@@ -12,5 +12,4 @@ Key documents:
 - [Tool reference](docs/tool-reference.md)
 - [Operator recipes](docs/operator-recipes.md)
 
-The local OpenAPI schema snapshot is stored in `api-schema.yaml`.
-
+The local OpenAPI schema snapshot is stored in `docs/api-schema.yaml`.

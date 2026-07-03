@@ -1,11 +1,11 @@
 # InvenTree API Schema Notes
 
-The local OpenAPI schema is stored at `api-schema.yaml`.
+The local OpenAPI schema is stored at `docs/api-schema.yaml`.
 
 Source:
 
 ```sh
-curl -fsSL https://inventory.internal.vanlaatum.id.au/api/schema/ -o api-schema.yaml
+curl -fsSL https://inventory.internal.vanlaatum.id.au/api/schema/ -o docs/api-schema.yaml
 ```
 
 Current fetched schema:
@@ -18,7 +18,7 @@ Current fetched schema:
 - Authentication used for schema fetch: none from this workspace
 - SHA256: `a574d8c055e36e2efa16dfaad093b77b4126f3a230c12a56c31b90f224d526a1`
 
-When `api-schema.yaml` changes, update this provenance block and any endpoint capability tables in the same change.
+When `docs/api-schema.yaml` changes, update this provenance block and any endpoint capability tables in the same change.
 
 ## Verified Auth and Token Endpoints
 

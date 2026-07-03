@@ -24,7 +24,7 @@ Build an InvenTree MCP server in Go using the official Model Context Protocol Go
 - InvenTree API access: small internal REST client using `net/http`, typed request/response structs, pagination helpers, and endpoint-specific methods.
 - Filesystem abstraction: use an injectable filesystem such as `github.com/spf13/afero` for local file access, fixtures, and allowlist tests.
 - Integration test infrastructure: `testcontainers-go` module that starts an isolated InvenTree test environment.
-- API schema source: keep a local copy of the OpenAPI schema at `api-schema.yaml`, refreshed from `https://inventory.internal.vanlaatum.id.au/api/schema/` when endpoint behavior needs verification. The current fetched schema is OpenAPI 3.0.3 for InvenTree API version `511`.
+- API schema source: keep a local copy of the OpenAPI schema at `docs/api-schema.yaml`, refreshed from `https://inventory.internal.vanlaatum.id.au/api/schema/` when endpoint behavior needs verification. The current fetched schema is OpenAPI 3.0.3 for InvenTree API version `511`.
 
 ## Implementation Libraries and Abstractions
 
@@ -42,7 +42,7 @@ Use established libraries for protocol-heavy or environment-heavy concerns, but 
 - ID and token generation: inject randomness and ID generation for authorization codes, state, nonces, request IDs, and test determinism. Production must use cryptographically secure randomness for secrets and token material.
 - Logging: use structured logging, preferably `log/slog`, behind package-level dependencies or constructors so tests can assert redaction without scraping global output.
 - Configuration and secrets: keep config parsing separate from runtime dependencies. Key material, InvenTree credentials, and token lifetimes should enter through a typed config object, not scattered environment lookups.
-- Schema access: parse `api-schema.yaml` through a schema helper for endpoint-manifest checks instead of ad hoc string matching.
+- Schema access: parse `docs/api-schema.yaml` through a schema helper for endpoint-manifest checks instead of ad hoc string matching.
 
 OAuth spike acceptance criteria:
 
@@ -185,10 +185,10 @@ The `TokenVerifier` should decrypt the envelope and return SDK `auth.TokenInfo` 
 
 ```text
 AGENTS.md
-api-schema.yaml
 cmd/inventree-mcp/
   main.go
 docs/
+  api-schema.yaml
   api-schema.md
   reviewers.md
   tool-reference.md
@@ -692,8 +692,8 @@ Stock movement, purchase receiving, build allocation, and build completion shoul
 - InvenTree compatibility baseline: latest stable InvenTree release.
 - Docker image for Testcontainers: `inventree/inventree:stable`.
 - Testcontainers should record the resolved InvenTree version and image digest/tag in test output so `stable` failures are diagnosable.
-- Integration startup should fetch `/api/schema/` and record the API version. Blocking schema-sensitive tests must fail when the runtime schema version differs from checked-in `api-schema.yaml`, unless they run against a recorded image digest/schema version known to match the checked-in schema. Only explicitly marked stable-canary compatibility checks may skip or report non-blocking schema drift.
-- API schema compatibility baseline: current local `api-schema.yaml` fetched from the internal InvenTree instance, OpenAPI 3.0.3 / API version `511`.
+- Integration startup should fetch `/api/schema/` and record the API version. Blocking schema-sensitive tests must fail when the runtime schema version differs from checked-in `docs/api-schema.yaml`, unless they run against a recorded image digest/schema version known to match the checked-in schema. Only explicitly marked stable-canary compatibility checks may skip or report non-blocking schema drift.
+- API schema compatibility baseline: current local `docs/api-schema.yaml` fetched from the internal InvenTree instance, OpenAPI 3.0.3 / API version `511`.
 - Upstream InvenTree auth schemes: `Token` and `Bearer` only.
 - STDIO auth behavior: use configured InvenTree credentials from environment or flags.
 - HTTP auth behavior: use MCP-owned OAuth bearer tokens with encrypted upstream InvenTree credential envelopes.
@@ -748,7 +748,7 @@ Validation:
 - Fake clock tests for OAuth token expiry and refresh windows.
 - Fake randomness/ID tests for authorization-code and state generation without weakening production randomness.
 - PATCH payload omission tests.
-- Schema-reference tests or docs checks proving implemented endpoint paths match `api-schema.yaml` for attachments and parameters.
+- Schema-reference tests or docs checks proving implemented endpoint paths match `docs/api-schema.yaml` for attachments and parameters.
 - Generated endpoint manifest checks should cover every milestone endpoint, including parts, categories, companies, stock, supplier parts, manufacturer parts, purchase preview dependencies, attachments, and parameters.
 
 ### Phase 3: Discovery Tools
@@ -946,9 +946,9 @@ Implementation notes:
 - Parameter matcher tests for disabled templates, same-name templates with different units/choices/checkbox settings, category-linked versus global templates, existing value update versus create, explicit empty/false/zero values, and refusal to create category links without an explicit separate workflow.
 - Documentation checks proving `AGENTS.md`, `docs/api-schema.md`, tool reference, and operator recipes are updated when relevant behavior changes.
 - Documentation checks covering the split between byte/path upload, URL ingestion, and link attachments.
-- Schema drift check proving `api-schema.yaml` changes require corresponding `docs/api-schema.md` provenance and capability updates.
+- Schema drift check proving `docs/api-schema.yaml` changes require corresponding `docs/api-schema.md` provenance and capability updates.
 - Generated endpoint manifest test proving implemented tools and client methods map to schema-known paths, HTTP methods, request schemas, response schemas, PATCH support, multipart fields, and object scopes.
-- Schema drift tests must fail if an implemented endpoint is absent from `api-schema.yaml`, if any capability table entry no longer matches the schema, or if `api-schema.yaml` hash/version changes without `docs/api-schema.md` provenance updates.
+- Schema drift tests must fail if an implemented endpoint is absent from `docs/api-schema.yaml`, if any capability table entry no longer matches the schema, or if `docs/api-schema.yaml` hash/version changes without `docs/api-schema.md` provenance updates.
 - Documentation/generated-manifest checks comparing registered tools, auth modes, mutation gates, upload sources, and schema endpoint references against docs.
 - STDIO smoke test at command level where practical.
 - Optional live integration tests against a test InvenTree instance.

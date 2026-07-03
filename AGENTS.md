@@ -3,8 +3,8 @@
 - If comments are unclear or require a product/workflow decision, report the specific question instead of guessing.
 - Keep `docs/PLAN.md`, `docs/api-schema.md`, tool reference docs, and operator recipes aligned with behavior changes.
 - Use `docs/reviewers.md` as the standard reviewer roster for future review passes and keep it aligned when reviewer responsibilities change.
-- Verify endpoint behavior against `api-schema.yaml` before implementing or changing InvenTree API calls.
-- When `api-schema.yaml` changes, update `docs/api-schema.md` provenance and capability notes in the same change.
+- Verify endpoint behavior against `docs/api-schema.yaml` before implementing or changing InvenTree API calls.
+- When `docs/api-schema.yaml` changes, update `docs/api-schema.md` provenance and capability notes in the same change.
 - Prefer PATCH for partial updates where the schema supports it, and preserve omitted fields versus explicit zero/false/empty/null values.
 - Prefer existing InvenTree records over creating new ones, especially parameter templates, category parameter templates, categories, companies, and locations.
 - For parameter entry, search existing `/api/parameter/template/`, `/api/parameter/`, and `/api/part/category/parameters/` data first. If the right parameter is ambiguous, ask the operator instead of creating a new template.
