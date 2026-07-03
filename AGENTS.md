@@ -1,0 +1,31 @@
+# Agent Instructions
+
+- If comments are unclear or require a product/workflow decision, report the specific question instead of guessing.
+- Keep `docs/PLAN.md`, `docs/api-schema.md`, tool reference docs, and operator recipes aligned with behavior changes.
+- Use `docs/reviewers.md` as the standard reviewer roster for future review passes and keep it aligned when reviewer responsibilities change.
+- Verify endpoint behavior against `api-schema.yaml` before implementing or changing InvenTree API calls.
+- When `api-schema.yaml` changes, update `docs/api-schema.md` provenance and capability notes in the same change.
+- Prefer PATCH for partial updates where the schema supports it, and preserve omitted fields versus explicit zero/false/empty/null values.
+- Prefer existing InvenTree records over creating new ones, especially parameter templates, category parameter templates, categories, companies, and locations.
+- For parameter entry, search existing `/api/parameter/template/`, `/api/parameter/`, and `/api/part/category/parameters/` data first. If the right parameter is ambiguous, ask the operator instead of creating a new template.
+- STDIO mode uses configured InvenTree credentials from environment or flags, including `Token` and `Bearer` upstream auth schemes.
+- HTTP mode must use MCP-owned OAuth bearer tokens for ChatGPT Developer Connector compatibility. Do not pass raw inbound InvenTree `Authorization: Token ...` or `Authorization: Bearer ...` headers through unchanged.
+- HTTP OAuth tokens must be encrypted, authenticated envelopes containing the upstream InvenTree credential. ChatGPT must only see opaque OAuth bearer tokens, never readable InvenTree credentials.
+- HTTP mode remains stateless: do not add a database-backed token mapping unless the plan is explicitly changed.
+- Do not use plaintext signed JWTs for HTTP OAuth access or refresh tokens. If a JWT-family token is required, use an encrypted JWE-style profile and document the decision.
+- Spike the official MCP Go SDK `auth` and `oauthex` packages before adding parallel OAuth plumbing. Prefer maintained libraries for OAuth authorization-server behavior and keep them behind `internal/oauth` interfaces. Do not hand-roll protocol details such as PKCE validation unless the SDK/library cannot cover them.
+- Resolve ChatGPT Developer Connector redirect URI, client registration, metadata, and local/dev callback behavior from current official OpenAI documentation before implementing HTTP OAuth.
+- Production HTTP mode is expected to sit behind a reverse proxy that terminates HTTPS. Use explicitly configured canonical public HTTPS issuer/resource URLs and trusted-proxy configuration; do not derive OAuth URLs from untrusted `Host` or forwarded headers.
+- Do not publish the internal Go HTTP listener directly in production; expose it only to the trusted reverse proxy or private service network.
+- Define and enforce OAuth scopes for tool classes before handlers run.
+- Treat OAuth scopes as additive and least-privilege; `inventree.write` does not imply upload or destructive access.
+- Envelope keys must have explicit key IDs, active/decrypt-only rotation states, startup validation, and documented compromise response.
+- Use Afero directly for local file access unless a concrete issue justifies a small helper. HTTP mode must not read arbitrary local paths.
+- STDIO local path reads must centralize direct-Afero logic in `internal/upload/local_file.go`, canonicalize allowlisted roots, reject symlinks where supported, reject non-regular files after open, and enforce that cleaned/resolved paths remain under the allowlist.
+- Inject clock, randomness/ID generation, HTTP transports, URL fetchers, and logging where needed so tests can be deterministic and can assert redaction and safety behavior.
+- Do not log auth tokens, uploaded file contents, or sensitive operator data.
+- `upload_attachment` may accept inline byte blobs and STDIO-mode allowlisted local paths. Only the dedicated URL-upload tool may accept HTTP(S) URLs. HTTP mode must not read arbitrary local paths.
+- URL upload code must enforce SSRF controls and must not forward MCP or InvenTree auth headers to fetched URLs.
+- STDIO local file uploads must reject symlink escapes and non-regular files.
+- Testcontainers integration tests should share a suite-owned container set, use immutable shared fixtures, and create prefixed records for every mutating subtest.
+- Keep sales/customer workflows out of the initial implementation unless the plan is explicitly changed.

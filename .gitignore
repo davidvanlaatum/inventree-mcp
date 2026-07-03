@@ -1,0 +1,36 @@
+# OS/editor noise
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+.idea/
+.vscode/
+
+# Local environment and secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.crt
+*.p12
+
+# Go build/test outputs
+/bin/
+/dist/
+/build/
+*.test
+*.out
+coverage.out
+coverage.html
+
+# Go workspace/cache files that should stay local
+go.work
+go.work.sum
+
+# Testcontainers and local runtime artifacts
+.testcontainers/
+tmp/
+*.log
+
