@@ -217,9 +217,12 @@ Tasks:
 
 ### M1B-S02: Schema Endpoint Manifest
 
-- Status: `Ready`
+- Status: `Done`
 - Depends on: M1B-S01
 - Scope: add a generated or maintained manifest tying implemented endpoints to `docs/api-schema.yaml`.
+- Validation: `GOCACHE=/Users/david/Projects/inventree-mcp/.gocache GOMODCACHE=/private/tmp/inventree-mcp-gomodcache go test ./...` passed. `git diff --check` passed.
+- Review: Senior Go Developer, Senior QA / Test Architect, Senior Product Manager, and Senior Infosec Reviewer reviews run. Go found optional schema fields, loose YAML decoding, and unused schema path validation; fixed with strict request/response contract checks, `KnownFields(true)`, regression tests, and schema path validation. QA found missing role-filter coverage, incomplete provenance assertions, and ambiguous parameter-template scope; fixed with `required_query` checks, OpenAPI/API version assertions, and explicit template/category-link scope notes. Product found parameter write scope ambiguity, company role-filter gaps, and missing attachment object-type scope metadata; fixed by removing template/category-link mutation entries, adding supplier/manufacturer query filters, and recording attachment model-type scope. Infosec found missing forbidden report detail endpoints and endpoint-vs-upload-boundary overclaiming; fixed by forbidding report detail paths and documenting that upload/file authorization remains in later attachment/image tool enforcement. Focused reruns for all four roles found no remaining actionable findings.
+- Residual risk: the manifest is maintained YAML rather than generated code; the tests enforce strict manifest fields, schema existence, operation IDs, selected query filters, request/response schema refs, schema/provenance drift, attachment model-type scope metadata, and deferred file-surface exclusion, but future client method enforcement still depends on later endpoint-specific client code consulting the manifest. Upload/file-source authorization remains owned by later attachment/image client and tool tests, not this endpoint-level manifest.
 - Acceptance:
   - Implemented client methods reference schema-known path/method/request/response data.
   - Schema drift checks require `docs/api-schema.md` provenance updates.
@@ -228,10 +231,10 @@ Tasks:
 
 Tasks:
 
-- [ ] Add schema parsing/check helper.
-- [ ] Add endpoint manifest format.
-- [ ] Add docs drift check.
-- [ ] Cover parts, categories, companies, stock, parameters, attachments, and purchasing preview dependencies.
+- [x] Add schema parsing/check helper.
+- [x] Add endpoint manifest format.
+- [x] Add docs drift check.
+- [x] Cover parts, categories, companies, stock, parameters, attachments, and purchasing preview dependencies.
 
 ## Milestone 1H: Early Integration Test Environment
 

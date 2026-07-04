@@ -1,0 +1,299 @@
+schema:
+  path: docs/api-schema.yaml
+  sha256: a574d8c055e36e2efa16dfaad093b77b4126f3a230c12a56c31b90f224d526a1
+  openapi: 3.0.3
+  api_version: "511"
+
+coverage_areas:
+  - parts
+  - categories
+  - companies
+  - stock
+  - parameters
+  - attachments
+  - purchasing_preview
+
+forbidden_paths:
+  - /api/notes-image-upload/
+  - /api/report/asset/
+  - /api/report/asset/{id}/
+  - /api/report/print/
+  - /api/report/snippet/
+  - /api/report/snippet/{id}/
+  - /api/report/template/
+  - /api/report/template/{id}/
+  - /api/stock/test/
+  - /api/stock/test/{id}/
+
+attachment_model_types:
+  in_scope:
+    - part
+    - stockitem
+    - company
+    - manufacturerpart
+    - supplierpart
+    - purchaseorder
+  deferred:
+    - build
+    - returnorder
+    - salesorder
+    - salesordershipment
+    - transferorder
+
+endpoints:
+  - id: search_parts
+    area: parts
+    path: /api/part/
+    method: GET
+    operation_id: part_list
+    response_schema: '#/components/schemas/PaginatedPartList'
+  - id: create_part
+    area: parts
+    path: /api/part/
+    method: POST
+    operation_id: part_create
+    request_schema: '#/components/schemas/Part'
+    request_content_type: multipart/form-data
+    response_schema: '#/components/schemas/Part'
+  - id: update_part
+    area: parts
+    path: /api/part/{id}/
+    method: PATCH
+    operation_id: part_partial_update
+    request_schema: '#/components/schemas/PatchedPart'
+    request_content_type: multipart/form-data
+    response_schema: '#/components/schemas/Part'
+  - id: get_part
+    area: parts
+    path: /api/part/{id}/
+    method: GET
+    operation_id: part_retrieve
+    response_schema: '#/components/schemas/Part'
+  - id: search_part_categories
+    area: categories
+    path: /api/part/category/
+    method: GET
+    operation_id: part_category_list
+    response_schema: '#/components/schemas/PaginatedCategoryList'
+  - id: get_part_category
+    area: categories
+    path: /api/part/category/{id}/
+    method: GET
+    operation_id: part_category_retrieve
+    response_schema: '#/components/schemas/Category'
+  - id: search_companies
+    area: companies
+    path: /api/company/
+    method: GET
+    operation_id: company_list
+    response_schema: '#/components/schemas/PaginatedCompanyList'
+  - id: search_suppliers
+    area: companies
+    path: /api/company/
+    method: GET
+    operation_id: company_list
+    required_query:
+      - is_supplier
+    response_schema: '#/components/schemas/PaginatedCompanyList'
+  - id: search_manufacturers
+    area: companies
+    path: /api/company/
+    method: GET
+    operation_id: company_list
+    required_query:
+      - is_manufacturer
+    response_schema: '#/components/schemas/PaginatedCompanyList'
+  - id: create_company
+    area: companies
+    path: /api/company/
+    method: POST
+    operation_id: company_create
+    request_schema: '#/components/schemas/Company'
+    request_content_type: multipart/form-data
+    response_schema: '#/components/schemas/Company'
+  - id: update_company
+    area: companies
+    path: /api/company/{id}/
+    method: PATCH
+    operation_id: company_partial_update
+    request_schema: '#/components/schemas/PatchedCompany'
+    request_content_type: multipart/form-data
+    response_schema: '#/components/schemas/Company'
+  - id: search_supplier_parts
+    area: purchasing_preview
+    path: /api/company/part/
+    method: GET
+    operation_id: company_part_list
+    response_schema: '#/components/schemas/PaginatedSupplierPartList'
+  - id: create_supplier_part
+    area: companies
+    path: /api/company/part/
+    method: POST
+    operation_id: company_part_create
+    request_schema: '#/components/schemas/SupplierPart'
+    request_content_type: multipart/form-data
+    response_schema: '#/components/schemas/SupplierPart'
+  - id: update_supplier_part
+    area: companies
+    path: /api/company/part/{id}/
+    method: PATCH
+    operation_id: company_part_partial_update
+    request_schema: '#/components/schemas/PatchedSupplierPart'
+    request_content_type: multipart/form-data
+    response_schema: '#/components/schemas/SupplierPart'
+  - id: search_manufacturer_parts
+    area: companies
+    path: /api/company/part/manufacturer/
+    method: GET
+    operation_id: company_part_manufacturer_list
+    response_schema: '#/components/schemas/PaginatedManufacturerPartList'
+  - id: create_manufacturer_part
+    area: companies
+    path: /api/company/part/manufacturer/
+    method: POST
+    operation_id: company_part_manufacturer_create
+    request_schema: '#/components/schemas/ManufacturerPart'
+    request_content_type: multipart/form-data
+    response_schema: '#/components/schemas/ManufacturerPart'
+  - id: update_manufacturer_part
+    area: companies
+    path: /api/company/part/manufacturer/{id}/
+    method: PATCH
+    operation_id: company_part_manufacturer_partial_update
+    request_schema: '#/components/schemas/PatchedManufacturerPart'
+    request_content_type: multipart/form-data
+    response_schema: '#/components/schemas/ManufacturerPart'
+  - id: search_stock_items
+    area: stock
+    path: /api/stock/
+    method: GET
+    operation_id: stock_list
+    response_schema: '#/components/schemas/PaginatedStockItemList'
+  - id: create_stock_item
+    area: stock
+    path: /api/stock/
+    method: POST
+    operation_id: stock_create
+    request_schema: '#/components/schemas/StockItem'
+    request_content_type: multipart/form-data
+    response_schema: '#/components/schemas/StockItem'
+  - id: update_stock_item
+    area: stock
+    path: /api/stock/{id}/
+    method: PATCH
+    operation_id: stock_partial_update
+    request_schema: '#/components/schemas/PatchedStockItem'
+    request_content_type: multipart/form-data
+    response_schema: '#/components/schemas/StockItem'
+  - id: search_stock_locations
+    area: stock
+    path: /api/stock/location/
+    method: GET
+    operation_id: stock_location_list
+    response_schema: '#/components/schemas/PaginatedLocationList'
+  - id: get_stock_location
+    area: stock
+    path: /api/stock/location/{id}/
+    method: GET
+    operation_id: stock_location_retrieve
+    response_schema: '#/components/schemas/Location'
+  - id: search_part_parameters
+    area: parameters
+    path: /api/parameter/
+    method: GET
+    operation_id: parameter_list
+    response_schema: '#/components/schemas/PaginatedParameterList'
+  - id: create_part_parameter
+    area: parameters
+    path: /api/parameter/
+    method: POST
+    operation_id: parameter_create
+    request_schema: '#/components/schemas/Parameter'
+    request_content_type: multipart/form-data
+    response_schema: '#/components/schemas/Parameter'
+  - id: update_part_parameter
+    area: parameters
+    path: /api/parameter/{id}/
+    method: PATCH
+    operation_id: parameter_partial_update
+    request_schema: '#/components/schemas/PatchedParameter'
+    request_content_type: multipart/form-data
+    response_schema: '#/components/schemas/Parameter'
+  - id: search_parameter_templates
+    area: parameters
+    path: /api/parameter/template/
+    method: GET
+    operation_id: parameter_template_list
+    response_schema: '#/components/schemas/PaginatedParameterTemplateList'
+  - id: search_category_parameter_templates
+    area: parameters
+    path: /api/part/category/parameters/
+    method: GET
+    operation_id: part_category_parameters_list
+    response_schema: '#/components/schemas/PaginatedCategoryParameterTemplateList'
+  - id: list_attachments
+    area: attachments
+    path: /api/attachment/
+    method: GET
+    operation_id: attachment_list
+    response_schema: '#/components/schemas/PaginatedAttachmentList'
+  - id: upload_attachment
+    area: attachments
+    path: /api/attachment/
+    method: POST
+    operation_id: attachment_create
+    request_schema: '#/components/schemas/Attachment'
+    request_content_type: multipart/form-data
+    response_schema: '#/components/schemas/Attachment'
+  - id: get_attachment_metadata
+    area: attachments
+    path: /api/attachment/{id}/
+    method: GET
+    operation_id: attachment_retrieve
+    response_schema: '#/components/schemas/Attachment'
+  - id: update_attachment_metadata
+    area: attachments
+    path: /api/attachment/{id}/
+    method: PATCH
+    operation_id: attachment_partial_update
+    request_schema: '#/components/schemas/PatchedAttachment'
+    request_content_type: multipart/form-data
+    response_schema: '#/components/schemas/Attachment'
+  - id: delete_attachment
+    area: attachments
+    path: /api/attachment/{id}/
+    method: DELETE
+    operation_id: attachment_destroy
+    response_status: 204
+  - id: list_part_thumbnails
+    area: attachments
+    path: /api/part/thumbs/
+    method: GET
+    operation_id: part_thumbs_list
+    response_schema: '#/components/schemas/PaginatedPartThumbList'
+  - id: update_part_thumbnail
+    area: attachments
+    path: /api/part/thumbs/{id}/
+    method: PATCH
+    operation_id: part_thumbs_partial_update
+    request_schema: '#/components/schemas/PatchedPartThumbSerializerUpdate'
+    request_content_type: multipart/form-data
+    response_schema: '#/components/schemas/PartThumbSerializerUpdate'
+  - id: search_purchase_orders
+    area: purchasing_preview
+    path: /api/order/po/
+    method: GET
+    operation_id: order_po_list
+    response_schema: '#/components/schemas/PaginatedPurchaseOrderList'
+  - id: get_purchase_order
+    area: purchasing_preview
+    path: /api/order/po/{id}/
+    method: GET
+    operation_id: order_po_retrieve
+    response_schema: '#/components/schemas/PurchaseOrder'
+  - id: search_purchase_order_lines
+    area: purchasing_preview
+    path: /api/order/po-line/
+    method: GET
+    operation_id: order_po_line_list
+    response_schema: '#/components/schemas/PaginatedPurchaseOrderLineItemList'

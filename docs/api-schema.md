@@ -1,6 +1,6 @@
 # InvenTree API Schema Notes
 
-The local OpenAPI schema is stored at `docs/api-schema.yaml`.
+The local OpenAPI schema is stored at `docs/api-schema.yaml`. Endpoint coverage for implemented and milestone-planned InvenTree client methods is tracked in `docs/endpoint-manifest.yaml`.
 
 Source:
 
@@ -19,6 +19,7 @@ Current fetched schema:
 - SHA256: `a574d8c055e36e2efa16dfaad093b77b4126f3a230c12a56c31b90f224d526a1`
 
 When `docs/api-schema.yaml` changes, update this provenance block and any endpoint capability tables in the same change.
+The manifest stores the same schema SHA256 and API version; schema drift tests fail until both this provenance block and `docs/endpoint-manifest.yaml` are updated.
 
 ## Verified Auth and Token Endpoints
 
@@ -150,7 +151,7 @@ Bulk attachment delete (`DELETE /api/attachment/`) is schema-confirmed but out o
 
 ## Milestone Endpoint Coverage
 
-Before implementation, extend this section with schema-confirmed paths, methods, request schemas, response schemas, and PATCH support for every milestone client method. Required milestone areas:
+The initial endpoint manifest covers schema-confirmed paths, methods, operation IDs, selected query filters, request schemas, response schemas, and PATCH support for every milestone client-method dependency in these areas:
 
 - Part and category search/create/update.
 - Company search/create/update and role filters.
@@ -159,6 +160,9 @@ Before implementation, extend this section with schema-confirmed paths, methods,
 - Parameter values, parameter templates, and category parameter template links.
 - Purchase order preview inputs and supplier-part validation dependencies.
 - Attachment, link attachment, URL upload, and primary-image update behavior.
+
+Future endpoint-specific client methods must use manifest entries rather than ad hoc path strings. Adding a method without a manifest entry or changing `docs/api-schema.yaml` without updating the manifest/provenance should fail the schema checks.
+The manifest is endpoint-level schema coverage, not a complete upload authorization boundary. Attachment `model_type`, accepted file fields, URL sources, and primary-image object rules remain enforced by the attachment/image client and tool tests when those tools are implemented. The manifest records in-scope and deferred attachment model types so those later tests have a machine-readable scope source.
 
 ## Verified Parameter Endpoints
 
@@ -171,6 +175,8 @@ Before implementation, extend this section with schema-confirmed paths, methods,
 - `GET /api/part/category/parameters/` lists category parameter template links.
 - `POST /api/part/category/parameters/` creates category parameter template links.
 - `PATCH /api/part/category/parameters/{id}/` partially updates category parameter template links.
+
+Template and category-link creation/update endpoints are schema-verified for reference, but they are not milestone-1 tool scope. `set_part_parameters` must use existing templates and category links unless a later task explicitly adds template administration workflows.
 
 Parameter guidance:
 

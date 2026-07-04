@@ -1,6 +1,6 @@
 # Tool Reference
 
-This file is the planned operator-facing and agent-facing reference for registered MCP tools. Once implementation begins, keep it aligned with the generated tool authorization manifest and the registered Go structs.
+This file is the planned operator-facing and agent-facing reference for registered MCP tools. Once implementation begins, keep it aligned with the generated tool authorization manifest, `docs/endpoint-manifest.yaml`, and the registered Go structs.
 
 ## Manifest Fields
 
@@ -15,6 +15,8 @@ Each registered tool must have:
 - Accepted upload sources, when relevant.
 - Stable retry fields for clarification responses.
 - "Ask operator when..." guidance.
+
+Endpoint-backed tools must also map to a `docs/endpoint-manifest.yaml` entry whose path, method, operation ID, selected query filters, request schema, and response schema are validated against `docs/api-schema.yaml`.
 
 ## Skeleton Tools
 
