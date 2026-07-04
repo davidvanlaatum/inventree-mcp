@@ -1,3 +1,5 @@
+[![Go](https://github.com/davidvanlaatum/inventree-mcp/actions/workflows/go.yml/badge.svg)](https://github.com/davidvanlaatum/inventree-mcp/actions/workflows/go.yml)
+
 # InvenTree MCP Server
 
 Go-based Model Context Protocol server for common InvenTree data-entry workflows.
@@ -65,6 +67,8 @@ gh release view vX.X.X --repo davidvanlaatum/inventree-mcp
 GitHub repository setup required for first release:
 
 - Actions are enabled for the repository.
+- Workflow permissions allow the Go workflow to write coverage baselines to git notes and comment on pull requests.
+- Coverage reporting uses GitHub job summaries, pull request comments, and git notes only; the `dvgoutils` gist-backed coverage badge and `COVERAGE_GIST_SECRET` were intentionally not copied.
 - Workflow permissions allow `GITHUB_TOKEN` to create releases with `contents: write`.
 - The `Release Preview` workflow passes on the release PR, including the GoReleaser snapshot package build.
 

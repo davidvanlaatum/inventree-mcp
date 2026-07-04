@@ -25,7 +25,7 @@ Build an InvenTree MCP server in Go using the official Model Context Protocol Go
 - Shared Go utilities: use `github.com/davidvanlaatum/dvgoutils` where it fits local code style, especially `github.com/davidvanlaatum/dvgoutils/logging` for context-carried `slog` loggers and `logging.Err`.
 - Filesystem abstraction: use an injectable filesystem such as `github.com/spf13/afero` for local file access, fixtures, and allowlist tests.
 - Integration test infrastructure: `testcontainers-go` module that starts an isolated InvenTree test environment.
-- Project automation: GitHub Actions for Go tests, lint, dependency submission, tag-driven GoReleaser releases, and pre-commit checks; Dependabot for Go modules and GitHub Actions.
+- Project automation: GitHub Actions for Go tests with coverage reporting, lint, dependency submission, tag-driven GoReleaser releases, and pre-commit checks; Dependabot for Go modules and GitHub Actions.
 - Local quality gate: pre-commit using `pre-commit-hooks` and Go hooks for `go mod tidy`, imports, golangci-lint, tests, and build.
 - API schema source: keep a local copy of the OpenAPI schema at `docs/api-schema.yaml`, refreshed from `https://inventory.internal.vanlaatum.id.au/api/schema/` when endpoint behavior needs verification. The current fetched schema is OpenAPI 3.0.3 for InvenTree API version `511`.
 

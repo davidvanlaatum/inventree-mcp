@@ -59,9 +59,9 @@ Tasks:
 - Status: `Done`
 - Depends on: M0-S01
 - Scope: add minimal Go module, GitHub Actions, Dependabot, golangci-lint, and pre-commit.
-- Validation: `go test ./...` passed with workspace-local Go build cache before commit.
-- Review: covered by earlier planning review passes.
-- Residual risk: none.
+- Validation: `go test ./...` passed with workspace-local Go build cache before commit. Follow-up CI alignment with `dvgoutils` added Go coverage reporting after `GOCACHE=/Users/david/Projects/inventree-mcp/.gocache GOMODCACHE=/private/tmp/inventree-mcp-gomodcache go test -coverpkg=./... -coverprofile=/private/tmp/inventree-mcp-coverage.out ./...` passed and reported 82.6% total coverage.
+- Review: covered by earlier planning review passes. Follow-up CI alignment reviewed by Senior QA / Test Architect and Senior Product Manager. QA found workflow-level write permissions were too broad for the gremlins job; fixed by moving write permissions to the test job and leaving gremlins read-only. Product found the omitted `dvgoutils` gist-backed badge needed to be explicit; fixed in README setup notes. Focused QA and product reruns found no remaining actionable findings.
+- Residual risk: Go coverage reporting writes git notes and may comment on pull requests, so repository workflow permissions must allow read/write Actions tokens for the test job. Coverage reporting uses GitHub checks/comments and git notes only; the `dvgoutils` gist-backed coverage badge and `COVERAGE_GIST_SECRET` were intentionally not copied.
 - Acceptance:
   - `go test ./...` passes with an allowed Go build cache.
   - GitHub Actions workflows exist for tests, lint, and dependency submission.
