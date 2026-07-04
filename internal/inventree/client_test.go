@@ -186,6 +186,128 @@ func TestDoJSONClassifiesCommonAPIErrorStatuses(t *testing.T) {
 	}
 }
 
+func TestAPIErrorStringIncludesDetailWhenAvailable(t *testing.T) {
+	t.Parallel()
+	a := assert.New(t)
+
+	withDetail := &APIError{
+		StatusCode: http.StatusNotFound,
+		Method:     http.MethodGet,
+		Path:       "/api/part/10/",
+		Detail:     "missing",
+	}
+	withoutDetail := &APIError{
+		StatusCode: http.StatusInternalServerError,
+		Method:     http.MethodPost,
+		Path:       "/api/part/",
+	}
+
+	a.Equal("InvenTree GET /api/part/10/ failed with 404: missing", withDetail.Error())
+	a.Equal("InvenTree POST /api/part/ failed with 500", withoutDetail.Error())
+}
+
+func TestNewClientRejectsInvalidConfig(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+
+	_, err := NewClient(Config{
+		BaseURL: "ftp://inventory.example.test",
+		Credential: Credential{
+			Scheme: AuthScheme("Basic"),
+		},
+	})
+	r.Error(err)
+	a.Contains(err.Error(), "base URL scheme must be http or https")
+	a.Contains(err.Error(), "auth scheme must be")
+
+	_, err = NewClient(Config{
+		BaseURL: "https://inventory.example.test",
+		Credential: Credential{
+			Scheme: AuthSchemeToken,
+		},
+	})
+	r.Error(err)
+	a.Contains(err.Error(), "token is required")
+}
+
+func TestNewRequestRejectsInvalidPathAndBody(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+
+	client, err := NewClient(Config{
+		BaseURL:    "https://inventory.example.test",
+		Credential: Credential{Scheme: AuthSchemeToken, Token: "secret"},
+	})
+	r.NoError(err)
+
+	_, err = client.NewRequest(context.Background(), http.MethodGet, "api/part/", nil, nil)
+	r.Error(err)
+	a.Contains(err.Error(), "path must start with /")
+
+	_, err = client.NewRequest(context.Background(), http.MethodGet, "//evil.example.test/api/part/", nil, nil)
+	r.Error(err)
+	a.Contains(err.Error(), "must not be protocol-relative")
+
+	_, err = client.NewRequest(context.Background(), http.MethodPost, "/api/part/", nil, func() {})
+	r.Error(err)
+	a.Contains(err.Error(), "encode request body")
+}
+
+func TestDoJSONReportsDecodeAndDiscardErrors(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name      string
+		status    int
+		body      io.ReadCloser
+		out       any
+		wantError string
+	}{
+		{
+			name:      "decode",
+			status:    http.StatusOK,
+			body:      io.NopCloser(strings.NewReader(`not-json`)),
+			out:       &struct{}{},
+			wantError: "decode InvenTree response",
+		},
+		{
+			name:      "discard",
+			status:    http.StatusNoContent,
+			body:      errReadCloser{},
+			out:       nil,
+			wantError: "discard InvenTree response body",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			r := require.New(t)
+
+			client, err := NewClient(Config{
+				BaseURL:    "https://inventory.example.test",
+				Credential: Credential{Scheme: AuthSchemeToken, Token: "secret"},
+				HTTPClient: &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+					return &http.Response{
+						StatusCode: tt.status,
+						Body:       tt.body,
+						Request:    req,
+					}, nil
+				})},
+			})
+			r.NoError(err)
+			req, err := client.NewRequest(context.Background(), http.MethodGet, "/api/part/", nil, nil)
+			r.NoError(err)
+
+			err = client.DoJSON(req, tt.out)
+			r.Error(err)
+			r.Contains(err.Error(), tt.wantError)
+		})
+	}
+}
+
 func TestListAllFollowsPagination(t *testing.T) {
 	t.Parallel()
 	r := require.New(t)
@@ -220,6 +342,28 @@ func TestListAllFollowsPagination(t *testing.T) {
 		"https://inventory.example.test/api/part/?limit=2",
 		"https://inventory.example.test/api/part/?limit=2&offset=2",
 	}, requested)
+}
+
+func TestListAllRejectsInvalidInputs(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+
+	_, err := ListAll[struct{}](context.Background(), nil, "/api/part/", nil)
+	r.Error(err)
+	a.Contains(err.Error(), "client is required")
+
+	client, err := NewClient(Config{
+		BaseURL:    "https://inventory.example.test",
+		Credential: Credential{Scheme: AuthSchemeToken, Token: "secret"},
+		HTTPClient: &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			return jsonResponse(req, http.StatusOK, `{"count":1,"next":"://bad-url","previous":null,"results":[]}`), nil
+		})},
+	})
+	r.NoError(err)
+
+	_, err = ListAll[struct{}](context.Background(), client, "/api/part/", nil)
+	r.Error(err)
 }
 
 func TestPatchFieldsPreserveOmittedAndExplicitZeroValues(t *testing.T) {
@@ -298,4 +442,14 @@ func jsonResponse(req *http.Request, status int, body string) *http.Response {
 		Body:       io.NopCloser(strings.NewReader(body)),
 		Request:    req,
 	}
+}
+
+type errReadCloser struct{}
+
+func (errReadCloser) Read([]byte) (int, error) {
+	return 0, errors.New("read failed")
+}
+
+func (errReadCloser) Close() error {
+	return nil
 }
