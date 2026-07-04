@@ -1,3 +1,6 @@
+//go:build !no_integration_tests
+// +build !no_integration_tests
+
 package testenv
 
 import (
