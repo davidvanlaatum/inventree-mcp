@@ -696,3 +696,27 @@ Tasks:
 - [ ] Define stocktake review workflow.
 - [ ] Add confirmation and audit requirements.
 - [ ] Add operational scope tests.
+
+### F-S05: Systemd Notify And Watchdog Support
+
+- Status: `Future`
+- Depends on: long-running HTTP server runtime, production HTTP OAuth startup behavior, and product review
+- Scope: add native systemd notification support for packaged HTTP deployments.
+- Acceptance:
+  - HTTP service startup sends systemd readiness only after the listener is bound, runtime dependencies are initialized, and production startup checks have passed.
+  - The process sends watchdog heartbeats at a safe interval when systemd `WatchdogSec` is configured.
+  - The process publishes useful systemd status text for startup, ready, degraded, shutdown, and fatal-error states without logging or exposing secrets.
+  - Packaged systemd unit can safely switch from `Type=simple` to `Type=notify` with `NotifyAccess=main` and an explicit `WatchdogSec`.
+  - Tests cover notify readiness ordering, heartbeat cadence, disabled-watchdog behavior, shutdown status, fatal-error status, and non-systemd fallback behavior.
+  - README, operator recipes, release packaging docs, and `AGENTS.md` are updated to describe the supported systemd behavior.
+
+Tasks:
+
+- [ ] Select and wrap a maintained Go systemd notification library.
+- [ ] Add injectable notifier/watchdog abstraction for deterministic tests.
+- [ ] Send startup status transitions and final readiness notification.
+- [ ] Send watchdog heartbeats only when systemd watchdog is enabled.
+- [ ] Publish shutdown, degraded, and fatal-error status messages.
+- [ ] Update packaged systemd unit to `Type=notify` after code support lands.
+- [ ] Add unit and integration tests for notify/watchdog behavior.
+- [ ] Update release and operator documentation.
