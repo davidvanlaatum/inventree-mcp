@@ -13,11 +13,15 @@ import (
 	"github.com/davidvanlaatum/inventree-mcp/internal/buildinfo"
 	"github.com/davidvanlaatum/inventree-mcp/internal/config"
 	"github.com/davidvanlaatum/inventree-mcp/internal/platform"
+	"github.com/davidvanlaatum/inventree-mcp/internal/server"
+	"github.com/davidvanlaatum/inventree-mcp/internal/tools"
 )
 
 func main() {
 	os.Exit(run(os.Args[1:], os.Stdout, os.Stderr, os.Getenv))
 }
+
+var serverRun = server.Run
 
 func run(args []string, stdout, stderr io.Writer, getenv config.Env) int {
 	if len(args) == 0 {
@@ -65,9 +69,9 @@ func run(args []string, stdout, stderr io.Writer, getenv config.Env) int {
 	}
 }
 
-func serve(ctx context.Context, _ config.Config) error {
+func serve(ctx context.Context, cfg config.Config) error {
 	_ = logging.FromContext(ctx)
-	return nil
+	return serverRun(ctx, cfg, tools.Dependencies{})
 }
 
 func writeLine(w io.Writer, format string, args ...any) {

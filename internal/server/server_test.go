@@ -1,0 +1,136 @@
+package server
+
+import (
+	"context"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+
+	"github.com/davidvanlaatum/dvgoutils/logging"
+	"github.com/davidvanlaatum/dvgoutils/logging/testhandler"
+	"github.com/davidvanlaatum/inventree-mcp/internal/tools"
+	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+)
+
+func TestStdioServerCanInitializeAndListTools(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	clientTransport, serverTransport := mcp.NewInMemoryTransports()
+	serverDone := make(chan error, 1)
+	go func() {
+		serverDone <- New(tools.Dependencies{}).Run(ctx, serverTransport)
+	}()
+
+	client := mcp.NewClient(&mcp.Implementation{Name: "test-client", Version: "v0.0.0"}, nil)
+	session, err := client.Connect(ctx, clientTransport, nil)
+	r.NoError(err)
+	defer func() {
+		r.NoError(session.Close())
+	}()
+
+	result, err := session.ListTools(ctx, nil)
+	r.NoError(err)
+	r.Len(result.Tools, 1)
+	a.Equal(tools.HealthVersionToolName, result.Tools[0].Name)
+	a.True(result.Tools[0].Annotations.ReadOnlyHint)
+	a.NotNil(result.Tools[0].Annotations.DestructiveHint)
+	a.False(*result.Tools[0].Annotations.DestructiveHint)
+	a.NotNil(result.Tools[0].Annotations.OpenWorldHint)
+	a.False(*result.Tools[0].Annotations.OpenWorldHint)
+
+	cancel()
+	<-serverDone
+}
+
+func TestHealthVersionToolReturnsReadOnlyStatus(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	clientTransport, serverTransport := mcp.NewInMemoryTransports()
+	serverDone := make(chan error, 1)
+	go func() {
+		serverDone <- New(tools.Dependencies{}).Run(ctx, serverTransport)
+	}()
+
+	client := mcp.NewClient(&mcp.Implementation{Name: "test-client", Version: "v0.0.0"}, nil)
+	session, err := client.Connect(ctx, clientTransport, nil)
+	r.NoError(err)
+	defer func() {
+		r.NoError(session.Close())
+	}()
+
+	result, err := session.CallTool(ctx, &mcp.CallToolParams{Name: tools.HealthVersionToolName})
+	r.NoError(err)
+	r.False(result.IsError)
+	r.Len(result.Content, 1)
+	a.Equal("ok", result.Content[0].(*mcp.TextContent).Text)
+	structured := result.StructuredContent.(map[string]any)
+	a.Equal("ok", structured["status"])
+	a.Equal("dev", structured["version"])
+	a.Equal("unknown", structured["commit"])
+	a.Equal("unknown", structured["date"])
+
+	cancel()
+	<-serverDone
+}
+
+func TestHTTPHandlerUsesStatelessStreamableServer(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	handler := HTTPHandler(ctx, New(tools.Dependencies{}))
+
+	initRecorder := postMCP(t, handler, `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","clientInfo":{"name":"test-client","version":"v0.0.0"},"capabilities":{}}}`)
+	r.Equal(http.StatusOK, initRecorder.Code)
+	a.Contains(initRecorder.Body.String(), "inventree-mcp")
+
+	listRecorder := postMCP(t, handler, `{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}`)
+	r.Equal(http.StatusOK, listRecorder.Code)
+	a.Empty(listRecorder.Header().Get("Mcp-Session-Id"))
+	a.Contains(listRecorder.Body.String(), tools.HealthVersionToolName)
+}
+
+func postMCP(t *testing.T, handler http.Handler, body string) *httptest.ResponseRecorder {
+	t.Helper()
+
+	req := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(body))
+	req.Header.Set("Accept", "application/json, text/event-stream")
+	req.Header.Set("Content-Type", "application/json")
+	recorder := httptest.NewRecorder()
+
+	handler.ServeHTTP(recorder, req)
+
+	return recorder
+}
+
+func TestRequestAndToolScopedLoggersAreReattached(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+
+	ctx, handler, _ := testhandler.SetupTestHandler(t)
+	ctx = WithTransportLogger(ctx, "stdio")
+	logging.FromContext(ctx).InfoContext(ctx, "request scoped")
+
+	record := handler.FirstMatchingLogForAssert(func(record testhandler.LogRecord) bool {
+		return record.Msg == "request scoped"
+	})
+	r.NotNil(record)
+	a.Equal("stdio", record["transport"])
+}

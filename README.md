@@ -2,11 +2,11 @@
 
 Go-based Model Context Protocol server for common InvenTree data-entry workflows.
 
-Current status: buildable command and typed configuration skeleton. MCP server runtime, tool registration, and HTTP OAuth are still planned work.
+Current status: buildable MCP server skeleton with STDIO and development-only HTTP transports, plus a read-only health/version tool. HTTP OAuth and InvenTree workflow tools are still planned work.
 
 ## Quick Start
 
-Validate STDIO configuration:
+Run STDIO mode:
 
 ```sh
 INVENTREE_URL=https://inventory.example.test \
@@ -20,7 +20,7 @@ Useful STDIO options:
 - `--inventree-timeout 30s`; default is `30s`.
 - `--inventree-tls-skip-verify`; intended only for local/test deployments and requires `--environment development`.
 
-HTTP mode currently validates only the pre-OAuth skeleton. Production HTTP mode is intentionally disabled until the OAuth milestone is complete. Development-only HTTP config parsing requires `--environment development --dev-incomplete-oauth` and rejects configured raw InvenTree tokens.
+HTTP mode currently runs only the pre-OAuth skeleton. Production HTTP mode is intentionally disabled until the OAuth milestone is complete. Development-only HTTP startup requires `--environment development --dev-incomplete-oauth` and rejects configured raw InvenTree tokens.
 
 ## Install From A Release
 
@@ -32,9 +32,9 @@ Linux packages install:
 - `/etc/systemd/system/inventree-mcp.service`
 - `/etc/inventree-mcp/inventree-mcp.env`
 
-The packaged service is intended for HTTP mode behind a reverse proxy. Production HTTP mode will not start until OAuth support is implemented, and the current command skeleton exits after config validation instead of running a long-lived HTTP server. Install packages now for file layout testing, but do not enable the systemd service until the server and OAuth milestones land.
+The packaged service is intended for HTTP mode behind a reverse proxy. Production HTTP mode will not start until OAuth support is implemented. Install packages now for file layout testing, but do not enable the systemd service until the OAuth milestone lands.
 
-For a development-only pre-OAuth HTTP config smoke test, run the binary directly. This validates configuration and exits; it is not a long-running service yet.
+For a development-only pre-OAuth HTTP runtime smoke test, run the binary directly. This starts the skeleton streamable HTTP server with only static MCP metadata and the read-only health/version tool.
 
 ```sh
 INVENTREE_URL=https://inventory.example.test \

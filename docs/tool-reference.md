@@ -16,6 +16,12 @@ Each registered tool must have:
 - Stable retry fields for clarification responses.
 - "Ask operator when..." guidance.
 
+## Skeleton Tools
+
+| Tool | Group | Milestone status | Class | MCP annotations | Scopes | Upload sources | Ask operator when |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `health_version` | Server health | `milestone_1` | `read_only` | `readOnlyHint:true`, `destructiveHint:false`, `idempotentHint:true`, `openWorldHint:false` | None until HTTP OAuth scope enforcement lands | None | Never; returns static server health and build metadata. |
+
 ## Milestone 1 Tools
 
 | Tool | Group | Class | Scopes | Upload sources | Ask operator when |
