@@ -1,6 +1,9 @@
 package main
 
 import (
+	"bytes"
+	"errors"
+	"flag"
 	"fmt"
 	"io"
 	"os"
@@ -20,8 +23,14 @@ func run(args []string, stdout, stderr io.Writer, getenv config.Env) int {
 
 	switch args[0] {
 	case "serve":
-		_, err := config.ParseServeWithEnv(args[1:], getenv, stderr)
+		var flagOutput bytes.Buffer
+		_, err := config.ParseServeWithEnv(args[1:], getenv, &flagOutput)
 		if err != nil {
+			if errors.Is(err, flag.ErrHelp) {
+				_, _ = io.Copy(stdout, &flagOutput)
+				return 0
+			}
+			_, _ = io.Copy(stderr, &flagOutput)
 			writeLine(stderr, "inventree-mcp: %v", err)
 			return 2
 		}

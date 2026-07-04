@@ -43,6 +43,24 @@ func TestRunServeReportsConfigErrors(t *testing.T) {
 	}
 }
 
+func TestRunServeHelpExitsSuccessfully(t *testing.T) {
+	t.Parallel()
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := run([]string{"serve", "--help"}, &stdout, &stderr, mapEnv(nil))
+
+	if code != 0 {
+		t.Fatalf("run exit code = %d, want 0; stderr = %q", code, stderr.String())
+	}
+	if !bytes.Contains(stdout.Bytes(), []byte("Usage of serve:")) {
+		t.Fatalf("stdout = %q, want serve help", stdout.String())
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("stderr = %q, want empty", stderr.String())
+	}
+}
+
 func TestRunServeStdioDoesNotWriteStdout(t *testing.T) {
 	t.Parallel()
 

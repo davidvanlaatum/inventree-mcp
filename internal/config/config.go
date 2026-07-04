@@ -129,6 +129,8 @@ func (c Config) Validate() error {
 		validationErrors = append(validationErrors, errors.New("InvenTree URL is required"))
 	} else if parsed, err := url.ParseRequestURI(c.InvenTreeURL); err != nil || parsed.Scheme == "" || parsed.Host == "" {
 		validationErrors = append(validationErrors, errors.New("InvenTree URL must be an absolute URL"))
+	} else if parsed.Scheme != "http" && parsed.Scheme != "https" {
+		validationErrors = append(validationErrors, errors.New("InvenTree URL scheme must be http or https"))
 	}
 
 	switch c.InvenTreeAuthScheme {
@@ -139,6 +141,10 @@ func (c Config) Validate() error {
 
 	if c.InvenTreeTimeout <= 0 {
 		validationErrors = append(validationErrors, errors.New("InvenTree timeout must be greater than zero"))
+	}
+
+	if c.InvenTreeTLSSkipVerify && c.Environment == EnvironmentProduction {
+		validationErrors = append(validationErrors, errors.New("production mode rejects InvenTree TLS skip verify"))
 	}
 
 	if c.Transport == TransportStdio {
@@ -159,9 +165,6 @@ func (c Config) Validate() error {
 		}
 		if c.InvenTreeAuthScheme != AuthSchemeToken {
 			validationErrors = append(validationErrors, errors.New("configured InvenTree auth schemes are STDIO-only until HTTP OAuth is implemented"))
-		}
-		if c.InvenTreeTLSSkipVerify && c.Environment == EnvironmentProduction {
-			validationErrors = append(validationErrors, errors.New("production HTTP mode rejects InvenTree TLS skip verify"))
 		}
 		if c.Environment == EnvironmentProduction {
 			validationErrors = append(validationErrors, errors.New("production HTTP mode is disabled until OAuth is implemented"))

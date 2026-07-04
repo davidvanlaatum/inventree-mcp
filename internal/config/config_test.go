@@ -73,6 +73,22 @@ func TestParseServeRejectsInvalidConfig(t *testing.T) {
 	assertErrorContains(t, err, "InvenTree timeout must be greater than zero")
 }
 
+func TestParseServeRejectsNonHTTPInvenTreeURL(t *testing.T) {
+	t.Parallel()
+
+	_, err := ParseServeWithEnv([]string{
+		"--transport", "stdio",
+		"--inventree-url", "ftp://inventory.example.test",
+	}, mapEnv(map[string]string{
+		EnvInvenTreeToken: "token",
+	}), nil)
+	if err == nil {
+		t.Fatal("ParseServeWithEnv returned nil error")
+	}
+
+	assertErrorContains(t, err, "InvenTree URL scheme must be http or https")
+}
+
 func TestParseServeRejectsInvalidEnvDuration(t *testing.T) {
 	t.Parallel()
 
@@ -89,6 +105,23 @@ func TestParseServeRejectsInvalidEnvDuration(t *testing.T) {
 	assertErrorContains(t, err, "InvenTree timeout must be greater than zero")
 }
 
+func TestParseServeRejectsProductionTLSSkipVerifyForAllTransports(t *testing.T) {
+	t.Parallel()
+
+	_, err := ParseServeWithEnv([]string{
+		"--transport", "stdio",
+		"--inventree-url", "https://inventory.example.test",
+		"--inventree-tls-skip-verify",
+	}, mapEnv(map[string]string{
+		EnvInvenTreeToken: "token",
+	}), nil)
+	if err == nil {
+		t.Fatal("ParseServeWithEnv returned nil error")
+	}
+
+	assertErrorContains(t, err, "production mode rejects InvenTree TLS skip verify")
+}
+
 func TestParseServeRejectsProductionHTTPBeforeOAuth(t *testing.T) {
 	t.Parallel()
 
@@ -101,7 +134,7 @@ func TestParseServeRejectsProductionHTTPBeforeOAuth(t *testing.T) {
 		t.Fatal("ParseServeWithEnv returned nil error")
 	}
 
-	assertErrorContains(t, err, "production HTTP mode rejects InvenTree TLS skip verify")
+	assertErrorContains(t, err, "production mode rejects InvenTree TLS skip verify")
 	assertErrorContains(t, err, "production HTTP mode is disabled until OAuth is implemented")
 }
 
@@ -130,6 +163,25 @@ func TestParseServeAllowsDevelopmentHTTPOnlyWithExplicitIncompleteOAuthFlag(t *t
 	if cfg.Transport != TransportHTTP {
 		t.Fatalf("Transport = %q, want %q", cfg.Transport, TransportHTTP)
 	}
+}
+
+func TestParseServeRejectsInvalidHTTPRequiredValues(t *testing.T) {
+	t.Parallel()
+
+	_, err := ParseServeWithEnv([]string{
+		"--transport", "http",
+		"--environment", "development",
+		"--dev-incomplete-oauth",
+		"--listen", "",
+		"--path", "",
+		"--inventree-url", "https://inventory.example.test",
+	}, mapEnv(nil), nil)
+	if err == nil {
+		t.Fatal("ParseServeWithEnv returned nil error")
+	}
+
+	assertErrorContains(t, err, "HTTP path must start with /")
+	assertErrorContains(t, err, "HTTP listen address is required")
 }
 
 func TestParseServeRejectsHTTPConfiguredToken(t *testing.T) {
