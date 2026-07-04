@@ -70,6 +70,27 @@ func TestRunServeStdioDoesNotWriteStdout(t *testing.T) {
 	a.Empty(stderr.String())
 }
 
+func TestRunServeReportsInvalidLogLevel(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := run([]string{
+		"serve",
+		"--transport", "stdio",
+		"--inventree-url", "https://inventory.example.test",
+		"--log-level", "verbose",
+	}, &stdout, &stderr, mapEnv(map[string]string{
+		config.EnvInvenTreeToken: "redacted",
+	}))
+
+	r.Equal(2, code)
+	a.Empty(stdout.String())
+	a.Contains(stderr.String(), "log level must be")
+}
+
 func mapEnv(values map[string]string) config.Env {
 	return func(key string) string {
 		return values[key]
