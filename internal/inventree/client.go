@@ -84,13 +84,17 @@ func (c *Client) DoJSON(req *http.Request, out any) error {
 	if err != nil {
 		return fmt.Errorf("InvenTree request failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		_ = resp.Body.Close()
+	}()
 
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
 		return parseAPIError(resp)
 	}
 	if out == nil || resp.StatusCode == http.StatusNoContent {
-		io.Copy(io.Discard, resp.Body)
+		if _, err := io.Copy(io.Discard, resp.Body); err != nil {
+			return fmt.Errorf("discard InvenTree response body: %w", err)
+		}
 		return nil
 	}
 	decoder := json.NewDecoder(resp.Body)
