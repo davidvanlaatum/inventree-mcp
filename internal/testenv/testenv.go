@@ -184,7 +184,7 @@ func Start(ctx context.Context, opts Options) (*Environment, error) {
 		testcontainers.WithCmd("sh", "-c", "invoke update --skip-backup --no-frontend --skip-static && exec gunicorn -c ./gunicorn.conf.py InvenTree.wsgi -b ${INVENTREE_WEB_ADDR}:${INVENTREE_WEB_PORT} --chdir ${INVENTREE_BACKEND_DIR}/InvenTree"),
 		testcontainers.WithExposedPorts(defaultWebPort),
 		testcontainers.WithHostConfigModifier(loopbackPortBinding(defaultWebPort)),
-		testcontainers.WithWaitStrategy(wait.ForHTTP("/api/version/").
+		testcontainers.WithWaitStrategyAndDeadline(opts.StartupTimeout, wait.ForHTTP("/api/version/").
 			WithPort(defaultWebPort).
 			WithStatusCodeMatcher(func(status int) bool {
 				return status == http.StatusOK || status == http.StatusUnauthorized || status == http.StatusForbidden
