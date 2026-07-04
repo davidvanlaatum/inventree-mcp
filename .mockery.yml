@@ -1,0 +1,12 @@
+dir: '{{.InterfaceDir}}/mock'
+formatter: goimports
+log-level: info
+structname: '{{.Mock}}{{.InterfaceName}}'
+pkgname: '{{.SrcPackageName}}mock'
+filename: '{{.InterfaceName}}_mock.go'
+recursive: false
+template: testify
+packages:
+  github.com/davidvanlaatum/inventree-mcp:
+    config:
+      recursive: true

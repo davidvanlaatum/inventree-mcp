@@ -36,7 +36,8 @@ Focus:
 - Upload tests for inline bytes, STDIO allowlisted paths, URL ingestion, link attachments, SSRF controls, and primary-image behavior.
 - Schema drift and generated endpoint-manifest checks.
 - Deterministic seams such as Afero, clock, randomness, HTTP transports, URL fetchers, and structured log capture via `dvgoutils/logging/testhandler`.
-- Test assertion style uses `github.com/stretchr/testify` assertion objects such as `require.New(t)` and `assert.New(t)`, with `mockery` used later when generated interface mocks are appropriate.
+- Test assertion style uses `github.com/stretchr/testify` assertion objects such as `require.New(t)` and `assert.New(t)`.
+- Mockery use follows `.mockery.yml`: interfaces opted in with `//mockery:generate: true`, generated files live under package-local `mock/`, generated packages use `<parent>mock`, and `*_mock.go` files are treated as derived artifacts unless the generator config or version changes.
 - Whether acceptance criteria are executable and deterministic.
 - Whether milestone tests are classified as blocking, non-blocking, or future.
 
