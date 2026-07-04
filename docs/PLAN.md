@@ -463,6 +463,8 @@ The fetched schema facts and attachment/image capability table live in `docs/api
 
 - `list_attachments`
 - `get_attachment_metadata`
+- `download_attachment`
+- `download_part_image`
 - `upload_attachment`
 - `upload_attachment_from_url`
 - `create_link_attachment`
@@ -474,6 +476,12 @@ Important behaviors:
 
 - For milestone 1, expose attachment tools only for `part`, `stockitem`, `company`, `supplierpart`, `manufacturerpart`, and existing `purchaseorder` records. Build, transfer, return, sales, and BOM-related attachment workflows are deferred even if the generic attachment schema can represent them.
 - Support image uploads for object types that expose image fields or attachment-backed images.
+- Support attachment download through `download_attachment` using a stable attachment ID. It is read-only, requires `inventree.read`, and must fetch only schema-supported attachment or thumbnail URLs belonging to the configured InvenTree instance. It must not fetch arbitrary caller-provided URLs and must not use the URL-upload fetcher.
+- `download_attachment` should return filename, content type when known, size, SHA-256 hash, and content as base64 for binary files or optionally text for allowlisted textual content types. Apply a configured maximum download size and return a structured error when content is too large.
+- Support primary part image download through `download_part_image` using a stable part ID. It is read-only, requires `inventree.read`, resolves only the schema-exposed `Part.image` or `Part.existing_image` field for that part, and applies the same configured-instance, maximum-size, bounded-read, hash, and redaction controls as `download_attachment`.
+- `download_part_image` should return a structured no-image result when the part has no primary image. If the part image is backed by a generic attachment and the caller already has the attachment ID, `download_attachment` may be used instead.
+- Treat the part thumbnail API as part of the primary part image implementation. Verify `/api/part/{id}/` and `/api/part/thumbs/{id}/` behavior before implementing `set_primary_image`; keep the public MCP tool contract stable even if the client endpoint differs by InvenTree version.
+- Keep notes image upload, generated report attachments, stock test-result attachments, and other app-specific file surfaces out of the first release unless the plan is explicitly changed.
 - Define upload input forms explicitly:
   - `upload_attachment` accepts inline byte blobs encoded as base64 in HTTP and STDIO mode, with required filename and content type.
   - `upload_attachment` may additionally accept local file paths in STDIO mode only when a configured allowlist permits the path.
@@ -491,6 +499,7 @@ Important behaviors:
 - Enforce configured maximum attachment size before buffering the entire file in memory.
 - Return attachment ID, object type, object ID, filename, content type, size, URL, and whether the uploaded image became primary.
 - Attachment list and metadata responses should include stable attachment ID, filename, comment, tags, file size, target object, image/file/link classification, thumbnail URL when present, and primary-image state when applicable.
+- Attachment and part-image download responses must not log file contents, auth tokens, attachment bytes, image bytes, or sensitive URLs. Downloading a stored link attachment should return link metadata only unless a future explicit link-fetch feature is added.
 - Duplicate filename/content handling must be explicit: if the target object already has a matching attachment and the caller did not provide `attachment_id`, replacement intent, or metadata-only intent, return a structured clarification. Metadata updates require a stable attachment ID. Replacing an existing primary image requires `confirm:true`.
 - Do not infer image meaning or choose a primary image when multiple plausible images are supplied; return a structured clarification question.
 - Do not infer part identity, revision, compliance status, manufacturer part number, or supplier SKU from uploaded images or datasheets unless the operator confirms the extracted value.
@@ -682,7 +691,7 @@ For update tools, prefer PATCH over PUT wherever InvenTree supports PATCH. The i
 - Use `omitempty` only where it does not erase an intentional zero value.
 - Preserve the distinction between omitted, empty string, false, zero, and null when the API supports those states.
 - Provide endpoint-specific PATCH methods such as `PatchPart`, `PatchCompany`, `PatchStockItem`, `PatchBOMItem`, and `PatchPurchaseOrderLine`.
-- Provide attachment methods such as `ListAttachments`, `UploadAttachment`, `PatchAttachment`, `PatchPrimaryImage`, and `DeleteAttachment` where the API supports them. For current schema version `511`, generic attachment support should map to `/api/attachment/` and `/api/attachment/{id}/`.
+- Provide attachment and image methods such as `ListAttachments`, `DownloadAttachment`, `DownloadPartImage`, `UploadAttachment`, `PatchAttachment`, `PatchPrimaryImage`, `PatchPartThumbnail`, and `DeleteAttachment` where the API supports them. For current schema version `511`, generic attachment support should map to `/api/attachment/` and `/api/attachment/{id}/`; attachment content download should use the schema-supported `attachment` or `thumbnail` URL from metadata, and part-image download should use `Part.image` or `Part.existing_image`. Both download paths must remain scoped to the configured InvenTree base URL.
 - Fall back to full update only when the API lacks PATCH for that endpoint, and document that exception in the tool description.
 - Include tests proving that omitted fields are absent from the JSON payload.
 
@@ -770,7 +779,7 @@ Validation:
 
 ### Phase 3: Discovery Tools
 
-- Add search/get tools across parts, companies, stock locations, stock items, attachments, orders, and BOMs.
+- Add search/get tools across parts, companies, stock locations, stock items, attachments, attachment downloads, part-image downloads, orders, and BOMs.
 - Add resource templates for core read-only objects.
 - Add parameter discovery tools that search existing `/api/parameter/template/`, `/api/parameter/`, and `/api/part/category/parameters/` data before any parameter write flow.
 
@@ -782,7 +791,7 @@ Validation:
 
 ### Phase 4: Basic Write Tools
 
-- Add create/update tools for parts, companies, locations, stock items, parameters, supplier parts, manufacturer parts, attachments, and images.
+- Add create/update tools for parts, companies, locations, stock items, parameters, supplier parts, manufacturer parts, attachments, and images. Attachment download remains read-only.
 - Add confirmation handling for risky stock changes.
 - Parameter writes must prefer existing templates and require explicit confirmation before creating new parameter templates or category-parameter-template links.
 
@@ -796,7 +805,7 @@ Validation:
 
 - Implement part upsert workflow.
 - Implement parameter reuse workflow using existing templates only unless creation is explicitly confirmed in a separate workflow.
-- Implement attachment/image workflows for byte/path upload, URL upload, link attachment, metadata update, and primary part image replacement.
+- Implement attachment/image workflows for byte/path upload, URL upload, link attachment, metadata update, primary part image download, and primary part image replacement.
 - Implement initial stock creation workflow with duplicate detection.
 - Implement purchase-order preview workflow with no writes.
 
@@ -962,6 +971,7 @@ Implementation notes:
 - Error mapping tests for InvenTree 400, 401, 403, 404, 409, 429, and 5xx responses.
 - Log/audit redaction tests proving auth tokens do not appear in logs, audit entries, tool errors, or panic recovery output.
 - Attachment negative tests for unsupported object type, nonexistent target object, invalid filename or path-like filename, content-type mismatch, zero-byte file, oversize file, unsupported image type, and delete scoped to a prefixed record only.
+- Attachment download tests for binary base64 output, allowlisted text output, maximum download size, hash/size reporting, missing file URL, stored-link behavior, thumbnail download where supported, and refusal to fetch URLs outside the configured InvenTree base URL.
 - Upload source tests for inline byte blobs, STDIO allowlisted local paths, rejected HTTP local paths, rejected non-HTTP URL schemes, timeout, redirect limit, DNS/IP SSRF rejection, URL allowlist behavior, and maximum-size enforcement.
 - SSRF bypass table tests for IPv6 loopback/link-local/ULA, unspecified/reserved/documentation ranges, CGNAT, IPv4-mapped IPv6, encoded IP forms supported by Go parsing, DNS rebinding, public-to-private redirects, allowlist edge cases, IDNA/punycode host normalization, wildcard suffix pitfalls, userinfo URLs, cloud metadata aliases, timeout, and streaming size cutoff before full buffering.
 - URL fetch implementation tests proving no ambient proxy use unless explicitly configured, vetted-IP dialing, remote-address verification, redirect revalidation, and no cookies/auth headers forwarded.
@@ -972,7 +982,7 @@ Implementation notes:
 - Tests proving link attachments do not fetch remote URLs.
 - Link attachment URL-policy tests proving unsupported schemes, credentials/userinfo, unwanted fragments, and local file references are rejected, and optional link allowlist policy is enforced when configured.
 - Link attachment tests must assert returned metadata clearly classifies the record as a stored link, not an uploaded file, including `is_link`/`is_file` behavior where available, absence of fetched byte metadata, and operator-facing text that no remote content was downloaded.
-- Primary image tests for first assignment, replacement blocked without `confirm`, replacement allowed with `confirm:true`, ambiguous image selection, and returned URL/thumbnail/image-state.
+- Primary image tests for first assignment, replacement blocked without `confirm`, replacement allowed with `confirm:true`, ambiguous image selection, returned URL/thumbnail/image-state, and endpoint selection between part PATCH and part thumbnail PATCH where both are schema-visible.
 - PATCH tests for attachment metadata and primary-image update behavior where the API supports PATCH, with documented exceptions where it does not.
 - Parameter reuse tests proving existing templates are selected when unambiguous, ambiguity returns a clarification response, and new template creation requires a separate explicit workflow.
 - Parameter matcher tests for disabled templates, same-name templates with different units/choices/checkbox settings, category-linked versus global templates, existing value update versus create, explicit empty/false/zero values, and refusal to create category links without an explicit separate workflow.
@@ -1025,10 +1035,10 @@ Test suite classes:
 - Testcontainers bootstrap.
 - Shared-container parallel subtest isolation.
 - Multi-user auth isolation in shared Testcontainers suite.
-- Attachment and image upload/update/delete behavior.
+- Attachment and image upload/download/update/delete behavior.
 - Upload source handling for byte blobs, dedicated URL upload tools, and STDIO local paths.
 - Link attachment behavior.
-- Primary image assignment/replacement behavior.
+- Primary image download and assignment/replacement behavior.
 - Sales/customer boundary enforcement.
 - End-to-end catalog and stock write workflows.
 - End-to-end purchasing dry-run workflow.
@@ -1065,7 +1075,7 @@ The full first beta milestone should include:
 - Part/category tools: `search_parts`, `get_part`, `search_part_categories`, `create_part`, `update_part`, `search_parameter_templates`, `get_part_parameters`, `set_part_parameters`.
 - Company tools: `search_companies`, `search_suppliers`, `search_manufacturers`, `create_company`, `create_supplier_part`, `create_manufacturer_part`.
 - Stock tools: `search_stock_locations`, `search_stock_items`, `create_stock_item`.
-- Attachment/image tools: `list_attachments`, `get_attachment_metadata`, `upload_attachment`, `upload_attachment_from_url`, `create_link_attachment`, `update_attachment_metadata`, `set_primary_image`.
+- Attachment/image tools: `list_attachments`, `get_attachment_metadata`, `download_attachment`, `download_part_image`, `upload_attachment`, `upload_attachment_from_url`, `create_link_attachment`, `update_attachment_metadata`, `set_primary_image`.
 - Milestone attachment object scope: `part`, `stockitem`, `company`, `supplierpart`, `manufacturerpart`, and `purchaseorder`. Sales/return/transfer/build attachment support is deferred unless explicitly added later.
 - Purchase-order attachment support in milestone 1 applies only to existing purchase orders found by ID/search. The milestone does not create purchase orders except through later explicitly enabled mutating workflows.
 - Milestone primary image scope: `part` only. Company image endpoint notes are recorded in `docs/api-schema.md` for later implementation, but company primary-image support is deferred.
@@ -1092,6 +1102,7 @@ Blocking milestone tests:
 - PATCH omission and zero-value table tests for `update_part`.
 - Annotation golden test for all milestone tools.
 - Attachment/image object capability table coverage check proving registered object types are a subset of `docs/api-schema.md`.
+- Attachment download test proving returned content matches uploaded fixture bytes and refuses non-InvenTree URLs.
 - HTTP local-path upload rejection before filesystem open/stat, including when STDIO allowlist is configured.
 - STDIO allowlist canonicalization tests for `..` and symlink escape.
 - Dry-run no-write test for `preview_purchase_order_with_lines`.
@@ -1105,6 +1116,7 @@ Blocking milestone tests:
 - `create_link_attachment` test proving the URL is stored without fetching remote bytes.
 - Test proving ordinary `upload_attachment` is `openWorldHint:false`, `upload_attachment_from_url` is `openWorldHint:true`, and URL input to ordinary upload is rejected.
 - Primary image assignment and replacement-confirmation tests.
+- Primary image download tests for present, missing, too-large, and non-InvenTree URL states.
 - Attachment listing or metadata test proving returned fields include thumbnail/image state, link/file classification, file size, object target, stable attachment ID, and relevant primary-image state.
 - Registered tool/prompt/resource list test proving no sales-order tools, customer-oriented workflows, or customer-role defaults are present in milestone 1.
 - Existing-parameter reuse test and ambiguous-parameter clarification test.
@@ -1121,6 +1133,7 @@ Milestone test classification:
 - Blocking tests must have deterministic local execution paths and documented skip behavior only for Docker-unavailable cases.
 - Non-blocking tests may cover optional live external InvenTree instances, canary compatibility checks, and extended stress runs.
 - Future tests must be tied to deferred scope such as sales workflows, return orders, transfer orders, company primary images, and build attachment support.
+- Future image/file tests must cover deferred surfaces only when they enter scope, including notes image upload, generated report attachments, and stock test-result attachments.
 
 Milestone README recipes:
 

@@ -84,6 +84,8 @@ Attachment fields include:
 - `upload_date`
 - `upload_user`
 - `file_size`
+
+Attachment content download is not a separate schema endpoint in the current schema snapshot. Implement `download_attachment` by resolving the schema-exposed `attachment` or `thumbnail` URL from metadata and fetching it through the InvenTree client, scoped to the configured InvenTree base URL and authenticated as the current InvenTree user. Do not treat arbitrary user-provided URLs or stored link targets as downloadable attachment content.
 - `model_type`
 - `model_id`
 - `tags`
@@ -91,6 +93,8 @@ Attachment fields include:
 Workflow mapping:
 
 - `upload_attachment` posts a file attachment using the `attachment` field and never accepts HTTP(S) URLs.
+- `download_attachment` reads an existing file attachment using the metadata `attachment` or `thumbnail` field and returns bounded content to the caller.
+- `download_part_image` reads a part's primary image by resolving only that part's schema-exposed `image` or `existing_image` field and returns bounded content to the caller. It does not accept arbitrary URLs and does not require the operator to know a generic attachment ID.
 - `upload_attachment_from_url` fetches remote bytes under the server's URL-fetch policy, then posts a file attachment using the `attachment` field.
 - `create_link_attachment` stores a URL in the `link` field without fetching the URL.
 
@@ -115,8 +119,13 @@ Initial implementation should expose only non-sales model types relevant to the 
 - `Part` exposes `image` and `existing_image`.
 - `Company` exposes `image`.
 - Generic attachments expose `is_image`, `thumbnail`, and `file_size`.
+- `/api/part/thumbs/` and `/api/part/thumbs/{id}/` expose part thumbnail listing and update behavior using `PartThumb` and `PartThumbSerializerUpdate`.
+- `/api/notes-image-upload/` exposes note image upload behavior, which is separate from inventory object attachments.
 
 Primary-image behavior must be implemented per object type from schema-verified fields rather than assumed generically.
+Part primary image download is part-specific for the first release. It should use the part record's `image` or `existing_image` value, scope the fetch to the configured InvenTree base URL, authenticate as the current InvenTree user, and apply the same maximum-size and redaction controls as attachment downloads.
+Part primary image assignment must verify whether the current InvenTree version expects `/api/part/{id}/` PATCH, `/api/part/thumbs/{id}/` PATCH, or both. Keep the tool contract as `set_primary_image`, but choose the client endpoint from schema-backed behavior and integration tests.
+Notes image upload, generated report attachments, stock test-result attachments, and other app-specific file surfaces are out of first-release scope unless a later task explicitly adds them.
 
 ## Attachment and Image Capability Table
 

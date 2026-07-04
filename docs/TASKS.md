@@ -200,7 +200,7 @@ Tasks:
 - [ ] Add company/supplier/manufacturer lookup methods.
 - [ ] Add stock location/item lookup methods.
 - [ ] Add parameter template/value lookup methods.
-- [ ] Add attachment metadata/list methods.
+- [ ] Add attachment metadata/list/download methods.
 - [ ] Add supplier-part lookup methods for purchase preview.
 
 ## Milestone 1C: HTTP OAuth Spike And Auth Layer
@@ -313,7 +313,7 @@ Tasks:
 - [ ] Add company/supplier/manufacturer lookup tools.
 - [ ] Add stock location/item lookup tools.
 - [ ] Add parameter template/part parameter lookup tools.
-- [ ] Add attachment list/metadata tools.
+- [ ] Add attachment list/metadata/download tools.
 
 ## Milestone 1E: Basic Write Tools
 
@@ -405,8 +405,11 @@ Tasks:
 
 - Status: `Planned`
 - Depends on: M1B-S02, M1F-S01
-- Scope: implement list/get/upload-url/link/update/delete attachment behavior for milestone object types.
+- Scope: implement list/get/download/upload-url/link/update/delete attachment behavior for milestone object types.
 - Acceptance:
+  - `download_attachment` is read-only, requires `inventree.read`, and only downloads schema-supported file or thumbnail URLs belonging to the configured InvenTree instance.
+  - `download_attachment` returns filename, content type when known, size, SHA-256 hash, and base64 content for binary files or text for allowlisted textual content types.
+  - Download limits enforce maximum size and bounded read time, and redaction tests prove downloaded bytes and sensitive URLs are not logged.
   - `upload_attachment` accepts inline bytes and STDIO allowlisted paths only.
   - `upload_attachment_from_url` is the only URL-fetch upload tool and has `openWorldHint:true`.
   - `create_link_attachment` stores links without fetching.
@@ -418,6 +421,7 @@ Tasks:
 Tasks:
 
 - [ ] Add attachment client methods.
+- [ ] Add `download_attachment`.
 - [ ] Add `upload_attachment`.
 - [ ] Add `upload_attachment_from_url`.
 - [ ] Add `create_link_attachment`.
@@ -428,18 +432,24 @@ Tasks:
 
 - Status: `Planned`
 - Depends on: M1F-S02
-- Scope: implement part primary image assignment/replacement.
+- Scope: implement part primary image download and assignment/replacement.
 - Acceptance:
   - Milestone primary image scope is part only.
+  - `download_part_image` is read-only, requires `inventree.read`, and downloads only the schema-exposed primary image URL for the requested part.
+  - `download_part_image` returns filename when known, content type when known, size, SHA-256 hash, and base64 content.
+  - Primary image downloads enforce maximum size, bounded read time, configured InvenTree instance URL restrictions, and redaction.
+  - Missing primary image returns a structured no-image result.
   - Replacement requires `confirm:true`.
   - Ambiguous image selection asks the operator.
 
 Tasks:
 
 - [ ] Verify part image endpoint behavior against `docs/api-schema.yaml`.
-- [ ] Add image client method.
+- [ ] Verify `/api/part/{id}/` image fields and `/api/part/thumbs/{id}/` behavior, and document which endpoint `set_primary_image` uses.
+- [ ] Add part image download and update client methods.
+- [ ] Add `download_part_image`.
 - [ ] Add `set_primary_image`.
-- [ ] Add first-assignment and replacement tests.
+- [ ] Add no-image, present-image, too-large, URL-scope, first-assignment, and replacement tests.
 
 ## Milestone 1G: Workflow Tools And Prompts
 
@@ -542,6 +552,8 @@ Tasks:
 - Scope: prove catalog, stock, supplier/manufacturer, attachment, URL upload, link, image, and purchase preview flows.
 - Acceptance:
   - Byte uploads are read back and hash-validated.
+  - `download_attachment` returns the uploaded fixture bytes with matching size/hash and rejects content outside configured limits.
+  - `download_part_image` returns the assigned primary part image bytes with matching size/hash and rejects content outside configured limits.
   - URL upload uses local fixture server and does not forward auth headers.
   - Link attachments are stored without fetch.
   - Sales/customer workflows remain absent.
@@ -551,6 +563,8 @@ Tasks:
 - [ ] Add catalog and initial stock happy path.
 - [ ] Add supplier/manufacturer purchase preview happy path.
 - [ ] Add inline/local-path attachment readback tests.
+- [ ] Add explicit `download_attachment` content, hash, size, and limit tests.
+- [ ] Add explicit `download_part_image` content, hash, size, no-image, and limit tests.
 - [ ] Add URL upload readback tests.
 - [ ] Add link attachment tests.
 - [ ] Add primary image tests.

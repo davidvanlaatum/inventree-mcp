@@ -32,6 +32,8 @@ Each registered tool must have:
 | `search_stock_items` | Stock lookup | Read-only | `inventree.read` | None | Existing stock may duplicate the requested initial stock. |
 | `list_attachments` | Attachments | Read-only | `inventree.read` | None | Target object is ambiguous. |
 | `get_attachment_metadata` | Attachments | Read-only | `inventree.read` | None | Attachment ID is missing or ambiguous. |
+| `download_attachment` | Attachments | Read-only | `inventree.read` | None | Attachment is a stored link, content exceeds download limit, or metadata URL is outside the configured InvenTree instance. |
+| `download_part_image` | Attachments | Read-only | `inventree.read` | None | Part has no primary image, content exceeds download limit, or image URL is outside the configured InvenTree instance. |
 | `preview_purchase_order_with_lines` | Purchasing preview | Read-only | `inventree.read` | None | Supplier part, price, quantity, or currency is ambiguous. |
 | `create_part` | Part entry | Write | `inventree.write` | None | Category, units, supplier/manufacturer data, or required API fields are unclear. |
 | `update_part` | Part entry | Write | `inventree.write` | None | Caller provides human names instead of stable IDs and lookup is ambiguous. |

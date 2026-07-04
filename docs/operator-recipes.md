@@ -57,6 +57,22 @@ Each recipe should preserve omitted fields versus explicit zero/false/empty valu
 - Tool sequence: `list_attachments`, then `upload_attachment`, `upload_attachment_from_url`, or `create_link_attachment`.
 - Expected output: attachment ID, target object, filename, size or link classification, content type, and thumbnail/image state when available.
 
+## Download Attachment Content
+
+- Required inputs: stable attachment ID.
+- Preferred lookup order: `get_attachment_metadata`, then `download_attachment` only when metadata identifies a file or thumbnail URL on the configured InvenTree instance.
+- Clarify when: the attachment is a stored link rather than a file, content exceeds the configured download limit, or the operator meant to fetch an external link target.
+- Tool sequence: `get_attachment_metadata`, then `download_attachment`.
+- Expected output: filename, content type when known, size, SHA-256 hash, and base64 content for binary files or text for allowlisted textual content types.
+
+## Download Part Primary Image
+
+- Required inputs: stable part ID.
+- Preferred lookup order: `get_part`, then `download_part_image` when the part has a schema-exposed primary image.
+- Clarify when: the part has no primary image, content exceeds the configured download limit, or the operator meant a generic attachment rather than the current primary image.
+- Tool sequence: `get_part`, then `download_part_image`.
+- Expected output: part ID, filename when known, content type when known, size, SHA-256 hash, and base64 image content.
+
 ## Set Or Replace Primary Part Image
 
 - Required inputs: part ID and attachment/image ID, plus `confirm:true` when replacing an existing primary image.

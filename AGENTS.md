@@ -46,6 +46,7 @@ When picking up an implementation task from `docs/TASKS.md`:
 - Use `dvgoutils.Ptr` for pointer values such as explicit false MCP `destructiveHint` and `openWorldHint` annotation fields where it improves clarity. Do not require JSON emission of false `readOnlyHint` or `idempotentHint` values when the SDK models them as non-pointer `omitempty` booleans.
 - Inject clock, randomness/ID generation, HTTP transports, and URL fetchers where needed so tests can be deterministic and can assert redaction and safety behavior.
 - Do not log auth tokens, uploaded file contents, or sensitive operator data.
+- Attachment and part-image downloads must fetch only schema-exposed file/thumbnail or `Part.image`/`Part.existing_image` URLs belonging to the configured InvenTree instance, enforce maximum size/bounded reads, and never log downloaded bytes, image bytes, or sensitive URLs.
 - `upload_attachment` may accept inline byte blobs and STDIO-mode allowlisted local paths. Only the dedicated URL-upload tool may accept HTTP(S) URLs. HTTP mode must not read arbitrary local paths.
 - URL upload code must enforce SSRF controls and must not forward MCP or InvenTree auth headers to fetched URLs.
 - Link attachments must not fetch remote bytes and should default to HTTP(S) links without credentials/userinfo.
