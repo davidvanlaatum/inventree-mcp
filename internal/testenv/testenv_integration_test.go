@@ -1,5 +1,4 @@
 //go:build !no_integration_tests
-// +build !no_integration_tests
 
 package testenv
 
@@ -21,6 +20,9 @@ func TestStartInvenTreeStack(t *testing.T) {
 	}
 
 	opts := DefaultOptions()
+	opts.ContainerLogf = func(container string, stream string, line string) {
+		t.Logf("container[%s][%s] %s", container, stream, line)
+	}
 	t.Logf("starting InvenTree integration stack with image %s, expected version %s, expected API %s", opts.Image, opts.ExpectedVersion, opts.ExpectedAPIVersion)
 	env, err := Start(ctx, opts)
 	r.NoError(err)

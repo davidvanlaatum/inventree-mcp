@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/netip"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/davidvanlaatum/inventree-mcp/internal/inventree"
@@ -48,6 +49,9 @@ type Options struct {
 	ExpectedAPIVersion string
 	StartupTimeout     time.Duration
 	HTTPClient         *http.Client
+	// ContainerLogf receives stdout and stderr lines from started containers.
+	// Start serializes calls so callbacks do not need to be concurrency-safe.
+	ContainerLogf func(container string, stream string, line string)
 }
 
 type Environment struct {
@@ -126,6 +130,7 @@ func Start(ctx context.Context, opts Options) (*Environment, error) {
 	if opts.HTTPClient == nil {
 		opts.HTTPClient = http.DefaultClient
 	}
+	containerLogf := synchronizedContainerLogf(opts.ContainerLogf)
 	if err := ValidateOptions(opts); err != nil {
 		return nil, err
 	}
@@ -147,14 +152,16 @@ func Start(ctx context.Context, opts Options) (*Environment, error) {
 	}
 	env.network = nw
 
-	pg, err := postgres.Run(ctx, defaultPostgresImage,
+	postgresOpts := []testcontainers.ContainerCustomizer{
 		postgres.WithDatabase(defaultDBName),
 		postgres.WithUsername(defaultDBUser),
 		postgres.WithPassword(defaultDBPassword),
-		testcontainers.WithAdditionalWaitStrategy(wait.ForLog("database system is ready to accept connections").WithOccurrence(2).WithStartupTimeout(60*time.Second)),
+		testcontainers.WithAdditionalWaitStrategy(wait.ForLog("database system is ready to accept connections").WithOccurrence(2).WithStartupTimeout(60 * time.Second)),
 		testcontainers.WithHostConfigModifier(loopbackPortBinding("5432/tcp")),
 		tcnetwork.WithNetwork([]string{"inventree-db"}, nw),
-	)
+	}
+	postgresOpts = appendContainerLogConsumer(postgresOpts, "postgres", containerLogf)
+	pg, err := postgres.Run(ctx, defaultPostgresImage, postgresOpts...)
 	if err != nil {
 		return nil, fmt.Errorf("start InvenTree postgres: %w", err)
 	}
@@ -164,11 +171,13 @@ func Start(ctx context.Context, opts Options) (*Environment, error) {
 		return nil, fmt.Errorf("resolve InvenTree postgres IP: %w", err)
 	}
 
-	redis, err := testcontainers.Run(ctx, defaultRedisImage,
+	redisOpts := []testcontainers.ContainerCustomizer{
 		tcnetwork.WithNetwork([]string{"inventree-cache"}, nw),
 		testcontainers.WithHostConfigModifier(loopbackPortBinding("6379/tcp")),
-		testcontainers.WithWaitStrategy(wait.ForLog("Ready to accept connections").WithStartupTimeout(30*time.Second)),
-	)
+		testcontainers.WithWaitStrategy(wait.ForLog("Ready to accept connections").WithStartupTimeout(30 * time.Second)),
+	}
+	redisOpts = appendContainerLogConsumer(redisOpts, "redis", containerLogf)
+	redis, err := testcontainers.Run(ctx, defaultRedisImage, redisOpts...)
 	if err != nil {
 		return nil, fmt.Errorf("start InvenTree redis: %w", err)
 	}
@@ -178,7 +187,7 @@ func Start(ctx context.Context, opts Options) (*Environment, error) {
 		return nil, fmt.Errorf("resolve InvenTree redis IP: %w", err)
 	}
 
-	server, err := testcontainers.Run(ctx, opts.Image,
+	serverOpts := []testcontainers.ContainerCustomizer{
 		tcnetwork.WithNetwork([]string{"inventree-server"}, nw),
 		testcontainers.WithEnv(inventreeContainerEnv(dbHost, cacheHost)),
 		testcontainers.WithCmd("sh", "-c", "invoke update --skip-backup --no-frontend --skip-static && exec gunicorn -c ./gunicorn.conf.py InvenTree.wsgi -b ${INVENTREE_WEB_ADDR}:${INVENTREE_WEB_PORT} --chdir ${INVENTREE_BACKEND_DIR}/InvenTree"),
@@ -190,7 +199,9 @@ func Start(ctx context.Context, opts Options) (*Environment, error) {
 				return status == http.StatusOK || status == http.StatusUnauthorized || status == http.StatusForbidden
 			}).
 			WithStartupTimeout(opts.StartupTimeout)),
-	)
+	}
+	serverOpts = appendContainerLogConsumer(serverOpts, "inventree", containerLogf)
+	server, err := testcontainers.Run(ctx, opts.Image, serverOpts...)
 	if err != nil {
 		return nil, fmt.Errorf("start InvenTree server: %w", err)
 	}
@@ -255,6 +266,46 @@ func loopbackPortBinding(port string) func(*container.HostConfig) {
 				},
 			},
 		}
+	}
+}
+
+func appendContainerLogConsumer(opts []testcontainers.ContainerCustomizer, name string, logf func(container string, stream string, line string)) []testcontainers.ContainerCustomizer {
+	if logf == nil {
+		return opts
+	}
+	return append(opts, testcontainers.WithLogConsumers(containerLogConsumer{
+		name: name,
+		logf: logf,
+	}))
+}
+
+func synchronizedContainerLogf(logf func(container string, stream string, line string)) func(container string, stream string, line string) {
+	if logf == nil {
+		return nil
+	}
+	var mu sync.Mutex
+	return func(container string, stream string, line string) {
+		mu.Lock()
+		defer mu.Unlock()
+		logf(container, stream, line)
+	}
+}
+
+type containerLogConsumer struct {
+	name string
+	logf func(container string, stream string, line string)
+}
+
+func (c containerLogConsumer) Accept(log testcontainers.Log) {
+	if c.logf == nil {
+		return
+	}
+	content := strings.TrimRight(string(log.Content), "\r\n")
+	if content == "" {
+		return
+	}
+	for _, line := range strings.Split(content, "\n") {
+		c.logf(c.name, strings.ToLower(log.LogType), strings.TrimRight(line, "\r"))
 	}
 }
 

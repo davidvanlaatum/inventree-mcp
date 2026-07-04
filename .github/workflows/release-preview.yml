@@ -33,7 +33,7 @@ jobs:
           go-version: stable
 
       - name: Run tests
-        run: go test ./...
+        run: go test -v ./...
 
       - name: Run GoReleaser snapshot
         uses: goreleaser/goreleaser-action@v7

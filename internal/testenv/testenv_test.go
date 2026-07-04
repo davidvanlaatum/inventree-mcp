@@ -13,6 +13,7 @@ import (
 	dockernetwork "github.com/moby/moby/api/types/network"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/testcontainers/testcontainers-go"
 )
 
 func TestDefaultOptionsPinInvenTreeVersion(t *testing.T) {
@@ -102,6 +103,53 @@ func TestLoopbackPortBinding(t *testing.T) {
 	r.Len(bindings, 1)
 	r.Equal(netip.MustParseAddr("127.0.0.1"), bindings[0].HostIP)
 	r.Empty(bindings[0].HostPort)
+}
+
+func TestContainerLogConsumerForwardsNamedLines(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+
+	var got []string
+	consumer := containerLogConsumer{
+		name: "inventree",
+		logf: func(container string, stream string, line string) {
+			got = append(got, container+" "+stream+" "+line)
+		},
+	}
+
+	consumer.Accept(testcontainers.Log{
+		LogType: testcontainers.StderrLog,
+		Content: []byte("first line\nsecond line\n"),
+	})
+	consumer.Accept(testcontainers.Log{
+		LogType: testcontainers.StdoutLog,
+		Content: []byte("\n"),
+	})
+
+	r.Equal([]string{
+		"inventree stderr first line",
+		"inventree stderr second line",
+	}, got)
+}
+
+func TestSynchronizedContainerLogfSerializesCalls(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+
+	var got []string
+	logf := synchronizedContainerLogf(func(container string, stream string, line string) {
+		got = append(got, container+" "+stream+" "+line)
+	})
+
+	r.NotNil(logf)
+	logf("postgres", "stdout", "ready")
+	logf("redis", "stderr", "warning")
+
+	r.Equal([]string{
+		"postgres stdout ready",
+		"redis stderr warning",
+	}, got)
+	r.Nil(synchronizedContainerLogf(nil))
 }
 
 func TestHTTPHelpersFetchVersionCreateAndProveToken(t *testing.T) {
