@@ -1,8 +1,27 @@
 # Agent Instructions
 
 - If comments are unclear or require a product/workflow decision, report the specific question instead of guessing.
-- Keep `docs/PLAN.md`, `docs/api-schema.md`, tool reference docs, and operator recipes aligned with behavior changes.
+- Keep `docs/PLAN.md`, `docs/TASKS.md`, `docs/api-schema.md`, tool reference docs, and operator recipes aligned with behavior changes.
 - Use `docs/reviewers.md` as the standard reviewer roster for future review passes and keep it aligned when reviewer responsibilities change.
+
+## Task Workflow
+
+When picking up an implementation task from `docs/TASKS.md`:
+
+- Read the task, its dependencies, acceptance criteria, and current status before editing code.
+- Review all applicable docs before planning: at minimum `docs/PLAN.md`, `docs/TASKS.md`, `docs/api-schema.md` when API behavior is involved, `docs/tool-reference.md` when tool behavior changes, `docs/operator-recipes.md` when operator workflow changes, and `docs/reviewers.md` when a review pass is needed.
+- If the task status is `Blocked`, do not implement around the blocker. Resolve the blocker, ask the operator the specific question, or update the task with why it remains blocked.
+- Build a short implementation plan that maps the task acceptance criteria to concrete files, tests, and documentation updates.
+- Implement in small, reviewable steps. Keep docs, task status, tool references, recipes, and agent instructions aligned with behavior changes in the same change.
+- Run the relevant validation for the task. At minimum run unit tests or targeted package tests for code changes and `git diff --check` for documentation-only changes.
+- Run subagent review after implementation for substantial task work. Use the applicable roles from `docs/reviewers.md`; use the full Go, QA, product, and infosec panel for auth, upload, Testcontainers, tool-surface, or milestone-completion changes.
+- Address actionable review feedback with code, tests, or docs. If feedback is rejected, document the reason and residual risk in the relevant task's `Review` or `Residual risk` note.
+- Repeat validation and review until there are no unresolved actionable findings for the task scope.
+- Update `docs/TASKS.md` task status, checkboxes, `Validation`, `Review`, and `Residual risk` notes as part of completion. Mark a task `Done` only when its acceptance criteria are met, tests/docs are updated, and review feedback is resolved or explicitly documented.
+- Do not widen into `Future` tasks unless the operator explicitly changes the plan.
+
+## Technical Rules
+
 - Verify endpoint behavior against `docs/api-schema.yaml` before implementing or changing InvenTree API calls.
 - When `docs/api-schema.yaml` changes, update `docs/api-schema.md` provenance and capability notes in the same change.
 - Prefer PATCH for partial updates where the schema supports it, and preserve omitted fields versus explicit zero/false/empty/null values.

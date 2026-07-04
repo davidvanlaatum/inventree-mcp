@@ -7,6 +7,7 @@ Current status: planning repository with a minimal Go module, CI, and pre-commit
 Key documents:
 
 - [Plan](docs/PLAN.md)
+- [Implementation tasks](docs/TASKS.md)
 - [API schema notes](docs/api-schema.md)
 - [Reviewer roster](docs/reviewers.md)
 - [Tool reference](docs/tool-reference.md)
