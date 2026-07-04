@@ -40,6 +40,17 @@ jobs:
           cover-pkg: ./...
           notes-ref: gocoverage-${{ matrix.go-version }}
 
+      - name: Update coverage badge
+        uses: schneegans/dynamic-badges-action@v1.8.0
+        if: github.ref_name == 'main' && matrix.go-version == 'stable'
+        with:
+          auth: ${{ secrets.COVERAGE_GIST_SECRET }}
+          gistID: 709e99cf973e064f68cf3937b3d5c633
+          filename: coverage.json
+          label: Go Coverage
+          message: ${{ steps.coverage.outputs.coverage-pct-1dp }}%
+          color: ${{ steps.coverage.outputs.meets-threshold == 'true' && 'green' || 'red' }}
+
       - uses: pre-commit-ci/lite-action@v1.1.0
         if: always()
 
