@@ -169,9 +169,12 @@ Tasks:
 
 ### M1A-S03: MCP Server Skeleton
 
-- Status: `Ready`
+- Status: `Done`
 - Depends on: M1A-S01, M1A-S02
 - Scope: create server construction, STDIO transport, HTTP transport, and a health/version tool.
+- Validation: `GOCACHE=/Users/david/Projects/inventree-mcp/.gocache GOMODCACHE=/private/tmp/inventree-mcp-gomodcache go test ./...` passed after the new MCP SDK dependency and transitive modules were downloaded into the workspace-local module cache; focused `go test ./internal/server -run 'TestHTTPHandlerUsesStatelessStreamableServer|TestHealthVersionToolReturnsReadOnlyStatus' -count=1 -v` passed after QA follow-up coverage; `git diff --check` passed.
+- Review: Senior Go Developer, Senior QA / Test Architect, and Senior Product Manager reviews run. Go findings to preserve request context in the HTTP handler, keep the MCP SDK as a direct dependency, and exercise CLI serve wiring were fixed; the first Go rerun requested moving the CLI seam lower, and final narrow Go rerun found no actionable findings after the test routed through `serve` before the `server.Run` seam. QA findings to prove sessionless stateless HTTP `tools/list` behavior and assert all health/version fields were fixed, and focused QA rerun found no actionable findings. Product findings to document the registered skeleton tool's manifest fields and replace placeholder review notes were fixed, and focused product rerun found no actionable findings.
+- Residual risk: production HTTP mode remains disabled until OAuth lands; the skeleton HTTP handler is tested without binding a local port because the sandbox blocks test listeners.
 - Acceptance:
   - STDIO server can initialize and list tools.
   - HTTP streamable server runs stateless.
@@ -181,12 +184,12 @@ Tasks:
 
 Tasks:
 
-- [ ] Add `internal/server`.
-- [ ] Add `internal/tools` registration entrypoint.
-- [ ] Register health/version tool.
-- [ ] Wire `mcp.StdioTransport`.
-- [ ] Wire `mcp.NewStreamableHTTPHandler` with stateless options.
-- [ ] Add tool annotation helpers and tests.
+- [x] Add `internal/server`.
+- [x] Add `internal/tools` registration entrypoint.
+- [x] Register health/version tool.
+- [x] Wire `mcp.StdioTransport`.
+- [x] Wire `mcp.NewStreamableHTTPHandler` with stateless options.
+- [x] Add tool annotation helpers and tests.
 
 ## Milestone 1B: InvenTree Client Foundation
 

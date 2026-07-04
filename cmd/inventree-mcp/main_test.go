@@ -2,9 +2,12 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"testing"
 
+	"github.com/davidvanlaatum/dvgoutils/logging"
 	"github.com/davidvanlaatum/inventree-mcp/internal/config"
+	"github.com/davidvanlaatum/inventree-mcp/internal/tools"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -65,9 +68,23 @@ func TestRunVersionReportsBuildVersion(t *testing.T) {
 }
 
 func TestRunServeStdioDoesNotWriteStdout(t *testing.T) {
-	t.Parallel()
 	r := require.New(t)
 	a := assert.New(t)
+
+	originalServerRun := serverRun
+	t.Cleanup(func() {
+		serverRun = originalServerRun
+	})
+
+	var gotConfig config.Config
+	var gotLoggerContext bool
+	var gotDependencies tools.Dependencies
+	serverRun = func(ctx context.Context, cfg config.Config, deps tools.Dependencies) error {
+		gotConfig = cfg
+		gotLoggerContext = logging.FromContext(ctx) != nil
+		gotDependencies = deps
+		return nil
+	}
 
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
@@ -82,6 +99,9 @@ func TestRunServeStdioDoesNotWriteStdout(t *testing.T) {
 	r.Equal(0, code)
 	a.Empty(stdout.String())
 	a.Empty(stderr.String())
+	a.Equal(config.TransportStdio, gotConfig.Transport)
+	a.True(gotLoggerContext)
+	a.Equal(tools.Dependencies{}, gotDependencies)
 }
 
 func TestRunServeReportsInvalidLogLevel(t *testing.T) {
