@@ -208,6 +208,7 @@ cmd/inventree-mcp/
 docs/
   api-schema.yaml
   api-schema.md
+  endpoint-manifest.yaml
   reviewers.md
   tool-reference.md
   operator-recipes.md
