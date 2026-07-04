@@ -8,13 +8,23 @@ This backlog turns [PLAN.md](PLAN.md) into executable work. Status values are:
 - `Planned`: valid work, but should wait for dependencies.
 - `Future`: outside the first beta milestone.
 
-Each story should be completed with tests, documentation updates, and reviewer follow-up when its acceptance criteria touch auth, upload, Testcontainers, or tool-surface behavior.
+Each story should be completed with tests, documentation updates, and reviewer follow-up. Code, behavior, task-status, operator workflow, or public documentation-contract changes require subagent review from the applicable roles in [reviewers.md](reviewers.md). Use the full Go, QA, product, and infosec panel when acceptance criteria touch auth, upload, Testcontainers, tool-surface behavior, or milestone completion. Manual-only review is reserved for typo-only or formatting-only documentation edits and must say why subagent review was not required.
+
+Go tests should use `github.com/stretchr/testify` assertion objects. Prefer `require.New(t)` and `assert.New(t)` instances over package-level free functions, with `require` for test-stopping preconditions and `assert` for related checks where collecting multiple failures helps.
+
+Interface mocks are generated with Mockery when needed. Mark interfaces with `//mockery:generate: true`, keep generation config in `.mockery.yml`, and generate all marked mocks in one run. Generated mocks live beside source packages under `mock/`, use package name `<parent>mock`, and use filenames shaped as `<InterfaceName>_mock.go`.
+
+Give review subagents read-only workspace access when available so they can inspect relevant code, docs, and tests without writing files. If the available tooling only provides a writable fork, reviewers must be told not to edit files, and the parent checkout must be checked afterward. Unexpected subagent edits are not automatically trusted; inspect, validate, and rerun review on any such changes before committing them. Diff-only review is acceptable only as a fallback for narrow follow-ups or when workspace access is not available.
+
+When PR or subagent review feedback is addressed after an initial review, rerun the applicable reviewer roles before final handoff if the follow-up changes code, tests, behavior, operator workflow, or public documentation contracts. Keep reruns focused on the follow-up diff. Typos and formatting-only documentation follow-ups do not need rerun review, but the completion note should say why.
 
 Before marking a story `Done`, add or update story-local completion notes:
 
 - `Validation`: commands/checks run, or why a check was not applicable.
-- `Review`: reviewer roles run, findings addressed, or why review was not required.
+- `Review`: reviewer roles run, findings addressed, or why subagent review was not required for a typo-only or formatting-only documentation edit.
 - `Residual risk`: accepted unresolved risk, or `none`.
+
+When updating an already-pushed branch or existing PR, prefer fresh follow-up commits over amending or force-pushing. Rewrite published history only for an explicit operator request or a concrete repository hygiene issue, and use `--force-with-lease` when a rewrite is unavoidable. Keep existing PR titles, descriptions, checklists, validation notes, review summaries, residual risks, and follow-up lists current whenever follow-up commits change the branch scope or status. Prefer squash merge when merging PRs unless the operator or repository policy requires another strategy.
 
 Before `M1C-S04` is complete, mutating, operational, destructive, and upload tools may be registered only on STDIO or in unit-test registries. HTTP registration must filter them out of the exposed tool manifest until per-tool scope enforcement is implemented and tested.
 
@@ -88,13 +98,16 @@ Tasks:
 
 ### M1A-S01: Command And Config Skeleton
 
-- Status: `Ready`
+- Status: `Done`
 - Depends on: M0-S02
 - Scope: add the first buildable `inventree-mcp` command with typed config.
+- Validation: `go test ./...` passed; `GOCACHE=/Users/david/Projects/inventree-mcp/.gocache go test ./...` passed; `GOCACHE=/Users/david/Projects/inventree-mcp/.gocache GOMODCACHE=/private/tmp/inventree-mcp-gomodcache go build ./cmd/inventree-mcp` passed; `git diff --check` passed. Initial plain `go test ./...` failed because the default macOS Go build cache was outside the writable sandbox before cache write access was granted.
+- Review: Senior Go Developer, Senior QA / Test Architect, and Senior Product Manager subagent reviews run. Go review found STDIO `serve` wrote a success banner to stdout; fixed by keeping successful `serve` silent and adding a regression test. QA and product findings on missing durable subagent review evidence were addressed in this note and the workflow wording updates. Follow-up Go and QA reviews after PR comments found stale token-source wording in `AGENTS.md`, stale token-source wording in `docs/PLAN.md`, and missing durable rerun evidence in this note; those findings were addressed. Final focused Go, QA, and product reruns on the follow-up diff found no actionable findings. A speculative write-error handling change introduced during review was removed before final handoff because it was outside the review-comment scope; focused Go and QA cleanup reviews found no actionable findings. Fresh full-panel Go, QA, product, and infosec review of the full PR found `serve --help` returned an error, empty HTTP `--path`/`--listen` branches lacked explicit tests, production STDIO accepted TLS skip-verify, and non-HTTP(S) InvenTree URLs were accepted; these findings were fixed with regression tests. Follow-up Go, QA, and infosec reviews found no actionable findings; product follow-up requested README clarification for development-only TLS skip-verify and this durable review note. Narrow product follow-up review of the README/TASKS docs fixes found no actionable findings. Test assertions were converted to Testify assertion objects after operator feedback; focused Go, QA, and product reviews found no actionable findings. Mockery marker/config conventions were aligned with `weather-station-server`; focused Go, QA, and product reviews found no actionable findings.
+- Residual risk: HTTP command still only validates development-mode config until `M1C` defines final OAuth config and server behavior. The command output helper intentionally ignores stdout/stderr write failures.
 - Acceptance:
   - `cmd/inventree-mcp` builds.
   - `inventree-mcp serve --transport stdio` and `--transport http` parse config and fail gracefully for missing required values.
-  - Production HTTP mode rejects upstream TLS skip-verify.
+  - Production mode rejects upstream TLS skip-verify.
   - Configured InvenTree token/scheme credentials are STDIO-only until HTTP OAuth is complete.
   - Production HTTP mode is disabled until OAuth is implemented unless an explicit development-only incomplete-OAuth flag is set.
   - The skeleton must not invent final OAuth config shape; `M1C` owns real OAuth config validation.
@@ -102,12 +115,12 @@ Tasks:
 
 Tasks:
 
-- [ ] Add `cmd/inventree-mcp/main.go`.
-- [ ] Add `internal/config`.
-- [ ] Define transport, listen/path, STDIO InvenTree URL/token/scheme, timeout, TLS, and logging config.
-- [ ] Add HTTP config validation that blocks production HTTP mode until OAuth tasks define the final config.
-- [ ] Add config validation tests.
-- [ ] Update README quick start.
+- [x] Add `cmd/inventree-mcp/main.go`.
+- [x] Add `internal/config`.
+- [x] Define transport, listen/path, STDIO InvenTree URL/token/scheme, timeout, TLS, and logging config.
+- [x] Add HTTP config validation that blocks production HTTP mode until OAuth tasks define the final config.
+- [x] Add config validation tests.
+- [x] Update README quick start.
 
 ### M1A-S02: Logging, Clock, IDs, And Randomness
 

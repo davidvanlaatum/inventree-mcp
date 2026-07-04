@@ -1,6 +1,8 @@
 # Reviewers
 
-Use these reviewer roles for substantial plan, architecture, authentication, test strategy, or tool-surface changes. Reviewers should return findings ordered by severity, with concrete document paths and line references where possible. They should not edit files unless explicitly assigned an implementation task.
+Use these reviewer roles when `AGENTS.md` and [TASKS.md](TASKS.md) require a review pass. This file defines reviewer responsibilities and output shape; it does not narrow the task workflow's review requirement. Reviewers should return findings ordered by severity, with concrete document paths and line references where possible. They should not edit files unless explicitly assigned an implementation task.
+
+Prefer read-only workspace access for review agents so they can inspect surrounding implementation, tests, and documentation without mutating files. If review tooling only supports writable forked workspaces, the reviewer prompt must explicitly say not to edit files, and the parent agent must verify the checkout afterward. Treat unexpected reviewer edits as untrusted until they are independently inspected, validated, and reviewed. Use diff-only review only as a fallback for narrow follow-ups or unavailable workspace access.
 
 ## Standard Review Panel
 
@@ -34,6 +36,8 @@ Focus:
 - Upload tests for inline bytes, STDIO allowlisted paths, URL ingestion, link attachments, SSRF controls, and primary-image behavior.
 - Schema drift and generated endpoint-manifest checks.
 - Deterministic seams such as Afero, clock, randomness, HTTP transports, URL fetchers, and structured log capture via `dvgoutils/logging/testhandler`.
+- Test assertion style uses `github.com/stretchr/testify` assertion objects such as `require.New(t)` and `assert.New(t)`.
+- Mockery use follows `.mockery.yml`: interfaces opted in with `//mockery:generate: true`, generated files live under package-local `mock/`, generated packages use `<parent>mock`, and `*_mock.go` files are treated as derived artifacts unless the generator config or version changes.
 - Whether acceptance criteria are executable and deterministic.
 - Whether milestone tests are classified as blocking, non-blocking, or future.
 
