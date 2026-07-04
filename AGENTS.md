@@ -23,6 +23,7 @@ When picking up an implementation task from `docs/TASKS.md`:
 - After addressing PR or subagent review feedback, rerun the applicable reviewer roles before final handoff whenever the follow-up changes code, tests, behavior, operator workflow, or public documentation contracts. Keep the rerun focused on the follow-up diff. Do not rerun subagents for typo-only or formatting-only documentation follow-ups; record why rerun review was not required.
 - Repeat validation and review until there are no unresolved actionable findings for the task scope.
 - Update `docs/TASKS.md` task status, checkboxes, `Validation`, `Review`, and `Residual risk` notes as part of completion. Mark a task `Done` only when its acceptance criteria are met, tests/docs are updated, and review feedback is resolved or explicitly documented.
+- When marking a task `Done`, check every `Planned` or `Blocked` task that depended on it. If all dependencies are now `Done` and no blocker remains, update that task to `Ready`; if it is still blocked, update the blocker text with the current reason.
 - Commit completed task work on the feature branch with a focused message. Do not commit directly to `main` unless the operator explicitly asks for that workflow.
 - When updating an already-pushed branch or existing PR, prefer fresh follow-up commits over amending or force-pushing. Rewrite published history only when the operator explicitly asks for it or when a concrete repository hygiene issue requires it, and use `--force-with-lease` if a rewrite is unavoidable.
 - Add appropriate commit trailers when committing or merging PRs. Use `Task: <task-id or docs/TASKS.md section>`, `Validation: <command/result>`, `Review: <subagent/manual review summary or none>`, and `Risk: <residual risk or none>` for task work. Add `AI-Assisted-by: Codex` for commits materially authored or edited by Codex. Keep trailers as one contiguous final block with no blank lines between trailer lines, and verify them with `git interpret-trailers --parse` when adding or changing trailer policy. Use standard identity trailers such as `Co-authored-by: <name> <email>`, `Reviewed-by: <name> <email>`, or `Signed-off-by: <name> <email>` only for real identities where the name and email are accurate. Add issue trailers such as `Fixes: #<issue>` or `Refs: #<issue>` only when they are accurate and useful.
@@ -34,6 +35,7 @@ When picking up an implementation task from `docs/TASKS.md`:
 
 ## Technical Rules
 
+- Prefer available MCP tools over CLI commands when both can perform the same repository, GitHub, GitLab, Jenkins, InvenTree, or automation action with equivalent fidelity. Use CLI commands when no suitable MCP tool is available, when the CLI gives materially better evidence, or when the MCP tool cannot perform the required operation safely.
 - Verify endpoint behavior against `docs/api-schema.yaml` before implementing or changing InvenTree API calls.
 - When `docs/api-schema.yaml` changes, update `docs/api-schema.md` provenance and capability notes in the same change.
 - Prefer PATCH for partial updates where the schema supports it, and preserve omitted fields versus explicit zero/false/empty/null values.

@@ -124,30 +124,34 @@ Tasks:
 
 ### M1A-S02: Logging, Clock, IDs, And Randomness
 
-- Status: `Planned`
+- Status: `Done`
 - Depends on: M1A-S01
 - Scope: add deterministic platform seams and context logging.
+- Validation: `GOCACHE=/Users/david/Projects/inventree-mcp/.gocache GOMODCACHE=/private/tmp/inventree-mcp-gomodcache go test ./...` passed; `GOCACHE=/Users/david/Projects/inventree-mcp/.gocache GOMODCACHE=/private/tmp/inventree-mcp-gomodcache go build -o /private/tmp/inventree-mcp-build/inventree-mcp ./cmd/inventree-mcp` passed after downloading `dvgoutils` into the writable module cache; `git diff --check` passed.
+- Review: Senior Go Developer, Senior QA / Test Architect, and Senior Product Manager subagent reviews run. Initial review found the root logger context was discarded, scoped logging risked becoming a second logging API, redaction conventions were only helper functions, command/server logging setup was not executable, deterministic clock coverage was weak, and task notes needed to clarify the platform-seam boundary. Fixes passed the seeded context into the `serve` path, removed the extra scoped-logging wrapper in favor of direct `dvgoutils/logging` use, installed a `slog.ReplaceAttr` redaction policy for sensitive auth/setup keys, added deterministic clock coverage, and recorded this completion boundary. Focused Go and QA reruns found no actionable findings. Focused product rerun found that request/tool scoped logging adoption belonged to the server/tool task; the acceptance criterion was moved to `M1A-S03`, and final product rerun found no actionable findings.
+- Residual risk: actual request/tool scoped logging adoption and runtime use of the clock, ID, and randomness seams will occur in later server, OAuth, upload, and tool tasks because this story only adds the command/root-context and platform-seam foundation.
 - Acceptance:
   - Root contexts are seeded with `dvgoutils/logging.WithLogger`.
-  - Request/tool scoped loggers are derived and reattached to context.
+  - Scoped logger derivation and context reattachment pattern is covered before request/tool paths exist.
   - Clock, ID, and randomness are injectable where needed.
   - Tests use `dvgoutils/logging/testhandler.SetupTestHandler`.
 
 Tasks:
 
-- [ ] Add logging setup in command/server construction.
-- [ ] Add `internal/platform` clock and ID/randomness seams.
-- [ ] Add log redaction conventions.
-- [ ] Add tests proving scoped attributes survive through context.
+- [x] Add logging setup in command/server construction.
+- [x] Add `internal/platform` clock and ID/randomness seams.
+- [x] Add log redaction conventions.
+- [x] Add tests proving scoped attributes survive through context.
 
 ### M1A-S03: MCP Server Skeleton
 
-- Status: `Planned`
+- Status: `Ready`
 - Depends on: M1A-S01, M1A-S02
 - Scope: create server construction, STDIO transport, HTTP transport, and a health/version tool.
 - Acceptance:
   - STDIO server can initialize and list tools.
   - HTTP streamable server runs stateless.
+  - Request/tool scoped loggers are derived and reattached to context.
   - Health/version tool is read-only.
   - Tool annotation helper tests cover SDK `v1.6.1` pointer false behavior for `destructiveHint` and `openWorldHint`.
 
