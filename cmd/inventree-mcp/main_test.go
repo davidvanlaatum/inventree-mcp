@@ -3,6 +3,8 @@ package main
 import (
 	"bytes"
 	"testing"
+
+	"github.com/davidvanlaatum/inventree-mcp/internal/config"
 )
 
 func TestRunRequiresServeCommand(t *testing.T) {
@@ -10,7 +12,7 @@ func TestRunRequiresServeCommand(t *testing.T) {
 
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
-	code := run(nil, &stdout, &stderr)
+	code := run(nil, &stdout, &stderr, mapEnv(nil))
 
 	if code != 2 {
 		t.Fatalf("run exit code = %d, want 2", code)
@@ -28,7 +30,7 @@ func TestRunServeReportsConfigErrors(t *testing.T) {
 
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
-	code := run([]string{"serve", "--transport", "stdio", "--inventree-url", "", "--inventree-token", ""}, &stdout, &stderr)
+	code := run([]string{"serve", "--transport", "stdio", "--inventree-url", ""}, &stdout, &stderr, mapEnv(nil))
 
 	if code != 2 {
 		t.Fatalf("run exit code = %d, want 2", code)
@@ -50,8 +52,9 @@ func TestRunServeStdioDoesNotWriteStdout(t *testing.T) {
 		"serve",
 		"--transport", "stdio",
 		"--inventree-url", "https://inventory.example.test",
-		"--inventree-token", "redacted",
-	}, &stdout, &stderr)
+	}, &stdout, &stderr, mapEnv(map[string]string{
+		config.EnvInvenTreeToken: "redacted",
+	}))
 
 	if code != 0 {
 		t.Fatalf("run exit code = %d, want 0; stderr = %q", code, stderr.String())
@@ -61,5 +64,11 @@ func TestRunServeStdioDoesNotWriteStdout(t *testing.T) {
 	}
 	if stderr.Len() != 0 {
 		t.Fatalf("stderr = %q, want empty", stderr.String())
+	}
+}
+
+func mapEnv(values map[string]string) config.Env {
+	return func(key string) string {
+		return values[key]
 	}
 }

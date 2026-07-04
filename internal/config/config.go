@@ -11,7 +11,21 @@ import (
 	"time"
 )
 
-const invalidDuration = time.Duration(-1)
+const (
+	EnvTransport              = "INVENTREE_MCP_TRANSPORT"
+	EnvEnvironment            = "INVENTREE_MCP_ENVIRONMENT"
+	EnvListen                 = "INVENTREE_MCP_LISTEN"
+	EnvPath                   = "INVENTREE_MCP_PATH"
+	EnvInvenTreeURL           = "INVENTREE_URL"
+	EnvInvenTreeToken         = "INVENTREE_TOKEN"
+	EnvInvenTreeAuthScheme    = "INVENTREE_AUTH_SCHEME"
+	EnvInvenTreeTimeout       = "INVENTREE_TIMEOUT"
+	EnvInvenTreeTLSSkipVerify = "INVENTREE_TLS_SKIP_VERIFY"
+	EnvLogLevel               = "INVENTREE_MCP_LOG_LEVEL"
+	EnvDevIncompleteOAuth     = "INVENTREE_MCP_DEV_INCOMPLETE_OAUTH"
+
+	invalidDuration = time.Duration(-1)
+)
 
 type Environment string
 
@@ -60,30 +74,29 @@ func ParseServeWithEnv(args []string, getenv Env, output io.Writer) (Config, err
 	}
 
 	cfg := Config{
-		Transport:           Transport(envDefault(getenv, "INVENTREE_MCP_TRANSPORT", string(TransportStdio))),
-		Environment:         Environment(envDefault(getenv, "INVENTREE_MCP_ENVIRONMENT", string(EnvironmentProduction))),
-		Listen:              envDefault(getenv, "INVENTREE_MCP_LISTEN", ":8080"),
-		Path:                envDefault(getenv, "INVENTREE_MCP_PATH", "/mcp"),
-		InvenTreeURL:        getenv("INVENTREE_URL"),
-		InvenTreeToken:      getenv("INVENTREE_TOKEN"),
-		InvenTreeAuthScheme: AuthScheme(envDefault(getenv, "INVENTREE_AUTH_SCHEME", string(AuthSchemeToken))),
-		InvenTreeTimeout:    durationDefault(getenv, "INVENTREE_TIMEOUT", 30*time.Second),
-		LogLevel:            envDefault(getenv, "INVENTREE_MCP_LOG_LEVEL", "info"),
+		Transport:           Transport(envDefault(getenv, EnvTransport, string(TransportStdio))),
+		Environment:         Environment(envDefault(getenv, EnvEnvironment, string(EnvironmentProduction))),
+		Listen:              envDefault(getenv, EnvListen, ":8080"),
+		Path:                envDefault(getenv, EnvPath, "/mcp"),
+		InvenTreeURL:        getenv(EnvInvenTreeURL),
+		InvenTreeToken:      getenv(EnvInvenTreeToken),
+		InvenTreeAuthScheme: AuthScheme(envDefault(getenv, EnvInvenTreeAuthScheme, string(AuthSchemeToken))),
+		InvenTreeTimeout:    durationDefault(getenv, EnvInvenTreeTimeout, 30*time.Second),
+		LogLevel:            envDefault(getenv, EnvLogLevel, "info"),
 	}
 
 	fs := flag.NewFlagSet("serve", flag.ContinueOnError)
 	fs.SetOutput(output)
-	fs.StringVar((*string)(&cfg.Transport), "transport", string(cfg.Transport), "transport to serve: stdio or http")
-	fs.StringVar((*string)(&cfg.Environment), "environment", string(cfg.Environment), "runtime environment: development or production")
-	fs.StringVar(&cfg.Listen, "listen", cfg.Listen, "HTTP listen address")
-	fs.StringVar(&cfg.Path, "path", cfg.Path, "HTTP MCP path")
-	fs.StringVar(&cfg.InvenTreeURL, "inventree-url", cfg.InvenTreeURL, "InvenTree base URL")
-	fs.StringVar(&cfg.InvenTreeToken, "inventree-token", cfg.InvenTreeToken, "InvenTree API token for STDIO mode")
-	fs.StringVar((*string)(&cfg.InvenTreeAuthScheme), "inventree-auth-scheme", string(cfg.InvenTreeAuthScheme), "InvenTree auth scheme: Token or Bearer")
-	fs.DurationVar(&cfg.InvenTreeTimeout, "inventree-timeout", cfg.InvenTreeTimeout, "InvenTree request timeout")
-	fs.BoolVar(&cfg.InvenTreeTLSSkipVerify, "inventree-tls-skip-verify", boolEnv(getenv, "INVENTREE_TLS_SKIP_VERIFY"), "skip upstream InvenTree TLS verification")
-	fs.StringVar(&cfg.LogLevel, "log-level", cfg.LogLevel, "log level")
-	fs.BoolVar(&cfg.DevIncompleteOAuth, "dev-incomplete-oauth", boolEnv(getenv, "INVENTREE_MCP_DEV_INCOMPLETE_OAUTH"), "allow development-only HTTP parsing before OAuth is implemented")
+	fs.StringVar((*string)(&cfg.Transport), "transport", string(cfg.Transport), flagHelp("transport to serve: stdio or http", EnvTransport))
+	fs.StringVar((*string)(&cfg.Environment), "environment", string(cfg.Environment), flagHelp("runtime environment: development or production", EnvEnvironment))
+	fs.StringVar(&cfg.Listen, "listen", cfg.Listen, flagHelp("HTTP listen address", EnvListen))
+	fs.StringVar(&cfg.Path, "path", cfg.Path, flagHelp("HTTP MCP path", EnvPath))
+	fs.StringVar(&cfg.InvenTreeURL, "inventree-url", cfg.InvenTreeURL, flagHelp("InvenTree base URL", EnvInvenTreeURL))
+	fs.StringVar((*string)(&cfg.InvenTreeAuthScheme), "inventree-auth-scheme", string(cfg.InvenTreeAuthScheme), flagHelp("InvenTree auth scheme: Token or Bearer", EnvInvenTreeAuthScheme))
+	fs.DurationVar(&cfg.InvenTreeTimeout, "inventree-timeout", cfg.InvenTreeTimeout, flagHelp("InvenTree request timeout", EnvInvenTreeTimeout))
+	fs.BoolVar(&cfg.InvenTreeTLSSkipVerify, "inventree-tls-skip-verify", boolEnv(getenv, EnvInvenTreeTLSSkipVerify), flagHelp("skip upstream InvenTree TLS verification", EnvInvenTreeTLSSkipVerify))
+	fs.StringVar(&cfg.LogLevel, "log-level", cfg.LogLevel, flagHelp("log level", EnvLogLevel))
+	fs.BoolVar(&cfg.DevIncompleteOAuth, "dev-incomplete-oauth", boolEnv(getenv, EnvDevIncompleteOAuth), flagHelp("allow development-only HTTP parsing before OAuth is implemented", EnvDevIncompleteOAuth))
 
 	if err := fs.Parse(args); err != nil {
 		return Config{}, err
@@ -187,4 +200,8 @@ func boolEnv(getenv Env, key string) bool {
 	default:
 		return false
 	}
+}
+
+func flagHelp(description string, envVar string) string {
+	return fmt.Sprintf("%s (env: %s)", description, envVar)
 }

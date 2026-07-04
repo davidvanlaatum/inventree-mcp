@@ -9,10 +9,10 @@ import (
 )
 
 func main() {
-	os.Exit(run(os.Args[1:], os.Stdout, os.Stderr))
+	os.Exit(run(os.Args[1:], os.Stdout, os.Stderr, os.Getenv))
 }
 
-func run(args []string, stdout, stderr io.Writer) int {
+func run(args []string, stdout, stderr io.Writer, getenv config.Env) int {
 	if len(args) == 0 {
 		writeLine(stderr, "usage: inventree-mcp serve [flags]")
 		return 2
@@ -20,7 +20,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 
 	switch args[0] {
 	case "serve":
-		_, err := config.ParseServeWithEnv(args[1:], os.Getenv, stderr)
+		_, err := config.ParseServeWithEnv(args[1:], getenv, stderr)
 		if err != nil {
 			writeLine(stderr, "inventree-mcp: %v", err)
 			return 2

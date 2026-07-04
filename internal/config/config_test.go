@@ -12,14 +12,13 @@ func TestParseServeUsesEnvAndFlagPrecedence(t *testing.T) {
 	cfg, err := ParseServeWithEnv([]string{
 		"--transport", "stdio",
 		"--inventree-url", "https://flag.example.test",
-		"--inventree-token", "flag-token",
 		"--inventree-auth-scheme", "Bearer",
 		"--inventree-timeout", "5s",
 	}, mapEnv(map[string]string{
-		"INVENTREE_URL":         "https://env.example.test",
-		"INVENTREE_TOKEN":       "env-token",
-		"INVENTREE_AUTH_SCHEME": "Token",
-		"INVENTREE_TIMEOUT":     "10s",
+		EnvInvenTreeURL:        "https://env.example.test",
+		EnvInvenTreeToken:      "env-token",
+		EnvInvenTreeAuthScheme: "Token",
+		EnvInvenTreeTimeout:    "10s",
 	}), nil)
 	if err != nil {
 		t.Fatalf("ParseServeWithEnv returned error: %v", err)
@@ -28,8 +27,8 @@ func TestParseServeUsesEnvAndFlagPrecedence(t *testing.T) {
 	if cfg.InvenTreeURL != "https://flag.example.test" {
 		t.Fatalf("InvenTreeURL = %q, want flag value", cfg.InvenTreeURL)
 	}
-	if cfg.InvenTreeToken != "flag-token" {
-		t.Fatalf("InvenTreeToken = %q, want flag value", cfg.InvenTreeToken)
+	if cfg.InvenTreeToken != "env-token" {
+		t.Fatalf("InvenTreeToken = %q, want env value", cfg.InvenTreeToken)
 	}
 	if cfg.InvenTreeAuthScheme != AuthSchemeBearer {
 		t.Fatalf("InvenTreeAuthScheme = %q, want %q", cfg.InvenTreeAuthScheme, AuthSchemeBearer)
@@ -58,10 +57,11 @@ func TestParseServeRejectsInvalidConfig(t *testing.T) {
 		"--transport", "websocket",
 		"--environment", "stage",
 		"--inventree-url", "not-a-url",
-		"--inventree-token", "token",
 		"--inventree-auth-scheme", "Basic",
 		"--inventree-timeout", "0s",
-	}, mapEnv(nil), nil)
+	}, mapEnv(map[string]string{
+		EnvInvenTreeToken: "token",
+	}), nil)
 	if err == nil {
 		t.Fatal("ParseServeWithEnv returned nil error")
 	}
@@ -79,9 +79,9 @@ func TestParseServeRejectsInvalidEnvDuration(t *testing.T) {
 	_, err := ParseServeWithEnv([]string{
 		"--transport", "stdio",
 		"--inventree-url", "https://inventory.example.test",
-		"--inventree-token", "token",
 	}, mapEnv(map[string]string{
-		"INVENTREE_TIMEOUT": "not-a-duration",
+		EnvInvenTreeToken:   "token",
+		EnvInvenTreeTimeout: "not-a-duration",
 	}), nil)
 	if err == nil {
 		t.Fatal("ParseServeWithEnv returned nil error")
@@ -140,12 +140,27 @@ func TestParseServeRejectsHTTPConfiguredToken(t *testing.T) {
 		"--environment", "development",
 		"--dev-incomplete-oauth",
 		"--inventree-url", "https://inventory.example.test",
+	}, mapEnv(map[string]string{
+		EnvInvenTreeToken: "raw-token",
+	}), nil)
+	if err == nil {
+		t.Fatal("ParseServeWithEnv returned nil error")
+	}
+	assertErrorContains(t, err, "configured InvenTree tokens are STDIO-only")
+}
+
+func TestParseServeRejectsTokenFlag(t *testing.T) {
+	t.Parallel()
+
+	_, err := ParseServeWithEnv([]string{
+		"--transport", "stdio",
+		"--inventree-url", "https://inventory.example.test",
 		"--inventree-token", "raw-token",
 	}, mapEnv(nil), nil)
 	if err == nil {
 		t.Fatal("ParseServeWithEnv returned nil error")
 	}
-	assertErrorContains(t, err, "configured InvenTree tokens are STDIO-only")
+	assertErrorContains(t, err, "flag provided but not defined: -inventree-token")
 }
 
 func TestParseServeRejectsHTTPConfiguredAuthScheme(t *testing.T) {
@@ -162,6 +177,37 @@ func TestParseServeRejectsHTTPConfiguredAuthScheme(t *testing.T) {
 		t.Fatal("ParseServeWithEnv returned nil error")
 	}
 	assertErrorContains(t, err, "configured InvenTree auth schemes are STDIO-only")
+}
+
+func TestParseServeHelpMentionsEnvVars(t *testing.T) {
+	t.Parallel()
+
+	var output strings.Builder
+	_, err := ParseServeWithEnv([]string{"--help"}, mapEnv(nil), &output)
+	if err == nil {
+		t.Fatal("ParseServeWithEnv returned nil error")
+	}
+
+	help := output.String()
+	for _, envVar := range []string{
+		EnvTransport,
+		EnvEnvironment,
+		EnvListen,
+		EnvPath,
+		EnvInvenTreeURL,
+		EnvInvenTreeAuthScheme,
+		EnvInvenTreeTimeout,
+		EnvInvenTreeTLSSkipVerify,
+		EnvLogLevel,
+		EnvDevIncompleteOAuth,
+	} {
+		if !strings.Contains(help, envVar) {
+			t.Fatalf("help output does not mention %s:\n%s", envVar, help)
+		}
+	}
+	if strings.Contains(help, EnvInvenTreeToken) {
+		t.Fatalf("help output mentions sensitive %s:\n%s", EnvInvenTreeToken, help)
+	}
 }
 
 func mapEnv(values map[string]string) Env {
