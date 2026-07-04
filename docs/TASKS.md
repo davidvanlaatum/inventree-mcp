@@ -26,6 +26,8 @@ Before marking a story `Done`, add or update story-local completion notes:
 
 When updating an already-pushed branch or existing PR, prefer fresh follow-up commits over amending or force-pushing. Rewrite published history only for an explicit operator request or a concrete repository hygiene issue, and use `--force-with-lease` when a rewrite is unavoidable. Keep existing PR titles, descriptions, checklists, validation notes, review summaries, residual risks, and follow-up lists current whenever follow-up commits change the branch scope or status. Prefer squash merge when merging PRs unless the operator or repository policy requires another strategy.
 
+Remove draft status once the PR is ready for human review: all automated or subagent review feedback has been addressed or explicitly documented, required rerun reviews are complete, the PR title/body/checklist are current, and the pipeline has passed on the latest pushed commit. Do not mark the PR ready while CI is pending, failing, or stale for an older head SHA.
+
 Before `M1C-S04` is complete, mutating, operational, destructive, and upload tools may be registered only on STDIO or in unit-test registries. HTTP registration must filter them out of the exposed tool manifest until per-tool scope enforcement is implemented and tested.
 
 ## Milestone 0: Repository And Planning
