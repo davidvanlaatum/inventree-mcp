@@ -14,7 +14,7 @@ func main() {
 
 func run(args []string, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
-		fmt.Fprintln(stderr, "usage: inventree-mcp serve [flags]")
+		writeLine(stderr, "usage: inventree-mcp serve [flags]")
 		return 2
 	}
 
@@ -22,15 +22,19 @@ func run(args []string, stdout, stderr io.Writer) int {
 	case "serve":
 		_, err := config.ParseServeWithEnv(args[1:], os.Getenv, stderr)
 		if err != nil {
-			fmt.Fprintf(stderr, "inventree-mcp: %v\n", err)
+			writeLine(stderr, "inventree-mcp: %v", err)
 			return 2
 		}
 		return 0
 	case "help", "-h", "--help":
-		fmt.Fprintln(stdout, "usage: inventree-mcp serve [flags]")
+		writeLine(stdout, "usage: inventree-mcp serve [flags]")
 		return 0
 	default:
-		fmt.Fprintf(stderr, "inventree-mcp: unknown command %q\n", args[0])
+		writeLine(stderr, "inventree-mcp: unknown command %q", args[0])
 		return 2
 	}
+}
+
+func writeLine(w io.Writer, format string, args ...any) {
+	_, _ = fmt.Fprintf(w, format+"\n", args...)
 }
