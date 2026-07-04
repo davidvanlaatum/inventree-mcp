@@ -233,14 +233,59 @@ Tasks:
 - [ ] Add docs drift check.
 - [ ] Cover parts, categories, companies, stock, parameters, attachments, and purchasing preview dependencies.
 
-### M1B-S03: Read-Only Client Methods
+## Milestone 1H: Early Integration Test Environment
+
+These integration-environment stories are intentionally pulled forward before read-only client methods so new client and tool behavior can gain optional real InvenTree coverage as it lands. The broad milestone happy-path integration suite remains later, after the corresponding workflow, upload, and image behavior exists.
+
+### M1H-S01: Testcontainers Stack Spike
 
 - Status: `Planned`
 - Depends on: M1B-S01, M1B-S02
+- Scope: prove InvenTree startup, migrations, admin token creation, and readiness with Testcontainers.
+- Acceptance:
+  - Uses explicit InvenTree version tag matching schema snapshot.
+  - Pinned InvenTree image tag is declared in testenv config or a single constant and appears in test logs.
+  - `docs/api-schema.md` provenance records the matching runtime InvenTree version and API version.
+  - Records runtime InvenTree version and API version.
+  - `go test ./...` never starts Docker.
+
+Tasks:
+
+- [ ] Add `internal/testenv`.
+- [ ] Choose and record the explicit InvenTree version tag matching `docs/api-schema.yaml`.
+- [ ] Start required database and InvenTree services.
+- [ ] Create deterministic admin/test token.
+- [ ] Add readiness polling.
+- [ ] Add integration tag and Docker skip behavior.
+
+### M1H-S02: Shared Suite Fixtures And Isolation
+
+- Status: `Planned`
+- Depends on: M1H-S01
+- Scope: add suite-owned container lifecycle, immutable fixtures, run prefixes, and cleanup safety.
+- Acceptance:
+  - Parent test acquires environment before parallel subtests.
+  - Every mutating helper requires a `Run` object.
+  - Cleanup refuses unprefixed or foreign-prefixed records.
+
+Tasks:
+
+- [ ] Add `SharedInvenTree`.
+- [ ] Add immutable fixture seeding.
+- [ ] Add `Run` prefix format `IT_<runid>_<pkg>_<test>_`.
+- [ ] Add cleanup safety checks.
+- [ ] Add parallel isolation tests.
+
+### M1B-S03: Read-Only Client Methods
+
+- Status: `Planned`
+- Depends on: M1B-S01, M1B-S02, M1H-S02
 - Scope: implement read-only API methods needed by milestone 1.
 - Acceptance:
   - Methods exist for part, category, company, stock location/item, parameter, attachment, and supplier-part lookup.
-  - Tests use fake transports, not live network.
+  - Default tests use fake transports, not live network.
+  - Optional integration-tag tests use the shared Testcontainers environment where real API behavior materially improves confidence.
+  - `go test ./...` does not start Docker.
 
 Tasks:
 
@@ -555,46 +600,7 @@ Tasks:
 - [ ] Add `purchase_preview_checklist`.
 - [ ] Add prompt manifest tests.
 
-## Milestone 1H: Integration Test Environment
-
-### M1H-S01: Testcontainers Stack Spike
-
-- Status: `Planned`
-- Depends on: M1B-S01
-- Scope: prove InvenTree startup, migrations, admin token creation, and readiness with Testcontainers.
-- Acceptance:
-  - Uses explicit InvenTree version tag matching schema snapshot.
-  - Pinned InvenTree image tag is declared in testenv config or a single constant and appears in test logs.
-  - `docs/api-schema.md` provenance records the matching runtime InvenTree version and API version.
-  - Records runtime InvenTree version and API version.
-  - `go test ./...` never starts Docker.
-
-Tasks:
-
-- [ ] Add `internal/testenv`.
-- [ ] Choose and record the explicit InvenTree version tag matching `docs/api-schema.yaml`.
-- [ ] Start required database and InvenTree services.
-- [ ] Create deterministic admin/test token.
-- [ ] Add readiness polling.
-- [ ] Add integration tag and Docker skip behavior.
-
-### M1H-S02: Shared Suite Fixtures And Isolation
-
-- Status: `Planned`
-- Depends on: M1H-S01
-- Scope: add suite-owned container lifecycle, immutable fixtures, run prefixes, and cleanup safety.
-- Acceptance:
-  - Parent test acquires environment before parallel subtests.
-  - Every mutating helper requires a `Run` object.
-  - Cleanup refuses unprefixed or foreign-prefixed records.
-
-Tasks:
-
-- [ ] Add `SharedInvenTree`.
-- [ ] Add immutable fixture seeding.
-- [ ] Add `Run` prefix format `IT_<runid>_<pkg>_<test>_`.
-- [ ] Add cleanup safety checks.
-- [ ] Add parallel isolation tests.
+## Milestone 1H: Integration Happy Paths
 
 ### M1H-S03: Milestone Integration Happy Paths
 

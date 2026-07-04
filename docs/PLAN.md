@@ -788,6 +788,18 @@ Validation:
 - Schema-reference tests or docs checks proving implemented endpoint paths match `docs/api-schema.yaml` for attachments and parameters.
 - Generated endpoint manifest checks should cover every milestone endpoint, including parts, categories, companies, stock, supplier parts, manufacturer parts, purchase preview dependencies, attachments, and parameters.
 
+### Early Testcontainers Foundation
+
+After the REST client core and schema endpoint manifest are in place, build the reusable Testcontainers environment before adding read-only client methods. This gives client and tool implementation tasks a disposable authenticated InvenTree instance for optional integration coverage as real endpoint behavior becomes useful to verify.
+
+- Add a reusable `internal/testenv` package backed by Testcontainers.
+- Prove InvenTree startup, migrations, admin or test-token creation, and readiness polling.
+- Pin the blocking integration suite to an explicit InvenTree version tag that matches the checked-in schema snapshot.
+- Record the runtime InvenTree version and API version in `docs/api-schema.md` provenance.
+- Add the shared-suite fixture and run-prefix model before broad client/tool integration tests depend on it.
+
+Do not let broad workflow happy-path tests depend on the Testcontainers environment until startup, migrations, token creation, fixture seeding, and cleanup are deterministic.
+
 ### Phase 3: Discovery Tools
 
 - Add search/get tools across parts, companies, stock locations, stock items, attachments, attachment downloads, part-image downloads, orders, and BOMs.
@@ -835,20 +847,6 @@ Validation:
 - Stocktake adjustment workflow.
 
 Future workflows require a new product review pass before implementation.
-
-### Phase 6: Integration Testing
-
-- Add optional integration tests gated by environment variables:
-  - `INVENTREE_TEST_URL`
-  - `INVENTREE_TEST_TOKEN`
-  - `INVENTREE_TEST_ENABLE_WRITES`
-- External write tests must refuse to run against `INVENTREE_TEST_URL` unless a separate dangerous opt-in is set and the base URL matches an explicit test allowlist or marker.
-- Add a reusable `internal/testenv` package backed by Testcontainers.
-- Provide a disposable fixture naming prefix.
-- Ensure tests can run read-only by default.
-- Ensure write-enabled integration tests run against the disposable Testcontainers InvenTree environment by default, not a shared production-like instance.
-
-Treat the Testcontainers environment as an early spike after Phase 2. Do not let broad workflow work depend on it until startup, migrations, token creation, fixture seeding, and cleanup are deterministic.
 
 ### Testcontainers InvenTree Module
 
@@ -913,6 +911,17 @@ Implementation notes:
 - If InvenTree requires multiple services for a realistic setup, wrap them behind one `StartInvenTree` helper rather than leaking container wiring into tests.
 - Integration tests that require the shared InvenTree stack should live in one package or suite for milestone 1. CI should invoke that package explicitly with integration tags so `go test ./...` does not accidentally start multiple stacks. If additional packages need integration coverage, they should call into the same suite entrypoint or remain unit/fake-client tests until cross-package sharing is deliberately designed.
 - Invocation contract: `go test ./...` must never start Testcontainers. `go test -tags=integration ./internal/testenv ./internal/integration/...` starts the shared suite. Local runs may skip when Docker is unavailable and `INVENTREE_TEST_REQUIRE_DOCKER` is false. Blocking CI sets `INVENTREE_TEST_REQUIRE_DOCKER=1`, so missing Docker or failed container startup fails the job.
+
+### Phase 6: Integration Happy Paths
+
+- Add optional integration tests gated by environment variables:
+  - `INVENTREE_TEST_URL`
+  - `INVENTREE_TEST_TOKEN`
+  - `INVENTREE_TEST_ENABLE_WRITES`
+- External write tests must refuse to run against `INVENTREE_TEST_URL` unless a separate dangerous opt-in is set and the base URL matches an explicit test allowlist or marker.
+- Reuse the early `internal/testenv` Testcontainers package and shared fixture/run-prefix model.
+- Ensure tests can run read-only by default where the workflow allows it.
+- Ensure write-enabled integration tests run against the disposable Testcontainers InvenTree environment by default, not a shared production-like instance.
 
 ### Phase 7: Documentation
 
