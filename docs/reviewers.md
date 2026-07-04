@@ -2,6 +2,8 @@
 
 Use these reviewer roles when `AGENTS.md` and [TASKS.md](TASKS.md) require a review pass. This file defines reviewer responsibilities and output shape; it does not narrow the task workflow's review requirement. Reviewers should return findings ordered by severity, with concrete document paths and line references where possible. They should not edit files unless explicitly assigned an implementation task.
 
+Prefer read-only workspace access for review agents so they can inspect surrounding implementation, tests, and documentation without mutating files. If review tooling only supports writable forked workspaces, the reviewer prompt must explicitly say not to edit files, and the parent agent must verify the checkout afterward. Treat unexpected reviewer edits as untrusted until they are independently inspected, validated, and reviewed. Use diff-only review only as a fallback for narrow follow-ups or unavailable workspace access.
+
 ## Standard Review Panel
 
 ### Senior Go Developer
