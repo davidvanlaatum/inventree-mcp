@@ -10,6 +10,7 @@ When picking up an implementation task from `docs/TASKS.md`:
 
 - Read the task, its dependencies, acceptance criteria, and current status before editing code.
 - Review all applicable docs before planning: at minimum `docs/PLAN.md`, `docs/TASKS.md`, `docs/api-schema.md` when API behavior is involved, `docs/tool-reference.md` when tool behavior changes, `docs/operator-recipes.md` when operator workflow changes, and `docs/reviewers.md` when a review pass is needed.
+- After reviewing the task and applicable docs, identify any unclear requirements, conflicting docs, missing product/workflow decisions, or unsafe assumptions. Ask the operator the specific questions before building the implementation plan or editing files. If there are no blocking questions, state the assumptions the plan will use.
 - If the task status is `Blocked`, do not implement around the blocker. Resolve the blocker, ask the operator the specific question, or update the task with why it remains blocked.
 - Build a short implementation plan that maps the task acceptance criteria to concrete files, tests, and documentation updates.
 - Implement in small, reviewable steps. Keep docs, task status, tool references, recipes, and agent instructions aligned with behavior changes in the same change.
