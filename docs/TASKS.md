@@ -238,11 +238,11 @@ Tasks:
 
 ## Milestone 1H: Early Integration Test Environment
 
-These integration-environment stories are intentionally pulled forward before read-only client methods so new client and tool behavior can gain optional real InvenTree coverage as it lands. The broad milestone happy-path integration suite remains later, after the corresponding workflow, upload, and image behavior exists.
+These integration-environment stories are intentionally pulled forward before read-only client methods so new client and tool behavior can gain real InvenTree coverage as it lands. Docker-backed integration coverage runs in the default test path unless explicitly excluded with `INVENTREE_TEST_SKIP_DOCKER=1` or `go test -short`. The broad milestone happy-path integration suite remains later, after the corresponding workflow, upload, and image behavior exists.
 
 ### M1H-S01: Testcontainers Stack Spike
 
-- Status: `Planned`
+- Status: `Done`
 - Depends on: M1B-S01, M1B-S02
 - Scope: prove InvenTree startup, migrations, admin token creation, and readiness with Testcontainers.
 - Acceptance:
@@ -250,20 +250,24 @@ These integration-environment stories are intentionally pulled forward before re
   - Pinned InvenTree image tag is declared in testenv config or a single constant and appears in test logs.
   - `docs/api-schema.md` provenance records the matching runtime InvenTree version and API version.
   - Records runtime InvenTree version and API version.
-  - `go test ./...` never starts Docker.
+  - Docker-backed integration tests run by default and can be explicitly excluded with `INVENTREE_TEST_SKIP_DOCKER=1` or `go test -short`.
 
 Tasks:
 
-- [ ] Add `internal/testenv`.
-- [ ] Choose and record the explicit InvenTree version tag matching `docs/api-schema.yaml`.
-- [ ] Start required database and InvenTree services.
-- [ ] Create deterministic admin/test token.
-- [ ] Add readiness polling.
-- [ ] Add integration tag and Docker skip behavior.
+- [x] Add `internal/testenv`.
+- [x] Choose and record the explicit InvenTree version tag matching `docs/api-schema.yaml`.
+- [x] Start required database and InvenTree services.
+- [x] Create deterministic admin/test token.
+- [x] Add readiness polling.
+- [x] Add default-on Docker integration test and explicit Docker skip behavior.
+
+- Validation: `GOCACHE=/Users/david/Projects/inventree-mcp/.gocache GOMODCACHE=/private/tmp/inventree-mcp-gomodcache go test ./...` passed with the default Docker-backed Testcontainers stack; `GOCACHE=/Users/david/Projects/inventree-mcp/.gocache GOMODCACHE=/private/tmp/inventree-mcp-gomodcache go test ./internal/testenv -count=1 -v` passed and logged `inventree/inventree:1.4.0`, runtime version `1.4.0`, and API `511`; `GOCACHE=/Users/david/Projects/inventree-mcp/.gocache GOMODCACHE=/private/tmp/inventree-mcp-gomodcache INVENTREE_TEST_SKIP_DOCKER=1 go test ./internal/testenv` passed; `GOCACHE=/Users/david/Projects/inventree-mcp/.gocache GOMODCACHE=/private/tmp/inventree-mcp-gomodcache GOLANGCI_LINT_CACHE=/Users/david/Projects/inventree-mcp/.golangci-cache golangci-lint run` passed with 0 issues; `git diff --check` passed.
+- Review: Senior Go Developer, Senior QA / Test Architect, Senior Product Manager, and Senior Infosec Reviewer reviews run. Go requested bounded cleanup contexts and test-log visibility for the pinned image/version/API; fixed by terminating containers with the caller context, adding bounded cleanup helpers, and logging the runtime pin before stack startup. QA requested excluding Docker-backed integration from Gremlins mutation testing while preserving default `go test ./...` integration coverage; fixed with `INVENTREE_TEST_SKIP_DOCKER=1` on the Gremlins job. Product found stale optional-integration, skip-policy, and latest-stable compatibility wording; fixed so docs state default-on Docker integration, explicit skip paths, blocking InvenTree `1.4.0`, and non-blocking latest-stable canary coverage. Infosec found host-port exposure with fixed test credentials; fixed by forcing Postgres, Redis, and InvenTree host bindings to `127.0.0.1` and asserting runtime bindings in the Docker-backed test. Focused reruns for all four roles found no remaining actionable findings.
+- Residual risk: default test runs now require Docker unless explicitly excluded with `INVENTREE_TEST_SKIP_DOCKER=1` or `go test -short`. The test stack uses fixed disposable credentials bound to loopback-only published ports. Postgres and Redis remain pinned to readable major/family tags (`postgres:17`, `redis:7-alpine`) for this spike; future shared-fixture work can tighten supporting-service pins if drift becomes noisy.
 
 ### M1H-S02: Shared Suite Fixtures And Isolation
 
-- Status: `Planned`
+- Status: `Ready`
 - Depends on: M1H-S01
 - Scope: add suite-owned container lifecycle, immutable fixtures, run prefixes, and cleanup safety.
 - Acceptance:
@@ -287,8 +291,8 @@ Tasks:
 - Acceptance:
   - Methods exist for part, category, company, stock location/item, parameter, attachment, and supplier-part lookup.
   - Default tests use fake transports, not live network.
-  - Optional integration-tag tests use the shared Testcontainers environment where real API behavior materially improves confidence.
-  - `go test ./...` does not start Docker.
+  - Integration tests use the shared Testcontainers environment by default where real API behavior materially improves confidence.
+  - Default `go test ./...` may start the shared Testcontainers environment; use `INVENTREE_TEST_SKIP_DOCKER=1` or `go test -short` only when explicitly excluding Docker-backed integration.
 
 Tasks:
 

@@ -725,12 +725,12 @@ Stock movement, purchase receiving, build allocation, and build completion shoul
 
 ## Compatibility Decisions
 
-- InvenTree compatibility baseline: latest stable InvenTree release.
-- Docker image for blocking Testcontainers tests: use an explicit InvenTree version tag known to match checked-in `docs/api-schema.yaml`. Do not use a digest as the primary pin because the version should be clear in config, logs, and failure output. Do not use floating tags such as `stable` for blocking tests.
+- InvenTree compatibility baseline: InvenTree `1.4.0` for the checked-in schema snapshot.
+- Docker image for blocking Testcontainers tests: `inventree/inventree:1.4.0`, matching checked-in `docs/api-schema.yaml` OpenAPI 3.0.3 / API version `511`. Do not use a digest as the primary pin because the version should be clear in config, logs, and failure output. Do not use floating tags such as `stable` for blocking tests.
 - Separate stable-canary compatibility job: use `inventree/inventree:stable`, record the resolved InvenTree version and image digest/tag, and report schema drift as non-blocking until the schema/provenance update workflow is run.
 - Integration startup should fetch `/api/schema/` and record the API version. Blocking schema-sensitive tests must fail when the runtime schema version differs from checked-in `docs/api-schema.yaml`, unless they run against the recorded image version/schema pair known to match the checked-in schema.
 - Schema update workflow: refresh `docs/api-schema.yaml`, update `docs/api-schema.md` provenance and capability tables, update the pinned InvenTree version tag or recorded tag/schema pair, then run the blocking integration suite.
-- API schema compatibility baseline: current local `docs/api-schema.yaml` fetched from the internal InvenTree instance, OpenAPI 3.0.3 / API version `511`.
+- API schema compatibility baseline: current local `docs/api-schema.yaml` fetched from the internal InvenTree instance, OpenAPI 3.0.3 / API version `511`, with runtime InvenTree version `1.4.0`.
 - Upstream InvenTree auth schemes: `Token` and `Bearer` only.
 - STDIO auth behavior: read the upstream InvenTree token only from `INVENTREE_TOKEN`. Non-secret connection settings, such as URL, auth scheme, and timeouts, may come from environment or flags.
 - HTTP auth behavior: use MCP-owned OAuth bearer tokens with encrypted upstream InvenTree credential envelopes.
@@ -791,7 +791,7 @@ Validation:
 
 ### Early Testcontainers Foundation
 
-After the REST client core and schema endpoint manifest are in place, build the reusable Testcontainers environment before adding read-only client methods. This gives client and tool implementation tasks a disposable authenticated InvenTree instance for optional integration coverage as real endpoint behavior becomes useful to verify.
+After the REST client core and schema endpoint manifest are in place, build the reusable Testcontainers environment before adding read-only client methods. This gives client and tool implementation tasks a disposable authenticated InvenTree instance for default-on integration coverage as real endpoint behavior becomes useful to verify.
 
 - Add a reusable `internal/testenv` package backed by Testcontainers.
 - Prove InvenTree startup, migrations, admin or test-token creation, and readiness polling.
@@ -858,7 +858,7 @@ Target API:
 ```go
 func TestIntegration(t *testing.T) {
     env := testenv.SharedInvenTree(t, testenv.Options{
-        Image: "inventree/inventree:<recorded-version-tag>",
+        Image: "inventree/inventree:1.4.0",
     })
 
     client := inventree.NewClient(inventree.Config{
@@ -910,8 +910,8 @@ Implementation notes:
 - Keep destructive tests scoped to records created by that subtest's unique prefix.
 - Keep production credentials and user-provided `INVENTREE_TEST_URL` out of Testcontainers logs.
 - If InvenTree requires multiple services for a realistic setup, wrap them behind one `StartInvenTree` helper rather than leaking container wiring into tests.
-- Integration tests that require the shared InvenTree stack should live in one package or suite for milestone 1. CI should invoke that package explicitly with integration tags so `go test ./...` does not accidentally start multiple stacks. If additional packages need integration coverage, they should call into the same suite entrypoint or remain unit/fake-client tests until cross-package sharing is deliberately designed.
-- Invocation contract: `go test ./...` must never start Testcontainers. `go test -tags=integration ./internal/testenv ./internal/integration/...` starts the shared suite. Local runs may skip when Docker is unavailable and `INVENTREE_TEST_REQUIRE_DOCKER` is false. Blocking CI sets `INVENTREE_TEST_REQUIRE_DOCKER=1`, so missing Docker or failed container startup fails the job.
+- Integration tests that require the shared InvenTree stack should live in one package or suite for milestone 1 so `go test ./...` starts at most one shared stack. If additional packages need integration coverage, they should call into the same suite entrypoint or remain unit/fake-client tests until cross-package sharing is deliberately designed.
+- Invocation contract: `go test ./...` starts the pinned Testcontainers InvenTree stack by default. Local and CI runs may explicitly exclude Docker-backed integration tests with `INVENTREE_TEST_SKIP_DOCKER=1` or `go test -short`; otherwise missing Docker or failed container startup fails the test.
 
 ### Phase 6: Integration Happy Paths
 
@@ -1022,10 +1022,11 @@ Test suite classes:
 
 | Suite | Command | Purpose |
 | --- | --- | --- |
-| Unit | `go test ./...` | Fast tests, no Docker, no external InvenTree. |
-| Contract/docs | `go test ./...` plus generated manifest checks | Tool annotations, scopes, schema references, and documentation drift. |
+| Default | `go test ./...` | Unit, contract, docs, and default-on pinned Testcontainers integration tests. |
+| Unit-only | `INVENTREE_TEST_SKIP_DOCKER=1 go test ./...` or `go test -short ./...` | Fast tests with Docker-backed integration explicitly excluded. |
+| Contract/docs | `INVENTREE_TEST_SKIP_DOCKER=1 go test ./...` plus generated manifest checks | Tool annotations, scopes, schema references, and documentation drift without starting Docker. |
 | HTTP auth | `go test ./internal/server/... ./internal/oauth/...` | OAuth metadata, bearer challenge, token envelopes, and scope guards using fakes. |
-| Integration | `go test -tags=integration ./internal/testenv ./internal/integration/...` | Shared Testcontainers suite with pinned version-tag/schema pair. |
+| Integration | `go test ./internal/testenv ./internal/integration/...` | Shared Testcontainers suite with pinned version-tag/schema pair. |
 | Stable canary | CI-specific `inventree/inventree:stable` integration run | Non-blocking latest-stable compatibility and schema drift signal. |
 
 ## Required Test Matrix
@@ -1151,7 +1152,7 @@ Blocking milestone tests:
 
 Milestone test classification:
 
-- Blocking tests must have deterministic local execution paths and documented skip behavior only for Docker-unavailable cases.
+- Blocking tests must have deterministic local execution paths. Docker-backed integration tests run by default and can be explicitly excluded for unit-only, fast, or Docker-unavailable runs with `INVENTREE_TEST_SKIP_DOCKER=1` or `go test -short`.
 - Non-blocking tests may cover optional live external InvenTree instances, canary compatibility checks, and extended stress runs.
 - Future tests must be tied to deferred scope such as sales workflows, return orders, transfer orders, company primary images, and build attachment support.
 - Future image/file tests must cover deferred surfaces only when they enter scope, including notes image upload, generated report attachments, and stock test-result attachments.
@@ -1166,7 +1167,7 @@ Milestone README recipes:
 - HTTP mode uses MCP-owned OAuth bearer tokens for ChatGPT Developer Connector compatibility and does not pass raw InvenTree `Authorization` headers through unchanged.
 - HTTP OAuth tokens are encrypted, authenticated, stateless envelopes that seal the upstream InvenTree credential.
 - STDIO mode supports configured `Token` or `Bearer` upstream InvenTree auth only.
-- Compatibility targets latest stable InvenTree.
-- Blocking integration tests use an explicit InvenTree version tag or recorded tag/schema pair; latest `inventree/inventree:stable` runs only as a non-blocking canary until schema/provenance updates are applied.
+- Blocking compatibility targets InvenTree `1.4.0` for the checked-in schema snapshot.
+- Latest stable InvenTree is covered only by a non-blocking `inventree/inventree:stable` canary until schema/provenance updates are applied.
 - Destructive operations are allowed behind confirmation and accurate MCP annotations.
 - Tool inputs require API-required fields only, unless additional fields are needed to avoid ambiguous writes.
