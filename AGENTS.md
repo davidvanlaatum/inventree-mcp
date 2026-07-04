@@ -13,12 +13,17 @@ When picking up an implementation task from `docs/TASKS.md`:
 - After reviewing the task and applicable docs, identify any unclear requirements, conflicting docs, missing product/workflow decisions, or unsafe assumptions. Ask the operator the specific questions before building the implementation plan or editing files. If there are no blocking questions, state the assumptions the plan will use.
 - If the task status is `Blocked`, do not implement around the blocker. Resolve the blocker, ask the operator the specific question, or update the task with why it remains blocked.
 - Build a short implementation plan that maps the task acceptance criteria to concrete files, tests, and documentation updates.
+- Before implementation, start from `main` unless the operator explicitly specifies another base branch. Verify `main` is up to date with its remote so the feature branch starts from a known good and current state.
+- Create or switch to a feature branch for the task unless the operator explicitly asks to work on the current branch. Use a descriptive branch name, preferably with the `codex/` prefix.
 - Implement in small, reviewable steps. Keep docs, task status, tool references, recipes, and agent instructions aligned with behavior changes in the same change.
 - Run the relevant validation for the task. At minimum run unit tests or targeted package tests for code changes and `git diff --check` for documentation-only changes.
 - Run subagent review after implementation for substantial task work. Use the applicable roles from `docs/reviewers.md`; use the full Go, QA, product, and infosec panel for auth, upload, Testcontainers, tool-surface, or milestone-completion changes.
 - Address actionable review feedback with code, tests, or docs. If feedback is rejected, document the reason and residual risk in the relevant task's `Review` or `Residual risk` note.
 - Repeat validation and review until there are no unresolved actionable findings for the task scope.
 - Update `docs/TASKS.md` task status, checkboxes, `Validation`, `Review`, and `Residual risk` notes as part of completion. Mark a task `Done` only when its acceptance criteria are met, tests/docs are updated, and review feedback is resolved or explicitly documented.
+- Commit completed task work on the feature branch with a focused message. Do not commit directly to `main` unless the operator explicitly asks for that workflow.
+- Push the feature branch and create a merge request or pull request with appropriate details: task ID/title, scope summary, validation commands and results, subagent review summary, unresolved questions, residual risks, and any follow-up tasks. For GitHub-hosted repos, treat this as a pull request even if the operator says merge request.
+- After pushing, monitor CI until it passes or produces a concrete failure. If CI fails, inspect the failure, fix actionable issues in the branch, and repeat validation/review as needed. If the failure is transient and cannot be made deterministic by adjusting the tests, retry the failing job and record the evidence.
 - Do not widen into `Future` tasks unless the operator explicitly changes the plan.
 
 ## Technical Rules
