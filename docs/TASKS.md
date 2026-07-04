@@ -195,9 +195,12 @@ Tasks:
 
 ### M1B-S01: REST Client Core
 
-- Status: `Planned`
+- Status: `Done`
 - Depends on: M1A-S01
 - Scope: implement low-level InvenTree HTTP client with auth, pagination, errors, and PATCH helpers.
+- Validation: `GOCACHE=/Users/david/Projects/inventree-mcp/.gocache GOMODCACHE=/private/tmp/inventree-mcp-gomodcache go test ./...` passed. `GOCACHE=/Users/david/Projects/inventree-mcp/.gocache GOMODCACHE=/private/tmp/inventree-mcp-gomodcache golangci-lint run` passed with 0 issues after sandbox cache-write warnings. `GOCACHE=/Users/david/Projects/inventree-mcp/.gocache GOMODCACHE=/private/tmp/inventree-mcp-gomodcache go test -covermode count -coverpkg ./... -coverprofile /private/tmp/inventree-mcp-cover.out ./...` plus `go tool cover -func` reported 85.8% total coverage after the CI coverage-threshold follow-up.
+- Review: Senior QA / Test Architect, Senior Product Manager, and Senior Go Developer reviews run. QA found common API error mapping was under-tested; fixed with coverage for validation, authentication, permission, not found, conflict, rate limit, server, unexpected, non-JSON, and list-detail responses. Product found empty PATCH no-ops were not rejected; fixed with a pre-request guard and regression test. Go found 409 Conflict needed its own typed error kind; fixed with `ErrorKindConflict`. Follow-up Go, QA, and product reviews found no remaining actionable findings. CI lint then found unchecked response body discard and close errors; fixed with checked discard and an explicit ignored deferred close. Narrow Go and QA reruns on the CI follow-up found no actionable findings. CI coverage then failed at exactly 80.0%; fixed with targeted client error-path tests, and a narrow QA rerun found no actionable findings.
+- Residual risk: endpoint-specific client methods and schema-manifest enforcement are intentionally deferred to M1B-S02 and M1B-S03.
 - Acceptance:
   - Supports `Authorization: Token ...` and `Authorization: Bearer ...`.
   - Pagination helpers are covered by tests.
@@ -206,15 +209,15 @@ Tasks:
 
 Tasks:
 
-- [ ] Add `internal/inventree` client.
-- [ ] Add auth header model.
-- [ ] Add pagination helpers.
-- [ ] Add error mapping.
-- [ ] Add PATCH helper and zero-value tests.
+- [x] Add `internal/inventree` client.
+- [x] Add auth header model.
+- [x] Add pagination helpers.
+- [x] Add error mapping.
+- [x] Add PATCH helper and zero-value tests.
 
 ### M1B-S02: Schema Endpoint Manifest
 
-- Status: `Planned`
+- Status: `Ready`
 - Depends on: M1B-S01
 - Scope: add a generated or maintained manifest tying implemented endpoints to `docs/api-schema.yaml`.
 - Acceptance:
@@ -230,14 +233,59 @@ Tasks:
 - [ ] Add docs drift check.
 - [ ] Cover parts, categories, companies, stock, parameters, attachments, and purchasing preview dependencies.
 
-### M1B-S03: Read-Only Client Methods
+## Milestone 1H: Early Integration Test Environment
+
+These integration-environment stories are intentionally pulled forward before read-only client methods so new client and tool behavior can gain optional real InvenTree coverage as it lands. The broad milestone happy-path integration suite remains later, after the corresponding workflow, upload, and image behavior exists.
+
+### M1H-S01: Testcontainers Stack Spike
 
 - Status: `Planned`
 - Depends on: M1B-S01, M1B-S02
+- Scope: prove InvenTree startup, migrations, admin token creation, and readiness with Testcontainers.
+- Acceptance:
+  - Uses explicit InvenTree version tag matching schema snapshot.
+  - Pinned InvenTree image tag is declared in testenv config or a single constant and appears in test logs.
+  - `docs/api-schema.md` provenance records the matching runtime InvenTree version and API version.
+  - Records runtime InvenTree version and API version.
+  - `go test ./...` never starts Docker.
+
+Tasks:
+
+- [ ] Add `internal/testenv`.
+- [ ] Choose and record the explicit InvenTree version tag matching `docs/api-schema.yaml`.
+- [ ] Start required database and InvenTree services.
+- [ ] Create deterministic admin/test token.
+- [ ] Add readiness polling.
+- [ ] Add integration tag and Docker skip behavior.
+
+### M1H-S02: Shared Suite Fixtures And Isolation
+
+- Status: `Planned`
+- Depends on: M1H-S01
+- Scope: add suite-owned container lifecycle, immutable fixtures, run prefixes, and cleanup safety.
+- Acceptance:
+  - Parent test acquires environment before parallel subtests.
+  - Every mutating helper requires a `Run` object.
+  - Cleanup refuses unprefixed or foreign-prefixed records.
+
+Tasks:
+
+- [ ] Add `SharedInvenTree`.
+- [ ] Add immutable fixture seeding.
+- [ ] Add `Run` prefix format `IT_<runid>_<pkg>_<test>_`.
+- [ ] Add cleanup safety checks.
+- [ ] Add parallel isolation tests.
+
+### M1B-S03: Read-Only Client Methods
+
+- Status: `Planned`
+- Depends on: M1B-S01, M1B-S02, M1H-S02
 - Scope: implement read-only API methods needed by milestone 1.
 - Acceptance:
   - Methods exist for part, category, company, stock location/item, parameter, attachment, and supplier-part lookup.
-  - Tests use fake transports, not live network.
+  - Default tests use fake transports, not live network.
+  - Optional integration-tag tests use the shared Testcontainers environment where real API behavior materially improves confidence.
+  - `go test ./...` does not start Docker.
 
 Tasks:
 
@@ -552,46 +600,7 @@ Tasks:
 - [ ] Add `purchase_preview_checklist`.
 - [ ] Add prompt manifest tests.
 
-## Milestone 1H: Integration Test Environment
-
-### M1H-S01: Testcontainers Stack Spike
-
-- Status: `Planned`
-- Depends on: M1B-S01
-- Scope: prove InvenTree startup, migrations, admin token creation, and readiness with Testcontainers.
-- Acceptance:
-  - Uses explicit InvenTree version tag matching schema snapshot.
-  - Pinned InvenTree image tag is declared in testenv config or a single constant and appears in test logs.
-  - `docs/api-schema.md` provenance records the matching runtime InvenTree version and API version.
-  - Records runtime InvenTree version and API version.
-  - `go test ./...` never starts Docker.
-
-Tasks:
-
-- [ ] Add `internal/testenv`.
-- [ ] Choose and record the explicit InvenTree version tag matching `docs/api-schema.yaml`.
-- [ ] Start required database and InvenTree services.
-- [ ] Create deterministic admin/test token.
-- [ ] Add readiness polling.
-- [ ] Add integration tag and Docker skip behavior.
-
-### M1H-S02: Shared Suite Fixtures And Isolation
-
-- Status: `Planned`
-- Depends on: M1H-S01
-- Scope: add suite-owned container lifecycle, immutable fixtures, run prefixes, and cleanup safety.
-- Acceptance:
-  - Parent test acquires environment before parallel subtests.
-  - Every mutating helper requires a `Run` object.
-  - Cleanup refuses unprefixed or foreign-prefixed records.
-
-Tasks:
-
-- [ ] Add `SharedInvenTree`.
-- [ ] Add immutable fixture seeding.
-- [ ] Add `Run` prefix format `IT_<runid>_<pkg>_<test>_`.
-- [ ] Add cleanup safety checks.
-- [ ] Add parallel isolation tests.
+## Milestone 1H: Integration Happy Paths
 
 ### M1H-S03: Milestone Integration Happy Paths
 
