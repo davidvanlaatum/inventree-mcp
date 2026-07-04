@@ -1,8 +1,12 @@
 package testenv
 
 import (
+	"context"
+	"io"
+	"net/http"
 	"net/netip"
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/moby/moby/api/types/container"
@@ -50,6 +54,23 @@ func TestValidateOptionsRejectsFloatingOrAmbiguousImages(t *testing.T) {
 	}
 }
 
+func TestValidateOptionsRejectsMissingVersionAPIAndNegativeTimeout(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+
+	opts := DefaultOptions()
+	opts.ExpectedVersion = ""
+	opts.ExpectedAPIVersion = ""
+	opts.StartupTimeout = -1
+
+	err := ValidateOptions(opts)
+
+	r.Error(err)
+	r.ErrorContains(err, "expected InvenTree version is required")
+	r.ErrorContains(err, "expected InvenTree API version is required")
+	r.ErrorContains(err, "startup timeout must not be negative")
+}
+
 func TestSkipDockerParsesExplicitExclusion(t *testing.T) {
 	t.Parallel()
 	a := assert.New(t)
@@ -81,4 +102,95 @@ func TestLoopbackPortBinding(t *testing.T) {
 	r.Len(bindings, 1)
 	r.Equal(netip.MustParseAddr("127.0.0.1"), bindings[0].HostIP)
 	r.Empty(bindings[0].HostPort)
+}
+
+func TestHTTPHelpersFetchVersionCreateAndProveToken(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	ctx := context.Background()
+
+	client := fakeHTTPClient(t, func(req *http.Request) (int, string) {
+		switch req.URL.Path {
+		case "/api/version/":
+			assertBasicAuth(t, req)
+			return http.StatusOK, `{"version":{"server":"1.4.0","api":511}}`
+		case "/api/user/me/token/":
+			assertBasicAuth(t, req)
+			r.Equal(defaultTokenName, req.URL.Query().Get("name"))
+			return http.StatusOK, `{"token":"test-token"}`
+		case "/api/user/me/":
+			r.Equal("Token test-token", req.Header.Get("Authorization"))
+			return http.StatusOK, `{"username":"admin"}`
+		default:
+			return http.StatusNotFound, `{}`
+		}
+	})
+
+	version, err := fetchVersion(ctx, client, "http://inventree.test", defaultAdminUser, defaultAdminPassword)
+	r.NoError(err)
+	r.Equal(DefaultVersion, version.Version.Server)
+	r.Equal(511, version.Version.API)
+
+	token, err := createToken(ctx, client, "http://inventree.test", defaultAdminUser, defaultAdminPassword)
+	r.NoError(err)
+	r.Equal("test-token", token)
+
+	r.NoError(proveToken(ctx, "http://inventree.test", token, client))
+}
+
+func TestDoJSONRejectsNonSuccessAndInvalidJSON(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	ctx := context.Background()
+
+	client := fakeHTTPClient(t, func(req *http.Request) (int, string) {
+		switch req.URL.Path {
+		case "/status":
+			return http.StatusTeapot, "nope"
+		case "/invalid":
+			return http.StatusOK, "{"
+		default:
+			return http.StatusNotFound, "{}"
+		}
+	})
+
+	statusReq, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://inventree.test/status", nil)
+	r.NoError(err)
+	r.ErrorContains(doJSON(client, statusReq, &map[string]any{}), "GET /status returned 418")
+
+	invalidReq, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://inventree.test/invalid", nil)
+	r.NoError(err)
+	r.ErrorContains(doJSON(client, invalidReq, &map[string]any{}), "decode response")
+}
+
+func assertBasicAuth(t *testing.T, req *http.Request) {
+	t.Helper()
+	r := require.New(t)
+
+	username, password, ok := req.BasicAuth()
+	r.True(ok)
+	r.Equal(defaultAdminUser, username)
+	r.Equal(defaultAdminPassword, password)
+}
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (fn roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+	return fn(req)
+}
+
+func fakeHTTPClient(t *testing.T, handler func(*http.Request) (int, string)) *http.Client {
+	t.Helper()
+
+	return &http.Client{
+		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			status, body := handler(req)
+			return &http.Response{
+				StatusCode: status,
+				Header:     make(http.Header),
+				Body:       io.NopCloser(strings.NewReader(body)),
+				Request:    req,
+			}, nil
+		}),
+	}
 }
