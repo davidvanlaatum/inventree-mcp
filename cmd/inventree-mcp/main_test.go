@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"errors"
 	"testing"
 
 	"github.com/davidvanlaatum/inventree-mcp/internal/config"
@@ -67,8 +68,28 @@ func TestRunServeStdioDoesNotWriteStdout(t *testing.T) {
 	}
 }
 
+func TestRunHelpReportsOutputWriteFailure(t *testing.T) {
+	t.Parallel()
+
+	var stderr bytes.Buffer
+	code := run([]string{"help"}, errWriter{}, &stderr, mapEnv(nil))
+
+	if code != 1 {
+		t.Fatalf("run exit code = %d, want 1", code)
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("stderr = %q, want empty", stderr.String())
+	}
+}
+
 func mapEnv(values map[string]string) config.Env {
 	return func(key string) string {
 		return values[key]
 	}
+}
+
+type errWriter struct{}
+
+func (errWriter) Write([]byte) (int, error) {
+	return 0, errors.New("write failed")
 }

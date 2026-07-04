@@ -721,7 +721,7 @@ Stock movement, purchase receiving, build allocation, and build completion shoul
 - Schema update workflow: refresh `docs/api-schema.yaml`, update `docs/api-schema.md` provenance and capability tables, update the pinned InvenTree version tag or recorded tag/schema pair, then run the blocking integration suite.
 - API schema compatibility baseline: current local `docs/api-schema.yaml` fetched from the internal InvenTree instance, OpenAPI 3.0.3 / API version `511`.
 - Upstream InvenTree auth schemes: `Token` and `Bearer` only.
-- STDIO auth behavior: use configured InvenTree credentials from environment or flags.
+- STDIO auth behavior: read the upstream InvenTree token only from `INVENTREE_TOKEN`. Non-secret connection settings, such as URL, auth scheme, and timeouts, may come from environment or flags.
 - HTTP auth behavior: use MCP-owned OAuth bearer tokens with encrypted upstream InvenTree credential envelopes.
 - HTTP statelessness: no database-backed access-token mapping is required for the initial implementation. Authorization codes still require bounded one-time-use code ID storage before beta.
 - Open product decision: exact ChatGPT Developer Connector client registration and redirect URI shape must be verified from current official OpenAI documentation before implementation.

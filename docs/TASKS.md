@@ -10,6 +10,8 @@ This backlog turns [PLAN.md](PLAN.md) into executable work. Status values are:
 
 Each story should be completed with tests, documentation updates, and reviewer follow-up. Code, behavior, task-status, operator workflow, or public documentation-contract changes require subagent review from the applicable roles in [reviewers.md](reviewers.md). Use the full Go, QA, product, and infosec panel when acceptance criteria touch auth, upload, Testcontainers, tool-surface behavior, or milestone completion. Manual-only review is reserved for typo-only or formatting-only documentation edits and must say why subagent review was not required.
 
+When PR or subagent review feedback is addressed after an initial review, rerun the applicable reviewer roles before final handoff if the follow-up changes code, tests, behavior, operator workflow, or public documentation contracts. Keep reruns focused on the follow-up diff. Typos and formatting-only documentation follow-ups do not need rerun review, but the completion note should say why.
+
 Before marking a story `Done`, add or update story-local completion notes:
 
 - `Validation`: commands/checks run, or why a check was not applicable.
@@ -94,8 +96,8 @@ Tasks:
 - Depends on: M0-S02
 - Scope: add the first buildable `inventree-mcp` command with typed config.
 - Validation: `GOCACHE=/Users/david/Projects/inventree-mcp/.gocache go test ./...` passed; `GOCACHE=/Users/david/Projects/inventree-mcp/.gocache GOMODCACHE=/private/tmp/inventree-mcp-gomodcache go build ./cmd/inventree-mcp` passed; `git diff --check` passed. Initial plain `go test ./...` failed because the default macOS Go build cache is outside the writable sandbox.
-- Review: Senior Go Developer, Senior QA / Test Architect, and Senior Product Manager subagent reviews run. Go review found STDIO `serve` wrote a success banner to stdout; fixed by keeping successful `serve` silent and adding a regression test. QA and product findings on missing durable subagent review evidence were addressed in this note and the workflow wording updates. No unresolved actionable findings.
-- Residual risk: HTTP command still only validates development-mode config until `M1C` defines final OAuth config and server behavior.
+- Review: Senior Go Developer, Senior QA / Test Architect, and Senior Product Manager subagent reviews run. Go review found STDIO `serve` wrote a success banner to stdout; fixed by keeping successful `serve` silent and adding a regression test. QA and product findings on missing durable subagent review evidence were addressed in this note and the workflow wording updates. Follow-up Go and QA reviews after PR comments found stale token-source wording in `AGENTS.md`, stale token-source wording in `docs/PLAN.md`, and missing durable rerun evidence in this note; those findings were addressed. Final focused Go, QA, and product reruns on the follow-up diff found no actionable findings.
+- Residual risk: HTTP command still only validates development-mode config until `M1C` defines final OAuth config and server behavior. The command write-error follow-up directly tests help/stdout failure; stderr write-failure branches are symmetric but not individually tested.
 - Acceptance:
   - `cmd/inventree-mcp` builds.
   - `inventree-mcp serve --transport stdio` and `--transport http` parse config and fail gracefully for missing required values.
