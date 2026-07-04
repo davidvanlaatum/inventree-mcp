@@ -25,6 +25,7 @@ const (
 	EnvDevIncompleteOAuth     = "INVENTREE_MCP_DEV_INCOMPLETE_OAUTH"
 
 	invalidDuration = time.Duration(-1)
+	DefaultListen   = "127.0.0.1:28686"
 )
 
 type Environment string
@@ -76,7 +77,7 @@ func ParseServeWithEnv(args []string, getenv Env, output io.Writer) (Config, err
 	cfg := Config{
 		Transport:           Transport(envDefault(getenv, EnvTransport, string(TransportStdio))),
 		Environment:         Environment(envDefault(getenv, EnvEnvironment, string(EnvironmentProduction))),
-		Listen:              envDefault(getenv, EnvListen, ":8080"),
+		Listen:              envDefault(getenv, EnvListen, DefaultListen),
 		Path:                envDefault(getenv, EnvPath, "/mcp"),
 		InvenTreeURL:        getenv(EnvInvenTreeURL),
 		InvenTreeToken:      getenv(EnvInvenTreeToken),

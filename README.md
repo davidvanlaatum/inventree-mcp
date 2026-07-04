@@ -40,8 +40,10 @@ For a development-only pre-OAuth HTTP config smoke test, run the binary directly
 INVENTREE_URL=https://inventory.example.test \
 INVENTREE_MCP_ENVIRONMENT=development \
 INVENTREE_MCP_DEV_INCOMPLETE_OAUTH=true \
-/usr/bin/inventree-mcp serve --transport http --listen 127.0.0.1:8080 --path /mcp
+/usr/bin/inventree-mcp serve --transport http --listen 127.0.0.1:28686 --path /mcp
 ```
+
+The default HTTP listen address is `127.0.0.1:28686`. The port is intentionally outside common HTTP development ports, below common Linux ephemeral ranges, and loopback-only by default.
 
 The `apk` package installs the same binary, config template, and systemd unit as the `deb` and `rpm` packages. Alpine/OpenRC service management is not implemented yet; use the binary directly or add an operator-specific OpenRC unit outside the package.
 

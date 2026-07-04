@@ -86,8 +86,10 @@ HTTP mode is intended for remote MCP clients using streamable HTTP.
 Expected command shape:
 
 ```sh
-inventree-mcp serve --transport http --listen :8080 --path /mcp
+inventree-mcp serve --transport http --listen 127.0.0.1:28686 --path /mcp
 ```
+
+The default HTTP listen address is `127.0.0.1:28686`: loopback-only for reverse-proxy deployments, outside common HTTP development ports, and below common Linux ephemeral ranges.
 
 Authentication model:
 

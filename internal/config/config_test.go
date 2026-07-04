@@ -29,6 +29,7 @@ func TestParseServeUsesEnvAndFlagPrecedence(t *testing.T) {
 	r.Equal("env-token", cfg.InvenTreeToken)
 	r.Equal(AuthSchemeBearer, cfg.InvenTreeAuthScheme)
 	r.Equal(5*time.Second, cfg.InvenTreeTimeout)
+	r.Equal(DefaultListen, cfg.Listen)
 }
 
 func TestParseServeRejectsMissingStdioRequiredValues(t *testing.T) {
