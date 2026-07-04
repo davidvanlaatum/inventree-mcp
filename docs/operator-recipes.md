@@ -60,18 +60,20 @@ Each recipe should preserve omitted fields versus explicit zero/false/empty valu
 ## Download Attachment Content
 
 - Required inputs: stable attachment ID.
-- Preferred lookup order: `get_attachment_metadata`, then `download_attachment` only when metadata identifies a file or thumbnail URL on the configured InvenTree instance.
-- Clarify when: the attachment is a stored link rather than a file, content exceeds the configured download limit, or the operator meant to fetch an external link target.
+- Preferred lookup order: `get_attachment_metadata`, then `download_attachment` only when metadata identifies an in-scope attachment with a file URL on the configured InvenTree instance. Request explicit thumbnail mode when the operator wants the thumbnail rather than the original file.
+- Clarify when: the attachment is a stored link and the operator might mean stored-link metadata versus an external link target, or the operator asks for a thumbnail but the target has both original and thumbnail content.
+- Structured non-success when: content exceeds the configured download limit, metadata URL redirects or points outside the configured InvenTree instance, or the attachment target object type is out of milestone scope.
 - Tool sequence: `get_attachment_metadata`, then `download_attachment`.
-- Expected output: filename, content type when known, size, SHA-256 hash, and base64 content for binary files or text for allowlisted textual content types.
+- Expected output: filename, content type when known, size, SHA-256 hash, selected download mode, and base64 content for binary files or text for allowlisted textual content types.
 
 ## Download Part Primary Image
 
 - Required inputs: stable part ID.
-- Preferred lookup order: `get_part`, then `download_part_image` when the part has a schema-exposed primary image.
-- Clarify when: the part has no primary image, content exceeds the configured download limit, or the operator meant a generic attachment rather than the current primary image.
+- Preferred lookup order: `get_part`, then `download_part_image` when the part has a readable schema-exposed primary image. Request explicit thumbnail mode when the operator wants the generated part thumbnail rather than the original primary image.
+- Clarify when: the operator might mean a generic attachment rather than the current primary image, or asks for a thumbnail but both original and thumbnail content are available.
+- Structured non-success when: the part has no primary image, content exceeds the configured download limit, or the image URL redirects or points outside the configured InvenTree instance.
 - Tool sequence: `get_part`, then `download_part_image`.
-- Expected output: part ID, filename when known, content type when known, size, SHA-256 hash, and base64 image content.
+- Expected output: part ID, filename when known, content type when known, size, SHA-256 hash, selected download mode, and base64 image content.
 
 ## Set Or Replace Primary Part Image
 

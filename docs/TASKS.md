@@ -177,6 +177,7 @@ Tasks:
   - Implemented client methods reference schema-known path/method/request/response data.
   - Schema drift checks require `docs/api-schema.md` provenance updates.
   - Attachment and parameter endpoint capability tables remain authoritative.
+  - Attachment/image manifest checks reject deferred app-specific file surfaces such as notes image upload, generated report attachments, and stock test-result attachments unless a later task explicitly brings them into scope.
 
 Tasks:
 
@@ -408,8 +409,10 @@ Tasks:
 - Scope: implement list/get/download/upload-url/link/update/delete attachment behavior for milestone object types.
 - Acceptance:
   - `download_attachment` is read-only, requires `inventree.read`, and only downloads schema-supported file or thumbnail URLs belonging to the configured InvenTree instance.
-  - `download_attachment` returns filename, content type when known, size, SHA-256 hash, and base64 content for binary files or text for allowlisted textual content types.
-  - Download limits enforce maximum size and bounded read time, and redaction tests prove downloaded bytes and sensitive URLs are not logged.
+  - `download_attachment` resolves attachment metadata first and rejects out-of-scope `model_type` values before fetching content.
+  - `download_attachment` defaults to the original file URL and uses thumbnail URLs only in explicit thumbnail mode.
+  - `download_attachment` returns filename, content type when known, size, SHA-256 hash, selected download mode, and base64 content for binary files or text for allowlisted textual content types.
+  - Download limits enforce maximum size and bounded read time, redirects are blocked or revalidated against the configured InvenTree instance, and redaction tests prove downloaded bytes and sensitive URLs are not logged.
   - `upload_attachment` accepts inline bytes and STDIO allowlisted paths only.
   - `upload_attachment_from_url` is the only URL-fetch upload tool and has `openWorldHint:true`.
   - `create_link_attachment` stores links without fetching.
@@ -435,8 +438,9 @@ Tasks:
 - Scope: implement part primary image download and assignment/replacement.
 - Acceptance:
   - Milestone primary image scope is part only.
-  - `download_part_image` is read-only, requires `inventree.read`, and downloads only the schema-exposed primary image URL for the requested part.
-  - `download_part_image` returns filename when known, content type when known, size, SHA-256 hash, and base64 content.
+  - `download_part_image` is read-only, requires `inventree.read`, and downloads only the schema-exposed readable primary image URL or explicit thumbnail endpoint for the requested part.
+  - `download_part_image` never treats write-only `existing_image` as a download source.
+  - `download_part_image` returns filename when known, content type when known, size, SHA-256 hash, selected download mode, and base64 content.
   - Primary image downloads enforce maximum size, bounded read time, configured InvenTree instance URL restrictions, and redaction.
   - Missing primary image returns a structured no-image result.
   - Replacement requires `confirm:true`.
@@ -552,23 +556,24 @@ Tasks:
 - Scope: prove catalog, stock, supplier/manufacturer, attachment, URL upload, link, image, and purchase preview flows.
 - Acceptance:
   - Byte uploads are read back and hash-validated.
-  - `download_attachment` returns the uploaded fixture bytes with matching size/hash and rejects content outside configured limits.
-  - `download_part_image` returns the assigned primary part image bytes with matching size/hash and rejects content outside configured limits.
+  - `download_attachment` original mode returns the uploaded fixture bytes with matching size/hash and rejects content outside configured limits.
+  - `download_attachment` coverage includes the in-scope target-object matrix: `part`, `stockitem`, `company`, `supplierpart`, `manufacturerpart`, and existing `purchaseorder`.
+  - `download_part_image` original mode returns the assigned primary part image bytes with matching size/hash, tests thumbnail mode separately, and rejects content outside configured limits.
   - URL upload uses local fixture server and does not forward auth headers.
   - Link attachments are stored without fetch.
-  - Sales/customer workflows remain absent.
+  - Sales/customer workflows, notes image upload, report attachments, stock test-result attachments, and other deferred app-specific file surfaces remain absent.
 
 Tasks:
 
 - [ ] Add catalog and initial stock happy path.
 - [ ] Add supplier/manufacturer purchase preview happy path.
 - [ ] Add inline/local-path attachment readback tests.
-- [ ] Add explicit `download_attachment` content, hash, size, and limit tests.
-- [ ] Add explicit `download_part_image` content, hash, size, no-image, and limit tests.
+- [ ] Add explicit `download_attachment` original-mode content, thumbnail-mode behavior, hash, size, out-of-scope model type, redirect, and limit tests.
+- [ ] Add explicit `download_part_image` original-mode content, thumbnail-mode behavior, hash, size, no-image, write-only `existing_image` exclusion, and limit tests.
 - [ ] Add URL upload readback tests.
 - [ ] Add link attachment tests.
 - [ ] Add primary image tests.
-- [ ] Add sales/customer boundary integration test.
+- [ ] Add sales/customer and deferred file-surface boundary integration test.
 
 ## Milestone 1I: Documentation And Release Readiness
 
