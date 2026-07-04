@@ -2,7 +2,7 @@
 
 Planning repository for a Go-based Model Context Protocol server for common InvenTree data-entry workflows.
 
-Current status: documentation and implementation plan only. No Go module or server code has been scaffolded yet.
+Current status: planning repository with a minimal Go module, CI, and pre-commit scaffolding. Server implementation has not started yet.
 
 Key documents:
 

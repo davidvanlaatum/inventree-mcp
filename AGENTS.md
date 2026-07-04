@@ -11,21 +11,27 @@
 - STDIO mode uses configured InvenTree credentials from environment or flags, including `Token` and `Bearer` upstream auth schemes.
 - HTTP mode must use MCP-owned OAuth bearer tokens for ChatGPT Developer Connector compatibility. Do not pass raw inbound InvenTree `Authorization: Token ...` or `Authorization: Bearer ...` headers through unchanged.
 - HTTP OAuth tokens must be encrypted, authenticated envelopes containing the upstream InvenTree credential. ChatGPT must only see opaque OAuth bearer tokens, never readable InvenTree credentials.
-- HTTP mode remains stateless: do not add a database-backed token mapping unless the plan is explicitly changed.
+- HTTP mode keeps access and refresh tokens as sealed envelopes where feasible. Do not add a database-backed access-token mapping unless the plan is explicitly changed. Authorization codes must still be one-time-use with bounded code ID storage before beta.
 - Do not use plaintext signed JWTs for HTTP OAuth access or refresh tokens. If a JWT-family token is required, use an encrypted JWE-style profile and document the decision.
 - Spike the official MCP Go SDK `auth` and `oauthex` packages before adding parallel OAuth plumbing. Prefer maintained libraries for OAuth authorization-server behavior and keep them behind `internal/oauth` interfaces. Do not hand-roll protocol details such as PKCE validation unless the SDK/library cannot cover them.
 - Resolve ChatGPT Developer Connector redirect URI, client registration, metadata, and local/dev callback behavior from current official OpenAI documentation before implementing HTTP OAuth.
 - Production HTTP mode is expected to sit behind a reverse proxy that terminates HTTPS. Use explicitly configured canonical public HTTPS issuer/resource URLs and trusted-proxy configuration; do not derive OAuth URLs from untrusted `Host` or forwarded headers.
 - Do not publish the internal Go HTTP listener directly in production; expose it only to the trusted reverse proxy or private service network.
 - Define and enforce OAuth scopes for tool classes before handlers run.
-- Treat OAuth scopes as additive and least-privilege; `inventree.write` does not imply upload or destructive access.
+- Treat OAuth scopes as additive and least-privilege; `inventree.write` does not imply upload, operational inventory access, or destructive access.
 - Envelope keys must have explicit key IDs, active/decrypt-only rotation states, startup validation, and documented compromise response.
 - Use Afero directly for local file access unless a concrete issue justifies a small helper. HTTP mode must not read arbitrary local paths.
 - STDIO local path reads must centralize direct-Afero logic in `internal/upload/local_file.go`, canonicalize allowlisted roots, reject symlinks where supported, reject non-regular files after open, and enforce that cleaned/resolved paths remain under the allowlist.
-- Inject clock, randomness/ID generation, HTTP transports, URL fetchers, and logging where needed so tests can be deterministic and can assert redaction and safety behavior.
+- Use `github.com/davidvanlaatum/dvgoutils` where appropriate. At minimum, use `github.com/davidvanlaatum/dvgoutils/logging` for context-carried `slog` loggers: seed contexts with `logging.WithLogger`, read loggers with `logging.FromContext`, derive child loggers with attributes using `logger.With(...)`, and attach errors with `logging.Err`.
+- Use `github.com/davidvanlaatum/dvgoutils/logging/testhandler.SetupTestHandler` for tests that need a logger in context; after deriving a child logger with `logging.WithLogger`, fetch it again with `logging.FromContext(ctx)` so scoped attributes are present.
+- Use `dvgoutils.Ptr` for pointer values such as explicit false MCP `destructiveHint` and `openWorldHint` annotation fields where it improves clarity. Do not require JSON emission of false `readOnlyHint` or `idempotentHint` values when the SDK models them as non-pointer `omitempty` booleans.
+- Inject clock, randomness/ID generation, HTTP transports, and URL fetchers where needed so tests can be deterministic and can assert redaction and safety behavior.
 - Do not log auth tokens, uploaded file contents, or sensitive operator data.
 - `upload_attachment` may accept inline byte blobs and STDIO-mode allowlisted local paths. Only the dedicated URL-upload tool may accept HTTP(S) URLs. HTTP mode must not read arbitrary local paths.
 - URL upload code must enforce SSRF controls and must not forward MCP or InvenTree auth headers to fetched URLs.
+- Link attachments must not fetch remote bytes and should default to HTTP(S) links without credentials/userinfo.
 - STDIO local file uploads must reject symlink escapes and non-regular files.
+- Blocking Testcontainers integration tests should use an explicit InvenTree version tag, not a digest or floating tag, so the pinned version is readable in config and logs. Latest `inventree/inventree:stable` belongs in a non-blocking canary until schema/provenance updates are applied.
 - Testcontainers integration tests should share a suite-owned container set, use immutable shared fixtures, and create prefixed records for every mutating subtest.
+- Keep GitHub Actions CI, Dependabot, `.pre-commit-config.yaml`, and `.golangci.yml` aligned with the Go module as implementation is added.
 - Keep sales/customer workflows out of the initial implementation unless the plan is explicitly changed.

@@ -28,9 +28,9 @@ coverage.html
 # Go workspace/cache files that should stay local
 go.work
 go.work.sum
+.gocache/
 
 # Testcontainers and local runtime artifacts
 .testcontainers/
 tmp/
 *.log
-

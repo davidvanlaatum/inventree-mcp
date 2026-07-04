@@ -1,0 +1,14 @@
+version: "2"
+linters:
+  exclusions:
+    rules:
+      - linters:
+          - ineffassign
+        text: "ineffectual assignment to ctx"
+      - linters:
+          - staticcheck
+        text: "SA4006: this value of ctx is never used"
+formatters:
+  enable:
+    - goimports
+    - gofmt

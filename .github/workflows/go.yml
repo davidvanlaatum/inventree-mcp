@@ -1,0 +1,46 @@
+name: Go
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+  schedule:
+    - cron: '0 0 * * 0'
+
+permissions:
+  contents: read
+
+env:
+  GOFLAGS: -trimpath
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        go-version: [ '1.25', 'stable' ]
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: ${{ matrix.go-version }}
+
+      - name: Test
+        run: go test -coverpkg=./... -coverprofile=coverage.out ./...
+
+      - uses: pre-commit-ci/lite-action@v1.1.0
+        if: always()
+
+  gremlins:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version: 'stable'
+      - uses: go-gremlins/gremlins-action@v1
+        with:
+          version: latest

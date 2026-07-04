@@ -14,7 +14,7 @@ Focus:
 - Official MCP Go SDK `auth` and `oauthex` API usage before introducing custom OAuth plumbing.
 - Stateless token and authorization-code feasibility, including any storage boundary required by the selected OAuth library.
 - Opaque token envelope feasibility and isolation behind `internal/oauth`.
-- Testability seams for filesystem, clock, randomness, HTTP transport, URL fetcher, and logging.
+- Testability seams for filesystem, clock, randomness, HTTP transport, URL fetcher, and context logging via `dvgoutils/logging`.
 - Go idioms, dependency injection seams, and concrete spike acceptance criteria.
 - Maintainability, dependency risk, and avoiding unnecessary framework spread.
 
@@ -33,7 +33,7 @@ Focus:
 - OAuth tests for metadata, protected-resource challenge, PKCE, token envelope validation, expiry, audience, scope, refresh, and redaction.
 - Upload tests for inline bytes, STDIO allowlisted paths, URL ingestion, link attachments, SSRF controls, and primary-image behavior.
 - Schema drift and generated endpoint-manifest checks.
-- Deterministic seams such as Afero, clock, randomness, HTTP transports, URL fetchers, and structured log capture.
+- Deterministic seams such as Afero, clock, randomness, HTTP transports, URL fetchers, and structured log capture via `dvgoutils/logging/testhandler`.
 - Whether acceptance criteria are executable and deterministic.
 - Whether milestone tests are classified as blocking, non-blocking, or future.
 

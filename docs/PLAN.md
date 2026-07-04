@@ -15,15 +15,18 @@ Build an InvenTree MCP server in Go using the official Model Context Protocol Go
 
 - Language: Go.
 - MCP SDK: `github.com/modelcontextprotocol/go-sdk/mcp`.
-- MCP SDK version: pin a current official SDK release that includes native `ToolAnnotations` support.
+- MCP SDK version: reviewed baseline is `github.com/modelcontextprotocol/go-sdk` `v1.6.1`. Pin this or a later current official SDK release only after re-running the MCP transport, auth, and annotation spike because auth middleware and annotation field shapes may change.
 - MCP STDIO transport: `mcp.StdioTransport`.
 - MCP HTTP transport: `mcp.NewStreamableHTTPHandler`.
 - HTTP auth support: implement a ChatGPT Developer Connector-compatible OAuth 2.1 layer owned by the MCP server. HTTP clients authenticate to `/mcp` with MCP-issued OAuth bearer tokens, not raw InvenTree tokens.
 - OAuth implementation: first spike the official MCP Go SDK `auth` and `oauthex` packages for protected-resource middleware, bearer-token verification hooks, and metadata handlers. Use a maintained OAuth2/OIDC authorization-server library such as `github.com/ory/fosite` only for authorization-server endpoints the SDK does not provide, after a spike confirms it fits stateless encrypted token envelopes. `golang.org/x/oauth2` is useful for OAuth clients, but should not be treated as sufficient for implementing the authorization server.
 - Upstream InvenTree auth header forms: `Authorization: Token <token>` and `Authorization: Bearer <token>`, recovered from encrypted MCP OAuth token envelopes.
 - InvenTree API access: small internal REST client using `net/http`, typed request/response structs, pagination helpers, and endpoint-specific methods.
+- Shared Go utilities: use `github.com/davidvanlaatum/dvgoutils` where it fits local code style, especially `github.com/davidvanlaatum/dvgoutils/logging` for context-carried `slog` loggers and `logging.Err`.
 - Filesystem abstraction: use an injectable filesystem such as `github.com/spf13/afero` for local file access, fixtures, and allowlist tests.
 - Integration test infrastructure: `testcontainers-go` module that starts an isolated InvenTree test environment.
+- Project automation: GitHub Actions for Go tests, lint, dependency submission, and pre-commit checks; Dependabot for Go modules and GitHub Actions.
+- Local quality gate: pre-commit using `pre-commit-hooks` and Go hooks for `go mod tidy`, imports, golangci-lint, tests, and build.
 - API schema source: keep a local copy of the OpenAPI schema at `docs/api-schema.yaml`, refreshed from `https://inventory.internal.vanlaatum.id.au/api/schema/` when endpoint behavior needs verification. The current fetched schema is OpenAPI 3.0.3 for InvenTree API version `511`.
 
 ## Implementation Libraries and Abstractions
@@ -40,7 +43,9 @@ Use established libraries for protocol-heavy or environment-heavy concerns, but 
 - HTTP transport: inject `*http.Client` or `http.RoundTripper` for the InvenTree client and URL fetcher so tests can use `httptest`, fake transports, and SSRF guard checks without real network access.
 - URL fetching: keep DNS resolution, dial policy, redirect policy, proxy behavior, content sniffing, and byte-limit enforcement behind a URL fetcher interface owned by `internal/upload`.
 - ID and token generation: inject randomness and ID generation for authorization codes, state, nonces, request IDs, and test determinism. Production must use cryptographically secure randomness for secrets and token material.
-- Logging: use structured logging, preferably `log/slog`, behind package-level dependencies or constructors so tests can assert redaction without scraping global output.
+- Logging: use `log/slog` with `github.com/davidvanlaatum/dvgoutils/logging` as the standard context logger mechanism. Request, transport, tool, workflow, and client code should get loggers from `logging.FromContext(ctx)`, attach request/tool/object attributes by deriving a child logger with `logger.With(...)`, and pass the child logger via `logging.WithLogger(ctx, logger.With(...))`. Code should fetch the logger from the updated context rather than reusing a logger captured before scoped attributes were attached. Use `logging.Err(err)` for error attributes. The process entrypoint and tests must seed contexts with a logger; missing loggers should fail visibly rather than silently discarding logs.
+- Logging tests: use `github.com/davidvanlaatum/dvgoutils/logging/testhandler.SetupTestHandler` for deterministic log capture and redaction assertions where code expects a logger in context.
+- Other `dvgoutils` helpers: use `dvgoutils.Ptr` for pointer values such as explicit false tool annotation fields, and use `MapSlice`, `FilterSlice`, or `Must` only where they improve clarity without hiding control flow or error handling.
 - Configuration and secrets: keep config parsing separate from runtime dependencies. Key material, InvenTree credentials, and token lifetimes should enter through a typed config object, not scattered environment lookups.
 - Schema access: parse `docs/api-schema.yaml` through a schema helper for endpoint-manifest checks instead of ad hoc string matching.
 
@@ -71,6 +76,8 @@ Authentication in STDIO mode should come from process configuration:
 - optional `INVENTREE_AUTH_SCHEME`, defaulting to `Token` for InvenTree API tokens and allowing `Bearer`
 - optional `INVENTREE_TIMEOUT`
 - optional `INVENTREE_TLS_SKIP_VERIFY`, only for local/test deployments
+
+Production HTTP mode must fail startup if `INVENTREE_TLS_SKIP_VERIFY` or equivalent upstream TLS verification bypass is enabled.
 
 ### HTTP Mode
 
@@ -111,7 +118,7 @@ OAuth setup flow:
 2. The MCP server presents an MCP-hosted setup/login page.
 3. The setup page offers explicit supported credential methods for the first release: paste an existing InvenTree API token, or authenticate to InvenTree only if a schema-verified/browser-verified flow is implemented. It must recommend a dedicated least-privilege InvenTree API token for this connector.
 4. The page explains that the MCP server will validate the credential and attempt to create a dedicated connector token where the InvenTree API allows it. MCP OAuth scopes restrict which MCP tools run, but they do not reduce the upstream permissions of the sealed InvenTree credential once a permitted tool calls InvenTree.
-5. The setup page binds form submissions to the OAuth authorization request using state/session data, requires CSRF protection, sets no-store cache headers, avoids persisting submitted credentials, and redacts request bodies from access logs, error logs, panic recovery, and audit events. It must set `Cache-Control: no-store`, `Referrer-Policy: no-referrer`, `X-Frame-Options: DENY` or equivalent CSP `frame-ancestors 'none'`, a restrictive `Content-Security-Policy`, and secure SameSite cookies for any setup session state. Production HSTS is enforced at the reverse proxy.
+5. The setup page binds form submissions to the OAuth authorization request using state/session data, requires CSRF protection, sets no-store cache headers, avoids persisting submitted credentials, and redacts request bodies from access logs, error logs, panic recovery, and audit events. It must set `Cache-Control: no-store`, `Referrer-Policy: no-referrer`, `X-Frame-Options: DENY` or equivalent CSP `frame-ancestors 'none'`, a restrictive `Content-Security-Policy`, and secure SameSite cookies for any setup session state. Production HSTS is enforced at the reverse proxy. Setup, authorization, and token endpoints must enforce per-IP and per-client rate limits, maximum request body sizes, context-aware timeouts, and generic error responses for credential validation failures.
 6. The MCP server validates the credential with a cheap authenticated endpoint such as `/api/user/me/` or `/api/user/me/roles/`.
 7. During setup, create a new dedicated InvenTree API token when the server does not already hold a sealed usable credential for this connector. Do not assume existing token values can be retrieved from InvenTree after creation. Token list/retrieve endpoints may be used for metadata, duplicate detection, or revocation, not for recovering a lost token secret.
 8. First beta setup should default to sealing a dedicated connector token. If token creation is unavailable or permission-denied after the operator pasted an existing API token, the setup page must explain the tradeoff and offer two explicit choices: `Use the supplied token for this connector` or `Cancel setup`. The default/recommended action is cancel unless the operator confirms. The resulting credential source must be recorded in non-sensitive setup metadata returned to the operator.
@@ -130,23 +137,24 @@ Token envelope requirements:
 - Envelope keys must be supplied through explicit secret configuration or a deployment secret manager. Fail startup if required keys are missing, weak, duplicated across incompatible purposes, or have unsupported algorithms.
 - Use key IDs, allow a bounded decrypt-only grace window for old keys, and issue new tokens only with the active key.
 - Document key compromise response: rotate keys, invalidate outstanding stateless envelopes encrypted with compromised keys by removing old decrypt keys, and require connector reauthorization if upstream credentials may have leaked.
-- Access tokens are short-lived.
-- Refresh tokens are longer-lived, distinct from access tokens, and must have `type=refresh`.
+- Access tokens are short-lived. Initial default: 15 minutes.
+- Refresh tokens are longer-lived, distinct from access tokens, and must have `type=refresh`. Initial default: 30 days.
+- Connector authorizations have an absolute session lifetime after which refresh stops and ChatGPT must restart setup. Initial default: 90 days.
 - Envelopes include token type, issuer, audience/resource, subject/user, `client_id`, scopes, issued-at, expiry, absolute authorization/session expiry where applicable, key ID/token version, and the encrypted upstream InvenTree credential envelope containing scheme and token.
 - Include the InvenTree base URL only if multi-instance operation is explicitly supported. Otherwise the base URL comes from server configuration and is not request-controlled.
 
 Authorization-code envelope requirements:
 
 - Authorization codes must be encrypted authenticated envelopes bound to `client_id`, exact `redirect_uri`, PKCE challenge, issuer, audience/resource, setup subject, expiry, and state/nonce where applicable.
-- If no server-side authorization-code store is used, codes cannot be strictly one-time-use; compensate with very short lifetimes, PKCE S256 only, redirect/client binding, and documented residual replay risk.
-- If one-time-use authorization codes are required by the chosen OAuth library or threat model, add bounded storage for authorization code IDs only. Do not add a database-backed access-token mapping unless the product plan changes.
+- Authorization codes must be one-time-use before beta. Use bounded process-local or optional external storage for authorization code IDs and expiry. Do not ship reusable stateless authorization codes in HTTP mode.
+- Do not add a database-backed access-token mapping unless the product plan changes; access and refresh tokens should remain sealed envelopes where feasible.
 
 OAuth scopes:
 
-- Define initial scopes before implementation: `inventree.read`, `inventree.write`, `inventree.upload`, and `inventree.destructive`.
-- Scopes are additive and least-privilege. `inventree.write` does not imply `inventree.upload` or `inventree.destructive`; destructive tools require `inventree.destructive` plus any relevant write/upload scope and normal `confirm:true` gates. Read-only tools require only `inventree.read`.
+- Define initial scopes before implementation: `inventree.read`, `inventree.write`, `inventree.upload`, `inventree.operational`, and `inventree.destructive`.
+- Scopes are additive and least-privilege. `inventree.write` does not imply `inventree.upload`, `inventree.operational`, or `inventree.destructive`; operationally sensitive stock/order/build tools require `inventree.operational` plus any relevant write/upload scope. Destructive tools require `inventree.destructive` plus any relevant write/upload/operational scope and normal `confirm:true` gates. Read-only tools require only `inventree.read`.
 - Tool registration must declare required OAuth scopes alongside MCP mutation annotations.
-- The OAuth guard must reject requests with insufficient scopes before invoking handlers.
+- The OAuth guard must reject requests with insufficient scopes before invoking handlers. Use global bearer validation only to authenticate and populate request context; enforce tool-specific scopes through a wrapper in `internal/tools` or `internal/server` that checks the tool authorization manifest before dispatch.
 
 Refresh flow:
 
@@ -172,14 +180,14 @@ handler := mcp.NewStreamableHTTPHandler(
 )
 
 verifier := oauth.NewTokenVerifier(envelopeCodec, credentialResolver)
-httpHandler := auth.RequireBearerToken(verifier, auth.Options{
-    Resource: configuredMCPResourceURL,
+httpHandler := auth.RequireBearerToken(verifier, &auth.RequireBearerTokenOptions{
+    ResourceMetadataURL: configuredProtectedResourceMetadataURL,
 })(handler)
 ```
 
 Prefer the official MCP Go SDK `auth.RequireBearerToken`, `auth.ProtectedResourceMetadataHandler`, `auth.TokenVerifier`, and `auth.TokenInfoFromContext` primitives for protected-resource behavior. `internal/oauth` should provide the SDK token verifier, envelope codec, metadata construction, setup page, and authorization-server endpoints. Only implement custom middleware where the SDK auth package cannot express the required behavior.
 
-The `TokenVerifier` should decrypt the envelope and return SDK `auth.TokenInfo` with scopes, expiry, subject, and a non-serializable internal credential reference in `Extra`, or a documented private context key if `Extra` is unsuitable. `ClientFromContext` must read exactly one selected carrier inside `CallTool` handlers; do not duplicate credentials into multiple context locations. Tool handlers and resource handlers must resolve credentials from `context.Context`; do not store credentials in server-global state.
+For SDK `v1.6.1`, `TokenVerifier` has the shape `func(context.Context, string, *http.Request) (*auth.TokenInfo, error)`. The verifier should decrypt the envelope and return SDK `auth.TokenInfo` with scopes, expiry, subject, and a non-serializable internal credential reference in `Extra`, or a documented private context key if `Extra` is unsuitable. If `Extra` is used, expose it only through a typed `internal/oauth.CredentialFromTokenInfo(*auth.TokenInfo)` accessor with an unexported key/type, and add tests proving the credential object is never serialized or logged. `ClientFromContext` must read exactly one selected carrier inside `CallTool` handlers; do not duplicate credentials into multiple context locations. Tool handlers and resource handlers must resolve credentials from `context.Context`; do not store credentials in server-global state.
 
 ## Project Structure
 
@@ -229,7 +237,6 @@ internal/upload/
 internal/platform/
   clock.go
   ids.go
-  logging.go
 internal/tools/
   common.go
   annotations.go
@@ -278,9 +285,10 @@ tests/
 - `internal/tools` owns MCP tool registration, input/output schemas, annotations, and thin handler glue.
 - `internal/workflows` owns multi-step planning, dry-run behavior, confirmation gates, ambiguity handling, and business workflow orchestration.
 - `internal/upload` owns upload source resolution for base64 byte blobs, STDIO allowlisted local files, and URL fetches. It must enforce source-mode policy and SSRF controls before content reaches InvenTree.
-- `internal/platform` owns small interfaces and adapters for clock, ID generation, randomness, and logging where a package needs test seams. It may provide constructors or config wiring for `afero.Fs`, but packages should accept `afero.Fs` directly instead of a second filesystem abstraction unless a concrete need appears.
+- `internal/platform` owns small interfaces and adapters for clock, ID generation, and randomness where a package needs test seams. It may provide constructors or config wiring for `afero.Fs`, but packages should accept `afero.Fs` directly instead of a second filesystem abstraction unless a concrete need appears. Logging should use `dvgoutils/logging` directly rather than a second internal logging abstraction.
 - Tool handlers should depend on a narrow `inventree.Client` interface or domain-specific interfaces, not concrete HTTP client construction. This keeps STDIO and HTTP OAuth credential resolution in the server layer and makes tool tests cheap.
 - `internal/server` should construct dependencies such as `tools.Dependencies{ClientFromContext func(context.Context) (inventree.Client, error)}` and call `tools.Register(mcpServer, deps)`.
+- Tool-specific OAuth scope enforcement belongs in `internal/tools` or `internal/server` as a handler wrapper generated from the tool authorization manifest. `auth.RequireBearerToken` should not be treated as sufficient for per-tool authorization because it only validates the bearer token and populates context.
 - `internal/tools` and `internal/workflows` must not import `internal/server`; dependencies should flow inward through interfaces.
 - `internal/tools` may call `internal/workflows` through constructors or interfaces. `internal/workflows` should depend only on domain client interfaces and upload source interfaces, not HTTP clients or transport state.
 
@@ -288,7 +296,7 @@ tests/
 
 Every tool registration must include explicit behavior metadata using SDK-native MCP tool annotations, including `ReadOnlyHint`, `DestructiveHint`, `IdempotentHint`, and `OpenWorldHint` where applicable. Keep a local classification table only as the source for registering and testing annotations, not as a replacement for SDK metadata.
 
-The official Go SDK models some annotation fields as pointer booleans. Annotation helpers must set explicit false values as pointers, not by omission. In particular, non-destructive tools should emit `destructiveHint:false`, and tools that do not interact with an open external world beyond the configured InvenTree instance should emit `openWorldHint:false` when appropriate. Add JSON-level tests proving explicit false values are serialized.
+For the reviewed SDK baseline `v1.6.1`, `DestructiveHint` and `OpenWorldHint` are pointer booleans, while `ReadOnlyHint` and `IdempotentHint` are plain booleans with `omitempty`. Annotation helpers must set explicit false pointer values for `destructiveHint:false` and `openWorldHint:false` where appropriate. Tests for `readOnlyHint:false` and `idempotentHint:false` should assert local classification and registration behavior, not require JSON emission the SDK cannot produce.
 
 `openWorldHint` must be decided per tool. In particular, `upload_attachment_from_url` is open-world because it fetches caller-provided URLs, while `upload_attachment` is not open-world when it only accepts inline bytes or STDIO allowlisted local files.
 
@@ -483,6 +491,7 @@ Important behaviors:
 - Enforce configured maximum attachment size before buffering the entire file in memory.
 - Return attachment ID, object type, object ID, filename, content type, size, URL, and whether the uploaded image became primary.
 - Attachment list and metadata responses should include stable attachment ID, filename, comment, tags, file size, target object, image/file/link classification, thumbnail URL when present, and primary-image state when applicable.
+- Duplicate filename/content handling must be explicit: if the target object already has a matching attachment and the caller did not provide `attachment_id`, replacement intent, or metadata-only intent, return a structured clarification. Metadata updates require a stable attachment ID. Replacing an existing primary image requires `confirm:true`.
 - Do not infer image meaning or choose a primary image when multiple plausible images are supplied; return a structured clarification question.
 - Do not infer part identity, revision, compliance status, manufacturer part number, or supplier SKU from uploaded images or datasheets unless the operator confirms the extracted value.
 - Tests should avoid committing large binary fixtures. Use tiny generated PNG/text/PDF fixtures in test code or small files under `tests/fixtures`.
@@ -496,6 +505,8 @@ URL upload safety:
 - Do not forward inbound MCP or InvenTree auth headers to fetched URLs.
 - Cap redirects and re-apply DNS/IP checks after every redirect.
 - Allow private or internal URL targets only through an explicit upload URL allowlist.
+- Upload URL allowlist entries must match normalized scheme, IDNA/punycode-normalized host, and explicit port policy. Reject userinfo URLs, wildcard suffix rules that can match attacker-controlled parent domains, and ambiguous default-port behavior. Re-resolve DNS before each request and redirect.
+- Block unspecified, loopback, private, link-local, multicast, reserved, documentation/test ranges, CGNAT, IPv4-mapped IPv6 private forms, and known cloud metadata aliases by default.
 - Apply timeout, maximum byte, content-type, filename, and extension checks before forwarding content to InvenTree.
 - Use a dedicated URL-fetch `http.Client` and `Transport`.
 - Do not use ambient proxy settings unless explicitly configured.
@@ -506,7 +517,7 @@ URL upload and link attachments are distinct workflows:
 
 - `upload_attachment_from_url` fetches remote bytes and uploads a file attachment to InvenTree.
 - `create_link_attachment` stores a URL in the InvenTree attachment `link` field without fetching the URL.
-- Link attachment URL policy is separate from URL-fetch SSRF policy because the server does not fetch the link target. At minimum, reject unsupported URL schemes and path-like local file references; allowlist stricter link destinations when deployment policy requires it.
+- Link attachment URL policy is separate from URL-fetch SSRF policy because the server does not fetch the link target. By default, allow only `http` and `https`, reject credentials/userinfo, fragments where they are not useful, unsupported schemes, and path-like local file references. Make optional link allowlists visible in operator docs.
 - `upload_attachment` must reject HTTP(S) URLs with a clear error directing callers to `upload_attachment_from_url` or `create_link_attachment`, depending on intent.
 - When an operator provides a URL with ambiguous intent such as "attach this", return a structured clarification asking whether to upload a copy of the remote file or store a link reference. Do not choose between `upload_attachment_from_url` and `create_link_attachment` automatically unless the caller's intent is explicit.
 - Dry-run URL uploads must not fetch remote content. They may validate URL syntax and policy configuration only. Actual URL fetches happen only during confirmed execution of `upload_attachment_from_url`.
@@ -591,12 +602,16 @@ Resources can expose read-only, low-risk snapshots:
 - `inventree://build-order/{id}`
 - `inventree://bom/{part_id}`
 
-Prompts can encode common operator workflows:
+Prompts can encode common operator workflows. Mark each prompt as `milestone_1`, `future`, or `deferred` in the tool reference and generated prompt manifest:
 
-- `new_part_entry_checklist`
-- `receive_purchase_order_checklist`
-- `bom_import_review`
-- `stocktake_review`
+- `new_part_entry_checklist` (`milestone_1`)
+- `parameter_reuse_checklist` (`milestone_1`)
+- `attachment_image_checklist` (`milestone_1`)
+- `initial_stock_entry_checklist` (`milestone_1`)
+- `purchase_preview_checklist` (`milestone_1`)
+- `receive_purchase_order_checklist` (`future`)
+- `bom_import_review` (`future`)
+- `stocktake_review` (`future`)
 
 Prompt guardrails:
 
@@ -690,14 +705,15 @@ Stock movement, purchase receiving, build allocation, and build completion shoul
 ## Compatibility Decisions
 
 - InvenTree compatibility baseline: latest stable InvenTree release.
-- Docker image for Testcontainers: `inventree/inventree:stable`.
-- Testcontainers should record the resolved InvenTree version and image digest/tag in test output so `stable` failures are diagnosable.
-- Integration startup should fetch `/api/schema/` and record the API version. Blocking schema-sensitive tests must fail when the runtime schema version differs from checked-in `docs/api-schema.yaml`, unless they run against a recorded image digest/schema version known to match the checked-in schema. Only explicitly marked stable-canary compatibility checks may skip or report non-blocking schema drift.
+- Docker image for blocking Testcontainers tests: use an explicit InvenTree version tag known to match checked-in `docs/api-schema.yaml`. Do not use a digest as the primary pin because the version should be clear in config, logs, and failure output. Do not use floating tags such as `stable` for blocking tests.
+- Separate stable-canary compatibility job: use `inventree/inventree:stable`, record the resolved InvenTree version and image digest/tag, and report schema drift as non-blocking until the schema/provenance update workflow is run.
+- Integration startup should fetch `/api/schema/` and record the API version. Blocking schema-sensitive tests must fail when the runtime schema version differs from checked-in `docs/api-schema.yaml`, unless they run against the recorded image version/schema pair known to match the checked-in schema.
+- Schema update workflow: refresh `docs/api-schema.yaml`, update `docs/api-schema.md` provenance and capability tables, update the pinned InvenTree version tag or recorded tag/schema pair, then run the blocking integration suite.
 - API schema compatibility baseline: current local `docs/api-schema.yaml` fetched from the internal InvenTree instance, OpenAPI 3.0.3 / API version `511`.
 - Upstream InvenTree auth schemes: `Token` and `Bearer` only.
 - STDIO auth behavior: use configured InvenTree credentials from environment or flags.
 - HTTP auth behavior: use MCP-owned OAuth bearer tokens with encrypted upstream InvenTree credential envelopes.
-- HTTP statelessness: no database-backed token mapping is required for the initial implementation.
+- HTTP statelessness: no database-backed access-token mapping is required for the initial implementation. Authorization codes still require bounded one-time-use code ID storage before beta.
 - Open product decision: exact ChatGPT Developer Connector client registration and redirect URI shape must be verified from current official OpenAI documentation before implementation.
 - Blocking compatibility decision: resolve ChatGPT Developer Connector registration, redirect, metadata, and local/dev callback behavior before starting HTTP OAuth implementation.
 - Production deployment assumes HTTPS is terminated by a reverse proxy. The server must be configured with canonical public HTTPS issuer/resource URLs and trusted-proxy configuration for any forwarded headers.
@@ -712,7 +728,8 @@ Stock movement, purchase receiving, build allocation, and build completion shoul
 - Add command entry point.
 - Add config package.
 - Add server construction package.
-- Add platform adapters for filesystem, clock, ID generation, randomness, and structured logging.
+- Add platform adapters for clock, ID generation, and randomness.
+- Add logging setup that seeds root contexts with `dvgoutils/logging.WithLogger` and derives request/tool scoped loggers via context.
 - Register a health/version tool.
 - Wire STDIO transport.
 - Wire HTTP streamable transport.
@@ -775,18 +792,29 @@ Validation:
 - InvenTree validation error tests.
 - HTTP OAuth challenge, metadata, token-envelope, and protected-resource tests.
 
-### Phase 5: Workflow Tools
+### Phase 5: Milestone 1 Workflow Tools
 
 - Implement part upsert workflow.
-- Implement BOM import workflow.
-- Implement purchase order create/receive workflow.
-- Implement build order create/allocate/complete workflow.
+- Implement parameter reuse workflow using existing templates only unless creation is explicitly confirmed in a separate workflow.
+- Implement attachment/image workflows for byte/path upload, URL upload, link attachment, metadata update, and primary part image replacement.
+- Implement initial stock creation workflow with duplicate detection.
+- Implement purchase-order preview workflow with no writes.
 
 Validation:
 
 - Dry-run tests.
 - Partial failure tests.
-- Row-level bulk import tests.
+- Structured clarification tests for duplicate stock, duplicate attachments, ambiguous parameters, and ambiguous supplier/manufacturer links.
+- Purchase preview no-write tests.
+
+### Future Workflow Tools
+
+- BOM import workflow.
+- Purchase order create/receive workflow.
+- Build order create/allocate/complete workflow.
+- Stocktake adjustment workflow.
+
+Future workflows require a new product review pass before implementation.
 
 ### Phase 6: Integration Testing
 
@@ -811,7 +839,7 @@ Target API:
 ```go
 func TestIntegration(t *testing.T) {
     env := testenv.SharedInvenTree(t, testenv.Options{
-        Image: "inventree/inventree:stable",
+        Image: "inventree/inventree:<recorded-version-tag>",
     })
 
     client := inventree.NewClient(inventree.Config{
@@ -843,7 +871,8 @@ Responsibilities:
 - Share the container set across subtests while ensuring each subtest uses a unique run prefix.
 - `SharedInvenTree` must be concurrency-safe, usually via `sync.Once` per package or suite. Parent tests must acquire the environment before parallel subtests start.
 - Ensure fixture seeding is idempotent and prefix-isolated for parallel runs.
-- Provide helpers for unique names, fixture lookup, and cleanup where cleanup is safe and useful.
+- Provide helpers for unique names, fixture lookup, and cleanup where cleanup is safe and useful. Prefix format should be deterministic and collision-resistant, for example `IT_<runid>_<pkg>_<test>_`.
+- Every mutating helper must take a per-test `Run` object and refuse to create or clean up mutable records without the current run prefix. Suite-level cleanup assertions must fail if destructive cleanup would touch unprefixed or foreign-prefixed records.
 - Redact admin password and API token from logs and failure output.
 
 Implementation notes:
@@ -862,7 +891,8 @@ Implementation notes:
 - Keep destructive tests scoped to records created by that subtest's unique prefix.
 - Keep production credentials and user-provided `INVENTREE_TEST_URL` out of Testcontainers logs.
 - If InvenTree requires multiple services for a realistic setup, wrap them behind one `StartInvenTree` helper rather than leaking container wiring into tests.
-- Integration tests that require the shared InvenTree stack should live in one package or suite for milestone 1. CI should invoke that package explicitly or with tags so `go test ./...` does not accidentally start multiple stacks. If additional packages need integration coverage, they should call into the same suite entrypoint or remain unit/fake-client tests until cross-package sharing is deliberately designed.
+- Integration tests that require the shared InvenTree stack should live in one package or suite for milestone 1. CI should invoke that package explicitly with integration tags so `go test ./...` does not accidentally start multiple stacks. If additional packages need integration coverage, they should call into the same suite entrypoint or remain unit/fake-client tests until cross-package sharing is deliberately designed.
+- Invocation contract: `go test ./...` must never start Testcontainers. `go test -tags=integration ./internal/testenv ./internal/integration/...` starts the shared suite. Local runs may skip when Docker is unavailable and `INVENTREE_TEST_REQUIRE_DOCKER` is false. Blocking CI sets `INVENTREE_TEST_REQUIRE_DOCKER=1`, so missing Docker or failed container startup fails the job.
 
 ### Phase 7: Documentation
 
@@ -888,13 +918,15 @@ Implementation notes:
 - Fake randomness/ID tests proving deterministic unit tests do not require weakening production entropy.
 - Fake `http.RoundTripper` tests for InvenTree client request construction, upstream auth headers, retry policy, and error mapping.
 - URL fetcher interface tests proving SSRF policy can be tested without real external network access.
-- Structured logger tests proving auth tokens, OAuth envelopes, uploaded file contents, and sensitive operator data are redacted.
+- Structured logger tests using `dvgoutils/logging/testhandler` proving auth tokens, OAuth envelopes, uploaded file contents, and sensitive operator data are redacted, and that request/tool attributes attached with `logging.WithLogger` are present on downstream logs.
 - HTTP OAuth metadata endpoint tests for `/.well-known/oauth-protected-resource` and `/.well-known/oauth-authorization-server`.
 - Metadata tests must assert issuer, authorization endpoint, token endpoint, supported grants, supported PKCE methods, resource identifier, scopes, and no internal host leakage.
 - HTTP protected-resource tests proving unauthenticated `/mcp` requests return `401` with the required `WWW-Authenticate` bearer challenge and `resource_metadata` reference.
-- Authorization-code and PKCE tests covering code challenge verification, redirect URI validation, state preservation, invalid verifier rejection, expired code rejection, wrong redirect URI rejection, cross-client code rejection, and reused-code behavior matching the selected storage strategy or documented stateless replay limitation.
+- Authorization-code and PKCE tests covering code challenge verification, redirect URI validation, state preservation, invalid verifier rejection, expired code rejection, wrong redirect URI rejection, cross-client code rejection, and reused-code rejection.
+- Authorization-code tests must prove codes are one-time-use before beta and that bounded code ID storage expires entries.
 - Authorization endpoint tests must reject unregistered redirect URIs, scheme/host/path variants, wildcard-like matches, CRLF, userinfo, fragment abuse, and open redirect parameters.
 - Token endpoint tests for `authorization_code` and `refresh_token` grants.
+- Setup, authorization, and token endpoint tests for rate limiting, maximum body size, timeout behavior, and generic credential-validation failures.
 - Token envelope tests proving encryption/decryption, authentication failure on tamper, key ID/version handling, and redaction in errors/logs.
 - Token format tests proving access and refresh tokens are opaque to clients, are not plaintext signed JWTs, and do not expose InvenTree credentials or sensitive metadata in decodable claims.
 - Key-management tests proving startup fails for missing, weak, duplicated, or unsupported keys; old keys are decrypt-only during a bounded grace window; and new tokens use only the active key.
@@ -931,14 +963,14 @@ Implementation notes:
 - Log/audit redaction tests proving auth tokens do not appear in logs, audit entries, tool errors, or panic recovery output.
 - Attachment negative tests for unsupported object type, nonexistent target object, invalid filename or path-like filename, content-type mismatch, zero-byte file, oversize file, unsupported image type, and delete scoped to a prefixed record only.
 - Upload source tests for inline byte blobs, STDIO allowlisted local paths, rejected HTTP local paths, rejected non-HTTP URL schemes, timeout, redirect limit, DNS/IP SSRF rejection, URL allowlist behavior, and maximum-size enforcement.
-- SSRF bypass table tests for IPv6 loopback/link-local/ULA, IPv4-mapped IPv6, encoded IP forms supported by Go parsing, DNS rebinding, public-to-private redirects, allowlist edge cases, userinfo URLs, timeout, and streaming size cutoff before full buffering.
+- SSRF bypass table tests for IPv6 loopback/link-local/ULA, unspecified/reserved/documentation ranges, CGNAT, IPv4-mapped IPv6, encoded IP forms supported by Go parsing, DNS rebinding, public-to-private redirects, allowlist edge cases, IDNA/punycode host normalization, wildcard suffix pitfalls, userinfo URLs, cloud metadata aliases, timeout, and streaming size cutoff before full buffering.
 - URL fetch implementation tests proving no ambient proxy use unless explicitly configured, vetted-IP dialing, remote-address verification, redirect revalidation, and no cookies/auth headers forwarded.
 - STDIO local file tests proving canonical path validation, symlink rejection where supported by the filesystem, non-regular file rejection after open via `File.Stat()`, directory/device/FIFO/socket rejection, and cleaned/resolved path containment under the allowlist.
 - Local file tests must distinguish Afero-memory behavior from production `OsFs` behavior and state which checks each filesystem can prove.
 - Tests proving `upload_attachment` rejects HTTP(S) URLs and points callers to `upload_attachment_from_url` or `create_link_attachment`.
 - Tests proving URL uploads do not forward MCP or InvenTree auth headers.
 - Tests proving link attachments do not fetch remote URLs.
-- Link attachment URL-policy tests proving unsupported schemes and local file references are rejected, and optional link allowlist policy is enforced when configured.
+- Link attachment URL-policy tests proving unsupported schemes, credentials/userinfo, unwanted fragments, and local file references are rejected, and optional link allowlist policy is enforced when configured.
 - Link attachment tests must assert returned metadata clearly classifies the record as a stored link, not an uploaded file, including `is_link`/`is_file` behavior where available, absence of fetched byte metadata, and operator-facing text that no remote content was downloaded.
 - Primary image tests for first assignment, replacement blocked without `confirm`, replacement allowed with `confirm:true`, ambiguous image selection, and returned URL/thumbnail/image-state.
 - PATCH tests for attachment metadata and primary-image update behavior where the API supports PATCH, with documented exceptions where it does not.
@@ -950,22 +982,33 @@ Implementation notes:
 - Generated endpoint manifest test proving implemented tools and client methods map to schema-known paths, HTTP methods, request schemas, response schemas, PATCH support, multipart fields, and object scopes.
 - Schema drift tests must fail if an implemented endpoint is absent from `docs/api-schema.yaml`, if any capability table entry no longer matches the schema, or if `docs/api-schema.yaml` hash/version changes without `docs/api-schema.md` provenance updates.
 - Documentation/generated-manifest checks comparing registered tools, auth modes, mutation gates, upload sources, and schema endpoint references against docs.
+- Attachment readback/hash integration tests proving inline bytes, STDIO local-path uploads, and URL uploads are retrievable through the schema-supported download path and match expected size, hash, and content type.
 - STDIO smoke test at command level where practical.
 - Optional live integration tests against a test InvenTree instance.
 - Testcontainers integration tests for write workflows.
+
+Test suite classes:
+
+| Suite | Command | Purpose |
+| --- | --- | --- |
+| Unit | `go test ./...` | Fast tests, no Docker, no external InvenTree. |
+| Contract/docs | `go test ./...` plus generated manifest checks | Tool annotations, scopes, schema references, and documentation drift. |
+| HTTP auth | `go test ./internal/server/... ./internal/oauth/...` | OAuth metadata, bearer challenge, token envelopes, and scope guards using fakes. |
+| Integration | `go test -tags=integration ./internal/testenv ./internal/integration/...` | Shared Testcontainers suite with pinned version-tag/schema pair. |
+| Stable canary | CI-specific `inventree/inventree:stable` integration run | Non-blocking latest-stable compatibility and schema drift signal. |
 
 ## Required Test Matrix
 
 - Config parsing.
 - STDIO auth configuration.
 - Filesystem abstraction and local upload policy.
-- Clock, randomness, ID generation, logging, and HTTP transport injection.
+- Clock, randomness, ID generation, context logging, and HTTP transport injection.
 - HTTP OAuth metadata and protected-resource challenges.
 - Authorization-code and PKCE handling.
-- Authorization-code state and replay strategy.
+- Authorization-code one-time-use state and replay rejection.
 - OAuth token envelope validation and upstream credential recovery.
 - OAuth key management and canonical issuer/resource URL validation.
-- OAuth scope-to-tool authorization.
+- OAuth scope-to-tool authorization, including operational scopes for inventory-affecting writes.
 - Setup-page CSRF, no-store, redaction, and token-creation fallback behavior.
 - Request-scoped OAuth credential propagation.
 - Client request construction.
@@ -1030,6 +1073,7 @@ The full first beta milestone should include:
 - Purchasing preview: `preview_purchase_order_with_lines`, with supplier-part validation and no writes.
 - Structured clarification responses for ambiguous part/category/company/location lookups.
 - Initial Testcontainers InvenTree test environment.
+- GitHub Actions CI, Dependabot, golangci-lint config, and pre-commit config.
 - README with quick-start links and minimal setup examples.
 
 This milestone proves the transport, auth, client, schema, and data-entry patterns while completing a useful operator loop: add or update a purchasable part, associate supplier/manufacturer data, create initial stock, and preview a purchase order.
@@ -1056,8 +1100,8 @@ Blocking milestone tests:
 - Testcontainers shared-suite happy path for catalog and initial stock entry.
 - Testcontainers parallel subtests proving prefix isolation.
 - Testcontainers happy path proving supplier/manufacturer part links are usable by `preview_purchase_order_with_lines`.
-- Attachment upload and metadata update test using a tiny generated fixture.
-- `upload_attachment_from_url` test using a local HTTP fixture server and STDIO local-path test with an allowlisted temp fixture.
+- Attachment upload, metadata update, and byte readback/hash test using a tiny generated fixture.
+- `upload_attachment_from_url` test using a local HTTP fixture server and STDIO local-path test with an allowlisted temp fixture, including readback/hash validation.
 - `create_link_attachment` test proving the URL is stored without fetching remote bytes.
 - Test proving ordinary `upload_attachment` is `openWorldHint:false`, `upload_attachment_from_url` is `openWorldHint:true`, and URL input to ordinary upload is rejected.
 - Primary image assignment and replacement-confirmation tests.
@@ -1070,7 +1114,7 @@ Blocking milestone tests:
 - Test proving `create_company` does not default companies to customer role and supplier/manufacturer prompts do not mention customer workflows.
 - Prompt output contract tests proving prompts return a stable-ID retry request, dry-run plan, or structured clarification object.
 - Sales/customer boundary tests proving `salesorder`, `salesordershipment`, `returnorder`, and customer-role defaults are rejected or hidden even though generic attachment schema exposes those model types.
-- Duplicate attachment handling test defining and verifying whether the tool creates a new attachment, rejects, clarifies, or updates metadata.
+- Duplicate attachment handling test proving duplicate filename/content without `attachment_id` or explicit replacement intent returns structured clarification; metadata updates require stable attachment ID.
 
 Milestone test classification:
 
@@ -1089,6 +1133,6 @@ Milestone README recipes:
 - HTTP OAuth tokens are encrypted, authenticated, stateless envelopes that seal the upstream InvenTree credential.
 - STDIO mode supports configured `Token` or `Bearer` upstream InvenTree auth only.
 - Compatibility targets latest stable InvenTree.
+- Blocking integration tests use an explicit InvenTree version tag or recorded tag/schema pair; latest `inventree/inventree:stable` runs only as a non-blocking canary until schema/provenance updates are applied.
 - Destructive operations are allowed behind confirmation and accurate MCP annotations.
 - Tool inputs require API-required fields only, unless additional fields are needed to avoid ambiguous writes.
-- Testcontainers uses the stable InvenTree image tag.
