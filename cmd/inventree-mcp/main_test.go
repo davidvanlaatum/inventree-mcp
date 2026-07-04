@@ -5,64 +5,55 @@ import (
 	"testing"
 
 	"github.com/davidvanlaatum/inventree-mcp/internal/config"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestRunRequiresServeCommand(t *testing.T) {
 	t.Parallel()
+	r := require.New(t)
 
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
 	code := run(nil, &stdout, &stderr, mapEnv(nil))
 
-	if code != 2 {
-		t.Fatalf("run exit code = %d, want 2", code)
-	}
-	if stdout.Len() != 0 {
-		t.Fatalf("stdout = %q, want empty", stdout.String())
-	}
-	if stderr.String() != "usage: inventree-mcp serve [flags]\n" {
-		t.Fatalf("stderr = %q, want usage", stderr.String())
-	}
+	r.Equal(2, code)
+	r.Empty(stdout.String())
+	r.Equal("usage: inventree-mcp serve [flags]\n", stderr.String())
 }
 
 func TestRunServeReportsConfigErrors(t *testing.T) {
 	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
 
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
 	code := run([]string{"serve", "--transport", "stdio", "--inventree-url", ""}, &stdout, &stderr, mapEnv(nil))
 
-	if code != 2 {
-		t.Fatalf("run exit code = %d, want 2", code)
-	}
-	if stdout.Len() != 0 {
-		t.Fatalf("stdout = %q, want empty", stdout.String())
-	}
-	if !bytes.Contains(stderr.Bytes(), []byte("InvenTree URL is required")) {
-		t.Fatalf("stderr = %q, want missing URL error", stderr.String())
-	}
+	r.Equal(2, code)
+	a.Empty(stdout.String())
+	a.Contains(stderr.String(), "InvenTree URL is required")
 }
 
 func TestRunServeHelpExitsSuccessfully(t *testing.T) {
 	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
 
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
 	code := run([]string{"serve", "--help"}, &stdout, &stderr, mapEnv(nil))
 
-	if code != 0 {
-		t.Fatalf("run exit code = %d, want 0; stderr = %q", code, stderr.String())
-	}
-	if !bytes.Contains(stdout.Bytes(), []byte("Usage of serve:")) {
-		t.Fatalf("stdout = %q, want serve help", stdout.String())
-	}
-	if stderr.Len() != 0 {
-		t.Fatalf("stderr = %q, want empty", stderr.String())
-	}
+	r.Equal(0, code)
+	a.Contains(stdout.String(), "Usage of serve:")
+	a.Empty(stderr.String())
 }
 
 func TestRunServeStdioDoesNotWriteStdout(t *testing.T) {
 	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
 
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
@@ -74,15 +65,9 @@ func TestRunServeStdioDoesNotWriteStdout(t *testing.T) {
 		config.EnvInvenTreeToken: "redacted",
 	}))
 
-	if code != 0 {
-		t.Fatalf("run exit code = %d, want 0; stderr = %q", code, stderr.String())
-	}
-	if stdout.Len() != 0 {
-		t.Fatalf("stdout = %q, want empty for STDIO transport", stdout.String())
-	}
-	if stderr.Len() != 0 {
-		t.Fatalf("stderr = %q, want empty", stderr.String())
-	}
+	r.Equal(0, code)
+	a.Empty(stdout.String())
+	a.Empty(stderr.String())
 }
 
 func mapEnv(values map[string]string) config.Env {

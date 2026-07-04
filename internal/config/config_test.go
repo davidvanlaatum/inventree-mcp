@@ -4,10 +4,14 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestParseServeUsesEnvAndFlagPrecedence(t *testing.T) {
 	t.Parallel()
+	r := require.New(t)
 
 	cfg, err := ParseServeWithEnv([]string{
 		"--transport", "stdio",
@@ -20,38 +24,29 @@ func TestParseServeUsesEnvAndFlagPrecedence(t *testing.T) {
 		EnvInvenTreeAuthScheme: "Token",
 		EnvInvenTreeTimeout:    "10s",
 	}), nil)
-	if err != nil {
-		t.Fatalf("ParseServeWithEnv returned error: %v", err)
-	}
-
-	if cfg.InvenTreeURL != "https://flag.example.test" {
-		t.Fatalf("InvenTreeURL = %q, want flag value", cfg.InvenTreeURL)
-	}
-	if cfg.InvenTreeToken != "env-token" {
-		t.Fatalf("InvenTreeToken = %q, want env value", cfg.InvenTreeToken)
-	}
-	if cfg.InvenTreeAuthScheme != AuthSchemeBearer {
-		t.Fatalf("InvenTreeAuthScheme = %q, want %q", cfg.InvenTreeAuthScheme, AuthSchemeBearer)
-	}
-	if cfg.InvenTreeTimeout != 5*time.Second {
-		t.Fatalf("InvenTreeTimeout = %s, want 5s", cfg.InvenTreeTimeout)
-	}
+	r.NoError(err)
+	r.Equal("https://flag.example.test", cfg.InvenTreeURL)
+	r.Equal("env-token", cfg.InvenTreeToken)
+	r.Equal(AuthSchemeBearer, cfg.InvenTreeAuthScheme)
+	r.Equal(5*time.Second, cfg.InvenTreeTimeout)
 }
 
 func TestParseServeRejectsMissingStdioRequiredValues(t *testing.T) {
 	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
 
 	_, err := ParseServeWithEnv([]string{"--transport", "stdio"}, mapEnv(nil), nil)
-	if err == nil {
-		t.Fatal("ParseServeWithEnv returned nil error")
-	}
+	r.Error(err)
 
-	assertErrorContains(t, err, "InvenTree URL is required")
-	assertErrorContains(t, err, "InvenTree token is required for STDIO transport")
+	a.Contains(err.Error(), "InvenTree URL is required")
+	a.Contains(err.Error(), "InvenTree token is required for STDIO transport")
 }
 
 func TestParseServeRejectsInvalidConfig(t *testing.T) {
 	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
 
 	_, err := ParseServeWithEnv([]string{
 		"--transport", "websocket",
@@ -62,19 +57,18 @@ func TestParseServeRejectsInvalidConfig(t *testing.T) {
 	}, mapEnv(map[string]string{
 		EnvInvenTreeToken: "token",
 	}), nil)
-	if err == nil {
-		t.Fatal("ParseServeWithEnv returned nil error")
-	}
+	r.Error(err)
 
-	assertErrorContains(t, err, "transport must be")
-	assertErrorContains(t, err, "environment must be")
-	assertErrorContains(t, err, "InvenTree URL must be an absolute URL")
-	assertErrorContains(t, err, "InvenTree auth scheme must be")
-	assertErrorContains(t, err, "InvenTree timeout must be greater than zero")
+	a.Contains(err.Error(), "transport must be")
+	a.Contains(err.Error(), "environment must be")
+	a.Contains(err.Error(), "InvenTree URL must be an absolute URL")
+	a.Contains(err.Error(), "InvenTree auth scheme must be")
+	a.Contains(err.Error(), "InvenTree timeout must be greater than zero")
 }
 
 func TestParseServeRejectsNonHTTPInvenTreeURL(t *testing.T) {
 	t.Parallel()
+	r := require.New(t)
 
 	_, err := ParseServeWithEnv([]string{
 		"--transport", "stdio",
@@ -82,15 +76,13 @@ func TestParseServeRejectsNonHTTPInvenTreeURL(t *testing.T) {
 	}, mapEnv(map[string]string{
 		EnvInvenTreeToken: "token",
 	}), nil)
-	if err == nil {
-		t.Fatal("ParseServeWithEnv returned nil error")
-	}
-
-	assertErrorContains(t, err, "InvenTree URL scheme must be http or https")
+	r.Error(err)
+	r.Contains(err.Error(), "InvenTree URL scheme must be http or https")
 }
 
 func TestParseServeRejectsInvalidEnvDuration(t *testing.T) {
 	t.Parallel()
+	r := require.New(t)
 
 	_, err := ParseServeWithEnv([]string{
 		"--transport", "stdio",
@@ -99,14 +91,13 @@ func TestParseServeRejectsInvalidEnvDuration(t *testing.T) {
 		EnvInvenTreeToken:   "token",
 		EnvInvenTreeTimeout: "not-a-duration",
 	}), nil)
-	if err == nil {
-		t.Fatal("ParseServeWithEnv returned nil error")
-	}
-	assertErrorContains(t, err, "InvenTree timeout must be greater than zero")
+	r.Error(err)
+	r.Contains(err.Error(), "InvenTree timeout must be greater than zero")
 }
 
 func TestParseServeRejectsProductionTLSSkipVerifyForAllTransports(t *testing.T) {
 	t.Parallel()
+	r := require.New(t)
 
 	_, err := ParseServeWithEnv([]string{
 		"--transport", "stdio",
@@ -115,41 +106,37 @@ func TestParseServeRejectsProductionTLSSkipVerifyForAllTransports(t *testing.T) 
 	}, mapEnv(map[string]string{
 		EnvInvenTreeToken: "token",
 	}), nil)
-	if err == nil {
-		t.Fatal("ParseServeWithEnv returned nil error")
-	}
-
-	assertErrorContains(t, err, "production mode rejects InvenTree TLS skip verify")
+	r.Error(err)
+	r.Contains(err.Error(), "production mode rejects InvenTree TLS skip verify")
 }
 
 func TestParseServeRejectsProductionHTTPBeforeOAuth(t *testing.T) {
 	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
 
 	_, err := ParseServeWithEnv([]string{
 		"--transport", "http",
 		"--inventree-url", "https://inventory.example.test",
 		"--inventree-tls-skip-verify",
 	}, mapEnv(nil), nil)
-	if err == nil {
-		t.Fatal("ParseServeWithEnv returned nil error")
-	}
+	r.Error(err)
 
-	assertErrorContains(t, err, "production mode rejects InvenTree TLS skip verify")
-	assertErrorContains(t, err, "production HTTP mode is disabled until OAuth is implemented")
+	a.Contains(err.Error(), "production mode rejects InvenTree TLS skip verify")
+	a.Contains(err.Error(), "production HTTP mode is disabled until OAuth is implemented")
 }
 
 func TestParseServeAllowsDevelopmentHTTPOnlyWithExplicitIncompleteOAuthFlag(t *testing.T) {
 	t.Parallel()
+	r := require.New(t)
 
 	_, err := ParseServeWithEnv([]string{
 		"--transport", "http",
 		"--environment", "development",
 		"--inventree-url", "https://inventory.example.test",
 	}, mapEnv(nil), nil)
-	if err == nil {
-		t.Fatal("ParseServeWithEnv returned nil error")
-	}
-	assertErrorContains(t, err, "development HTTP mode requires --dev-incomplete-oauth")
+	r.Error(err)
+	r.Contains(err.Error(), "development HTTP mode requires --dev-incomplete-oauth")
 
 	cfg, err := ParseServeWithEnv([]string{
 		"--transport", "http",
@@ -157,16 +144,14 @@ func TestParseServeAllowsDevelopmentHTTPOnlyWithExplicitIncompleteOAuthFlag(t *t
 		"--dev-incomplete-oauth",
 		"--inventree-url", "https://inventory.example.test",
 	}, mapEnv(nil), nil)
-	if err != nil {
-		t.Fatalf("ParseServeWithEnv returned error: %v", err)
-	}
-	if cfg.Transport != TransportHTTP {
-		t.Fatalf("Transport = %q, want %q", cfg.Transport, TransportHTTP)
-	}
+	r.NoError(err)
+	r.Equal(TransportHTTP, cfg.Transport)
 }
 
 func TestParseServeRejectsInvalidHTTPRequiredValues(t *testing.T) {
 	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
 
 	_, err := ParseServeWithEnv([]string{
 		"--transport", "http",
@@ -176,16 +161,15 @@ func TestParseServeRejectsInvalidHTTPRequiredValues(t *testing.T) {
 		"--path", "",
 		"--inventree-url", "https://inventory.example.test",
 	}, mapEnv(nil), nil)
-	if err == nil {
-		t.Fatal("ParseServeWithEnv returned nil error")
-	}
+	r.Error(err)
 
-	assertErrorContains(t, err, "HTTP path must start with /")
-	assertErrorContains(t, err, "HTTP listen address is required")
+	a.Contains(err.Error(), "HTTP path must start with /")
+	a.Contains(err.Error(), "HTTP listen address is required")
 }
 
 func TestParseServeRejectsHTTPConfiguredToken(t *testing.T) {
 	t.Parallel()
+	r := require.New(t)
 
 	_, err := ParseServeWithEnv([]string{
 		"--transport", "http",
@@ -195,28 +179,26 @@ func TestParseServeRejectsHTTPConfiguredToken(t *testing.T) {
 	}, mapEnv(map[string]string{
 		EnvInvenTreeToken: "raw-token",
 	}), nil)
-	if err == nil {
-		t.Fatal("ParseServeWithEnv returned nil error")
-	}
-	assertErrorContains(t, err, "configured InvenTree tokens are STDIO-only")
+	r.Error(err)
+	r.Contains(err.Error(), "configured InvenTree tokens are STDIO-only")
 }
 
 func TestParseServeRejectsTokenFlag(t *testing.T) {
 	t.Parallel()
+	r := require.New(t)
 
 	_, err := ParseServeWithEnv([]string{
 		"--transport", "stdio",
 		"--inventree-url", "https://inventory.example.test",
 		"--inventree-token", "raw-token",
 	}, mapEnv(nil), nil)
-	if err == nil {
-		t.Fatal("ParseServeWithEnv returned nil error")
-	}
-	assertErrorContains(t, err, "flag provided but not defined: -inventree-token")
+	r.Error(err)
+	r.Contains(err.Error(), "flag provided but not defined: -inventree-token")
 }
 
 func TestParseServeRejectsHTTPConfiguredAuthScheme(t *testing.T) {
 	t.Parallel()
+	r := require.New(t)
 
 	_, err := ParseServeWithEnv([]string{
 		"--transport", "http",
@@ -225,20 +207,18 @@ func TestParseServeRejectsHTTPConfiguredAuthScheme(t *testing.T) {
 		"--inventree-url", "https://inventory.example.test",
 		"--inventree-auth-scheme", "Bearer",
 	}, mapEnv(nil), nil)
-	if err == nil {
-		t.Fatal("ParseServeWithEnv returned nil error")
-	}
-	assertErrorContains(t, err, "configured InvenTree auth schemes are STDIO-only")
+	r.Error(err)
+	r.Contains(err.Error(), "configured InvenTree auth schemes are STDIO-only")
 }
 
 func TestParseServeHelpMentionsEnvVars(t *testing.T) {
 	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
 
 	var output strings.Builder
 	_, err := ParseServeWithEnv([]string{"--help"}, mapEnv(nil), &output)
-	if err == nil {
-		t.Fatal("ParseServeWithEnv returned nil error")
-	}
+	r.Error(err)
 
 	help := output.String()
 	for _, envVar := range []string{
@@ -253,25 +233,13 @@ func TestParseServeHelpMentionsEnvVars(t *testing.T) {
 		EnvLogLevel,
 		EnvDevIncompleteOAuth,
 	} {
-		if !strings.Contains(help, envVar) {
-			t.Fatalf("help output does not mention %s:\n%s", envVar, help)
-		}
+		a.Contains(help, envVar)
 	}
-	if strings.Contains(help, EnvInvenTreeToken) {
-		t.Fatalf("help output mentions sensitive %s:\n%s", EnvInvenTreeToken, help)
-	}
+	a.NotContains(help, EnvInvenTreeToken)
 }
 
 func mapEnv(values map[string]string) Env {
 	return func(key string) string {
 		return values[key]
-	}
-}
-
-func assertErrorContains(t *testing.T, err error, want string) {
-	t.Helper()
-
-	if !strings.Contains(err.Error(), want) {
-		t.Fatalf("error %q does not contain %q", err, want)
 	}
 }
