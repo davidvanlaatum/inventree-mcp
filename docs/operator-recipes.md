@@ -25,6 +25,20 @@ Each recipe should preserve omitted fields versus explicit zero/false/empty valu
 - Clarify when: public URL differs from proxy routing, path prefix handling is unclear, or production config enables TLS skip verify.
 - Expected output: HTTP MCP endpoint with OAuth metadata that never leaks internal hostnames or ports.
 
+## Packaged Systemd Deployment
+
+- Required inputs: release package for the target Linux distribution, private HTTP listen address, public reverse-proxy route, and OAuth/key settings once the HTTP OAuth milestone is complete.
+- Preferred flow: install the `deb`, `rpm`, or `apk` artifact from the GitHub release, edit `/etc/inventree-mcp/inventree-mcp.env`, keep `INVENTREE_MCP_LISTEN` bound to loopback or a private service network, and enable `inventree-mcp.service` only after the server runtime and OAuth support exist.
+- Clarify when: the operator expects STDIO mode from the packaged service, wants to expose the Go listener directly to the internet, asks to enable production HTTP mode before OAuth is implemented, or expects Alpine/OpenRC service management from the `apk` package.
+- Expected output: installed package files now, and a systemd-managed `inventree-mcp serve --transport http` process behind the deployment's reverse proxy once the HTTP server runtime and OAuth are available. Pre-runtime smoke tests should run the binary directly and expect config validation followed by process exit.
+
+## Maintainer Release
+
+- Required inputs: clean `main`, selected semantic version tag `vX.X.X`, passing local validation, and GitHub Actions permissions that allow `contents: write`.
+- Preferred flow: run `go test ./...`, run `goreleaser check` and `goreleaser release --snapshot --clean` when the CLI is installed, confirm the `Release Preview` workflow passed on the release PR, create and push the `vX.X.X` tag, watch the GitHub `Release` workflow, then verify the GitHub release assets and `checksums.txt`.
+- Clarify when: the version number is unclear, the tag already exists, GitHub Actions or `GITHUB_TOKEN` release permissions are disabled, snapshot package validation has not passed, or the release should include signing, SBOMs, containers, Homebrew, OpenRC packaging, or package repositories beyond GitHub release assets.
+- Expected output: GitHub release containing Linux/macOS/Windows binary archives, Linux `deb`/`rpm`/`apk` packages, and checksums.
+
 ## Add Or Update A Purchasable Part
 
 - Required inputs: part name or IPN/SKU, category or category ID, units where required, supplier/manufacturer details when available.

@@ -26,6 +26,8 @@ Before marking a story `Done`, add or update story-local completion notes:
 
 When updating an already-pushed branch or existing PR, prefer fresh follow-up commits over amending or force-pushing. Rewrite published history only for an explicit operator request or a concrete repository hygiene issue, and use `--force-with-lease` when a rewrite is unavoidable. Keep existing PR titles, descriptions, checklists, validation notes, review summaries, residual risks, and follow-up lists current whenever follow-up commits change the branch scope or status. Prefer squash merge when merging PRs unless the operator or repository policy requires another strategy.
 
+Remove draft status once the PR is ready for human review: all automated or subagent review feedback has been addressed or explicitly documented, required rerun reviews are complete, the PR title/body/checklist are current, and the pipeline has passed on the latest pushed commit. Do not mark the PR ready while CI is pending, failing, or stale for an older head SHA.
+
 Before `M1C-S04` is complete, mutating, operational, destructive, and upload tools may be registered only on STDIO or in unit-test registries. HTTP registration must filter them out of the exposed tool manifest until per-tool scope enforcement is implemented and tested.
 
 ## Milestone 0: Repository And Planning
@@ -94,6 +96,28 @@ Tasks:
 - [x] Add first-release operator recipe skeletons.
 - [x] Link docs from README.
 
+### M0-S04: Release Automation And Packages
+
+- Status: `Done`
+- Depends on: M0-S02
+- Scope: add tag-driven GitHub releases with GoReleaser, binary archives, Linux packages, and systemd packaging.
+- Validation: `git diff --check` passed; `goreleaser check` passed; `GOCACHE=/Users/david/Projects/inventree-mcp/.gocache GOMODCACHE=/private/tmp/inventree-mcp-gomodcache go test ./...` passed; `GOCACHE=/Users/david/Projects/inventree-mcp/.gocache GOMODCACHE=/private/tmp/inventree-mcp-gomodcache goreleaser release --snapshot --clean` passed and generated Linux/macOS/Windows archives plus Linux `deb`, `rpm`, and `apk` packages. Plain `go test ./...` failed before the cached rerun because the sandbox could not write to the default macOS Go build cache.
+- Review: Senior Go Developer, Senior QA / Test Architect, and Senior Product Manager reviews run. Initial findings asked to avoid documenting a start path for the currently non-running HTTP service, expose full stamped version metadata, align usage text, document Alpine/OpenRC limits for `apk`, add GitHub release setup instructions, add deterministic snapshot package validation before tag releases, and reject non-`vX.X.X` tags. Follow-up changes addressed those findings with direct config smoke-test docs, `Restart=on-failure`, full `version` output, `Release Preview`, strict release-tag validation, and aligned README/PLAN/operator/agent docs. Focused Go, QA, and product reruns found no remaining actionable findings; final narrow Go and product reruns on the service-startup correction also found no actionable findings.
+- Residual risk: first production service start still waits for the HTTP server runtime and OAuth milestones; `apk` installs package files but does not provide OpenRC service management; GitHub repository Actions/release permissions must be confirmed in GitHub before the first real tag release.
+- Acceptance:
+  - Pushing a `vX.X.X` tag runs a GitHub Actions release workflow.
+  - GoReleaser publishes GitHub release assets containing checksums, binary archives, and Linux `deb`, `rpm`, and `apk` packages.
+  - Packaged installs include a systemd unit, environment-file template, and maintainer scripts following the repository release-packaging conventions.
+  - User and agent documentation explains release, install, and systemd setup behavior.
+
+Tasks:
+
+- [x] Add `.goreleaser.yaml`.
+- [x] Add `.github/workflows/release.yml`.
+- [x] Add packaged systemd unit and maintainer scripts.
+- [x] Add release version metadata to the CLI.
+- [x] Update README, plan, operator recipes, and agent instructions.
+
 ## Milestone 1A: Buildable Skeleton
 
 ### M1A-S01: Command And Config Skeleton
@@ -102,7 +126,7 @@ Tasks:
 - Depends on: M0-S02
 - Scope: add the first buildable `inventree-mcp` command with typed config.
 - Validation: `go test ./...` passed; `GOCACHE=/Users/david/Projects/inventree-mcp/.gocache go test ./...` passed; `GOCACHE=/Users/david/Projects/inventree-mcp/.gocache GOMODCACHE=/private/tmp/inventree-mcp-gomodcache go build ./cmd/inventree-mcp` passed; `git diff --check` passed. Initial plain `go test ./...` failed because the default macOS Go build cache was outside the writable sandbox before cache write access was granted.
-- Review: Senior Go Developer, Senior QA / Test Architect, and Senior Product Manager subagent reviews run. Go review found STDIO `serve` wrote a success banner to stdout; fixed by keeping successful `serve` silent and adding a regression test. QA and product findings on missing durable subagent review evidence were addressed in this note and the workflow wording updates. Follow-up Go and QA reviews after PR comments found stale token-source wording in `AGENTS.md`, stale token-source wording in `docs/PLAN.md`, and missing durable rerun evidence in this note; those findings were addressed. Final focused Go, QA, and product reruns on the follow-up diff found no actionable findings. A speculative write-error handling change introduced during review was removed before final handoff because it was outside the review-comment scope; focused Go and QA cleanup reviews found no actionable findings. Fresh full-panel Go, QA, product, and infosec review of the full PR found `serve --help` returned an error, empty HTTP `--path`/`--listen` branches lacked explicit tests, production STDIO accepted TLS skip-verify, and non-HTTP(S) InvenTree URLs were accepted; these findings were fixed with regression tests. Follow-up Go, QA, and infosec reviews found no actionable findings; product follow-up requested README clarification for development-only TLS skip-verify and this durable review note. Narrow product follow-up review of the README/TASKS docs fixes found no actionable findings. Test assertions were converted to Testify assertion objects after operator feedback; focused Go, QA, and product reviews found no actionable findings. Mockery marker/config conventions were aligned with `weather-station-server`; focused Go, QA, and product reviews found no actionable findings.
+- Review: Senior Go Developer, Senior QA / Test Architect, and Senior Product Manager subagent reviews run. Go review found STDIO `serve` wrote a success banner to stdout; fixed by keeping successful `serve` silent and adding a regression test. QA and product findings on missing durable subagent review evidence were addressed in this note and the workflow wording updates. Follow-up Go and QA reviews after PR comments found stale token-source wording in `AGENTS.md`, stale token-source wording in `docs/PLAN.md`, and missing durable rerun evidence in this note; those findings were addressed. Final focused Go, QA, and product reruns on the follow-up diff found no actionable findings. A speculative write-error handling change introduced during review was removed before final handoff because it was outside the review-comment scope; focused Go and QA cleanup reviews found no actionable findings. Fresh full-panel Go, QA, product, and infosec review of the full PR found `serve --help` returned an error, empty HTTP `--path`/`--listen` branches lacked explicit tests, production STDIO accepted TLS skip-verify, and non-HTTP(S) InvenTree URLs were accepted; these findings were fixed with regression tests. Follow-up Go, QA, and infosec reviews found no actionable findings; product follow-up requested README clarification for development-only TLS skip-verify and this durable review note. Narrow product follow-up review of the README/TASKS docs fixes found no actionable findings. Test assertions were converted to Testify assertion objects after operator feedback; focused Go, QA, and product reviews found no actionable findings. Mockery marker/config conventions were aligned with repository conventions; focused Go, QA, and product reviews found no actionable findings.
 - Residual risk: HTTP command still only validates development-mode config until `M1C` defines final OAuth config and server behavior. The command output helper intentionally ignores stdout/stderr write failures.
 - Acceptance:
   - `cmd/inventree-mcp` builds.
@@ -674,3 +698,27 @@ Tasks:
 - [ ] Define stocktake review workflow.
 - [ ] Add confirmation and audit requirements.
 - [ ] Add operational scope tests.
+
+### F-S05: Systemd Notify And Watchdog Support
+
+- Status: `Future`
+- Depends on: long-running HTTP server runtime, production HTTP OAuth startup behavior, and product review
+- Scope: add native systemd notification support for packaged HTTP deployments.
+- Acceptance:
+  - HTTP service startup sends systemd readiness only after the listener is bound, runtime dependencies are initialized, and production startup checks have passed.
+  - The process sends watchdog heartbeats at a safe interval when systemd `WatchdogSec` is configured.
+  - The process publishes useful systemd status text for startup, ready, degraded, shutdown, and fatal-error states without logging or exposing secrets.
+  - Packaged systemd unit can safely switch from `Type=simple` to `Type=notify` with `NotifyAccess=main` and an explicit `WatchdogSec`.
+  - Tests cover notify readiness ordering, heartbeat cadence, disabled-watchdog behavior, shutdown status, fatal-error status, and non-systemd fallback behavior.
+  - README, operator recipes, release packaging docs, and `AGENTS.md` are updated to describe the supported systemd behavior.
+
+Tasks:
+
+- [ ] Select and wrap a maintained Go systemd notification library.
+- [ ] Add injectable notifier/watchdog abstraction for deterministic tests.
+- [ ] Send startup status transitions and final readiness notification.
+- [ ] Send watchdog heartbeats only when systemd watchdog is enabled.
+- [ ] Publish shutdown, degraded, and fatal-error status messages.
+- [ ] Update packaged systemd unit to `Type=notify` after code support lands.
+- [ ] Add unit and integration tests for notify/watchdog behavior.
+- [ ] Update release and operator documentation.

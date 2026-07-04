@@ -19,7 +19,7 @@ func TestRunRequiresServeCommand(t *testing.T) {
 
 	r.Equal(2, code)
 	r.Empty(stdout.String())
-	r.Equal("usage: inventree-mcp serve [flags]\n", stderr.String())
+	r.Equal("usage: inventree-mcp <serve|version> [flags]\n", stderr.String())
 }
 
 func TestRunServeReportsConfigErrors(t *testing.T) {
@@ -47,6 +47,20 @@ func TestRunServeHelpExitsSuccessfully(t *testing.T) {
 
 	r.Equal(0, code)
 	a.Contains(stdout.String(), "Usage of serve:")
+	a.Empty(stderr.String())
+}
+
+func TestRunVersionReportsBuildVersion(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := run([]string{"version"}, &stdout, &stderr, mapEnv(nil))
+
+	r.Equal(0, code)
+	a.Equal("version: dev\ncommit: unknown\ndate: unknown\n", stdout.String())
 	a.Empty(stderr.String())
 }
 

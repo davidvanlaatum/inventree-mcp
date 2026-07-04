@@ -1,0 +1,81 @@
+# yaml-language-server: $schema=https://goreleaser.com/static/schema.json
+# vim: set ts=2 sw=2 tw=0 fo=cnqoj
+
+version: 2
+
+project_name: inventree-mcp
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: inventree-mcp
+    env:
+      - CGO_ENABLED=0
+    main: ./cmd/inventree-mcp
+    binary: inventree-mcp
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w
+      - -X github.com/davidvanlaatum/inventree-mcp/internal/buildinfo.Version={{ .Version }}
+      - -X github.com/davidvanlaatum/inventree-mcp/internal/buildinfo.Commit={{ .Commit }}
+      - -X github.com/davidvanlaatum/inventree-mcp/internal/buildinfo.Date={{ .Date }}
+
+archives:
+  - formats: [tar.gz]
+    name_template: >-
+      {{ .ProjectName }}_
+      {{- title .Os }}_
+      {{- if eq .Arch "amd64" }}x86_64
+      {{- else }}{{ .Arch }}{{ end }}
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+
+checksum:
+  name_template: checksums.txt
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+
+nfpms:
+  - id: inventree-mcp
+    package_name: inventree-mcp
+    file_name_template: "{{ .ConventionalFileName }}"
+    vendor: "David van Laatum"
+    homepage: "https://github.com/davidvanlaatum/inventree-mcp"
+    maintainer: David van Laatum <david@vanlaatum.id.au>
+    description: |-
+      InvenTree MCP server for common inventory data-entry workflows.
+    license: proprietary
+    formats:
+      - apk
+      - deb
+      - rpm
+    bindir: /usr/bin
+    contents:
+      - src: packaging/systemd/inventree-mcp.service
+        dst: /etc/systemd/system/inventree-mcp.service
+      - src: packaging/inventree-mcp.env
+        dst: /etc/inventree-mcp/inventree-mcp.env
+        type: config|noreplace
+        file_info:
+          mode: 0600
+    mtime: "{{ .CommitDate }}"
+    scripts:
+      postinstall: packaging/scripts/postinstall.sh
+      preremove: packaging/scripts/preremove.sh
+      postremove: packaging/scripts/postremove.sh

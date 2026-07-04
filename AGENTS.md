@@ -29,9 +29,20 @@ When picking up an implementation task from `docs/TASKS.md`:
 - Add appropriate commit trailers when committing or merging PRs. Use `Task: <task-id or docs/TASKS.md section>`, `Validation: <command/result>`, `Review: <subagent/manual review summary or none>`, and `Risk: <residual risk or none>` for task work. Add `AI-Assisted-by: Codex` for commits materially authored or edited by Codex. Keep trailers as one contiguous final block with no blank lines between trailer lines, and verify them with `git interpret-trailers --parse` when adding or changing trailer policy. Use standard identity trailers such as `Co-authored-by: <name> <email>`, `Reviewed-by: <name> <email>`, or `Signed-off-by: <name> <email>` only for real identities where the name and email are accurate. Add issue trailers such as `Fixes: #<issue>` or `Refs: #<issue>` only when they are accurate and useful.
 - Push the feature branch and create a merge request or pull request with appropriate details: task ID/title, scope summary, validation commands and results, subagent review summary, unresolved questions, residual risks, and any follow-up tasks. For GitHub-hosted repos, treat this as a pull request even if the operator says merge request.
 - Keep existing pull requests current as scope changes. Before final handoff after any pushed follow-up that changes scope, behavior, validation, review status, residual risk, or follow-up work, update the PR title/body/checklist so reviewers see accurate metadata instead of stale initial-scope text.
+- Remove draft status once the PR is ready for human review: all automated or subagent review feedback has been addressed or explicitly documented, required rerun reviews are complete, the PR title/body/checklist are current, and the pipeline has passed on the latest pushed commit. Do not mark the PR ready while CI is pending, failing, or stale for an older head SHA.
 - When merging PRs, prefer squash merge unless the operator or repository policy explicitly requires another merge strategy.
 - After pushing, monitor CI until it passes or produces a concrete failure. If CI fails, inspect the failure, fix actionable issues in the branch, and repeat validation/review as needed. If the failure is transient and cannot be made deterministic by adjusting the tests, retry the failing job and record the evidence.
 - Do not widen into `Future` tasks unless the operator explicitly changes the plan.
+
+## Release Workflow
+
+- Releases are created by pushing semantic version tags shaped as `vX.X.X` to GitHub. The tag workflow runs GoReleaser and publishes GitHub release assets.
+- Before creating or pushing a release tag, start from an up-to-date `main`, run the local validation relevant to the change, and run `goreleaser check` when GoReleaser is installed.
+- Release packages are configured in `.goreleaser.yaml` and include Linux `deb`, `rpm`, and `apk` packages plus archived binaries and checksums. Run `goreleaser release --snapshot --clean` locally when changing release/package behavior, and keep the `Release Preview` workflow passing on PRs.
+- Keep `.github/workflows/release.yml`, `.goreleaser.yaml`, `packaging/`, README release instructions, operator recipes, and this section aligned when release behavior changes.
+- The packaged systemd unit intentionally uses `Type=simple`. Do not switch it to `Type=notify` or add watchdog settings until the Go process implements systemd readiness/watchdog notifications and tests cover the behavior.
+- Do not document `systemctl enable --now inventree-mcp.service` as usable until `serve --transport http` runs a long-lived HTTP server and production OAuth startup is implemented.
+- The `apk` package does not provide OpenRC management. Document any future Alpine/OpenRC support explicitly before claiming managed service support for Alpine.
 
 ## Technical Rules
 
