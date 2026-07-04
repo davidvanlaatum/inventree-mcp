@@ -195,9 +195,12 @@ Tasks:
 
 ### M1B-S01: REST Client Core
 
-- Status: `Planned`
+- Status: `Done`
 - Depends on: M1A-S01
 - Scope: implement low-level InvenTree HTTP client with auth, pagination, errors, and PATCH helpers.
+- Validation: `GOCACHE=/Users/david/Projects/inventree-mcp/.gocache GOMODCACHE=/private/tmp/inventree-mcp-gomodcache go test ./...` passed.
+- Review: Senior QA / Test Architect, Senior Product Manager, and Senior Go Developer reviews run. QA found common API error mapping was under-tested; fixed with coverage for validation, authentication, permission, not found, conflict, rate limit, server, unexpected, non-JSON, and list-detail responses. Product found empty PATCH no-ops were not rejected; fixed with a pre-request guard and regression test. Go found 409 Conflict needed its own typed error kind; fixed with `ErrorKindConflict`. Follow-up Go, QA, and product reviews found no remaining actionable findings.
+- Residual risk: endpoint-specific client methods and schema-manifest enforcement are intentionally deferred to M1B-S02 and M1B-S03.
 - Acceptance:
   - Supports `Authorization: Token ...` and `Authorization: Bearer ...`.
   - Pagination helpers are covered by tests.
@@ -206,15 +209,15 @@ Tasks:
 
 Tasks:
 
-- [ ] Add `internal/inventree` client.
-- [ ] Add auth header model.
-- [ ] Add pagination helpers.
-- [ ] Add error mapping.
-- [ ] Add PATCH helper and zero-value tests.
+- [x] Add `internal/inventree` client.
+- [x] Add auth header model.
+- [x] Add pagination helpers.
+- [x] Add error mapping.
+- [x] Add PATCH helper and zero-value tests.
 
 ### M1B-S02: Schema Endpoint Manifest
 
-- Status: `Planned`
+- Status: `Ready`
 - Depends on: M1B-S01
 - Scope: add a generated or maintained manifest tying implemented endpoints to `docs/api-schema.yaml`.
 - Acceptance:
