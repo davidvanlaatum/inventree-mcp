@@ -145,7 +145,7 @@ Tasks:
 
 ### M1A-S03: MCP Server Skeleton
 
-- Status: `Planned`
+- Status: `Ready`
 - Depends on: M1A-S01, M1A-S02
 - Scope: create server construction, STDIO transport, HTTP transport, and a health/version tool.
 - Acceptance:
