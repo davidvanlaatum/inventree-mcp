@@ -33,7 +33,9 @@ func TestStdioServerCanInitializeAndListTools(t *testing.T) {
 	client := mcp.NewClient(&mcp.Implementation{Name: "test-client", Version: "v0.0.0"}, nil)
 	session, err := client.Connect(ctx, clientTransport, nil)
 	r.NoError(err)
-	defer session.Close()
+	defer func() {
+		r.NoError(session.Close())
+	}()
 
 	result, err := session.ListTools(ctx, nil)
 	r.NoError(err)
@@ -67,7 +69,9 @@ func TestHealthVersionToolReturnsReadOnlyStatus(t *testing.T) {
 	client := mcp.NewClient(&mcp.Implementation{Name: "test-client", Version: "v0.0.0"}, nil)
 	session, err := client.Connect(ctx, clientTransport, nil)
 	r.NoError(err)
-	defer session.Close()
+	defer func() {
+		r.NoError(session.Close())
+	}()
 
 	result, err := session.CallTool(ctx, &mcp.CallToolParams{Name: tools.HealthVersionToolName})
 	r.NoError(err)
