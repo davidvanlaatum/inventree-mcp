@@ -24,7 +24,7 @@ Before marking a story `Done`, add or update story-local completion notes:
 - `Review`: reviewer roles run, findings addressed, or why subagent review was not required for a typo-only or formatting-only documentation edit.
 - `Residual risk`: accepted unresolved risk, or `none`.
 
-When updating an already-pushed branch or existing PR, prefer fresh follow-up commits over amending or force-pushing. Rewrite published history only for an explicit operator request or a concrete repository hygiene issue, and use `--force-with-lease` when a rewrite is unavoidable. Prefer squash merge when merging PRs unless the operator or repository policy requires another strategy.
+When updating an already-pushed branch or existing PR, prefer fresh follow-up commits over amending or force-pushing. Rewrite published history only for an explicit operator request or a concrete repository hygiene issue, and use `--force-with-lease` when a rewrite is unavoidable. Keep existing PR titles, descriptions, checklists, validation notes, review summaries, residual risks, and follow-up lists current whenever follow-up commits change the branch scope or status. Prefer squash merge when merging PRs unless the operator or repository policy requires another strategy.
 
 Before `M1C-S04` is complete, mutating, operational, destructive, and upload tools may be registered only on STDIO or in unit-test registries. HTTP registration must filter them out of the exposed tool manifest until per-tool scope enforcement is implemented and tested.
 
