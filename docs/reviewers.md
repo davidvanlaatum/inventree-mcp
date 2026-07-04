@@ -1,6 +1,6 @@
 # Reviewers
 
-Use these reviewer roles for substantial plan, architecture, authentication, test strategy, or tool-surface changes. Reviewers should return findings ordered by severity, with concrete document paths and line references where possible. They should not edit files unless explicitly assigned an implementation task.
+Use these reviewer roles when `AGENTS.md` and [TASKS.md](TASKS.md) require a review pass. This file defines reviewer responsibilities and output shape; it does not narrow the task workflow's review requirement. Reviewers should return findings ordered by severity, with concrete document paths and line references where possible. They should not edit files unless explicitly assigned an implementation task.
 
 ## Standard Review Panel
 

@@ -8,12 +8,12 @@ This backlog turns [PLAN.md](PLAN.md) into executable work. Status values are:
 - `Planned`: valid work, but should wait for dependencies.
 - `Future`: outside the first beta milestone.
 
-Each story should be completed with tests, documentation updates, and reviewer follow-up when its acceptance criteria touch auth, upload, Testcontainers, or tool-surface behavior.
+Each story should be completed with tests, documentation updates, and reviewer follow-up. Code, behavior, task-status, operator workflow, or public documentation-contract changes require subagent review from the applicable roles in [reviewers.md](reviewers.md). Use the full Go, QA, product, and infosec panel when acceptance criteria touch auth, upload, Testcontainers, tool-surface behavior, or milestone completion. Manual-only review is reserved for typo-only or formatting-only documentation edits and must say why subagent review was not required.
 
 Before marking a story `Done`, add or update story-local completion notes:
 
 - `Validation`: commands/checks run, or why a check was not applicable.
-- `Review`: reviewer roles run, findings addressed, or why review was not required.
+- `Review`: reviewer roles run, findings addressed, or why subagent review was not required for a typo-only or formatting-only documentation edit.
 - `Residual risk`: accepted unresolved risk, or `none`.
 
 Before `M1C-S04` is complete, mutating, operational, destructive, and upload tools may be registered only on STDIO or in unit-test registries. HTTP registration must filter them out of the exposed tool manifest until per-tool scope enforcement is implemented and tested.
@@ -88,9 +88,12 @@ Tasks:
 
 ### M1A-S01: Command And Config Skeleton
 
-- Status: `Ready`
+- Status: `Done`
 - Depends on: M0-S02
 - Scope: add the first buildable `inventree-mcp` command with typed config.
+- Validation: `GOCACHE=/Users/david/Projects/inventree-mcp/.gocache go test ./...` passed; `GOCACHE=/Users/david/Projects/inventree-mcp/.gocache GOMODCACHE=/private/tmp/inventree-mcp-gomodcache go build ./cmd/inventree-mcp` passed; `git diff --check` passed. Initial plain `go test ./...` failed because the default macOS Go build cache is outside the writable sandbox.
+- Review: Senior Go Developer, Senior QA / Test Architect, and Senior Product Manager subagent reviews run. Go review found STDIO `serve` wrote a success banner to stdout; fixed by keeping successful `serve` silent and adding a regression test. QA and product findings on missing durable subagent review evidence were addressed in this note and the workflow wording updates. No unresolved actionable findings.
+- Residual risk: HTTP command still only validates development-mode config until `M1C` defines final OAuth config and server behavior.
 - Acceptance:
   - `cmd/inventree-mcp` builds.
   - `inventree-mcp serve --transport stdio` and `--transport http` parse config and fail gracefully for missing required values.
@@ -102,12 +105,12 @@ Tasks:
 
 Tasks:
 
-- [ ] Add `cmd/inventree-mcp/main.go`.
-- [ ] Add `internal/config`.
-- [ ] Define transport, listen/path, STDIO InvenTree URL/token/scheme, timeout, TLS, and logging config.
-- [ ] Add HTTP config validation that blocks production HTTP mode until OAuth tasks define the final config.
-- [ ] Add config validation tests.
-- [ ] Update README quick start.
+- [x] Add `cmd/inventree-mcp/main.go`.
+- [x] Add `internal/config`.
+- [x] Define transport, listen/path, STDIO InvenTree URL/token/scheme, timeout, TLS, and logging config.
+- [x] Add HTTP config validation that blocks production HTTP mode until OAuth tasks define the final config.
+- [x] Add config validation tests.
+- [x] Update README quick start.
 
 ### M1A-S02: Logging, Clock, IDs, And Randomness
 

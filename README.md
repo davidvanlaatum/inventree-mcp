@@ -1,8 +1,26 @@
 # InvenTree MCP Server
 
-Planning repository for a Go-based Model Context Protocol server for common InvenTree data-entry workflows.
+Go-based Model Context Protocol server for common InvenTree data-entry workflows.
 
-Current status: planning repository with a minimal Go module, CI, and pre-commit scaffolding. Server implementation has not started yet.
+Current status: buildable command and typed configuration skeleton. MCP server runtime, tool registration, and HTTP OAuth are still planned work.
+
+## Quick Start
+
+Validate STDIO configuration:
+
+```sh
+INVENTREE_URL=https://inventory.example.test \
+INVENTREE_TOKEN=redacted \
+go run ./cmd/inventree-mcp serve --transport stdio
+```
+
+Useful STDIO options:
+
+- `--inventree-auth-scheme Token` or `--inventree-auth-scheme Bearer`; default is `Token`.
+- `--inventree-timeout 30s`; default is `30s`.
+- `--inventree-tls-skip-verify`; intended only for local/test deployments.
+
+HTTP mode currently validates only the pre-OAuth skeleton. Production HTTP mode is intentionally disabled until the OAuth milestone is complete. Development-only HTTP config parsing requires `--environment development --dev-incomplete-oauth` and rejects configured raw InvenTree tokens.
 
 Key documents:
 
