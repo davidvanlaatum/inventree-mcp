@@ -94,6 +94,28 @@ Tasks:
 - [x] Add first-release operator recipe skeletons.
 - [x] Link docs from README.
 
+### M0-S04: Release Automation And Packages
+
+- Status: `Done`
+- Depends on: M0-S02
+- Scope: add tag-driven GitHub releases with GoReleaser, binary archives, Linux packages, and systemd packaging.
+- Validation: `git diff --check` passed; `goreleaser check` passed; `GOCACHE=/Users/david/Projects/inventree-mcp/.gocache GOMODCACHE=/private/tmp/inventree-mcp-gomodcache go test ./...` passed; `GOCACHE=/Users/david/Projects/inventree-mcp/.gocache GOMODCACHE=/private/tmp/inventree-mcp-gomodcache goreleaser release --snapshot --clean` passed and generated Linux/macOS/Windows archives plus Linux `deb`, `rpm`, and `apk` packages. Plain `go test ./...` failed before the cached rerun because the sandbox could not write to the default macOS Go build cache.
+- Review: Senior Go Developer, Senior QA / Test Architect, and Senior Product Manager reviews run. Initial findings asked to avoid documenting a start path for the currently non-running HTTP service, expose full stamped version metadata, align usage text, document Alpine/OpenRC limits for `apk`, add GitHub release setup instructions, add deterministic snapshot package validation before tag releases, and reject non-`vX.X.X` tags. Follow-up changes addressed those findings with direct config smoke-test docs, `Restart=on-failure`, full `version` output, `Release Preview`, strict release-tag validation, and aligned README/PLAN/operator/agent docs. Focused Go, QA, and product reruns found no remaining actionable findings; final narrow Go and product reruns on the service-startup correction also found no actionable findings.
+- Residual risk: first production service start still waits for the HTTP server runtime and OAuth milestones; `apk` installs package files but does not provide OpenRC service management; GitHub repository Actions/release permissions must be confirmed in GitHub before the first real tag release.
+- Acceptance:
+  - Pushing a `vX.X.X` tag runs a GitHub Actions release workflow.
+  - GoReleaser publishes GitHub release assets containing checksums, binary archives, and Linux `deb`, `rpm`, and `apk` packages.
+  - Packaged installs include a systemd unit, environment-file template, and maintainer scripts adapted from the weather-station-server pattern.
+  - User and agent documentation explains release, install, and systemd setup behavior.
+
+Tasks:
+
+- [x] Add `.goreleaser.yaml`.
+- [x] Add `.github/workflows/release.yml`.
+- [x] Add packaged systemd unit and maintainer scripts.
+- [x] Add release version metadata to the CLI.
+- [x] Update README, plan, operator recipes, and agent instructions.
+
 ## Milestone 1A: Buildable Skeleton
 
 ### M1A-S01: Command And Config Skeleton

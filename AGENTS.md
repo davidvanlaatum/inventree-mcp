@@ -33,6 +33,16 @@ When picking up an implementation task from `docs/TASKS.md`:
 - After pushing, monitor CI until it passes or produces a concrete failure. If CI fails, inspect the failure, fix actionable issues in the branch, and repeat validation/review as needed. If the failure is transient and cannot be made deterministic by adjusting the tests, retry the failing job and record the evidence.
 - Do not widen into `Future` tasks unless the operator explicitly changes the plan.
 
+## Release Workflow
+
+- Releases are created by pushing semantic version tags shaped as `vX.X.X` to GitHub. The tag workflow runs GoReleaser and publishes GitHub release assets.
+- Before creating or pushing a release tag, start from an up-to-date `main`, run the local validation relevant to the change, and run `goreleaser check` when GoReleaser is installed.
+- Release packages are configured in `.goreleaser.yaml` and include Linux `deb`, `rpm`, and `apk` packages plus archived binaries and checksums. Run `goreleaser release --snapshot --clean` locally when changing release/package behavior, and keep the `Release Preview` workflow passing on PRs.
+- Keep `.github/workflows/release.yml`, `.goreleaser.yaml`, `packaging/`, README release instructions, operator recipes, and this section aligned when release behavior changes.
+- The packaged systemd unit intentionally uses `Type=simple`. Do not switch it to `Type=notify` or add watchdog settings until the Go process implements systemd readiness/watchdog notifications and tests cover the behavior.
+- Do not document `systemctl enable --now inventree-mcp.service` as usable until `serve --transport http` runs a long-lived HTTP server and production OAuth startup is implemented.
+- The `apk` package does not provide OpenRC management. Document any future Alpine/OpenRC support explicitly before claiming managed service support for Alpine.
+
 ## Technical Rules
 
 - Prefer available MCP tools over CLI commands when both can perform the same repository, GitHub, GitLab, Jenkins, InvenTree, or automation action with equivalent fidelity. Use CLI commands when no suitable MCP tool is available, when the CLI gives materially better evidence, or when the MCP tool cannot perform the required operation safely.

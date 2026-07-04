@@ -25,7 +25,7 @@ Build an InvenTree MCP server in Go using the official Model Context Protocol Go
 - Shared Go utilities: use `github.com/davidvanlaatum/dvgoutils` where it fits local code style, especially `github.com/davidvanlaatum/dvgoutils/logging` for context-carried `slog` loggers and `logging.Err`.
 - Filesystem abstraction: use an injectable filesystem such as `github.com/spf13/afero` for local file access, fixtures, and allowlist tests.
 - Integration test infrastructure: `testcontainers-go` module that starts an isolated InvenTree test environment.
-- Project automation: GitHub Actions for Go tests, lint, dependency submission, and pre-commit checks; Dependabot for Go modules and GitHub Actions.
+- Project automation: GitHub Actions for Go tests, lint, dependency submission, tag-driven GoReleaser releases, and pre-commit checks; Dependabot for Go modules and GitHub Actions.
 - Local quality gate: pre-commit using `pre-commit-hooks` and Go hooks for `go mod tidy`, imports, golangci-lint, tests, and build.
 - API schema source: keep a local copy of the OpenAPI schema at `docs/api-schema.yaml`, refreshed from `https://inventory.internal.vanlaatum.id.au/api/schema/` when endpoint behavior needs verification. The current fetched schema is OpenAPI 3.0.3 for InvenTree API version `511`.
 
@@ -188,6 +188,14 @@ httpHandler := auth.RequireBearerToken(verifier, &auth.RequireBearerTokenOptions
 Prefer the official MCP Go SDK `auth.RequireBearerToken`, `auth.ProtectedResourceMetadataHandler`, `auth.TokenVerifier`, and `auth.TokenInfoFromContext` primitives for protected-resource behavior. `internal/oauth` should provide the SDK token verifier, envelope codec, metadata construction, setup page, and authorization-server endpoints. Only implement custom middleware where the SDK auth package cannot express the required behavior.
 
 For SDK `v1.6.1`, `TokenVerifier` has the shape `func(context.Context, string, *http.Request) (*auth.TokenInfo, error)`. The verifier should decrypt the envelope and return SDK `auth.TokenInfo` with scopes, expiry, subject, and a non-serializable internal credential reference in `Extra`, or a documented private context key if `Extra` is unsuitable. If `Extra` is used, expose it only through a typed `internal/oauth.CredentialFromTokenInfo(*auth.TokenInfo)` accessor with an unexported key/type, and add tests proving the credential object is never serialized or logged. `ClientFromContext` must read exactly one selected carrier inside `CallTool` handlers; do not duplicate credentials into multiple context locations. Tool handlers and resource handlers must resolve credentials from `context.Context`; do not store credentials in server-global state.
+
+## Releases And Packages
+
+Releases are tag-driven through GitHub Actions and GoReleaser. Pushing a `vX.X.X` tag runs `.github/workflows/release.yml`, executes `go test ./...`, and publishes a GitHub release with checksums, Linux/macOS/Windows binary archives for `amd64` and `arm64`, and Linux `deb`, `rpm`, and `apk` packages.
+
+The Linux packages install the `inventree-mcp` binary to `/usr/bin`, install `packaging/systemd/inventree-mcp.service` as `inventree-mcp.service`, and install `/etc/inventree-mcp/inventree-mcp.env` as a noreplace configuration file. Package maintainer scripts reload systemd and restart the service only when it is already enabled or active. The `apk` package carries the same files for artifact parity; Alpine/OpenRC service management is not implemented in the first release package.
+
+The packaged service is for HTTP mode behind a reverse proxy. Production HTTP mode remains disabled until OAuth is implemented, and the current command skeleton exits after config validation until the server runtime lands. Packages can be installed for layout testing, but the systemd service should not be enabled yet. The unit uses `Type=simple` because the current command does not implement systemd notify or watchdog support. Do not switch the unit to `Type=notify` or add `WatchdogSec` until the Go process sends systemd readiness/watchdog notifications and tests cover that behavior.
 
 ## Project Structure
 

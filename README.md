@@ -22,6 +22,50 @@ Useful STDIO options:
 
 HTTP mode currently validates only the pre-OAuth skeleton. Production HTTP mode is intentionally disabled until the OAuth milestone is complete. Development-only HTTP config parsing requires `--environment development --dev-incomplete-oauth` and rejects configured raw InvenTree tokens.
 
+## Install From A Release
+
+GitHub releases are produced by GoReleaser when a `vX.X.X` tag is pushed. Each release includes checksums, archived binaries for Linux, macOS, and Windows on `amd64` and `arm64`, plus Linux `deb`, `rpm`, and `apk` packages.
+
+Linux packages install:
+
+- `/usr/bin/inventree-mcp`
+- `/etc/systemd/system/inventree-mcp.service`
+- `/etc/inventree-mcp/inventree-mcp.env`
+
+The packaged service is intended for HTTP mode behind a reverse proxy. Production HTTP mode will not start until OAuth support is implemented, and the current command skeleton exits after config validation instead of running a long-lived HTTP server. Install packages now for file layout testing, but do not enable the systemd service until the server and OAuth milestones land.
+
+For a development-only pre-OAuth HTTP config smoke test, run the binary directly. This validates configuration and exits; it is not a long-running service yet.
+
+```sh
+INVENTREE_URL=https://inventory.example.test \
+INVENTREE_MCP_ENVIRONMENT=development \
+INVENTREE_MCP_DEV_INCOMPLETE_OAUTH=true \
+/usr/bin/inventree-mcp serve --transport http --listen 127.0.0.1:8080 --path /mcp
+```
+
+The `apk` package installs the same binary, config template, and systemd unit as the `deb` and `rpm` packages. Alpine/OpenRC service management is not implemented yet; use the binary directly or add an operator-specific OpenRC unit outside the package.
+
+## Maintainer Release Flow
+
+From an up-to-date `main` commit:
+
+```sh
+git tag vX.X.X
+git push origin vX.X.X
+```
+
+The `Release` GitHub Actions workflow runs tests, invokes GoReleaser, creates the GitHub release for the tag, and uploads the binary archives, packages, and checksums. Verify the completed release before announcing it:
+
+```sh
+gh release view vX.X.X --repo davidvanlaatum/inventree-mcp
+```
+
+GitHub repository setup required for first release:
+
+- Actions are enabled for the repository.
+- Workflow permissions allow `GITHUB_TOKEN` to create releases with `contents: write`.
+- The `Release Preview` workflow passes on the release PR, including the GoReleaser snapshot package build.
+
 Key documents:
 
 - [Plan](docs/PLAN.md)

@@ -1,0 +1,15 @@
+[Unit]
+Description=InvenTree MCP Server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+EnvironmentFile=-/etc/inventree-mcp/inventree-mcp.env
+Restart=on-failure
+RestartSec=5s
+ExecStart=/usr/bin/inventree-mcp serve --transport http --listen ${INVENTREE_MCP_LISTEN} --path ${INVENTREE_MCP_PATH}
+TimeoutSec=60
+
+[Install]
+WantedBy=multi-user.target

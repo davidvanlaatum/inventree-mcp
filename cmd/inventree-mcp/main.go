@@ -10,6 +10,7 @@ import (
 	"os"
 
 	"github.com/davidvanlaatum/dvgoutils/logging"
+	"github.com/davidvanlaatum/inventree-mcp/internal/buildinfo"
 	"github.com/davidvanlaatum/inventree-mcp/internal/config"
 	"github.com/davidvanlaatum/inventree-mcp/internal/platform"
 )
@@ -20,11 +21,16 @@ func main() {
 
 func run(args []string, stdout, stderr io.Writer, getenv config.Env) int {
 	if len(args) == 0 {
-		writeLine(stderr, "usage: inventree-mcp serve [flags]")
+		writeLine(stderr, "usage: inventree-mcp <serve|version> [flags]")
 		return 2
 	}
 
 	switch args[0] {
+	case "version", "--version":
+		writeLine(stdout, "version: %s", buildinfo.Version)
+		writeLine(stdout, "commit: %s", buildinfo.Commit)
+		writeLine(stdout, "date: %s", buildinfo.Date)
+		return 0
 	case "serve":
 		var flagOutput bytes.Buffer
 		cfg, err := config.ParseServeWithEnv(args[1:], getenv, &flagOutput)
@@ -51,7 +57,7 @@ func run(args []string, stdout, stderr io.Writer, getenv config.Env) int {
 		}
 		return 0
 	case "help", "-h", "--help":
-		writeLine(stdout, "usage: inventree-mcp serve [flags]")
+		writeLine(stdout, "usage: inventree-mcp <serve|version> [flags]")
 		return 0
 	default:
 		writeLine(stderr, "inventree-mcp: unknown command %q", args[0])
