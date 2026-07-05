@@ -18,7 +18,8 @@ import (
 )
 
 const (
-	ScopeInventreeRead = "inventree.read"
+	ScopeInventreeRead  = "inventree.read"
+	ScopeInventreeWrite = "inventree.write"
 
 	SearchPartsToolName              = "search_parts"
 	GetPartToolName                  = "get_part"
@@ -34,6 +35,11 @@ const (
 	GetAttachmentMetadataToolName    = "get_attachment_metadata"
 	DownloadAttachmentToolName       = "download_attachment"
 	DownloadPartImageToolName        = "download_part_image"
+	CreatePartToolName               = "create_part"
+	UpdatePartToolName               = "update_part"
+	CreateCompanyToolName            = "create_company"
+	CreateSupplierPartToolName       = "create_supplier_part"
+	CreateManufacturerPartToolName   = "create_manufacturer_part"
 
 	defaultDownloadMaxBytes int64 = 5 * 1024 * 1024
 	maxDownloadMaxBytes     int64 = 25 * 1024 * 1024
@@ -72,6 +78,14 @@ var lookupToolNames = []string{
 	DownloadPartImageToolName,
 }
 
+var writeToolNames = []string{
+	CreatePartToolName,
+	UpdatePartToolName,
+	CreateCompanyToolName,
+	CreateSupplierPartToolName,
+	CreateManufacturerPartToolName,
+}
+
 var ToolAuthorizations = map[string]ToolAuthorization{
 	HealthVersionToolName: {
 		Name:          HealthVersionToolName,
@@ -88,6 +102,14 @@ func init() {
 			MutationClass: "read_only",
 			Scopes:        []string{ScopeInventreeRead},
 			Annotations:   ReadOnlyAnnotations,
+		}
+	}
+	for _, name := range writeToolNames {
+		ToolAuthorizations[name] = ToolAuthorization{
+			Name:          name,
+			MutationClass: "write",
+			Scopes:        []string{ScopeInventreeWrite},
+			Annotations:   WriteAnnotations,
 		}
 	}
 }
@@ -495,6 +517,10 @@ func candidateFor(record any) ClarificationCandidate {
 		return ClarificationCandidate{ID: strconv.Itoa(v.PK), Label: v.Name, URL: fmt.Sprintf("/api/parameter/template/%d/", v.PK), Fields: map[string]any{"units": v.Units, "choices": v.Choices, "checkbox": v.Checkbox}}
 	case inventree.Company:
 		return ClarificationCandidate{ID: strconv.Itoa(v.PK), Label: v.Name, Summary: v.Description, URL: fmt.Sprintf("/api/company/%d/", v.PK), Fields: map[string]any{"supplier": v.IsSupplier, "manufacturer": v.IsManufacturer, "active": v.Active}}
+	case inventree.SupplierPart:
+		return ClarificationCandidate{ID: strconv.Itoa(v.PK), Label: v.SKU, Summary: v.Description, URL: fmt.Sprintf("/api/company/part/%d/", v.PK), Fields: map[string]any{"part": v.Part, "supplier": v.Supplier, "active": v.Active, "primary": v.Primary}}
+	case inventree.ManufacturerPart:
+		return ClarificationCandidate{ID: strconv.Itoa(v.PK), Label: v.MPN, Summary: v.Description, URL: fmt.Sprintf("/api/company/part/manufacturer/%d/", v.PK), Fields: map[string]any{"part": v.Part, "manufacturer": v.Manufacturer}}
 	case inventree.StockLocation:
 		return ClarificationCandidate{ID: strconv.Itoa(v.PK), Label: v.Name, Summary: v.Description, URL: fmt.Sprintf("/api/stock/location/%d/", v.PK), Fields: map[string]any{"structural": v.Structural, "external": v.External}}
 	default:

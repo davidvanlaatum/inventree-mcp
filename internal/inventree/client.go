@@ -115,6 +115,14 @@ func (c *Client) Patch(ctx context.Context, path string, fields PatchFields, out
 	return c.DoJSON(req, out)
 }
 
+func (c *Client) Post(ctx context.Context, path string, body any, out any) error {
+	req, err := c.NewRequest(ctx, http.MethodPost, path, nil, body)
+	if err != nil {
+		return err
+	}
+	return c.DoJSON(req, out)
+}
+
 func (c *Client) resolve(path string, query url.Values) (*url.URL, error) {
 	if path == "" || !strings.HasPrefix(path, "/") {
 		return nil, errors.New("InvenTree API path must start with /")

@@ -256,12 +256,12 @@ func (c *Client) partImageURL(ctx context.Context, part Part, mode AttachmentCon
 	}
 }
 
-func (c *Client) SearchSupplierParts(ctx context.Context, query url.Values) ([]SupplierPart, error) {
-	return listAll[SupplierPart](ctx, c, "/api/company/part/", query)
+func (c *Client) SearchSupplierParts(ctx context.Context, query SupplierPartQuery) ([]SupplierPart, error) {
+	return listAll[SupplierPart](ctx, c, "/api/company/part/", query.values())
 }
 
-func (c *Client) SearchManufacturerParts(ctx context.Context, query url.Values) ([]ManufacturerPart, error) {
-	return listAll[ManufacturerPart](ctx, c, "/api/company/part/manufacturer/", query)
+func (c *Client) SearchManufacturerParts(ctx context.Context, query ManufacturerPartQuery) ([]ManufacturerPart, error) {
+	return listAll[ManufacturerPart](ctx, c, "/api/company/part/manufacturer/", query.values())
 }
 
 func (c *Client) SearchPurchaseOrders(ctx context.Context, query url.Values) ([]PurchaseOrder, error) {

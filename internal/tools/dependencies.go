@@ -9,6 +9,7 @@ var ErrLookupClientUnavailable = errors.New("InvenTree lookup client unavailable
 
 type Dependencies struct {
 	ClientFromContext func(context.Context) (any, error)
+	EnableWriteTools  bool
 }
 
 func (d Dependencies) Client(ctx context.Context) (any, error) {

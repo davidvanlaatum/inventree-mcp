@@ -52,6 +52,7 @@ When picking up an implementation task from `docs/TASKS.md`:
 - Verify endpoint behavior against `docs/api-schema.yaml` before implementing or changing InvenTree API calls.
 - When `docs/api-schema.yaml` changes, update `docs/api-schema.md` provenance and capability notes in the same change.
 - Prefer PATCH for partial updates where the schema supports it, and preserve omitted fields versus explicit zero/false/empty/null values.
+- Keep HTTP transport details out of the tools package. Tool handlers should use tool input structs and typed domain/client query structs; do not expose `url.Values`, raw query strings, request headers, or similar HTTP encoding details through tool-layer interfaces.
 - Prefer existing InvenTree records over creating new ones, especially parameter templates, category parameter templates, categories, companies, and locations.
 - For parameter entry, search existing `/api/parameter/template/`, `/api/parameter/`, and `/api/part/category/parameters/` data first. If the right parameter is ambiguous, ask the operator instead of creating a new template.
 - STDIO mode uses the configured InvenTree token from `INVENTREE_TOKEN`; non-secret connection settings may come from environment or flags, including `Token` and `Bearer` upstream auth schemes.

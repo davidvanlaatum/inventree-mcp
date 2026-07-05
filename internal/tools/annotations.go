@@ -19,6 +19,13 @@ var ReadOnlyAnnotations = AnnotationClass{
 	OpenWorld:   false,
 }
 
+var WriteAnnotations = AnnotationClass{
+	ReadOnly:    false,
+	Destructive: false,
+	Idempotent:  false,
+	OpenWorld:   false,
+}
+
 func ToolAnnotations(class AnnotationClass) *mcp.ToolAnnotations {
 	return &mcp.ToolAnnotations{
 		ReadOnlyHint:    class.ReadOnly,

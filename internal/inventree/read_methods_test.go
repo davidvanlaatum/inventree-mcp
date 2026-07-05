@@ -174,21 +174,21 @@ func TestReadMethodsUseExpectedEndpoints(t *testing.T) {
 		{
 			name: "search supplier parts",
 			call: func(ctx context.Context, client *Client) error {
-				_, err := client.SearchSupplierParts(ctx, url.Values{"SKU": []string{"abc"}})
+				_, err := client.SearchSupplierParts(ctx, SupplierPartQuery{Part: 10, Supplier: 30, SKU: "abc"})
 				return err
 			},
 			wantPath:  "/api/company/part/",
-			wantQuery: url.Values{"SKU": []string{"abc"}},
+			wantQuery: url.Values{"part": []string{"10"}, "supplier": []string{"30"}, "SKU": []string{"abc"}},
 			response:  `{"count":1,"next":null,"previous":null,"results":[{"pk":100,"part":10,"supplier":30,"SKU":"abc"}]}`,
 		},
 		{
 			name: "search manufacturer parts",
 			call: func(ctx context.Context, client *Client) error {
-				_, err := client.SearchManufacturerParts(ctx, url.Values{"MPN": []string{"mfg-1"}})
+				_, err := client.SearchManufacturerParts(ctx, ManufacturerPartQuery{Part: 10, Manufacturer: 31, MPN: "mfg-1"})
 				return err
 			},
 			wantPath:  "/api/company/part/manufacturer/",
-			wantQuery: url.Values{"MPN": []string{"mfg-1"}},
+			wantQuery: url.Values{"part": []string{"10"}, "manufacturer": []string{"31"}, "MPN": []string{"mfg-1"}},
 			response:  `{"count":1,"next":null,"previous":null,"results":[{"pk":110,"part":10,"manufacturer":31,"MPN":"mfg-1"}]}`,
 		},
 		{

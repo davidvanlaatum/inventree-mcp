@@ -104,6 +104,7 @@ func TestRunServeStdioDoesNotWriteStdout(t *testing.T) {
 	a.Empty(stderr.String())
 	a.Equal(config.TransportStdio, gotConfig.Transport)
 	a.True(gotLoggerContext)
+	a.True(gotDependencies.EnableWriteTools)
 	r.NotNil(gotDependencies.ClientFromContext)
 
 	client, err := gotDependencies.ClientFromContext(context.Background())
@@ -121,6 +122,7 @@ func TestDependenciesForConfigLeavesHTTPClientUnavailableUntilOAuth(t *testing.T
 
 	r.NoError(err)
 	a.Nil(deps.ClientFromContext)
+	a.False(deps.EnableWriteTools)
 }
 
 func TestDependenciesForConfigBuildsStdioClient(t *testing.T) {
@@ -137,6 +139,7 @@ func TestDependenciesForConfigBuildsStdioClient(t *testing.T) {
 	})
 
 	r.NoError(err)
+	r.True(deps.EnableWriteTools)
 	r.NotNil(deps.ClientFromContext)
 	client, err := deps.ClientFromContext(context.Background())
 	r.NoError(err)

@@ -3,7 +3,6 @@ package tools
 import (
 	"context"
 	"errors"
-	"net/url"
 	"strconv"
 	"testing"
 
@@ -15,7 +14,7 @@ import (
 )
 
 type partSearchClient interface {
-	SearchParts(context.Context, url.Values) ([]inventree.Part, error)
+	SearchParts(context.Context, inventree.SearchQuery) ([]inventree.Part, error)
 }
 
 func TestDependenciesReturnLookupClientFromContext(t *testing.T) {
@@ -70,7 +69,7 @@ func TestLookupHandlerUsesInterfaceClient(t *testing.T) {
 
 	handler := LookupHandler[partSearchClient, SearchInput, searchPartsOutput](deps, "sample_search_parts",
 		func(ctx context.Context, _ *mcp.CallToolRequest, client partSearchClient, input SearchInput) (*mcp.CallToolResult, searchPartsOutput, error) {
-			parts, err := client.SearchParts(ctx, SearchValues(input))
+			parts, err := client.SearchParts(ctx, inventree.SearchQuery{Search: input.Search, Limit: NormalizeLookupLimit(input.Limit), Offset: input.Offset})
 			return TextResult("ok"), searchPartsOutput{Status: StatusOK, Count: len(parts)}, err
 		})
 
@@ -79,7 +78,7 @@ func TestLookupHandlerUsesInterfaceClient(t *testing.T) {
 	r.NotNil(result)
 	a.Equal("ok", result.Content[0].(*mcp.TextContent).Text)
 	a.Equal(searchPartsOutput{Status: StatusOK, Count: 1}, output)
-	a.Equal(url.Values{"limit": []string{"100"}, "search": []string{"resistor"}}, fake.lastSearchPartsQuery)
+	a.Equal(inventree.SearchQuery{Search: "resistor", Limit: 100}, fake.lastSearchPartsQuery)
 }
 
 func TestLookupHandlerReturnsClientResolutionError(t *testing.T) {
@@ -117,7 +116,7 @@ func TestLookupHandlerReturnsClarificationFromAmbiguousFakeClient(t *testing.T) 
 			return fake, nil
 		},
 	}, "sample_search_parts", func(ctx context.Context, _ *mcp.CallToolRequest, client partSearchClient, input SearchInput) (*mcp.CallToolResult, partLookupOutput, error) {
-		parts, err := client.SearchParts(ctx, SearchValues(input))
+		parts, err := client.SearchParts(ctx, inventree.SearchQuery{Search: input.Search, Limit: NormalizeLookupLimit(input.Limit), Offset: input.Offset})
 		if err != nil {
 			return nil, partLookupOutput{}, err
 		}
@@ -158,25 +157,6 @@ func TestLookupHandlerReturnsClarificationFromAmbiguousFakeClient(t *testing.T) 
 	a.Equal("10k", output.Clarification.RetryValues["search"])
 }
 
-func TestLookupQueryHelpers(t *testing.T) {
-	t.Parallel()
-	a := assert.New(t)
-
-	a.Equal(url.Values{"limit": []string{"20"}}, SearchValues(SearchInput{}))
-	a.Equal(url.Values{"limit": []string{"7"}, "offset": []string{"3"}, "search": []string{"cap"}}, SearchValues(SearchInput{
-		Search: "cap",
-		Limit:  7,
-		Offset: 3,
-	}))
-	a.Equal(url.Values{"limit": []string{"100"}}, SearchValues(SearchInput{Limit: 101}))
-	a.Equal(url.Values{
-		"limit":      []string{"20"},
-		"model_id":   []string{"42"},
-		"model_type": []string{"part"},
-		"search":     []string{"datasheet"},
-	}, ObjectLookupValues(ObjectLookupInput{ModelType: "part", ModelID: 42, Search: "datasheet"}))
-}
-
 func TestClarificationResponseUsesStableRetryFields(t *testing.T) {
 	t.Parallel()
 	a := assert.New(t)
@@ -207,10 +187,10 @@ type partLookupOutput struct {
 
 type fakeLookupClient struct {
 	parts                []inventree.Part
-	lastSearchPartsQuery url.Values
+	lastSearchPartsQuery inventree.SearchQuery
 }
 
-func (f *fakeLookupClient) SearchParts(_ context.Context, query url.Values) ([]inventree.Part, error) {
+func (f *fakeLookupClient) SearchParts(_ context.Context, query inventree.SearchQuery) ([]inventree.Part, error) {
 	f.lastSearchPartsQuery = query
 	return f.parts, nil
 }

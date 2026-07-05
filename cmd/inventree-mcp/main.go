@@ -97,6 +97,7 @@ func dependenciesForConfig(cfg config.Config) (tools.Dependencies, error) {
 		return tools.Dependencies{}, err
 	}
 	return tools.Dependencies{
+		EnableWriteTools: true,
 		ClientFromContext: func(context.Context) (any, error) {
 			return client, nil
 		},

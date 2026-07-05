@@ -2,11 +2,8 @@ package tools
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"log/slog"
-	"net/url"
-	"strconv"
 
 	"github.com/davidvanlaatum/dvgoutils/logging"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -79,26 +76,6 @@ func LookupHandler[Client, In, Out any](deps Dependencies, toolName string, hand
 	}
 }
 
-func SearchValues(input SearchInput) url.Values {
-	values := url.Values{}
-	if input.Search != "" {
-		values.Set("search", input.Search)
-	}
-	setPagingValues(values, input.Limit, input.Offset)
-	return values
-}
-
-func ObjectLookupValues(input ObjectLookupInput) url.Values {
-	values := url.Values{}
-	values.Set("model_type", input.ModelType)
-	values.Set("model_id", strconv.Itoa(input.ModelID))
-	if input.Search != "" {
-		values.Set("search", input.Search)
-	}
-	setPagingValues(values, input.Limit, input.Offset)
-	return values
-}
-
 func NormalizeLookupLimit(limit int) int {
 	if limit <= 0 {
 		return DefaultLookupLimit
@@ -133,15 +110,5 @@ func NewClarification(
 func TextResult(text string) *mcp.CallToolResult {
 	return &mcp.CallToolResult{
 		Content: []mcp.Content{&mcp.TextContent{Text: text}},
-	}
-}
-
-func setPagingValues(values url.Values, limit int, offset int) {
-	if values == nil {
-		panic(errors.New("setPagingValues requires non-nil url.Values"))
-	}
-	values.Set("limit", strconv.Itoa(NormalizeLookupLimit(limit)))
-	if offset > 0 {
-		values.Set("offset", strconv.Itoa(offset))
 	}
 }
