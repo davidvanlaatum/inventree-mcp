@@ -2,6 +2,7 @@ package inventree
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/url"
@@ -23,13 +24,24 @@ func ListAll[T any](ctx context.Context, client *Client, path string, query url.
 	nextPath := path
 	nextQuery := cloneValues(query)
 	for {
-		var page Page[T]
+		var payload json.RawMessage
 		req, err := client.NewRequest(ctx, http.MethodGet, nextPath, nextQuery, nil)
 		if err != nil {
 			return nil, err
 		}
-		if err := client.DoJSON(req, &page); err != nil {
+		if err := client.DoJSON(req, &payload); err != nil {
 			return nil, err
+		}
+		page, ok, err := decodePage[T](payload)
+		if err != nil {
+			return nil, err
+		}
+		if !ok {
+			var records []T
+			if err := json.Unmarshal(payload, &records); err != nil {
+				return nil, err
+			}
+			return append(all, records...), nil
 		}
 		all = append(all, page.Results...)
 		if page.Next == nil || *page.Next == "" {
@@ -42,6 +54,18 @@ func ListAll[T any](ctx context.Context, client *Client, path string, query url.
 		nextPath = nextURL.Path
 		nextQuery = nextURL.Query()
 	}
+}
+
+func decodePage[T any](payload json.RawMessage) (Page[T], bool, error) {
+	var page Page[T]
+	if err := json.Unmarshal(payload, &page); err != nil {
+		var records []T
+		if recordsErr := json.Unmarshal(payload, &records); recordsErr == nil {
+			return Page[T]{Results: records}, false, nil
+		}
+		return Page[T]{}, false, err
+	}
+	return page, true, nil
 }
 
 func cloneValues(values url.Values) url.Values {
