@@ -36,6 +36,48 @@ Remove draft status once the PR is ready for human review: all automated or suba
 
 Before `M1C-S04` is complete, mutating, operational, destructive, and upload tools may be registered only on STDIO or in unit-test registries. HTTP registration must filter them out of the exposed tool manifest until per-tool scope enforcement is implemented and tested.
 
+## Task Index
+
+| Task | Brief description | Status |
+| --- | --- | --- |
+| [M0-S01](#m0-s01-initialize-repository-scaffold) | Create repository baseline, docs, schema snapshot, GitHub remote, and initial commits. | Done |
+| [M0-S02](#m0-s02-add-project-automation) | Add minimal Go module, GitHub Actions, Dependabot, golangci-lint, and pre-commit. | Done |
+| [M0-S03](#m0-s03-first-beta-documentation-contracts) | Create first-beta tool reference and operator recipe skeletons. | Done |
+| [M0-S04](#m0-s04-release-automation-and-packages) | Add tag-driven releases, GoReleaser assets, Linux packages, and systemd packaging. | Done |
+| [M0-S05](#m0-s05-test-context-and-stable-ci-hygiene) | Standardize test contexts and simplify Go CI to the stable toolchain. | Done |
+| [M1A-S01](#m1a-s01-command-and-config-skeleton) | Add the first buildable `inventree-mcp` command with typed config. | Done |
+| [M1A-S02](#m1a-s02-logging-clock-ids-and-randomness) | Add deterministic platform seams and context logging. | Done |
+| [M1A-S03](#m1a-s03-mcp-server-skeleton) | Create MCP server construction, STDIO/HTTP transports, and health/version tool. | Done |
+| [M1B-S01](#m1b-s01-rest-client-core) | Implement the low-level InvenTree REST client core. | Done |
+| [M1B-S02](#m1b-s02-schema-endpoint-manifest) | Add the schema-backed endpoint manifest. | Done |
+| [M1H-S01](#m1h-s01-testcontainers-stack-spike) | Prove the pinned InvenTree Testcontainers stack. | Done |
+| [M1H-S02](#m1h-s02-shared-suite-fixtures-and-isolation) | Add shared suite fixtures, per-run accounts, and isolation checks. | Done |
+| [M1B-S03](#m1b-s03-read-only-client-methods) | Implement read-only client methods needed by milestone 1. | Done |
+| [M1C-S01](#m1c-s01-mcp-sdk-auth-spike) | Spike official MCP SDK auth behavior for HTTP. | Planned |
+| [M1C-S02](#m1c-s02-chatgpt-connector-compatibility-spike) | Verify ChatGPT connector OAuth compatibility. | Blocked |
+| [M1C-S03](#m1c-s03-oauth-envelope-and-code-storage) | Implement OAuth token envelopes and auth-code storage. | Planned |
+| [M1C-S04](#m1c-s04-scope-guard-and-credential-propagation) | Enforce per-tool OAuth scopes and credential propagation. | Planned |
+| [M1D-S01](#m1d-s01-lookup-tool-framework) | Add common lookup tool framework and clarification contracts. | Done |
+| [M1D-S02](#m1d-s02-part-company-stock-parameter-and-attachment-lookup-tools) | Add read-only part, company, stock, parameter, and attachment lookup tools. | Done |
+| [M1E-S01](#m1e-s01-part-and-company-writes) | Add part and company write tools. | Done |
+| [M1E-S02](#m1e-s02-parameter-writes) | Add existing-template-only parameter writes. | Done |
+| [M1E-S03](#m1e-s03-initial-stock-writes) | Create initial stock items with duplicate detection. | Ready |
+| [M1F-S01](#m1f-s01-upload-source-resolver) | Resolve inline, STDIO local-path, and URL upload sources safely. | Planned |
+| [M1F-S02](#m1f-s02-attachment-tools) | Add attachment download, upload, link, update, and delete tools. | Planned |
+| [M1F-S03](#m1f-s03-primary-part-image) | Add part primary image download and assignment/replacement. | Planned |
+| [M1G-S01](#m1g-s01-part-upsert-workflow) | Add safer part upsert workflow with supplier/manufacturer data. | Ready |
+| [M1G-S02](#m1g-s02-initial-stock-and-purchase-preview-workflows) | Add initial-stock workflow helper and no-write purchase preview. | Planned |
+| [M1G-S03](#m1g-s03-milestone-prompts) | Add milestone 1 prompts and prompt contract tests. | Planned |
+| [M1H-S03](#m1h-s03-milestone-integration-happy-paths) | Prove milestone catalog, stock, supplier, attachment, image, and preview happy paths. | Planned |
+| [M1I-S01](#m1i-s01-operator-docs-finalization) | Finalize README, operator recipes, and generated tool reference alignment. | Planned |
+| [M1I-S02](#m1i-s02-final-review-panel) | Run final Go, QA, product, and infosec review panel. | Planned |
+| [F-S01](#f-s01-evaluate-docker-compose-testcontainers-stack) | Evaluate Docker Compose-based Testcontainers stack. | Future |
+| [F-S02](#f-s02-bom-import-workflow) | BOM import workflow. | Future |
+| [F-S03](#f-s03-purchase-order-write-and-receiving) | Purchase order write and receiving. | Future |
+| [F-S04](#f-s04-build-order-workflows) | Build order workflows. | Future |
+| [F-S05](#f-s05-stocktake-adjustments) | Stocktake adjustments. | Future |
+| [F-S06](#f-s06-systemd-notify-and-watchdog-support) | Native systemd notification support for packaged HTTP deployments. | Future |
+
 ## Milestone 0: Repository And Planning
 
 ### M0-S01: Initialize Repository Scaffold
