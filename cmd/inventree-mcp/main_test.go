@@ -3,10 +3,13 @@ package main
 import (
 	"bytes"
 	"context"
+	"net/http"
 	"testing"
+	"time"
 
 	"github.com/davidvanlaatum/dvgoutils/logging"
 	"github.com/davidvanlaatum/inventree-mcp/internal/config"
+	"github.com/davidvanlaatum/inventree-mcp/internal/inventree"
 	"github.com/davidvanlaatum/inventree-mcp/internal/tools"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -101,7 +104,53 @@ func TestRunServeStdioDoesNotWriteStdout(t *testing.T) {
 	a.Empty(stderr.String())
 	a.Equal(config.TransportStdio, gotConfig.Transport)
 	a.True(gotLoggerContext)
-	a.Equal(tools.Dependencies{}, gotDependencies)
+	r.NotNil(gotDependencies.ClientFromContext)
+
+	client, err := gotDependencies.ClientFromContext(context.Background())
+	r.NoError(err)
+	_, ok := client.(*inventree.Client)
+	a.True(ok)
+}
+
+func TestDependenciesForConfigLeavesHTTPClientUnavailableUntilOAuth(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+
+	deps, err := dependenciesForConfig(config.Config{Transport: config.TransportHTTP})
+
+	r.NoError(err)
+	a.Nil(deps.ClientFromContext)
+}
+
+func TestDependenciesForConfigBuildsStdioClient(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+
+	deps, err := dependenciesForConfig(config.Config{
+		Transport:              config.TransportStdio,
+		InvenTreeURL:           "https://inventory.example.test",
+		InvenTreeToken:         "redacted",
+		InvenTreeAuthScheme:    config.AuthSchemeBearer,
+		InvenTreeTimeout:       5 * time.Second,
+		InvenTreeTLSSkipVerify: true,
+	})
+
+	r.NoError(err)
+	r.NotNil(deps.ClientFromContext)
+	client, err := deps.ClientFromContext(context.Background())
+	r.NoError(err)
+	r.IsType(&inventree.Client{}, client)
+}
+
+func TestInvenTreeHTTPClientUsesConfiguredTimeout(t *testing.T) {
+	t.Parallel()
+	a := assert.New(t)
+
+	client := inventreeHTTPClient(config.Config{InvenTreeTimeout: 7 * time.Second})
+
+	a.Equal(7*time.Second, client.Timeout)
+	a.IsType(&http.Transport{}, client.Transport)
 }
 
 func TestRunServeReportsInvalidLogLevel(t *testing.T) {

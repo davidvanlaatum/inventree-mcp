@@ -18,6 +18,48 @@ Each registered tool must have:
 
 Endpoint-backed tools must also map to a `docs/endpoint-manifest.yaml` entry whose path, method, operation ID, selected query filters, request schema, and response schema are validated against `docs/api-schema.yaml`.
 
+## Lookup Tool Framework
+
+Read-only lookup handlers use a context-resolved InvenTree client supplied through the tool dependency struct. Handlers depend on the lookup client interface instead of constructing a concrete HTTP client, so STDIO credentials and future HTTP OAuth credentials stay in the server layer.
+
+Common lookup inputs:
+
+| Field | Applies to | Behavior |
+| --- | --- | --- |
+| `search` | search tools | Optional text passed to the schema-backed InvenTree endpoint. |
+| `limit` | list/search tools | Optional maximum result count. Defaults to `20` and is capped at `100`. |
+| `offset` | list/search tools | Optional pagination offset for deterministic retries. |
+| `id` | get-by-id tools | Stable InvenTree primary key. |
+| `model_type` | object-scoped attachment/parameter tools | In-scope InvenTree object type such as `part`, `stockitem`, `company`, `manufacturerpart`, `supplierpart`, or `purchaseorder`. |
+| `model_id` | object-scoped attachment/parameter tools | Stable primary key for the selected object type. |
+
+Structured lookup outputs must include `status`. Successful lookups use `ok`; absent stable records use `not_found`; ambiguous lookups use `clarification_required`.
+
+Clarification outputs must include:
+
+| Field | Behavior |
+| --- | --- |
+| `status` | Always `clarification_required`. |
+| `question` | Specific operator question to resolve the ambiguity. |
+| `field` | Field or relationship that is ambiguous or missing. |
+| `reason` | Why the tool cannot safely continue. |
+| `candidates` | Candidate records with stable IDs, labels, optional summaries, URLs, and extra fields needed for the operator decision. |
+| `retry` | Stable field the caller should provide on retry, such as `part_id`, `company_id`, `location_id`, `template_id`, or `attachment_id`. |
+| `hard_error` | Whether the API would reject the request, distinct from a recommended-field warning. |
+| `retry_values` | Optional non-sensitive prior input values that should be preserved on retry. |
+
+Clarification `candidates` entries use:
+
+| Field | Behavior |
+| --- | --- |
+| `id` | Stable object ID to provide on retry. |
+| `label` | Human-readable object name or identifier. |
+| `summary` | Optional short disambiguating detail. |
+| `url` | Optional InvenTree URL for operator inspection. |
+| `fields` | Optional non-sensitive structured details needed for the decision. |
+
+The Milestone 1 table below is a planning summary until each tool is registered. When a tool is implemented, its authoritative row must include every manifest field above, including milestone status and MCP annotations.
+
 ## Skeleton Tools
 
 | Tool | Group | Milestone status | Class | MCP annotations | Scopes | Upload sources | Ask operator when |

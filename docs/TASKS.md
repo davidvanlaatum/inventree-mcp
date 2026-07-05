@@ -420,9 +420,12 @@ Tasks:
 
 ### M1D-S01: Lookup Tool Framework
 
-- Status: `Ready`
+- Status: `Done`
 - Depends on: M1A-S03, M1B-S03
 - Scope: implement common tool schemas, structured outputs, ambiguity responses, and fake-client handler tests.
+- Validation: `go test ./cmd/inventree-mcp ./internal/tools` passed; `go test ./internal/tools` passed after the docs-drift follow-up; `go test ./...` passed; `golangci-lint run` passed with 0 issues; `git diff --check` passed.
+- Review: Senior Go Developer, Senior QA / Test Architect, and Senior Product Manager reviews run. Initial Go review found the real `serve` path did not wire lookup client dependencies and the first interface was too broad; fixed with STDIO InvenTree client construction in the CLI layer, HTTP lookup dependencies left unavailable until OAuth, and generic handler wrapping that lets each tool require a narrow interface. Initial QA review found the ambiguous lookup path was not exercised through a fake handler, docs drift checks were too weak, and `retry_values` documentation conflicted with `omitempty`; fixed with a fake ambiguous handler test, reflection-backed docs drift checks tied to framework schema structs and constants, and optional `retry_values` wording. Initial product review found pending completion metadata, a mismatch with the plan's structured clarification contract, and unclear Milestone 1 table authority; fixed by using the plan's `field`/`reason`/`retry`/`hard_error` clarification shape and documenting that the Milestone 1 table is a planning summary until tools are registered. Focused Go, final focused QA, and final focused product reruns found no remaining actionable findings.
+- Residual risk: individual lookup tools, per-tool read-only annotations/scopes, no-result behavior, and full per-tool manifest rows remain deferred to M1D-S02.
 - Acceptance:
   - Tool handlers depend on interfaces, not concrete HTTP clients.
   - Ambiguous lookup returns structured clarification with candidates and stable retry fields.
@@ -430,14 +433,14 @@ Tasks:
 
 Tasks:
 
-- [ ] Add common tool dependency struct.
-- [ ] Add structured clarification response type.
-- [ ] Add fake-client test helpers.
-- [ ] Add docs generation or drift check.
+- [x] Add common tool dependency struct.
+- [x] Add structured clarification response type.
+- [x] Add fake-client test helpers.
+- [x] Add docs generation or drift check.
 
 ### M1D-S02: Part, Company, Stock, Parameter, And Attachment Lookup Tools
 
-- Status: `Planned`
+- Status: `Ready`
 - Depends on: M1D-S01
 - Scope: add read-only milestone lookup tools.
 - Acceptance:
