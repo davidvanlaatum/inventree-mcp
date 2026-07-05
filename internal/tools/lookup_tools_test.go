@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"net/http"
+	"net/url"
 	"testing"
 
 	"github.com/davidvanlaatum/dvgoutils/logging/testhandler"
@@ -305,20 +306,26 @@ func depsForFake(fake *fakeMilestoneLookupClient) Dependencies {
 }
 
 type fakeMilestoneLookupClient struct {
-	parts                []inventree.Part
-	categories           []inventree.Category
-	companies            []inventree.Company
-	suppliers            []inventree.Company
-	manufacturers        []inventree.Company
-	stockLocations       []inventree.StockLocation
-	stockItems           []inventree.StockItem
-	parameters           []inventree.Parameter
-	parameterTemplates   []inventree.ParameterTemplate
-	attachments          []inventree.Attachment
-	attachment           inventree.Attachment
-	downloadedAttachment inventree.DownloadedAttachment
-	downloadedPartImage  inventree.DownloadedPartImage
-	getPartErr           error
+	parts                   []inventree.Part
+	categories              []inventree.Category
+	companies               []inventree.Company
+	suppliers               []inventree.Company
+	manufacturers           []inventree.Company
+	stockLocations          []inventree.StockLocation
+	stockItems              []inventree.StockItem
+	parameters              []inventree.Parameter
+	parameterTemplates      []inventree.ParameterTemplate
+	attachments             []inventree.Attachment
+	supplierParts           []inventree.SupplierPart
+	manufacturerParts       []inventree.ManufacturerPart
+	attachment              inventree.Attachment
+	downloadedAttachment    inventree.DownloadedAttachment
+	downloadedPartImage     inventree.DownloadedPartImage
+	getPartErr              error
+	createdPart             bool
+	createdCompany          bool
+	createdSupplierPart     bool
+	createdManufacturerPart bool
 
 	lastSearchPartsQuery              inventree.SearchQuery
 	lastSearchPartCategoriesQuery     inventree.SearchQuery
@@ -330,6 +337,13 @@ type fakeMilestoneLookupClient struct {
 	lastSearchStockLocationsQuery     inventree.SearchQuery
 	lastSearchStockItemsQuery         inventree.StockItemQuery
 	lastListAttachmentsQuery          inventree.AttachmentQuery
+	lastSearchSupplierPartsQuery      url.Values
+	lastSearchManufacturerPartsQuery  url.Values
+	lastCreatePart                    inventree.PartCreate
+	lastCreateCompany                 inventree.CompanyCreate
+	lastCreateSupplierPart            inventree.SupplierPartCreate
+	lastCreateManufacturerPart        inventree.ManufacturerPartCreate
+	lastUpdatePartFields              inventree.PatchFields
 	lastAttachmentMaxBytes            int64
 	lastPartImageMaxBytes             int64
 }
@@ -364,6 +378,12 @@ func (f *fakeMilestoneLookupClient) SearchParameterTemplates(_ context.Context, 
 func (f *fakeMilestoneLookupClient) SearchCompanies(_ context.Context, query inventree.SearchQuery) ([]inventree.Company, error) {
 	f.lastSearchCompaniesQuery = query
 	return f.companies, nil
+}
+
+func (f *fakeMilestoneLookupClient) CreateCompany(_ context.Context, input inventree.CompanyCreate) (inventree.Company, error) {
+	f.createdCompany = true
+	f.lastCreateCompany = input
+	return inventree.Company{PK: 30, Name: input.Name, Currency: input.Currency, IsSupplier: input.IsSupplier, IsManufacturer: input.IsManufacturer}, nil
 }
 
 func (f *fakeMilestoneLookupClient) SearchSuppliers(_ context.Context, query inventree.SearchQuery) ([]inventree.Company, error) {
@@ -406,4 +426,41 @@ func (f *fakeMilestoneLookupClient) DownloadAttachment(_ context.Context, _ int,
 func (f *fakeMilestoneLookupClient) DownloadPartImage(_ context.Context, _ int, _ inventree.AttachmentContentMode, maxBytes int64) (inventree.DownloadedPartImage, error) {
 	f.lastPartImageMaxBytes = maxBytes
 	return f.downloadedPartImage, nil
+}
+
+func (f *fakeMilestoneLookupClient) CreatePart(_ context.Context, input inventree.PartCreate) (inventree.Part, error) {
+	f.createdPart = true
+	f.lastCreatePart = input
+	return inventree.Part{PK: 10, Name: input.Name, Category: input.Category, Purchaseable: input.Purchaseable != nil && *input.Purchaseable}, nil
+}
+
+func (f *fakeMilestoneLookupClient) UpdatePart(_ context.Context, id int, fields inventree.PatchFields) (inventree.Part, error) {
+	f.lastUpdatePartFields = fields
+	return inventree.Part{PK: id}, nil
+}
+
+func (f *fakeMilestoneLookupClient) SearchSupplierParts(_ context.Context, query url.Values) ([]inventree.SupplierPart, error) {
+	f.lastSearchSupplierPartsQuery = query
+	return f.supplierParts, nil
+}
+
+func (f *fakeMilestoneLookupClient) CreateSupplierPart(_ context.Context, input inventree.SupplierPartCreate) (inventree.SupplierPart, error) {
+	f.createdSupplierPart = true
+	f.lastCreateSupplierPart = input
+	return inventree.SupplierPart{PK: 40, Part: input.Part, Supplier: input.Supplier, SKU: input.SKU}, nil
+}
+
+func (f *fakeMilestoneLookupClient) SearchManufacturerParts(_ context.Context, query url.Values) ([]inventree.ManufacturerPart, error) {
+	f.lastSearchManufacturerPartsQuery = query
+	return f.manufacturerParts, nil
+}
+
+func (f *fakeMilestoneLookupClient) CreateManufacturerPart(_ context.Context, input inventree.ManufacturerPartCreate) (inventree.ManufacturerPart, error) {
+	f.createdManufacturerPart = true
+	f.lastCreateManufacturerPart = input
+	mpn := ""
+	if input.MPN != nil {
+		mpn = *input.MPN
+	}
+	return inventree.ManufacturerPart{PK: 50, Part: input.Part, Manufacturer: input.Manufacturer, MPN: mpn}, nil
 }

@@ -45,7 +45,8 @@ Each recipe should preserve omitted fields versus explicit zero/false/empty valu
 - Preferred lookup order: search parts, search categories, search companies, search supplier/manufacturer part records, then create or update only the missing pieces.
 - Clarify when: part/category/company matches are ambiguous, an existing part may already represent the requested item, or supplier/manufacturer identifiers conflict.
 - Tool sequence: `search_parts`, `search_part_categories`, `search_companies` or role-specific search, then `create_part`/`update_part`, `create_supplier_part`, `create_manufacturer_part`.
-- Expected output: stable part ID/URL, supplier/manufacturer link IDs, and a summary of omitted recommended fields.
+- Expected output: `status` plus the created or updated part, supplier-part, and manufacturer-part records. If a required stable ID, currency, supported company role, or duplicate decision is missing, the tool returns structured clarification.
+- HTTP note: write tools are STDIO-only until per-tool OAuth scope enforcement is implemented.
 
 ## Add Or Update Part Parameters
 
@@ -61,7 +62,7 @@ Each recipe should preserve omitted fields versus explicit zero/false/empty valu
 - Preferred lookup order: `get_part`, `search_stock_locations`, `search_stock_items` for duplicate detection.
 - Clarify when: location is ambiguous, quantity/status is unclear, or existing stock at the same location may duplicate the requested initial stock.
 - Tool sequence: `search_parts` or `get_part`, `search_stock_locations`, `search_stock_items`, then `create_stock_item`.
-- Expected output: stock item ID/URL and duplicate-detection summary.
+- Planned output when `create_stock_item` is implemented: stock item record and duplicate-detection status.
 
 ## Attach Datasheet Or Photo
 
@@ -95,7 +96,7 @@ Each recipe should preserve omitted fields versus explicit zero/false/empty valu
 - Preferred lookup order: `list_attachments`, inspect image-capable attachments, then set primary image only when the candidate is unambiguous.
 - Clarify when: multiple images are plausible, the image is already attached elsewhere, or replacement lacks confirmation.
 - Tool sequence: `list_attachments`, optionally upload an image, then `set_primary_image`.
-- Expected output: part ID, selected attachment/image ID, primary-image URL or thumbnail state, and replacement confirmation status.
+- Planned output when `set_primary_image` is implemented: part record, selected attachment/image ID, and replacement confirmation status.
 
 ## Preview Purchase Order Lines
 

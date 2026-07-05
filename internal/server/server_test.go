@@ -9,6 +9,7 @@ import (
 
 	"github.com/davidvanlaatum/dvgoutils/logging"
 	"github.com/davidvanlaatum/dvgoutils/logging/testhandler"
+	"github.com/davidvanlaatum/inventree-mcp/internal/config"
 	"github.com/davidvanlaatum/inventree-mcp/internal/tools"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/stretchr/testify/assert"
@@ -39,7 +40,7 @@ func TestStdioServerCanInitializeAndListTools(t *testing.T) {
 
 	result, err := session.ListTools(ctx, nil)
 	r.NoError(err)
-	r.Len(result.Tools, len(tools.ToolAuthorizations))
+	r.Len(result.Tools, countNonWriteAuthorizations())
 	for _, tool := range result.Tools {
 		a.True(tool.Annotations.ReadOnlyHint, tool.Name)
 		a.NotNil(tool.Annotations.DestructiveHint, tool.Name)
@@ -50,6 +51,64 @@ func TestStdioServerCanInitializeAndListTools(t *testing.T) {
 
 	cancel()
 	<-serverDone
+}
+
+func countNonWriteAuthorizations() int {
+	count := 0
+	for _, auth := range tools.ToolAuthorizations {
+		if auth.MutationClass != "write" {
+			count++
+		}
+	}
+	return count
+}
+
+func TestServerListsWriteToolsOnlyWhenEnabled(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	clientTransport, serverTransport := mcp.NewInMemoryTransports()
+	serverDone := make(chan error, 1)
+	go func() {
+		serverDone <- New(tools.Dependencies{EnableWriteTools: true}).Run(ctx, serverTransport)
+	}()
+
+	client := mcp.NewClient(&mcp.Implementation{Name: "test-client", Version: "v0.0.0"}, nil)
+	session, err := client.Connect(ctx, clientTransport, nil)
+	r.NoError(err)
+	defer func() {
+		r.NoError(session.Close())
+	}()
+
+	result, err := session.ListTools(ctx, nil)
+	r.NoError(err)
+	r.Len(result.Tools, len(tools.ToolAuthorizations))
+	names := make(map[string]bool, len(result.Tools))
+	for _, tool := range result.Tools {
+		names[tool.Name] = true
+	}
+	a.True(names[tools.CreatePartToolName])
+	a.True(names[tools.CreateCompanyToolName])
+
+	cancel()
+	<-serverDone
+}
+
+func TestRunRejectsHTTPWriteToolsBeforeOAuthScopeEnforcement(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+
+	err := Run(ctx, config.Config{Transport: config.TransportHTTP}, tools.Dependencies{EnableWriteTools: true})
+
+	r.Error(err)
+	a.Contains(err.Error(), "HTTP transport cannot register write tools")
 }
 
 func TestHealthVersionToolReturnsReadOnlyStatus(t *testing.T) {
@@ -105,6 +164,11 @@ func TestHTTPHandlerUsesStatelessStreamableServer(t *testing.T) {
 	r.Equal(http.StatusOK, listRecorder.Code)
 	a.Empty(listRecorder.Header().Get("Mcp-Session-Id"))
 	a.Contains(listRecorder.Body.String(), tools.HealthVersionToolName)
+	for name, auth := range tools.ToolAuthorizations {
+		if auth.MutationClass == "write" {
+			a.NotContains(listRecorder.Body.String(), name)
+		}
+	}
 }
 
 func postMCP(t *testing.T, handler http.Handler, body string) *httptest.ResponseRecorder {

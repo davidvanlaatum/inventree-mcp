@@ -89,6 +89,31 @@ func TestToolReferenceDocumentsRegisteredLookupTools(t *testing.T) {
 	}
 }
 
+func TestToolReferenceDocumentsRegisteredWriteTools(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+
+	data, err := os.ReadFile("../../docs/tool-reference.md")
+	r.NoError(err)
+	docs := string(data)
+
+	a.Contains(docs, "## Registered Write Tools")
+	a.Contains(docs, "`"+ScopeInventreeWrite+"`")
+	a.Contains(docs, "`readOnlyHint:false`")
+	a.Contains(docs, "`destructiveHint:false`")
+	a.Contains(docs, "`idempotentHint:false`")
+	a.Contains(docs, "`openWorldHint:false`")
+	a.Contains(docs, "HTTP mode does not register them until `M1C-S04`")
+	for _, name := range writeToolNames {
+		a.Contains(docs, "`"+name+"`")
+		auth, ok := ToolAuthorizations[name]
+		r.True(ok, "missing authorization for %s", name)
+		a.Equal("write", auth.MutationClass)
+		a.Equal([]string{ScopeInventreeWrite}, auth.Scopes)
+	}
+}
+
 func jsonFieldName(tag string) string {
 	for i, char := range tag {
 		if char == ',' {

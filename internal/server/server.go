@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"net/http"
 
@@ -23,6 +24,9 @@ func New(deps tools.Dependencies) *mcp.Server {
 }
 
 func Run(ctx context.Context, cfg config.Config, deps tools.Dependencies) error {
+	if cfg.Transport == config.TransportHTTP && deps.EnableWriteTools {
+		return errors.New("HTTP transport cannot register write tools until per-tool OAuth scope enforcement is implemented")
+	}
 	srv := New(deps)
 	switch cfg.Transport {
 	case config.TransportStdio:

@@ -85,6 +85,20 @@ All tools in this section are implemented and registered. They use class `read_o
 | `download_attachment` | Attachments | `id`, `mode`, `max_bytes` | `status`, `id`, `filename`, `content_type`, `size`, `sha256`, `mode`, `source_url`, plus `text` or `base64` content | Operator may mean stored-link metadata versus an external link target, or original file versus explicit thumbnail mode. |
 | `download_part_image` | Attachments | `id`, `mode`, `max_bytes` | `status`, `id`, `content_type`, `size`, `sha256`, `mode`, `source_url`, plus `text` or `base64` content | Operator may mean a generic attachment rather than the current primary image, or original image versus explicit thumbnail mode. |
 
+## Registered Write Tools
+
+The tools in this section are implemented and registered only when write tools are explicitly enabled by the server dependency configuration. The current CLI enables them for STDIO mode. HTTP mode does not register them until `M1C-S04` implements per-tool OAuth scope enforcement.
+
+All tools in this section use class `write`, milestone status `milestone_1`, MCP annotations `readOnlyHint:false`, `destructiveHint:false`, `idempotentHint:false`, and `openWorldHint:false`. They require OAuth scope `inventree.write` when HTTP OAuth scope enforcement lands. Upload sources are `None`.
+
+| Tool | Group | Inputs | Output | Ask operator when |
+| --- | --- | --- | --- | --- |
+| `create_part` | Part entry | `name`, `category_id`, optional `description`, `ipn`, `units`, `active`, `assembly`, `component`, `purchaseable`, `trackable`, `virtual`, `default_location_id` | `status`, `record`, optional `clarification` with retry `part_id`, `category_id`, or `default_location_id` | Category ID or default location ID is missing/invalid, or matching parts already exist. |
+| `update_part` | Part entry | `id`, optional `name`, `description`, `category_id`, `ipn`, `units`, `active`, `assembly`, `component`, `purchaseable`, `trackable`, `virtual`, `default_location_id` | `status`, `record`, optional `clarification` with retry `id`, `category_id`, or `default_location_id` | Part ID or referenced IDs are invalid, caller provides names instead of stable IDs, or no PATCH fields are supplied. |
+| `create_company` | Company entry | `name`, `currency`, at least one of `is_supplier` or `is_manufacturer`, optional `description`, `website` | `status`, `record`, optional `clarification` with retry `company_id`, `currency`, or `is_supplier` | Matching companies already exist, currency is missing, no supported role is selected, or the caller asks for a customer/sales workflow. |
+| `create_supplier_part` | Supplier link | `part_id`, `supplier_id`, `sku`, optional `description`, `link`, `active`, `primary`, `manufacturer_part_id`, `packaging`, `note` | `status`, `record`, optional `clarification` with retry `supplier_part_id`, `part_id`, `supplier_id`, or `manufacturer_part_id` | Part, supplier, or manufacturer-part ID is invalid, or matching supplier-part links already exist. |
+| `create_manufacturer_part` | Manufacturer link | `part_id`, `manufacturer_id`, optional `mpn`, `description`, `link` | `status`, `record`, optional `clarification` with retry `manufacturer_part_id`, `part_id`, or `manufacturer_id` | Part or manufacturer ID is invalid, or matching manufacturer-part links already exist. |
+
 ## Skeleton Tools
 
 | Tool | Group | Milestone status | Class | MCP annotations | Scopes | Upload sources | Ask operator when |
@@ -110,12 +124,12 @@ All tools in this section are implemented and registered. They use class `read_o
 | `download_attachment` | Attachments | Read-only | `inventree.read` | None | Operator may mean stored-link metadata versus an external link target, or original file versus explicit thumbnail mode. |
 | `download_part_image` | Attachments | Read-only | `inventree.read` | None | Operator may mean a generic attachment rather than the current primary image, or original image versus explicit thumbnail mode. |
 | `preview_purchase_order_with_lines` | Purchasing preview | Read-only | `inventree.read` | None | Supplier part, price, quantity, or currency is ambiguous. |
-| `create_part` | Part entry | Write | `inventree.write` | None | Category, units, supplier/manufacturer data, or required API fields are unclear. |
-| `update_part` | Part entry | Write | `inventree.write` | None | Caller provides human names instead of stable IDs and lookup is ambiguous. |
+| `create_part` | Part entry | Write | `inventree.write` | None | See Registered Write Tools. |
+| `update_part` | Part entry | Write | `inventree.write` | None | See Registered Write Tools. |
 | `set_part_parameters` | Parameters | Write | `inventree.write` | None | Existing template match is ambiguous or creation of a new template/category link would be required. |
-| `create_company` | Company entry | Write | `inventree.write` | None | Role should be supplier/manufacturer but existing company may already match. |
-| `create_supplier_part` | Supplier link | Write | `inventree.write` | None | Supplier company or purchasable part match is ambiguous. |
-| `create_manufacturer_part` | Manufacturer link | Write | `inventree.write` | None | Manufacturer company or part match is ambiguous. |
+| `create_company` | Company entry | Write | `inventree.write` | None | See Registered Write Tools. |
+| `create_supplier_part` | Supplier link | Write | `inventree.write` | None | See Registered Write Tools. |
+| `create_manufacturer_part` | Manufacturer link | Write | `inventree.write` | None | See Registered Write Tools. |
 | `create_stock_item` | Initial stock | Operational | `inventree.write`, `inventree.operational` | None | Existing stock at the requested location may duplicate the new item. |
 | `upload_attachment` | Attachments | Write | `inventree.write`, `inventree.upload` | Inline bytes; STDIO allowlisted local path | Filename/content duplicates an existing attachment without explicit replacement or metadata-update intent. |
 | `upload_attachment_from_url` | Attachments | Write, open-world | `inventree.write`, `inventree.upload` | HTTP(S) URL only | Intent could be upload-copy versus store-link, or URL policy rejects the target. |

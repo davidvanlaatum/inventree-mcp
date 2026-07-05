@@ -463,9 +463,12 @@ Tasks:
 
 ### M1E-S01: Part And Company Writes
 
-- Status: `Ready`
+- Status: `Done`
 - Depends on: M1B-S01, M1D-S02
 - Scope: create/update parts and create supplier/manufacturer companies or links.
+- Validation: `go test ./...` passed; `golangci-lint run` passed with 0 issues; `git diff --check` passed.
+- Review: Senior Go Developer, Senior QA / Test Architect, Senior Product Manager, and Senior Infosec Reviewer reviews run. Initial findings requested direct HTTP `tools/list` exclusion checks, structured no-op `update_part` clarification, broader sales/customer boundary tests, role-less company rejection, positive-ID validation before writes, explicit company currency instead of defaulting to USD, structured missing-category clarification, removal of the low-level `PartCreate.salable` field, a server-layer HTTP/write-tool guard, and docs alignment for registered write-tool behavior. Fixes addressed those findings with tests and docs updates. Final Go, QA, product, and infosec reruns found no actionable findings.
+- Residual risk: write tools are intentionally STDIO/test-registry only until `M1C-S04` implements per-tool OAuth scope enforcement. Client create/update payloads cover milestone fields rather than every schema field; later workflow tools may add richer success summaries.
 - Acceptance:
   - PATCH is used where schema supports it.
   - Existing companies/categories are preferred over creating new records.
@@ -476,12 +479,12 @@ Tasks:
 
 Tasks:
 
-- [ ] Add `create_part`.
-- [ ] Add `update_part`.
-- [ ] Add `create_company`.
-- [ ] Add `create_supplier_part`.
-- [ ] Add `create_manufacturer_part`.
-- [ ] Add sales/customer boundary tests.
+- [x] Add `create_part`.
+- [x] Add `update_part`.
+- [x] Add `create_company`.
+- [x] Add `create_supplier_part`.
+- [x] Add `create_manufacturer_part`.
+- [x] Add sales/customer boundary tests.
 
 ### M1E-S02: Parameter Writes
 
