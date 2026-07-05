@@ -64,6 +64,8 @@ type Environment struct {
 
 	containers []testcontainers.Container
 	network    *testcontainers.DockerNetwork
+	httpClient *http.Client
+	logCancel  context.CancelFunc
 }
 
 // CleanupFunc tears down a started test environment with a bounded timeout.
@@ -93,11 +95,21 @@ func DefaultOptions() Options {
 func DefaultTestOptions(tb testing.TB) Options {
 	tb.Helper()
 	opts := DefaultOptions()
+	opts.ContainerLogf = filteredContainerLogf(func(format string, args ...any) {
+		tb.Helper()
+		tb.Logf(format, args...)
+	})
+	return opts
+}
+
+func filteredContainerLogf(logf func(format string, args ...any)) func(container string, stream string, line string) {
+	if logf == nil {
+		return nil
+	}
 	migrationsComplete := false
 	skipNextStatement := false
 	droppedLogs := 0
-	opts.ContainerLogf = func(container string, stream string, line string) {
-		tb.Helper()
+	return func(container string, stream string, line string) {
 		if !migrationsComplete && stream == "stdout" && strings.Contains(line, "database migrations completed") {
 			migrationsComplete = true
 		}
@@ -118,12 +130,11 @@ func DefaultTestOptions(tb testing.TB) Options {
 			return
 		}
 		if droppedLogs > 0 {
-			tb.Logf("Dropped %d migration error logs", droppedLogs)
+			logf("Dropped %d migration error logs", droppedLogs)
 			droppedLogs = 0
 		}
-		tb.Logf("container[%s][%s] %s", container, stream, line)
+		logf("container[%s][%s] %s", container, stream, line)
 	}
-	return opts
 }
 
 // CleanupForTest wraps cleanup so it can be passed directly to testing.T.Cleanup.
@@ -190,10 +201,11 @@ func Start(ctx context.Context, opts Options) (*Environment, CleanupFunc, error)
 		return nil, nil, err
 	}
 
-	ctx, cancel := context.WithTimeout(ctx, opts.StartupTimeout)
-	defer cancel()
+	startupCtx, cancelStartup := context.WithTimeout(ctx, opts.StartupTimeout)
+	defer cancelStartup()
+	logCtx, cancelLogs := context.WithCancel(context.Background())
 
-	env := &Environment{Image: opts.Image}
+	env := &Environment{Image: opts.Image, httpClient: opts.HTTPClient, logCancel: cancelLogs}
 	var started bool
 	defer func() {
 		if !started {
@@ -201,7 +213,7 @@ func Start(ctx context.Context, opts Options) (*Environment, CleanupFunc, error)
 		}
 	}()
 
-	nw, err := tcnetwork.New(ctx, tcnetwork.WithDriver("bridge"))
+	nw, err := tcnetwork.New(startupCtx, tcnetwork.WithDriver("bridge"))
 	if err != nil {
 		return nil, nil, fmt.Errorf("create InvenTree test network: %w", err)
 	}
@@ -215,13 +227,15 @@ func Start(ctx context.Context, opts Options) (*Environment, CleanupFunc, error)
 		testcontainers.WithHostConfigModifier(loopbackPortBinding("5432/tcp")),
 		tcnetwork.WithNetwork([]string{"inventree-db"}, nw),
 	}
-	postgresOpts = appendContainerLogConsumer(postgresOpts, "postgres", containerLogf)
-	pg, err := postgres.Run(ctx, defaultPostgresImage, postgresOpts...)
+	pg, err := postgres.Run(startupCtx, defaultPostgresImage, postgresOpts...)
 	if err != nil {
 		return nil, nil, fmt.Errorf("start InvenTree postgres: %w", err)
 	}
 	env.containers = append(env.containers, pg)
-	dbHost, err := pg.ContainerIP(ctx)
+	if err := startContainerLogProducer(logCtx, pg, "postgres", containerLogf); err != nil {
+		return nil, nil, fmt.Errorf("start InvenTree postgres log forwarding: %w", err)
+	}
+	dbHost, err := pg.ContainerIP(startupCtx)
 	if err != nil {
 		return nil, nil, fmt.Errorf("resolve InvenTree postgres IP: %w", err)
 	}
@@ -231,13 +245,15 @@ func Start(ctx context.Context, opts Options) (*Environment, CleanupFunc, error)
 		testcontainers.WithHostConfigModifier(loopbackPortBinding("6379/tcp")),
 		testcontainers.WithWaitStrategy(wait.ForLog("Ready to accept connections").WithStartupTimeout(30 * time.Second)),
 	}
-	redisOpts = appendContainerLogConsumer(redisOpts, "redis", containerLogf)
-	redis, err := testcontainers.Run(ctx, defaultRedisImage, redisOpts...)
+	redis, err := testcontainers.Run(startupCtx, defaultRedisImage, redisOpts...)
 	if err != nil {
 		return nil, nil, fmt.Errorf("start InvenTree redis: %w", err)
 	}
 	env.containers = append(env.containers, redis)
-	cacheHost, err := redis.ContainerIP(ctx)
+	if err := startContainerLogProducer(logCtx, redis, "redis", containerLogf); err != nil {
+		return nil, nil, fmt.Errorf("start InvenTree redis log forwarding: %w", err)
+	}
+	cacheHost, err := redis.ContainerIP(startupCtx)
 	if err != nil {
 		return nil, nil, fmt.Errorf("resolve InvenTree redis IP: %w", err)
 	}
@@ -263,20 +279,22 @@ func Start(ctx context.Context, opts Options) (*Environment, CleanupFunc, error)
 				WithStartupTimeout(opts.StartupTimeout),
 		),
 	}
-	serverOpts = appendContainerLogConsumer(serverOpts, "inventree", containerLogf)
-	server, err := testcontainers.Run(ctx, opts.Image, serverOpts...)
+	server, err := testcontainers.Run(startupCtx, opts.Image, serverOpts...)
 	if err != nil {
 		return nil, nil, fmt.Errorf("start InvenTree server: %w", err)
 	}
 	env.containers = append(env.containers, server)
+	if err := startContainerLogProducer(logCtx, server, "inventree", containerLogf); err != nil {
+		return nil, nil, fmt.Errorf("start InvenTree server log forwarding: %w", err)
+	}
 
-	baseURL, err := server.PortEndpoint(ctx, defaultWebPort, "http")
+	baseURL, err := server.PortEndpoint(startupCtx, defaultWebPort, "http")
 	if err != nil {
 		return nil, nil, fmt.Errorf("resolve InvenTree endpoint: %w", err)
 	}
 	env.BaseURL = strings.TrimRight(baseURL, "/")
 
-	version, err := fetchVersion(ctx, opts.HTTPClient, env.BaseURL, defaultAdminUser, defaultAdminPassword)
+	version, err := fetchVersion(startupCtx, opts.HTTPClient, env.BaseURL, defaultAdminUser, defaultAdminPassword)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -293,13 +311,13 @@ func Start(ctx context.Context, opts Options) (*Environment, CleanupFunc, error)
 	env.Version = version.Version.Server
 	env.APIVersion = apiVersion
 
-	token, err := createToken(ctx, opts.HTTPClient, env.BaseURL, defaultAdminUser, defaultAdminPassword)
+	token, err := createToken(startupCtx, opts.HTTPClient, env.BaseURL, defaultAdminUser, defaultAdminPassword)
 	if err != nil {
 		return nil, nil, err
 	}
 	env.Token = token
 
-	if err := proveToken(ctx, env.BaseURL, token, opts.HTTPClient); err != nil {
+	if err := proveToken(startupCtx, env.BaseURL, token, opts.HTTPClient); err != nil {
 		return nil, nil, err
 	}
 
@@ -311,6 +329,14 @@ func Start(ctx context.Context, opts Options) (*Environment, CleanupFunc, error)
 
 func (e *Environment) Close(ctx context.Context) error {
 	var errs []error
+	if e.logCancel != nil {
+		e.logCancel()
+	}
+	for i := len(e.containers) - 1; i >= 0; i-- {
+		if e.containers[i] != nil {
+			errs = append(errs, e.containers[i].StopLogProducer())
+		}
+	}
 	for i := len(e.containers) - 1; i >= 0; i-- {
 		if e.containers[i] != nil {
 			errs = append(errs, e.containers[i].Terminate(ctx))
@@ -340,22 +366,20 @@ func loopbackPortBinding(port string) func(*container.HostConfig) {
 	}
 }
 
-func appendContainerLogConsumer(
-	opts []testcontainers.ContainerCustomizer,
+func startContainerLogProducer(
+	ctx context.Context,
+	c testcontainers.Container,
 	name string,
 	logf func(container string, stream string, line string),
-) []testcontainers.ContainerCustomizer {
-	if logf == nil {
-		return opts
+) error {
+	if logf == nil || c == nil {
+		return nil
 	}
-	return append(
-		opts, testcontainers.WithLogConsumers(
-			containerLogConsumer{
-				name: name,
-				logf: logf,
-			},
-		),
-	)
+	c.FollowOutput(containerLogConsumer{
+		name: name,
+		logf: logf,
+	})
+	return c.StartLogProducer(ctx)
 }
 
 func synchronizedContainerLogf(logf func(container string, stream string, line string)) func(
