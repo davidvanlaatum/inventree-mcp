@@ -4,7 +4,7 @@ go 1.25.0
 
 require (
 	github.com/davidvanlaatum/dvgoutils v0.0.0-20260704011248-9d2ce1ecf3de
-	github.com/moby/moby/api v1.54.2
+	github.com/moby/moby/api v1.55.0
 	github.com/modelcontextprotocol/go-sdk v1.6.1
 	github.com/stretchr/testify v1.11.1
 	github.com/testcontainers/testcontainers-go v0.43.0
