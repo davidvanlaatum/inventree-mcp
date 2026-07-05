@@ -603,8 +603,6 @@ func TestTestEnvironmentSmallHelpers(t *testing.T) {
 	r.Equal(defaultAdminUser, env["INVENTREE_ADMIN_USER"])
 	r.Equal(defaultAdminEmail, env["INVENTREE_ADMIN_EMAIL"])
 
-	r.Len(appendContainerLogConsumer(nil, "inventree", func(string, string, string) {}), 1)
-	r.Empty(appendContainerLogConsumer(nil, "inventree", nil))
 	r.NoError((&Environment{}).Close(context.Background()))
 }
 

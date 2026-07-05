@@ -4,9 +4,13 @@ package testenv
 
 import (
 	"context"
+	"io"
+	"net/http"
 	"net/netip"
 	"os"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 )
@@ -45,6 +49,17 @@ func TestSharedInvenTreeFixturesAndParallelRuns(t *testing.T) {
 	t.Parallel()
 
 	opts := DefaultTestOptions(t)
+	logProbeSeen := make(chan string, 1)
+	originalContainerLogf := opts.ContainerLogf
+	opts.ContainerLogf = func(container string, stream string, line string) {
+		originalContainerLogf(container, stream, line)
+		if container == "inventree" && strings.Contains(line, "GET /api/testenv-log-probe/") {
+			select {
+			case logProbeSeen <- line:
+			default:
+			}
+		}
+	}
 	t.Logf("starting shared InvenTree integration stack with image %s, expected version %s, expected API %s", opts.Image, opts.ExpectedVersion, opts.ExpectedAPIVersion)
 	shared, err := StartSharedInvenTree(ctx, opts)
 	r.NoError(err)
@@ -54,6 +69,30 @@ func TestSharedInvenTreeFixturesAndParallelRuns(t *testing.T) {
 	}))
 	env := shared.Environment()
 	r.NotNil(env)
+	t.Run("container-log-forwarding-after-start", func(t *testing.T) {
+		r := require.New(t)
+
+		reqCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		req, err := http.NewRequestWithContext(
+			reqCtx,
+			http.MethodGet,
+			env.BaseURL+"/api/testenv-log-probe/",
+			nil,
+		)
+		r.NoError(err)
+		resp, err := env.httpClient.Do(req)
+		r.NoError(err)
+		_, _ = io.Copy(io.Discard, resp.Body)
+		r.NoError(resp.Body.Close())
+
+		select {
+		case line := <-logProbeSeen:
+			r.Contains(line, "GET /api/testenv-log-probe/")
+		case <-time.After(10 * time.Second):
+			t.Fatal("timed out waiting for forwarded InvenTree container log after Start returned")
+		}
+	})
 	prefixes := make(chan string, 2)
 	usernames := make(chan string, 2)
 	for _, name := range []string{"alpha", "beta"} {
