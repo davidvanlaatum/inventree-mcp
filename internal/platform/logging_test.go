@@ -1,7 +1,6 @@
 package platform
 
 import (
-	"context"
 	"log/slog"
 	"strings"
 	"testing"
@@ -15,8 +14,9 @@ import (
 func TestNewRootContextSeedsLogger(t *testing.T) {
 	t.Parallel()
 	r := require.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
 
-	ctx, err := NewRootContext(context.Background(), LoggerConfig{Level: "debug"})
+	ctx, err := NewRootContext(ctx, LoggerConfig{Level: "debug"})
 	r.NoError(err)
 	r.NotNil(logging.FromContext(ctx))
 }

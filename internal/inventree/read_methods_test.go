@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/davidvanlaatum/dvgoutils/logging/testhandler"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -225,6 +226,7 @@ func TestReadMethodsUseExpectedEndpoints(t *testing.T) {
 			t.Parallel()
 			r := require.New(t)
 			a := assert.New(t)
+			ctx, _, _ := testhandler.SetupTestHandler(t)
 
 			client, err := NewClient(Config{
 				BaseURL:    "https://inventory.example.test",
@@ -239,7 +241,7 @@ func TestReadMethodsUseExpectedEndpoints(t *testing.T) {
 			})
 			r.NoError(err)
 
-			r.NoError(tt.call(context.Background(), client))
+			r.NoError(tt.call(ctx, client))
 		})
 	}
 }
@@ -248,6 +250,7 @@ func TestDownloadAttachmentFetchesOnlyMetadataURLWithBounds(t *testing.T) {
 	t.Parallel()
 	r := require.New(t)
 	a := assert.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
 
 	var requests []string
 	client, err := NewClient(Config{
@@ -277,7 +280,7 @@ func TestDownloadAttachmentFetchesOnlyMetadataURLWithBounds(t *testing.T) {
 	})
 	r.NoError(err)
 
-	download, err := client.DownloadAttachment(context.Background(), 90, AttachmentContentOriginal, 32)
+	download, err := client.DownloadAttachment(ctx, 90, AttachmentContentOriginal, 32)
 	r.NoError(err)
 
 	a.Equal("pdf-bytes", string(download.Content))
@@ -338,6 +341,7 @@ func TestDownloadAttachmentRejectsUnsafeSourcesAndOversizedContent(t *testing.T)
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			r := require.New(t)
+			ctx, _, _ := testhandler.SetupTestHandler(t)
 
 			client, err := NewClient(Config{
 				BaseURL:    "https://inventory.example.test",
@@ -364,7 +368,7 @@ func TestDownloadAttachmentRejectsUnsafeSourcesAndOversizedContent(t *testing.T)
 			})
 			r.NoError(err)
 
-			_, err = client.DownloadAttachment(context.Background(), 90, AttachmentContentOriginal, 4)
+			_, err = client.DownloadAttachment(ctx, 90, AttachmentContentOriginal, 4)
 			r.Error(err)
 			r.Contains(err.Error(), tt.wantError)
 		})
@@ -374,6 +378,7 @@ func TestDownloadAttachmentRejectsUnsafeSourcesAndOversizedContent(t *testing.T)
 func TestDownloadAttachmentDoesNotSurfaceSensitiveURLOnTransportError(t *testing.T) {
 	t.Parallel()
 	r := require.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
 
 	client, err := NewClient(Config{
 		BaseURL:    "https://inventory.example.test",
@@ -391,7 +396,7 @@ func TestDownloadAttachmentDoesNotSurfaceSensitiveURLOnTransportError(t *testing
 	})
 	r.NoError(err)
 
-	_, err = client.DownloadAttachment(context.Background(), 90, AttachmentContentOriginal, 1024)
+	_, err = client.DownloadAttachment(ctx, 90, AttachmentContentOriginal, 1024)
 	r.Error(err)
 	r.Contains(err.Error(), "download InvenTree attachment content failed")
 	r.NotContains(err.Error(), "signature=secret")
@@ -401,6 +406,7 @@ func TestDownloadAttachmentDoesNotSurfaceSensitiveURLOnTransportError(t *testing
 func TestDownloadAttachmentRejectsInvalidOptionsBeforeFetch(t *testing.T) {
 	t.Parallel()
 	r := require.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
 
 	client, err := NewClient(Config{
 		BaseURL:    "https://inventory.example.test",
@@ -412,7 +418,7 @@ func TestDownloadAttachmentRejectsInvalidOptionsBeforeFetch(t *testing.T) {
 	})
 	r.NoError(err)
 
-	_, err = client.DownloadAttachment(context.Background(), 90, AttachmentContentOriginal, 0)
+	_, err = client.DownloadAttachment(ctx, 90, AttachmentContentOriginal, 0)
 	r.Error(err)
 	r.Contains(err.Error(), "maxBytes must be positive")
 }

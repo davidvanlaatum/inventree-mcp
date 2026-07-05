@@ -12,6 +12,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/davidvanlaatum/dvgoutils/logging/testhandler"
 	"github.com/moby/moby/api/types/container"
 	dockernetwork "github.com/moby/moby/api/types/network"
 	"github.com/stretchr/testify/assert"
@@ -144,7 +145,7 @@ func TestIntegrationDockerSkipEnvironmentName(t *testing.T) {
 func TestStartSharedInvenTreeDoesNotSeedFixtures(t *testing.T) {
 	t.Parallel()
 	r := require.New(t)
-	ctx := context.Background()
+	ctx, _, _ := testhandler.SetupTestHandler(t)
 
 	starts := 0
 	cleanups := 0
@@ -172,15 +173,16 @@ func TestStartSharedInvenTreeDoesNotSeedFixtures(t *testing.T) {
 func TestSharedInvenTreeWrapperNilAndClientPaths(t *testing.T) {
 	t.Parallel()
 	r := require.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
 
 	var shared *SharedInvenTree
 	r.Nil(shared.Environment())
-	r.NoError(shared.Close(context.Background()))
-	_, err := shared.Account(context.Background(), &Run{}, AccountAdmin)
+	r.NoError(shared.Close(ctx))
+	_, err := shared.Account(ctx, &Run{}, AccountAdmin)
 	r.Error(err)
 	_, err = shared.Client(&Account{})
 	r.Error(err)
-	_, err = shared.EnsureFixture(context.Background(), &Account{}, &Run{}, FixtureCategory)
+	_, err = shared.EnsureFixture(ctx, &Account{}, &Run{}, FixtureCategory)
 	r.Error(err)
 
 	run, err := newRun("ABC123", "TESTENV", "TESTSHAREDWRAPPER")
@@ -197,7 +199,7 @@ func TestSharedInvenTreeWrapperNilAndClientPaths(t *testing.T) {
 func TestAccountCreatesRunScopedInvenTreeUserAndToken(t *testing.T) {
 	t.Parallel()
 	r := require.New(t)
-	ctx := context.Background()
+	ctx, _, _ := testhandler.SetupTestHandler(t)
 
 	run, err := newRun("ABC123", "TESTENV", "TESTACCOUNT")
 	r.NoError(err)
@@ -272,7 +274,7 @@ func TestAccountCreatesRunScopedInvenTreeUserAndToken(t *testing.T) {
 func TestAccountRejectsUnsupportedRoleAndInvalidEnvironment(t *testing.T) {
 	t.Parallel()
 	r := require.New(t)
-	ctx := context.Background()
+	ctx, _, _ := testhandler.SetupTestHandler(t)
 
 	run, err := newRun("ABC123", "TESTENV", "TESTACCOUNTREJECTS")
 	r.NoError(err)
@@ -304,7 +306,7 @@ func TestClientRejectsMissingAccountToken(t *testing.T) {
 func TestCreateMutableCompanyUsesRunScopedAccount(t *testing.T) {
 	t.Parallel()
 	r := require.New(t)
-	ctx := context.Background()
+	ctx, _, _ := testhandler.SetupTestHandler(t)
 
 	run, err := newRun("ABC123", "TESTENV", "TESTCREATEMUTABLE")
 	r.NoError(err)
@@ -335,7 +337,7 @@ func TestCreateMutableCompanyUsesRunScopedAccount(t *testing.T) {
 func TestEnsureFixtureCreatesRequestedRunPrefixedFixtureAndDependencies(t *testing.T) {
 	t.Parallel()
 	r := require.New(t)
-	ctx := context.Background()
+	ctx, _, _ := testhandler.SetupTestHandler(t)
 
 	nextID := 100
 	starts := 0
@@ -471,7 +473,7 @@ func TestEnsureFixtureCreatesRequestedRunPrefixedFixtureAndDependencies(t *testi
 func TestEnsureFixtureRejectsMutatedExistingFixture(t *testing.T) {
 	t.Parallel()
 	r := require.New(t)
-	ctx := context.Background()
+	ctx, _, _ := testhandler.SetupTestHandler(t)
 
 	run, err := newRun("ABC123", "TESTENV", "TESTENSUREREJECTS")
 	r.NoError(err)
@@ -518,7 +520,7 @@ func TestEnsureFixtureRejectsMutatedExistingFixture(t *testing.T) {
 func TestEnsureFixtureRejectsUnsupportedKind(t *testing.T) {
 	t.Parallel()
 	r := require.New(t)
-	ctx := context.Background()
+	ctx, _, _ := testhandler.SetupTestHandler(t)
 
 	run, err := newRun("ABC123", "TESTENV", "TESTUNSUPPORTEDFIXTURE")
 	r.NoError(err)
@@ -552,7 +554,7 @@ func TestRandomTestPasswordProducesStrongOpaqueValue(t *testing.T) {
 func TestRunScopedHelpersRejectForeignAccount(t *testing.T) {
 	t.Parallel()
 	r := require.New(t)
-	ctx := context.Background()
+	ctx, _, _ := testhandler.SetupTestHandler(t)
 
 	owningRun, err := newRun("ABC123", "TESTENV", "OWNER")
 	r.NoError(err)
@@ -588,6 +590,7 @@ func TestLoopbackPortBinding(t *testing.T) {
 func TestTestEnvironmentSmallHelpers(t *testing.T) {
 	t.Parallel()
 	r := require.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
 
 	cleanupCalls := 0
 	CleanupForTest(t, func() error {
@@ -603,7 +606,7 @@ func TestTestEnvironmentSmallHelpers(t *testing.T) {
 	r.Equal(defaultAdminUser, env["INVENTREE_ADMIN_USER"])
 	r.Equal(defaultAdminEmail, env["INVENTREE_ADMIN_EMAIL"])
 
-	r.NoError((&Environment{}).Close(context.Background()))
+	r.NoError((&Environment{}).Close(ctx))
 }
 
 func TestDefaultTestOptionsFiltersStartupNoise(t *testing.T) {
@@ -680,7 +683,7 @@ func TestSynchronizedContainerLogfSerializesCalls(t *testing.T) {
 func TestHTTPHelpersFetchVersionCreateAndProveToken(t *testing.T) {
 	t.Parallel()
 	r := require.New(t)
-	ctx := context.Background()
+	ctx, _, _ := testhandler.SetupTestHandler(t)
 
 	client := fakeHTTPClient(t, func(req *http.Request) (int, string) {
 		switch req.URL.Path {
@@ -714,7 +717,7 @@ func TestHTTPHelpersFetchVersionCreateAndProveToken(t *testing.T) {
 func TestDoJSONRejectsNonSuccessAndInvalidJSON(t *testing.T) {
 	t.Parallel()
 	r := require.New(t)
-	ctx := context.Background()
+	ctx, _, _ := testhandler.SetupTestHandler(t)
 
 	client := fakeHTTPClient(t, func(req *http.Request) (int, string) {
 		switch req.URL.Path {
