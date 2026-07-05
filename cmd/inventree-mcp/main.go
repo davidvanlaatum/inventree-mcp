@@ -3,15 +3,18 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
 	"errors"
 	"flag"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 
 	"github.com/davidvanlaatum/dvgoutils/logging"
 	"github.com/davidvanlaatum/inventree-mcp/internal/buildinfo"
 	"github.com/davidvanlaatum/inventree-mcp/internal/config"
+	"github.com/davidvanlaatum/inventree-mcp/internal/inventree"
 	"github.com/davidvanlaatum/inventree-mcp/internal/platform"
 	"github.com/davidvanlaatum/inventree-mcp/internal/server"
 	"github.com/davidvanlaatum/inventree-mcp/internal/tools"
@@ -71,7 +74,44 @@ func run(args []string, stdout, stderr io.Writer, getenv config.Env) int {
 
 func serve(ctx context.Context, cfg config.Config) error {
 	_ = logging.FromContext(ctx)
-	return serverRun(ctx, cfg, tools.Dependencies{})
+	deps, err := dependenciesForConfig(cfg)
+	if err != nil {
+		return err
+	}
+	return serverRun(ctx, cfg, deps)
+}
+
+func dependenciesForConfig(cfg config.Config) (tools.Dependencies, error) {
+	if cfg.Transport != config.TransportStdio {
+		return tools.Dependencies{}, nil
+	}
+	client, err := inventree.NewClient(inventree.Config{
+		BaseURL: cfg.InvenTreeURL,
+		Credential: inventree.Credential{
+			Scheme: inventree.AuthScheme(cfg.InvenTreeAuthScheme),
+			Token:  cfg.InvenTreeToken,
+		},
+		HTTPClient: inventreeHTTPClient(cfg),
+	})
+	if err != nil {
+		return tools.Dependencies{}, err
+	}
+	return tools.Dependencies{
+		ClientFromContext: func(context.Context) (any, error) {
+			return client, nil
+		},
+	}, nil
+}
+
+func inventreeHTTPClient(cfg config.Config) *http.Client {
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	if cfg.InvenTreeTLSSkipVerify {
+		transport.TLSClientConfig = &tls.Config{InsecureSkipVerify: true} //nolint:gosec // Config validation rejects this in production.
+	}
+	return &http.Client{
+		Timeout:   cfg.InvenTreeTimeout,
+		Transport: transport,
+	}
 }
 
 func writeLine(w io.Writer, format string, args ...any) {

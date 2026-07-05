@@ -11,8 +11,6 @@ import (
 
 const HealthVersionToolName = "health_version"
 
-type Dependencies struct{}
-
 type HealthVersionOutput struct {
 	Status  string `json:"status"`
 	Version string `json:"version"`
