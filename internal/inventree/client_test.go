@@ -1,7 +1,6 @@
 package inventree
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"io"
@@ -10,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/davidvanlaatum/dvgoutils/logging/testhandler"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -38,6 +38,7 @@ func TestNewRequestAppliesTokenAndBearerAuth(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			r := require.New(t)
+			ctx, _, _ := testhandler.SetupTestHandler(t)
 
 			client, err := NewClient(Config{
 				BaseURL:    "https://inventory.example.test",
@@ -48,7 +49,7 @@ func TestNewRequestAppliesTokenAndBearerAuth(t *testing.T) {
 			})
 			r.NoError(err)
 
-			req, err := client.NewRequest(context.Background(), http.MethodGet, "/api/part/", url.Values{"search": []string{"resistor"}}, nil)
+			req, err := client.NewRequest(ctx, http.MethodGet, "/api/part/", url.Values{"search": []string{"resistor"}}, nil)
 			r.NoError(err)
 
 			r.Equal("https://inventory.example.test/api/part/?search=resistor", req.URL.String())
@@ -62,6 +63,7 @@ func TestDoJSONMapsAPIErrorFields(t *testing.T) {
 	t.Parallel()
 	r := require.New(t)
 	a := assert.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
 
 	client, err := NewClient(Config{
 		BaseURL:    "https://inventory.example.test",
@@ -71,7 +73,7 @@ func TestDoJSONMapsAPIErrorFields(t *testing.T) {
 		})},
 	})
 	r.NoError(err)
-	req, err := client.NewRequest(context.Background(), http.MethodPost, "/api/part/", nil, map[string]string{"name": ""})
+	req, err := client.NewRequest(ctx, http.MethodPost, "/api/part/", nil, map[string]string{"name": ""})
 	r.NoError(err)
 
 	var out map[string]any
@@ -162,6 +164,7 @@ func TestDoJSONClassifiesCommonAPIErrorStatuses(t *testing.T) {
 			t.Parallel()
 			r := require.New(t)
 			a := assert.New(t)
+			ctx, _, _ := testhandler.SetupTestHandler(t)
 
 			client, err := NewClient(Config{
 				BaseURL:    "https://inventory.example.test",
@@ -171,7 +174,7 @@ func TestDoJSONClassifiesCommonAPIErrorStatuses(t *testing.T) {
 				})},
 			})
 			r.NoError(err)
-			req, err := client.NewRequest(context.Background(), http.MethodGet, "/api/part/10/", nil, nil)
+			req, err := client.NewRequest(ctx, http.MethodGet, "/api/part/10/", nil, nil)
 			r.NoError(err)
 
 			err = client.DoJSON(req, nil)
@@ -235,6 +238,7 @@ func TestNewRequestRejectsInvalidPathAndBody(t *testing.T) {
 	t.Parallel()
 	r := require.New(t)
 	a := assert.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
 
 	client, err := NewClient(Config{
 		BaseURL:    "https://inventory.example.test",
@@ -242,15 +246,15 @@ func TestNewRequestRejectsInvalidPathAndBody(t *testing.T) {
 	})
 	r.NoError(err)
 
-	_, err = client.NewRequest(context.Background(), http.MethodGet, "api/part/", nil, nil)
+	_, err = client.NewRequest(ctx, http.MethodGet, "api/part/", nil, nil)
 	r.Error(err)
 	a.Contains(err.Error(), "path must start with /")
 
-	_, err = client.NewRequest(context.Background(), http.MethodGet, "//evil.example.test/api/part/", nil, nil)
+	_, err = client.NewRequest(ctx, http.MethodGet, "//evil.example.test/api/part/", nil, nil)
 	r.Error(err)
 	a.Contains(err.Error(), "must not be protocol-relative")
 
-	_, err = client.NewRequest(context.Background(), http.MethodPost, "/api/part/", nil, func() {})
+	_, err = client.NewRequest(ctx, http.MethodPost, "/api/part/", nil, func() {})
 	r.Error(err)
 	a.Contains(err.Error(), "encode request body")
 }
@@ -285,6 +289,7 @@ func TestDoJSONReportsDecodeAndDiscardErrors(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			r := require.New(t)
+			ctx, _, _ := testhandler.SetupTestHandler(t)
 
 			client, err := NewClient(Config{
 				BaseURL:    "https://inventory.example.test",
@@ -298,7 +303,7 @@ func TestDoJSONReportsDecodeAndDiscardErrors(t *testing.T) {
 				})},
 			})
 			r.NoError(err)
-			req, err := client.NewRequest(context.Background(), http.MethodGet, "/api/part/", nil, nil)
+			req, err := client.NewRequest(ctx, http.MethodGet, "/api/part/", nil, nil)
 			r.NoError(err)
 
 			err = client.DoJSON(req, tt.out)
@@ -312,6 +317,7 @@ func TestListAllFollowsPagination(t *testing.T) {
 	t.Parallel()
 	r := require.New(t)
 	a := assert.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
 
 	var requested []string
 	client, err := NewClient(Config{
@@ -334,7 +340,7 @@ func TestListAllFollowsPagination(t *testing.T) {
 	type part struct {
 		PK int `json:"pk"`
 	}
-	parts, err := ListAll[part](context.Background(), client, "/api/part/", url.Values{"limit": []string{"2"}})
+	parts, err := ListAll[part](ctx, client, "/api/part/", url.Values{"limit": []string{"2"}})
 	r.NoError(err)
 
 	r.Equal([]part{{PK: 1}, {PK: 2}, {PK: 3}}, parts)
@@ -347,6 +353,7 @@ func TestListAllFollowsPagination(t *testing.T) {
 func TestListAllAcceptsUnpaginatedArrayResponses(t *testing.T) {
 	t.Parallel()
 	r := require.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
 
 	client, err := NewClient(Config{
 		BaseURL:    "https://inventory.example.test",
@@ -360,7 +367,7 @@ func TestListAllAcceptsUnpaginatedArrayResponses(t *testing.T) {
 	type part struct {
 		PK int `json:"pk"`
 	}
-	parts, err := ListAll[part](context.Background(), client, "/api/part/", nil)
+	parts, err := ListAll[part](ctx, client, "/api/part/", nil)
 	r.NoError(err)
 	r.Equal([]part{{PK: 1}, {PK: 2}}, parts)
 }
@@ -369,8 +376,9 @@ func TestListAllRejectsInvalidInputs(t *testing.T) {
 	t.Parallel()
 	r := require.New(t)
 	a := assert.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
 
-	_, err := ListAll[struct{}](context.Background(), nil, "/api/part/", nil)
+	_, err := ListAll[struct{}](ctx, nil, "/api/part/", nil)
 	r.Error(err)
 	a.Contains(err.Error(), "client is required")
 
@@ -383,7 +391,7 @@ func TestListAllRejectsInvalidInputs(t *testing.T) {
 	})
 	r.NoError(err)
 
-	_, err = ListAll[struct{}](context.Background(), client, "/api/part/", nil)
+	_, err = ListAll[struct{}](ctx, client, "/api/part/", nil)
 	r.Error(err)
 }
 
@@ -391,6 +399,7 @@ func TestPatchFieldsPreserveOmittedAndExplicitZeroValues(t *testing.T) {
 	t.Parallel()
 	r := require.New(t)
 	a := assert.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
 
 	var patchBody map[string]any
 	client, err := NewClient(Config{
@@ -408,7 +417,7 @@ func TestPatchFieldsPreserveOmittedAndExplicitZeroValues(t *testing.T) {
 	var out struct {
 		PK int `json:"pk"`
 	}
-	err = client.Patch(context.Background(), "/api/part/10/", PatchFields{
+	err = client.Patch(ctx, "/api/part/10/", PatchFields{
 		"active":      Set(false),
 		"description": Set(""),
 		"keywords":    Set([]string{}),
@@ -434,6 +443,7 @@ func TestPatchFieldsPreserveOmittedAndExplicitZeroValues(t *testing.T) {
 func TestPatchRejectsNoOpUpdateBeforeRequest(t *testing.T) {
 	t.Parallel()
 	r := require.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
 
 	client, err := NewClient(Config{
 		BaseURL:    "https://inventory.example.test",
@@ -445,7 +455,7 @@ func TestPatchRejectsNoOpUpdateBeforeRequest(t *testing.T) {
 	})
 	r.NoError(err)
 
-	err = client.Patch(context.Background(), "/api/part/10/", PatchFields{}, nil)
+	err = client.Patch(ctx, "/api/part/10/", PatchFields{}, nil)
 	r.Error(err)
 	r.Contains(err.Error(), "PATCH requires at least one field")
 }

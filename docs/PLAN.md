@@ -25,7 +25,7 @@ Build an InvenTree MCP server in Go using the official Model Context Protocol Go
 - Shared Go utilities: use `github.com/davidvanlaatum/dvgoutils` where it fits local code style, especially `github.com/davidvanlaatum/dvgoutils/logging` for context-carried `slog` loggers and `logging.Err`.
 - Filesystem abstraction: use an injectable filesystem such as `github.com/spf13/afero` for local file access, fixtures, and allowlist tests.
 - Integration test infrastructure: `testcontainers-go` module that starts an isolated InvenTree test environment.
-- Project automation: GitHub Actions for Go tests with coverage reporting, lint, dependency submission, tag-driven GoReleaser releases, and pre-commit checks; Dependabot for Go modules and GitHub Actions.
+- Project automation: GitHub Actions for Go tests on the stable Go toolchain with coverage reporting, lint, dependency submission, tag-driven GoReleaser releases, and pre-commit checks; Dependabot for Go modules and GitHub Actions.
 - Local quality gate: pre-commit using `pre-commit-hooks` and Go hooks for `go mod tidy`, imports, golangci-lint, tests, and build.
 - API schema source: keep a local copy of the OpenAPI schema at `docs/api-schema.yaml`, refreshed from `https://inventory.internal.vanlaatum.id.au/api/schema/` when endpoint behavior needs verification. The current fetched schema is OpenAPI 3.0.3 for InvenTree API version `511`.
 
@@ -44,7 +44,7 @@ Use established libraries for protocol-heavy or environment-heavy concerns, but 
 - URL fetching: keep DNS resolution, dial policy, redirect policy, proxy behavior, content sniffing, and byte-limit enforcement behind a URL fetcher interface owned by `internal/upload`.
 - ID and token generation: inject randomness and ID generation for authorization codes, state, nonces, request IDs, and test determinism. Production must use cryptographically secure randomness for secrets and token material.
 - Logging: use `log/slog` with `github.com/davidvanlaatum/dvgoutils/logging` as the standard context logger mechanism. Request, transport, tool, workflow, and client code should get loggers from `logging.FromContext(ctx)`, attach request/tool/object attributes by deriving a child logger with `logger.With(...)`, and pass the child logger via `logging.WithLogger(ctx, logger.With(...))`. Code should fetch the logger from the updated context rather than reusing a logger captured before scoped attributes were attached. Use `logging.Err(err)` for error attributes. The process entrypoint and tests must seed contexts with a logger; missing loggers should fail visibly rather than silently discarding logs.
-- Logging tests: use `github.com/davidvanlaatum/dvgoutils/logging/testhandler.SetupTestHandler` for deterministic log capture and redaction assertions where code expects a logger in context.
+- Logging tests: use `github.com/davidvanlaatum/dvgoutils/logging/testhandler.SetupTestHandler(t)` for deterministic log capture, redaction assertions, and ordinary test contexts passed into code under test. Create the logger context inside each subtest that uses it so logs are attached to the correct `testing.T`; use a bounded cleanup context or `context.WithoutCancel(ctx)` for cleanup callbacks that run after `t.Context()` is canceled.
 - Other `dvgoutils` helpers: use `dvgoutils.Ptr` for pointer values such as explicit false tool annotation fields, and use `MapSlice`, `FilterSlice`, or `Must` only where they improve clarity without hiding control flow or error handling.
 - Configuration and secrets: keep config parsing separate from runtime dependencies. Key material, InvenTree credentials, and token lifetimes should enter through a typed config object, not scattered environment lookups.
 - Schema access: parse `docs/api-schema.yaml` through a schema helper for endpoint-manifest checks instead of ad hoc string matching.
@@ -857,17 +857,18 @@ Target API:
 
 ```go
 func TestIntegration(t *testing.T) {
-    ctx := context.Background()
+    ctx, _, _ := testhandler.SetupTestHandler(t)
     shared, err := testenv.StartSharedInvenTree(ctx, testenv.Options{
         Image: "inventree/inventree:1.4.0",
     })
     require.NoError(t, err)
     t.Cleanup(func() {
-        require.NoError(t, shared.Close(context.Background()))
+        require.NoError(t, shared.Close(context.WithoutCancel(ctx)))
     })
 
     t.Run("create part", func(t *testing.T) {
         t.Parallel()
+        ctx, _, _ := testhandler.SetupTestHandler(t)
         run, err := shared.NewRun(t)
         require.NoError(t, err)
         account, err := shared.Account(ctx, run, testenv.AccountAdmin)

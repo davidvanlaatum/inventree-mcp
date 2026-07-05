@@ -12,12 +12,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/davidvanlaatum/dvgoutils/logging/testhandler"
 	"github.com/stretchr/testify/require"
 )
 
 func TestStartInvenTreeStack(t *testing.T) {
 	r := require.New(t)
-	ctx := context.Background()
+	ctx, _, _ := testhandler.SetupTestHandler(t)
 
 	if SkipDocker(os.Getenv) || testing.Short() {
 		t.Skipf("Docker-backed InvenTree integration test excluded by %s or -short", EnvSkipDocker)
@@ -41,7 +42,7 @@ func TestStartInvenTreeStack(t *testing.T) {
 
 func TestSharedInvenTreeFixturesAndParallelRuns(t *testing.T) {
 	r := require.New(t)
-	ctx := context.Background()
+	ctx, _, _ := testhandler.SetupTestHandler(t)
 
 	if SkipDocker(os.Getenv) || testing.Short() {
 		t.Skipf("Docker-backed InvenTree integration test excluded by %s or -short", EnvSkipDocker)
@@ -65,14 +66,15 @@ func TestSharedInvenTreeFixturesAndParallelRuns(t *testing.T) {
 	r.NoError(err)
 	r.NotNil(shared)
 	t.Cleanup(CleanupForTest(t, func() error {
-		return shared.Close(context.Background())
+		return shared.Close(context.WithoutCancel(ctx))
 	}))
 	env := shared.Environment()
 	r.NotNil(env)
 	t.Run("container-log-forwarding-after-start", func(t *testing.T) {
 		r := require.New(t)
+		ctx, _, _ := testhandler.SetupTestHandler(t)
 
-		reqCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		reqCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 		defer cancel()
 		req, err := http.NewRequestWithContext(
 			reqCtx,
@@ -100,11 +102,12 @@ func TestSharedInvenTreeFixturesAndParallelRuns(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			r := require.New(t)
+			ctx, _, _ := testhandler.SetupTestHandler(t)
 
 			run, err := shared.NewRun(t)
 			r.NoError(err)
 			t.Logf("creating or retrieving InvenTree test account role=%s run_prefix=%s", AccountAdmin, run.Prefix)
-			account, err := shared.Account(context.Background(), run, AccountAdmin)
+			account, err := shared.Account(ctx, run, AccountAdmin)
 			r.NoError(err)
 			t.Logf("using InvenTree test account username=%s role=%s run_prefix=%s", account.Username, account.Role, run.Prefix)
 			r.NoError(run.RequireOwnedName(account.Username))
@@ -113,16 +116,16 @@ func TestSharedInvenTreeFixturesAndParallelRuns(t *testing.T) {
 			r.NotNil(client)
 			switch name {
 			case "alpha":
-				category, err := shared.EnsureFixture(context.Background(), account, run, FixtureCategory)
+				category, err := shared.EnsureFixture(ctx, account, run, FixtureCategory)
 				r.NoError(err)
 				r.NoError(run.RequireOwnedName(category.Name))
 				r.NotZero(category.ID)
 			case "beta":
-				supplierPart, err := shared.EnsureFixture(context.Background(), account, run, FixtureSupplierPart)
+				supplierPart, err := shared.EnsureFixture(ctx, account, run, FixtureSupplierPart)
 				r.NoError(err)
 				r.NoError(run.RequireOwnedName(supplierPart.Name))
 				r.NotZero(supplierPart.ID)
-				bom, err := shared.EnsureFixture(context.Background(), account, run, FixtureBOM)
+				bom, err := shared.EnsureFixture(ctx, account, run, FixtureBOM)
 				r.NoError(err)
 				r.NoError(run.RequireOwnedName(bom.Name))
 				r.NotZero(bom.ID)
@@ -133,7 +136,7 @@ func TestSharedInvenTreeFixturesAndParallelRuns(t *testing.T) {
 			r.Error(ValidateMutableRecords(run, []MutableRecord{{Name: "unprefixed"}}))
 			r.Error(ValidateMutableRecords(run, []MutableRecord{{Name: "IT_OTHER_TESTENV_TEST_MUTABLE"}}))
 
-			record, err := env.CreateMutableCompany(context.Background(), account, run, "mutable company")
+			record, err := env.CreateMutableCompany(ctx, account, run, "mutable company")
 			r.NoError(err)
 			r.NoError(run.RequireOwnedName(record.Name))
 			r.NotZero(record.ID)
@@ -163,7 +166,7 @@ func TestSharedInvenTreeFixturesAndParallelRuns(t *testing.T) {
 func assertPublishedPortsLoopback(t *testing.T, env *Environment) {
 	t.Helper()
 	r := require.New(t)
-	ctx := context.Background()
+	ctx, _, _ := testhandler.SetupTestHandler(t)
 
 	for _, ctr := range env.containers {
 		inspect, err := ctr.Inspect(ctx)

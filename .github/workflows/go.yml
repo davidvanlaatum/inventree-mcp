@@ -20,9 +20,6 @@ jobs:
     permissions:
       contents: write
       pull-requests: write
-    strategy:
-      matrix:
-        go-version: [ '1.25', 'stable' ]
     steps:
       - uses: actions/checkout@v7
         with:
@@ -31,7 +28,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v6
         with:
-          go-version: ${{ matrix.go-version }}
+          go-version: stable
 
       - uses: gwatts/go-coverage-action@v2
         id: coverage
@@ -40,11 +37,11 @@ jobs:
           cover-mode: atomic
           cover-pkg: ./...
           test-args: '["-v", "-race"]'
-          notes-ref: gocoverage-${{ matrix.go-version }}
+          notes-ref: gocoverage-stable
 
       - name: Update coverage badge
         uses: schneegans/dynamic-badges-action@v1.8.0
-        if: github.ref_name == 'main' && matrix.go-version == 'stable'
+        if: github.ref_name == 'main'
         with:
           auth: ${{ secrets.COVERAGE_GIST_SECRET }}
           gistID: 709e99cf973e064f68cf3937b3d5c633

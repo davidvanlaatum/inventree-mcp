@@ -5,6 +5,7 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/davidvanlaatum/dvgoutils/logging/testhandler"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -12,11 +13,12 @@ import (
 func TestRandomIDGeneratorUsesInjectedRandomSource(t *testing.T) {
 	t.Parallel()
 	r := require.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
 
 	id, err := RandomIDGenerator{
 		Random: fixedRandomSource{fill: 'a'},
 		Bytes:  3,
-	}.NewID(context.Background())
+	}.NewID(ctx)
 
 	r.NoError(err)
 	r.Equal("YWFh", id)
@@ -25,11 +27,12 @@ func TestRandomIDGeneratorUsesInjectedRandomSource(t *testing.T) {
 func TestRandomIDGeneratorReportsRandomFailure(t *testing.T) {
 	t.Parallel()
 	r := require.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
 
 	_, err := RandomIDGenerator{
 		Random: failingRandomSource{err: errors.New("boom")},
 		Bytes:  3,
-	}.NewID(context.Background())
+	}.NewID(ctx)
 
 	r.Error(err)
 	r.Contains(err.Error(), "boom")
@@ -38,8 +41,9 @@ func TestRandomIDGeneratorReportsRandomFailure(t *testing.T) {
 func TestRandomIDGeneratorRejectsNegativeByteCount(t *testing.T) {
 	t.Parallel()
 	r := require.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
 
-	_, err := RandomIDGenerator{Bytes: -1}.NewID(context.Background())
+	_, err := RandomIDGenerator{Bytes: -1}.NewID(ctx)
 
 	r.Error(err)
 	r.Contains(err.Error(), "ID byte count")

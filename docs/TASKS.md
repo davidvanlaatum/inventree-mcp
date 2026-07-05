@@ -16,6 +16,8 @@ Local test commands do not need `-v` by default. Use verbose local test output w
 
 Go tests should use `github.com/stretchr/testify` assertion objects. Prefer `require.New(t)` and `assert.New(t)` instances over package-level free functions, with `require` for test-stopping preconditions and `assert` for related checks where collecting multiple failures helps.
 
+Go tests that call code accepting `context.Context` should pass a context from `github.com/davidvanlaatum/dvgoutils/logging/testhandler.SetupTestHandler(t)` so the test's `testing.T` owns cancellation and log capture. Create that context inside each subtest that uses it, especially parallel subtests. Cleanup callbacks that run after `t.Context()` cancellation may use bounded cleanup contexts or `context.WithoutCancel(ctx)` when they still need context-carried test logger values.
+
 Interface mocks are generated with Mockery when needed. Mark interfaces with `//mockery:generate: true`, keep generation config in `.mockery.yml`, and generate all marked mocks in one run. Generated mocks live beside source packages under `mock/`, use package name `<parent>mock`, and use filenames shaped as `<InterfaceName>_mock.go`.
 
 Give review subagents read-only workspace access when available so they can inspect relevant code, docs, and tests without writing files. If the available tooling only provides a writable fork, reviewers must be told not to edit files, and the parent checkout must be checked afterward. Unexpected subagent edits are not automatically trusted; inspect, validate, and rerun review on any such changes before committing them. Diff-only review is acceptable only as a fallback for narrow follow-ups or when workspace access is not available.
@@ -121,6 +123,29 @@ Tasks:
 - [x] Add packaged systemd unit and maintainer scripts.
 - [x] Add release version metadata to the CLI.
 - [x] Update README, plan, operator recipes, and agent instructions.
+
+### M0-S05: Test Context And Stable CI Hygiene
+
+- Status: `Done`
+- Depends on: M0-S02, M1A-S02
+- Scope: standardize test contexts on `dvgoutils/logging/testhandler` and simplify the Go CI workflow to the stable toolchain only.
+- Validation: `go test ./...` passed; `golangci-lint run` passed; `git diff --check` passed.
+- Review: Senior Go Developer, Senior QA / Test Architect, and Senior Product Manager reviews run. Reviewers found no unresolved actionable findings after the context/logger test cleanup, stable-only Go workflow update, and aligned instructions/backlog/plan wording.
+- Residual risk: none.
+- Acceptance:
+  - Existing tests that call context-aware code pass contexts created from the active `testing.T` through `testhandler.SetupTestHandler(t)` where possible.
+  - Parallel and independent subtests create their own logger contexts instead of reusing a parent test context.
+  - Cleanup paths avoid raw `context.Background()` while preserving cleanup execution after `t.Context()` cancellation.
+  - Go CI uses the stable Go toolchain rather than a version matrix.
+  - Agent instructions and planning docs document the convention.
+
+Tasks:
+
+- [x] Update test context and logger guidance.
+- [x] Replace raw test `context.Background()` calls with test logger contexts where applicable.
+- [x] Keep subtest contexts scoped to the active `testing.T`.
+- [x] Simplify the Go workflow to `stable`.
+- [x] Run validation and review.
 
 ## Milestone 1A: Buildable Skeleton
 
