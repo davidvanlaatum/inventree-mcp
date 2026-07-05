@@ -44,8 +44,8 @@ type DownloadedPartImage struct {
 	SourceURL   string
 }
 
-func (c *Client) SearchParts(ctx context.Context, query url.Values) ([]Part, error) {
-	return listAll[Part](ctx, c, "/api/part/", query)
+func (c *Client) SearchParts(ctx context.Context, query SearchQuery) ([]Part, error) {
+	return listAll[Part](ctx, c, "/api/part/", query.values())
 }
 
 func (c *Client) GetPart(ctx context.Context, id int) (Part, error) {
@@ -54,8 +54,8 @@ func (c *Client) GetPart(ctx context.Context, id int) (Part, error) {
 	return out, err
 }
 
-func (c *Client) SearchPartCategories(ctx context.Context, query url.Values) ([]Category, error) {
-	return listAll[Category](ctx, c, "/api/part/category/", query)
+func (c *Client) SearchPartCategories(ctx context.Context, query SearchQuery) ([]Category, error) {
+	return listAll[Category](ctx, c, "/api/part/category/", query.values())
 }
 
 func (c *Client) GetPartCategory(ctx context.Context, id int) (Category, error) {
@@ -64,20 +64,20 @@ func (c *Client) GetPartCategory(ctx context.Context, id int) (Category, error) 
 	return out, err
 }
 
-func (c *Client) SearchCompanies(ctx context.Context, query url.Values) ([]Company, error) {
-	return listAll[Company](ctx, c, "/api/company/", query)
+func (c *Client) SearchCompanies(ctx context.Context, query SearchQuery) ([]Company, error) {
+	return listAll[Company](ctx, c, "/api/company/", query.values())
 }
 
-func (c *Client) SearchSuppliers(ctx context.Context, query url.Values) ([]Company, error) {
+func (c *Client) SearchSuppliers(ctx context.Context, query SearchQuery) ([]Company, error) {
 	return c.searchCompaniesWithRole(ctx, query, "is_supplier")
 }
 
-func (c *Client) SearchManufacturers(ctx context.Context, query url.Values) ([]Company, error) {
+func (c *Client) SearchManufacturers(ctx context.Context, query SearchQuery) ([]Company, error) {
 	return c.searchCompaniesWithRole(ctx, query, "is_manufacturer")
 }
 
-func (c *Client) SearchStockLocations(ctx context.Context, query url.Values) ([]StockLocation, error) {
-	return listAll[StockLocation](ctx, c, "/api/stock/location/", query)
+func (c *Client) SearchStockLocations(ctx context.Context, query SearchQuery) ([]StockLocation, error) {
+	return listAll[StockLocation](ctx, c, "/api/stock/location/", query.values())
 }
 
 func (c *Client) GetStockLocation(ctx context.Context, id int) (StockLocation, error) {
@@ -86,25 +86,16 @@ func (c *Client) GetStockLocation(ctx context.Context, id int) (StockLocation, e
 	return out, err
 }
 
-func (c *Client) SearchStockItems(ctx context.Context, query url.Values) ([]StockItem, error) {
-	return listAll[StockItem](ctx, c, "/api/stock/", query)
+func (c *Client) SearchStockItems(ctx context.Context, query StockItemQuery) ([]StockItem, error) {
+	return listAll[StockItem](ctx, c, "/api/stock/", query.values())
 }
 
-func (c *Client) SearchPartParameters(ctx context.Context, query url.Values) ([]Parameter, error) {
-	nextQuery := cloneValues(query)
-	if nextQuery == nil {
-		nextQuery = url.Values{}
-	}
-	if partID := nextQuery.Get("part"); partID != "" && nextQuery.Get("model_id") == "" {
-		nextQuery.Set("model_id", partID)
-	}
-	nextQuery.Del("part")
-	nextQuery.Set("model_type", parameterModelTypePart)
-	return listAll[Parameter](ctx, c, "/api/parameter/", nextQuery)
+func (c *Client) SearchPartParameters(ctx context.Context, query PartParameterQuery) ([]Parameter, error) {
+	return listAll[Parameter](ctx, c, "/api/parameter/", query.values())
 }
 
-func (c *Client) SearchParameterTemplates(ctx context.Context, query url.Values) ([]ParameterTemplate, error) {
-	return listAll[ParameterTemplate](ctx, c, "/api/parameter/template/", query)
+func (c *Client) SearchParameterTemplates(ctx context.Context, query SearchQuery) ([]ParameterTemplate, error) {
+	return listAll[ParameterTemplate](ctx, c, "/api/parameter/template/", query.values())
 }
 
 func (c *Client) SearchCategoryParameterTemplates(ctx context.Context, query url.Values) ([]CategoryParameterTemplate, error) {
@@ -127,8 +118,8 @@ func (c *Client) SearchCategoryParameterTemplates(ctx context.Context, query url
 	return filtered, nil
 }
 
-func (c *Client) ListAttachments(ctx context.Context, query url.Values) ([]Attachment, error) {
-	return listAll[Attachment](ctx, c, "/api/attachment/", query)
+func (c *Client) ListAttachments(ctx context.Context, query AttachmentQuery) ([]Attachment, error) {
+	return listAll[Attachment](ctx, c, "/api/attachment/", query.values())
 }
 
 func (c *Client) GetAttachmentMetadata(ctx context.Context, id int) (Attachment, error) {
@@ -295,13 +286,10 @@ func (c *Client) get(ctx context.Context, path string, out any) error {
 	return c.DoJSON(req, out)
 }
 
-func (c *Client) searchCompaniesWithRole(ctx context.Context, query url.Values, roleFilter string) ([]Company, error) {
-	nextQuery := cloneValues(query)
-	if nextQuery == nil {
-		nextQuery = url.Values{}
-	}
+func (c *Client) searchCompaniesWithRole(ctx context.Context, query SearchQuery, roleFilter string) ([]Company, error) {
+	nextQuery := query.values()
 	nextQuery.Set(roleFilter, "true")
-	return c.SearchCompanies(ctx, nextQuery)
+	return listAll[Company](ctx, c, "/api/company/", nextQuery)
 }
 
 func listAll[T any](ctx context.Context, client *Client, path string, query url.Values) ([]T, error) {

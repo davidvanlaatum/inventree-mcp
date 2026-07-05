@@ -3,7 +3,6 @@ package tools
 import (
 	"context"
 	"net/http"
-	"net/url"
 	"testing"
 
 	"github.com/davidvanlaatum/dvgoutils/logging/testhandler"
@@ -54,7 +53,7 @@ func TestSearchPartsReturnsClarificationForAmbiguousResults(t *testing.T) {
 	a.Equal("10", output.Clarification.Candidates[0].ID)
 	a.Equal("10k resistor", output.Clarification.Candidates[0].Label)
 	a.Equal("/api/part/10/", output.Clarification.Candidates[0].URL)
-	a.Equal(url.Values{"limit": []string{"20"}, "search": []string{"10k"}}, fake.lastSearchPartsQuery)
+	a.Equal(inventree.SearchQuery{Search: "10k", Limit: 20}, fake.lastSearchPartsQuery)
 }
 
 func TestGetPartReturnsStructuredNotFoundForMissingRecord(t *testing.T) {
@@ -161,7 +160,89 @@ func TestSearchStockItemsUsesStableFilters(t *testing.T) {
 	r.NotNil(result)
 	a.Equal(StatusOK, output.Status)
 	a.Equal(1, output.Count)
-	a.Equal(url.Values{"limit": []string{"100"}, "location": []string{"40"}, "part": []string{"10"}}, fake.lastSearchStockItemsQuery)
+	a.Equal(inventree.StockItemQuery{PartID: 10, LocationID: 40, Limit: 100}, fake.lastSearchStockItemsQuery)
+}
+
+func TestLookupHandlersPassStructuredQueriesToClient(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		run  func(context.Context, *require.Assertions, *fakeMilestoneLookupClient)
+	}{
+		{
+			name: "categories",
+			run: func(ctx context.Context, r *require.Assertions, fake *fakeMilestoneLookupClient) {
+				fake.categories = []inventree.Category{{PK: 20, Name: "passives"}}
+				_, _, err := searchPartCategories(depsForFake(fake))(ctx, &mcp.CallToolRequest{}, SearchInput{Search: "pass", Limit: 101, Offset: 2})
+				r.NoError(err)
+				r.Equal(inventree.SearchQuery{Search: "pass", Limit: 100, Offset: 2}, fake.lastSearchPartCategoriesQuery)
+			},
+		},
+		{
+			name: "parameter templates",
+			run: func(ctx context.Context, r *require.Assertions, fake *fakeMilestoneLookupClient) {
+				fake.parameterTemplates = []inventree.ParameterTemplate{{PK: 70, Name: "Resistance"}}
+				_, _, err := searchParameterTemplates(depsForFake(fake))(ctx, &mcp.CallToolRequest{}, SearchInput{Search: "resistance", Limit: 5, Offset: 1})
+				r.NoError(err)
+				r.Equal(inventree.SearchQuery{Search: "resistance", Limit: 5, Offset: 1}, fake.lastSearchParameterTemplatesQuery)
+			},
+		},
+		{
+			name: "part parameters",
+			run: func(ctx context.Context, r *require.Assertions, fake *fakeMilestoneLookupClient) {
+				fake.parameters = []inventree.Parameter{{PK: 60, ModelID: 10}}
+				_, _, err := getPartParameters(depsForFake(fake))(ctx, &mcp.CallToolRequest{}, PartParametersInput{PartID: 10, Limit: 0, Offset: 3})
+				r.NoError(err)
+				r.Equal(inventree.PartParameterQuery{PartID: 10, Limit: 20, Offset: 3}, fake.lastSearchPartParametersQuery)
+			},
+		},
+		{
+			name: "suppliers",
+			run: func(ctx context.Context, r *require.Assertions, fake *fakeMilestoneLookupClient) {
+				fake.suppliers = []inventree.Company{{PK: 30, Name: "supplier", IsSupplier: true}}
+				_, _, err := searchSuppliers(depsForFake(fake))(ctx, &mcp.CallToolRequest{}, SearchInput{Search: "sup", Limit: 6})
+				r.NoError(err)
+				r.Equal(inventree.SearchQuery{Search: "sup", Limit: 6}, fake.lastSearchSuppliersQuery)
+			},
+		},
+		{
+			name: "manufacturers",
+			run: func(ctx context.Context, r *require.Assertions, fake *fakeMilestoneLookupClient) {
+				fake.manufacturers = []inventree.Company{{PK: 31, Name: "maker", IsManufacturer: true}}
+				_, _, err := searchManufacturers(depsForFake(fake))(ctx, &mcp.CallToolRequest{}, SearchInput{Search: "make", Offset: 4})
+				r.NoError(err)
+				r.Equal(inventree.SearchQuery{Search: "make", Limit: 20, Offset: 4}, fake.lastSearchManufacturersQuery)
+			},
+		},
+		{
+			name: "stock locations",
+			run: func(ctx context.Context, r *require.Assertions, fake *fakeMilestoneLookupClient) {
+				fake.stockLocations = []inventree.StockLocation{{PK: 40, Name: "bin"}}
+				_, _, err := searchStockLocations(depsForFake(fake))(ctx, &mcp.CallToolRequest{}, SearchInput{Search: "bin", Limit: 12})
+				r.NoError(err)
+				r.Equal(inventree.SearchQuery{Search: "bin", Limit: 12}, fake.lastSearchStockLocationsQuery)
+			},
+		},
+		{
+			name: "attachments",
+			run: func(ctx context.Context, r *require.Assertions, fake *fakeMilestoneLookupClient) {
+				fake.attachments = []inventree.Attachment{{PK: 90, ModelType: "part", ModelID: 10, Filename: "datasheet.pdf"}}
+				_, _, err := listAttachments(depsForFake(fake))(ctx, &mcp.CallToolRequest{}, ObjectLookupInput{ModelType: "part", ModelID: 10, Search: "data", Limit: 3, Offset: 2})
+				r.NoError(err)
+				r.Equal(inventree.AttachmentQuery{ModelType: "part", ModelID: 10, Search: "data", Limit: 3, Offset: 2}, fake.lastListAttachmentsQuery)
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			r := require.New(t)
+			ctx, _, _ := testhandler.SetupTestHandler(t)
+			tt.run(ctx, r, &fakeMilestoneLookupClient{})
+		})
+	}
 }
 
 func TestDownloadAttachmentReturnsTextOrBase64WithDigest(t *testing.T) {
@@ -225,22 +306,35 @@ func depsForFake(fake *fakeMilestoneLookupClient) Dependencies {
 
 type fakeMilestoneLookupClient struct {
 	parts                []inventree.Part
+	categories           []inventree.Category
 	companies            []inventree.Company
+	suppliers            []inventree.Company
+	manufacturers        []inventree.Company
+	stockLocations       []inventree.StockLocation
 	stockItems           []inventree.StockItem
+	parameters           []inventree.Parameter
+	parameterTemplates   []inventree.ParameterTemplate
 	attachments          []inventree.Attachment
 	attachment           inventree.Attachment
 	downloadedAttachment inventree.DownloadedAttachment
 	downloadedPartImage  inventree.DownloadedPartImage
 	getPartErr           error
 
-	lastSearchPartsQuery      url.Values
-	lastSearchCompaniesQuery  url.Values
-	lastSearchStockItemsQuery url.Values
-	lastAttachmentMaxBytes    int64
-	lastPartImageMaxBytes     int64
+	lastSearchPartsQuery              inventree.SearchQuery
+	lastSearchPartCategoriesQuery     inventree.SearchQuery
+	lastSearchPartParametersQuery     inventree.PartParameterQuery
+	lastSearchParameterTemplatesQuery inventree.SearchQuery
+	lastSearchCompaniesQuery          inventree.SearchQuery
+	lastSearchSuppliersQuery          inventree.SearchQuery
+	lastSearchManufacturersQuery      inventree.SearchQuery
+	lastSearchStockLocationsQuery     inventree.SearchQuery
+	lastSearchStockItemsQuery         inventree.StockItemQuery
+	lastListAttachmentsQuery          inventree.AttachmentQuery
+	lastAttachmentMaxBytes            int64
+	lastPartImageMaxBytes             int64
 }
 
-func (f *fakeMilestoneLookupClient) SearchParts(_ context.Context, query url.Values) ([]inventree.Part, error) {
+func (f *fakeMilestoneLookupClient) SearchParts(_ context.Context, query inventree.SearchQuery) ([]inventree.Part, error) {
 	f.lastSearchPartsQuery = query
 	return f.parts, nil
 }
@@ -252,41 +346,48 @@ func (f *fakeMilestoneLookupClient) GetPart(_ context.Context, id int) (inventre
 	return inventree.Part{PK: id, Name: "part"}, nil
 }
 
-func (f *fakeMilestoneLookupClient) SearchPartCategories(context.Context, url.Values) ([]inventree.Category, error) {
-	return nil, nil
+func (f *fakeMilestoneLookupClient) SearchPartCategories(_ context.Context, query inventree.SearchQuery) ([]inventree.Category, error) {
+	f.lastSearchPartCategoriesQuery = query
+	return f.categories, nil
 }
 
-func (f *fakeMilestoneLookupClient) SearchPartParameters(context.Context, url.Values) ([]inventree.Parameter, error) {
-	return nil, nil
+func (f *fakeMilestoneLookupClient) SearchPartParameters(_ context.Context, query inventree.PartParameterQuery) ([]inventree.Parameter, error) {
+	f.lastSearchPartParametersQuery = query
+	return f.parameters, nil
 }
 
-func (f *fakeMilestoneLookupClient) SearchParameterTemplates(context.Context, url.Values) ([]inventree.ParameterTemplate, error) {
-	return nil, nil
+func (f *fakeMilestoneLookupClient) SearchParameterTemplates(_ context.Context, query inventree.SearchQuery) ([]inventree.ParameterTemplate, error) {
+	f.lastSearchParameterTemplatesQuery = query
+	return f.parameterTemplates, nil
 }
 
-func (f *fakeMilestoneLookupClient) SearchCompanies(_ context.Context, query url.Values) ([]inventree.Company, error) {
+func (f *fakeMilestoneLookupClient) SearchCompanies(_ context.Context, query inventree.SearchQuery) ([]inventree.Company, error) {
 	f.lastSearchCompaniesQuery = query
 	return f.companies, nil
 }
 
-func (f *fakeMilestoneLookupClient) SearchSuppliers(context.Context, url.Values) ([]inventree.Company, error) {
-	return nil, nil
+func (f *fakeMilestoneLookupClient) SearchSuppliers(_ context.Context, query inventree.SearchQuery) ([]inventree.Company, error) {
+	f.lastSearchSuppliersQuery = query
+	return f.suppliers, nil
 }
 
-func (f *fakeMilestoneLookupClient) SearchManufacturers(context.Context, url.Values) ([]inventree.Company, error) {
-	return nil, nil
+func (f *fakeMilestoneLookupClient) SearchManufacturers(_ context.Context, query inventree.SearchQuery) ([]inventree.Company, error) {
+	f.lastSearchManufacturersQuery = query
+	return f.manufacturers, nil
 }
 
-func (f *fakeMilestoneLookupClient) SearchStockLocations(context.Context, url.Values) ([]inventree.StockLocation, error) {
-	return nil, nil
+func (f *fakeMilestoneLookupClient) SearchStockLocations(_ context.Context, query inventree.SearchQuery) ([]inventree.StockLocation, error) {
+	f.lastSearchStockLocationsQuery = query
+	return f.stockLocations, nil
 }
 
-func (f *fakeMilestoneLookupClient) SearchStockItems(_ context.Context, query url.Values) ([]inventree.StockItem, error) {
+func (f *fakeMilestoneLookupClient) SearchStockItems(_ context.Context, query inventree.StockItemQuery) ([]inventree.StockItem, error) {
 	f.lastSearchStockItemsQuery = query
 	return f.stockItems, nil
 }
 
-func (f *fakeMilestoneLookupClient) ListAttachments(context.Context, url.Values) ([]inventree.Attachment, error) {
+func (f *fakeMilestoneLookupClient) ListAttachments(_ context.Context, query inventree.AttachmentQuery) ([]inventree.Attachment, error) {
+	f.lastListAttachmentsQuery = query
 	return f.attachments, nil
 }
 

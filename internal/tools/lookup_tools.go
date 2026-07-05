@@ -93,32 +93,32 @@ func init() {
 }
 
 type PartLookupClient interface {
-	SearchParts(context.Context, url.Values) ([]inventree.Part, error)
+	SearchParts(context.Context, inventree.SearchQuery) ([]inventree.Part, error)
 	GetPart(context.Context, int) (inventree.Part, error)
 }
 
 type CategoryLookupClient interface {
-	SearchPartCategories(context.Context, url.Values) ([]inventree.Category, error)
+	SearchPartCategories(context.Context, inventree.SearchQuery) ([]inventree.Category, error)
 }
 
 type ParameterLookupClient interface {
-	SearchPartParameters(context.Context, url.Values) ([]inventree.Parameter, error)
-	SearchParameterTemplates(context.Context, url.Values) ([]inventree.ParameterTemplate, error)
+	SearchPartParameters(context.Context, inventree.PartParameterQuery) ([]inventree.Parameter, error)
+	SearchParameterTemplates(context.Context, inventree.SearchQuery) ([]inventree.ParameterTemplate, error)
 }
 
 type CompanyLookupClient interface {
-	SearchCompanies(context.Context, url.Values) ([]inventree.Company, error)
-	SearchSuppliers(context.Context, url.Values) ([]inventree.Company, error)
-	SearchManufacturers(context.Context, url.Values) ([]inventree.Company, error)
+	SearchCompanies(context.Context, inventree.SearchQuery) ([]inventree.Company, error)
+	SearchSuppliers(context.Context, inventree.SearchQuery) ([]inventree.Company, error)
+	SearchManufacturers(context.Context, inventree.SearchQuery) ([]inventree.Company, error)
 }
 
 type StockLookupClient interface {
-	SearchStockLocations(context.Context, url.Values) ([]inventree.StockLocation, error)
-	SearchStockItems(context.Context, url.Values) ([]inventree.StockItem, error)
+	SearchStockLocations(context.Context, inventree.SearchQuery) ([]inventree.StockLocation, error)
+	SearchStockItems(context.Context, inventree.StockItemQuery) ([]inventree.StockItem, error)
 }
 
 type AttachmentLookupClient interface {
-	ListAttachments(context.Context, url.Values) ([]inventree.Attachment, error)
+	ListAttachments(context.Context, inventree.AttachmentQuery) ([]inventree.Attachment, error)
 	GetAttachmentMetadata(context.Context, int) (inventree.Attachment, error)
 	DownloadAttachment(context.Context, int, inventree.AttachmentContentMode, int64) (inventree.DownloadedAttachment, error)
 	DownloadPartImage(context.Context, int, inventree.AttachmentContentMode, int64) (inventree.DownloadedPartImage, error)
@@ -217,7 +217,7 @@ func addReadOnlyTool[In, Out any](server *mcp.Server, name string, title string,
 func searchParts(deps Dependencies) mcp.ToolHandlerFor[SearchInput, LookupOutput[inventree.Part]] {
 	return LookupHandler[PartLookupClient, SearchInput, LookupOutput[inventree.Part]](deps, SearchPartsToolName,
 		func(ctx context.Context, _ *mcp.CallToolRequest, client PartLookupClient, input SearchInput) (*mcp.CallToolResult, LookupOutput[inventree.Part], error) {
-			records, err := client.SearchParts(ctx, SearchValues(input))
+			records, err := client.SearchParts(ctx, searchQuery(input))
 			return searchOutput(records, input.Search, "part", "part_id", "Which part should be used?", err)
 		})
 }
@@ -233,7 +233,7 @@ func getPart(deps Dependencies) mcp.ToolHandlerFor[IDInput, RecordOutput[inventr
 func searchPartCategories(deps Dependencies) mcp.ToolHandlerFor[SearchInput, LookupOutput[inventree.Category]] {
 	return LookupHandler[CategoryLookupClient, SearchInput, LookupOutput[inventree.Category]](deps, SearchPartCategoriesToolName,
 		func(ctx context.Context, _ *mcp.CallToolRequest, client CategoryLookupClient, input SearchInput) (*mcp.CallToolResult, LookupOutput[inventree.Category], error) {
-			records, err := client.SearchPartCategories(ctx, SearchValues(input))
+			records, err := client.SearchPartCategories(ctx, searchQuery(input))
 			return searchOutput(records, input.Search, "category", "category_id", "Which category should be used?", err)
 		})
 }
@@ -241,7 +241,7 @@ func searchPartCategories(deps Dependencies) mcp.ToolHandlerFor[SearchInput, Loo
 func searchParameterTemplates(deps Dependencies) mcp.ToolHandlerFor[SearchInput, LookupOutput[inventree.ParameterTemplate]] {
 	return LookupHandler[ParameterLookupClient, SearchInput, LookupOutput[inventree.ParameterTemplate]](deps, SearchParameterTemplatesToolName,
 		func(ctx context.Context, _ *mcp.CallToolRequest, client ParameterLookupClient, input SearchInput) (*mcp.CallToolResult, LookupOutput[inventree.ParameterTemplate], error) {
-			records, err := client.SearchParameterTemplates(ctx, SearchValues(input))
+			records, err := client.SearchParameterTemplates(ctx, searchQuery(input))
 			return searchOutput(records, input.Search, "template", "template_id", "Which parameter template should be used?", err)
 		})
 }
@@ -249,9 +249,11 @@ func searchParameterTemplates(deps Dependencies) mcp.ToolHandlerFor[SearchInput,
 func getPartParameters(deps Dependencies) mcp.ToolHandlerFor[PartParametersInput, LookupOutput[inventree.Parameter]] {
 	return LookupHandler[ParameterLookupClient, PartParametersInput, LookupOutput[inventree.Parameter]](deps, GetPartParametersToolName,
 		func(ctx context.Context, _ *mcp.CallToolRequest, client ParameterLookupClient, input PartParametersInput) (*mcp.CallToolResult, LookupOutput[inventree.Parameter], error) {
-			query := url.Values{"part": []string{strconv.Itoa(input.PartID)}}
-			setPagingValues(query, input.Limit, input.Offset)
-			records, err := client.SearchPartParameters(ctx, query)
+			records, err := client.SearchPartParameters(ctx, inventree.PartParameterQuery{
+				PartID: input.PartID,
+				Limit:  NormalizeLookupLimit(input.Limit),
+				Offset: input.Offset,
+			})
 			return listOutput(records, err)
 		})
 }
@@ -259,7 +261,7 @@ func getPartParameters(deps Dependencies) mcp.ToolHandlerFor[PartParametersInput
 func searchCompanies(deps Dependencies) mcp.ToolHandlerFor[SearchInput, LookupOutput[inventree.Company]] {
 	return LookupHandler[CompanyLookupClient, SearchInput, LookupOutput[inventree.Company]](deps, SearchCompaniesToolName,
 		func(ctx context.Context, _ *mcp.CallToolRequest, client CompanyLookupClient, input SearchInput) (*mcp.CallToolResult, LookupOutput[inventree.Company], error) {
-			records, err := client.SearchCompanies(ctx, SearchValues(input))
+			records, err := client.SearchCompanies(ctx, searchQuery(input))
 			return searchOutput(records, input.Search, "company", "company_id", "Which company should be used?", err)
 		})
 }
@@ -267,7 +269,7 @@ func searchCompanies(deps Dependencies) mcp.ToolHandlerFor[SearchInput, LookupOu
 func searchSuppliers(deps Dependencies) mcp.ToolHandlerFor[SearchInput, LookupOutput[inventree.Company]] {
 	return LookupHandler[CompanyLookupClient, SearchInput, LookupOutput[inventree.Company]](deps, SearchSuppliersToolName,
 		func(ctx context.Context, _ *mcp.CallToolRequest, client CompanyLookupClient, input SearchInput) (*mcp.CallToolResult, LookupOutput[inventree.Company], error) {
-			records, err := client.SearchSuppliers(ctx, SearchValues(input))
+			records, err := client.SearchSuppliers(ctx, searchQuery(input))
 			return searchOutput(records, input.Search, "supplier", "supplier_id", "Which supplier should be used?", err)
 		})
 }
@@ -275,7 +277,7 @@ func searchSuppliers(deps Dependencies) mcp.ToolHandlerFor[SearchInput, LookupOu
 func searchManufacturers(deps Dependencies) mcp.ToolHandlerFor[SearchInput, LookupOutput[inventree.Company]] {
 	return LookupHandler[CompanyLookupClient, SearchInput, LookupOutput[inventree.Company]](deps, SearchManufacturersToolName,
 		func(ctx context.Context, _ *mcp.CallToolRequest, client CompanyLookupClient, input SearchInput) (*mcp.CallToolResult, LookupOutput[inventree.Company], error) {
-			records, err := client.SearchManufacturers(ctx, SearchValues(input))
+			records, err := client.SearchManufacturers(ctx, searchQuery(input))
 			return searchOutput(records, input.Search, "manufacturer", "manufacturer_id", "Which manufacturer should be used?", err)
 		})
 }
@@ -283,7 +285,7 @@ func searchManufacturers(deps Dependencies) mcp.ToolHandlerFor[SearchInput, Look
 func searchStockLocations(deps Dependencies) mcp.ToolHandlerFor[SearchInput, LookupOutput[inventree.StockLocation]] {
 	return LookupHandler[StockLookupClient, SearchInput, LookupOutput[inventree.StockLocation]](deps, SearchStockLocationsToolName,
 		func(ctx context.Context, _ *mcp.CallToolRequest, client StockLookupClient, input SearchInput) (*mcp.CallToolResult, LookupOutput[inventree.StockLocation], error) {
-			records, err := client.SearchStockLocations(ctx, SearchValues(input))
+			records, err := client.SearchStockLocations(ctx, searchQuery(input))
 			return searchOutput(records, input.Search, "location", "location_id", "Which stock location should be used?", err)
 		})
 }
@@ -291,14 +293,13 @@ func searchStockLocations(deps Dependencies) mcp.ToolHandlerFor[SearchInput, Loo
 func searchStockItems(deps Dependencies) mcp.ToolHandlerFor[StockItemsInput, LookupOutput[inventree.StockItem]] {
 	return LookupHandler[StockLookupClient, StockItemsInput, LookupOutput[inventree.StockItem]](deps, SearchStockItemsToolName,
 		func(ctx context.Context, _ *mcp.CallToolRequest, client StockLookupClient, input StockItemsInput) (*mcp.CallToolResult, LookupOutput[inventree.StockItem], error) {
-			query := SearchValues(SearchInput{Search: input.Search, Limit: input.Limit, Offset: input.Offset})
-			if input.PartID != 0 {
-				query.Set("part", strconv.Itoa(input.PartID))
-			}
-			if input.LocationID != 0 {
-				query.Set("location", strconv.Itoa(input.LocationID))
-			}
-			records, err := client.SearchStockItems(ctx, query)
+			records, err := client.SearchStockItems(ctx, inventree.StockItemQuery{
+				Search:     input.Search,
+				PartID:     input.PartID,
+				LocationID: input.LocationID,
+				Limit:      NormalizeLookupLimit(input.Limit),
+				Offset:     input.Offset,
+			})
 			return listOutput(records, err)
 		})
 }
@@ -309,7 +310,13 @@ func listAttachments(deps Dependencies) mcp.ToolHandlerFor[ObjectLookupInput, Lo
 			if err := validateAttachmentModelType(input.ModelType); err != nil {
 				return nil, LookupOutput[AttachmentMetadata]{}, err
 			}
-			records, err := client.ListAttachments(ctx, ObjectLookupValues(input))
+			records, err := client.ListAttachments(ctx, inventree.AttachmentQuery{
+				ModelType: input.ModelType,
+				ModelID:   input.ModelID,
+				Search:    input.Search,
+				Limit:     NormalizeLookupLimit(input.Limit),
+				Offset:    input.Offset,
+			})
 			return listOutput(sanitizeAttachments(records), err)
 		})
 }
@@ -404,6 +411,14 @@ func recordOutput[T any](record T, err error) (*mcp.CallToolResult, RecordOutput
 		return nil, RecordOutput[T]{}, err
 	}
 	return TextResult(StatusOK), RecordOutput[T]{Status: StatusOK, Record: record}, nil
+}
+
+func searchQuery(input SearchInput) inventree.SearchQuery {
+	return inventree.SearchQuery{
+		Search: input.Search,
+		Limit:  NormalizeLookupLimit(input.Limit),
+		Offset: input.Offset,
+	}
 }
 
 func attachmentMode(raw string) inventree.AttachmentContentMode {
