@@ -37,7 +37,9 @@ jobs:
         id: coverage
         with:
           coverage-threshold: 80
+          cover-mode: atomic
           cover-pkg: ./...
+          test-args: '["-v", "-race"]'
           notes-ref: gocoverage-${{ matrix.go-version }}
 
       - name: Update coverage badge

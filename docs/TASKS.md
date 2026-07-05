@@ -238,11 +238,11 @@ Tasks:
 
 ## Milestone 1H: Early Integration Test Environment
 
-These integration-environment stories are intentionally pulled forward before read-only client methods so new client and tool behavior can gain optional real InvenTree coverage as it lands. The broad milestone happy-path integration suite remains later, after the corresponding workflow, upload, and image behavior exists.
+These integration-environment stories are intentionally pulled forward before read-only client methods so new client and tool behavior can gain real InvenTree coverage as it lands. Docker-backed integration coverage runs in the default test path unless explicitly excluded with `INVENTREE_TEST_SKIP_DOCKER=1` or `GOFLAGS=-trimpath go test -race -short`. The broad milestone happy-path integration suite remains later, after the corresponding workflow, upload, and image behavior exists.
 
 ### M1H-S01: Testcontainers Stack Spike
 
-- Status: `Planned`
+- Status: `Done`
 - Depends on: M1B-S01, M1B-S02
 - Scope: prove InvenTree startup, migrations, admin token creation, and readiness with Testcontainers.
 - Acceptance:
@@ -250,20 +250,24 @@ These integration-environment stories are intentionally pulled forward before re
   - Pinned InvenTree image tag is declared in testenv config or a single constant and appears in test logs.
   - `docs/api-schema.md` provenance records the matching runtime InvenTree version and API version.
   - Records runtime InvenTree version and API version.
-  - `go test ./...` never starts Docker.
+  - Docker-backed integration tests run by default and can be explicitly excluded with `INVENTREE_TEST_SKIP_DOCKER=1` or `GOFLAGS=-trimpath go test -race -short`.
 
 Tasks:
 
-- [ ] Add `internal/testenv`.
-- [ ] Choose and record the explicit InvenTree version tag matching `docs/api-schema.yaml`.
-- [ ] Start required database and InvenTree services.
-- [ ] Create deterministic admin/test token.
-- [ ] Add readiness polling.
-- [ ] Add integration tag and Docker skip behavior.
+- [x] Add `internal/testenv`.
+- [x] Choose and record the explicit InvenTree version tag matching `docs/api-schema.yaml`.
+- [x] Start required database and InvenTree services.
+- [x] Create deterministic admin/test token.
+- [x] Add readiness polling.
+- [x] Add default-on Docker integration test and explicit Docker skip behavior.
+
+- Validation: `GOFLAGS=-trimpath GOCACHE=/Users/david/Projects/inventree-mcp/.gocache GOMODCACHE=/private/tmp/inventree-mcp-gomodcache go test -race ./...` passed with the default Docker-backed Testcontainers stack; `GOFLAGS=-trimpath GOCACHE=/Users/david/Projects/inventree-mcp/.gocache GOMODCACHE=/private/tmp/inventree-mcp-gomodcache go test -race ./internal/testenv -run TestStartInvenTreeStack -count=1 -v` passed and logged `inventree/inventree:1.4.0`, runtime version `1.4.0`, API `511`, and forwarded Postgres, Redis, and InvenTree container stdout/stderr with `container[name][stream]` prefixes; GitHub Actions Go coverage now uses `cover-mode: atomic` and passes `test-args: '["-v", "-race"]'`, and release/release-preview tests run `go test -v -race ./...`, so successful CI test runs also show forwarded container logs with race detection enabled; `GOFLAGS=-trimpath GOCACHE=/Users/david/Projects/inventree-mcp/.gocache GOMODCACHE=/private/tmp/inventree-mcp-gomodcache INVENTREE_TEST_SKIP_DOCKER=1 go test -race ./internal/testenv` passed; `GOFLAGS=-trimpath GOCACHE=/Users/david/Projects/inventree-mcp/.gocache GOMODCACHE=/private/tmp/inventree-mcp-gomodcache go test -race -tags no_integration_tests ./internal/testenv` passed with the Docker-backed integration test excluded by build tag; `GOFLAGS=-trimpath GOCACHE=/Users/david/Projects/inventree-mcp/.gocache GOMODCACHE=/private/tmp/inventree-mcp-gomodcache go test -race -covermode atomic -coverpkg ./... -coverprofile /private/tmp/inventree-mcp-cover.out ./...` passed and `go tool cover -func` reported 80.7% total coverage; `GOCACHE=/Users/david/Projects/inventree-mcp/.gocache GOMODCACHE=/private/tmp/inventree-mcp-gomodcache GOLANGCI_LINT_CACHE=/Users/david/Projects/inventree-mcp/.golangci-cache golangci-lint run` passed with 0 issues; `GOFLAGS=-trimpath GOCACHE=/Users/david/Projects/inventree-mcp/.gocache GOMODCACHE=/private/tmp/inventree-mcp-gomodcache go mod tidy -diff` passed; `git diff --check` passed. PR-comment follow-up validation: `GOFLAGS=-trimpath GOCACHE=/Users/david/Projects/inventree-mcp/.gocache GOMODCACHE=/private/tmp/inventree-mcp-gomodcache go test -race -tags no_integration_tests ./internal/testenv` passed; `GOFLAGS=-trimpath GOCACHE=/Users/david/Projects/inventree-mcp/.gocache GOMODCACHE=/private/tmp/inventree-mcp-gomodcache INVENTREE_TEST_SKIP_DOCKER=1 go test -race ./internal/testenv` passed; `GOFLAGS=-trimpath GOCACHE=/Users/david/Projects/inventree-mcp/.gocache GOMODCACHE=/private/tmp/inventree-mcp-gomodcache go test -race ./internal/testenv -run TestStartInvenTreeStack -count=1 -v` passed and confirmed initial `relation does not exist` Postgres lines occur during InvenTree `migrate` before update completion and before the HTTP readiness wait passes.
+- Review: Senior Go Developer, Senior QA / Test Architect, Senior Product Manager, and Senior Infosec Reviewer reviews run. Go requested bounded cleanup contexts and test-log visibility for the pinned image/version/API; fixed by terminating containers with the caller context, adding bounded cleanup helpers, and logging the runtime pin before stack startup. QA requested excluding Docker-backed integration from Gremlins mutation testing while preserving default `go test ./...` integration coverage; fixed with a Gremlins config that sets the `no_integration_tests` build tag and a matching `!no_integration_tests` build constraint on the Docker-backed integration test. Product found stale optional-integration, skip-policy, and latest-stable compatibility wording; fixed so docs state default-on Docker integration, explicit skip paths, blocking InvenTree `1.4.0`, and non-blocking latest-stable canary coverage. Infosec found host-port exposure with fixed test credentials; fixed by forcing Postgres, Redis, and InvenTree host bindings to `127.0.0.1` and asserting runtime bindings in the Docker-backed test. Initial GitHub Actions runs then exposed Testcontainers' default 60-second outer `WithWaitStrategy` deadline around InvenTree readiness; fixed by using `WithWaitStrategyAndDeadline(opts.StartupTimeout, ...)` for the server wait. The next GitHub Actions run passed Release Preview but failed Go coverage at 79.5%; fixed with deterministic `internal/testenv` unit coverage for option validation, version/token helper auth, token proof, and JSON error paths. Focused reruns for all four initial roles, Go/QA reruns for the CI wait-deadline follow-up, Go/QA reruns for the coverage follow-up, and focused Go/QA/Product reruns for the Gremlins build-tag follow-up found no remaining actionable findings. The container-log follow-up forwards Postgres, Redis, and InvenTree stdout/stderr to verbose integration test output; Go review requested making successful CI runs verbose and serializing callback calls, fixed with coverage-action `test-args: '["-v"]'` and a synchronized log callback wrapper. QA review then found release workflows still used non-verbose tests; fixed by changing release and release-preview test steps to `go test -v ./...`. Race/trimpath follow-up made CI and operator test commands use `GOFLAGS=-trimpath` plus `-race` wherever supported, with atomic coverage mode for race-enabled coverage. PR-comment follow-up grouped Testcontainers Dependabot updates, added `DefaultTestOptions(t)` for default test-log forwarding, made `Start` return a bounded cleanup function plus `CleanupForTest(t, cleanup)` for direct `t.Cleanup` registration with visible cleanup errors, and documented that observed initial Postgres relation errors occur during InvenTree migrations rather than after server readiness.
+- Residual risk: default test runs now require Docker unless explicitly excluded with `INVENTREE_TEST_SKIP_DOCKER=1` or `GOFLAGS=-trimpath go test -race -short`. The test stack uses fixed disposable credentials bound to loopback-only published ports. Postgres and Redis remain pinned to readable major/family tags (`postgres:17`, `redis:7-alpine`) for this spike; future shared-fixture work can tighten supporting-service pins if drift becomes noisy. Total coverage is 80.7%, leaving a narrow margin over the 80% CI threshold.
 
 ### M1H-S02: Shared Suite Fixtures And Isolation
 
-- Status: `Planned`
+- Status: `Ready`
 - Depends on: M1H-S01
 - Scope: add suite-owned container lifecycle, immutable fixtures, run prefixes, and cleanup safety.
 - Acceptance:
@@ -287,8 +291,8 @@ Tasks:
 - Acceptance:
   - Methods exist for part, category, company, stock location/item, parameter, attachment, and supplier-part lookup.
   - Default tests use fake transports, not live network.
-  - Optional integration-tag tests use the shared Testcontainers environment where real API behavior materially improves confidence.
-  - `go test ./...` does not start Docker.
+  - Integration tests use the shared Testcontainers environment by default where real API behavior materially improves confidence.
+  - Default `GOFLAGS=-trimpath go test -race ./...` may start the shared Testcontainers environment; use `INVENTREE_TEST_SKIP_DOCKER=1` or `GOFLAGS=-trimpath go test -race -short` only when explicitly excluding Docker-backed integration.
 
 Tasks:
 
@@ -670,7 +674,24 @@ Tasks:
 
 ## Future Backlog
 
-### F-S01: BOM Import Workflow
+### F-S01: Evaluate Docker Compose Testcontainers Stack
+
+- Status: `Future`
+- Depends on: M1H-S01
+- Scope: evaluate whether `github.com/testcontainers/testcontainers-go/modules/compose` can replace or complement the hand-wired InvenTree Testcontainers stack by using official InvenTree Docker Compose files plus test-specific overrides.
+- Acceptance:
+  - Compare compose-based startup against the current `internal/testenv` stack for startup time, log visibility, cleanup behavior, loopback-only published ports, readiness checks, and deterministic token creation.
+  - Determine whether the official compose topology starts all backend services needed for realistic MCP integration tests without introducing unnecessary CI cost.
+  - Document whether compose should replace the current stack, become an optional canary/compatibility path, or be rejected with reasons.
+
+Tasks:
+
+- [ ] Identify the official InvenTree compose files and required test overrides for pinned `inventree/inventree:1.4.0`.
+- [ ] Prototype a local compose stack using `testcontainers-go/modules/compose`.
+- [ ] Verify service logs, `ServiceContainer` inspection, endpoint discovery, and `Down` cleanup semantics.
+- [ ] Compare findings with the current direct-container `internal/testenv` implementation.
+
+### F-S02: BOM Import Workflow
 
 - Status: `Future`
 - Depends on: milestone 1 complete and product review
@@ -681,7 +702,7 @@ Tasks:
 - [ ] Implement structured row validation.
 - [ ] Add dry-run and row-level error tests.
 
-### F-S02: Purchase Order Write And Receiving
+### F-S03: Purchase Order Write And Receiving
 
 - Status: `Future`
 - Depends on: milestone 1 complete and product review
@@ -692,7 +713,7 @@ Tasks:
 - [ ] Define receiving workflow.
 - [ ] Add operational/destructive scope review.
 
-### F-S03: Build Order Workflows
+### F-S04: Build Order Workflows
 
 - Status: `Future`
 - Depends on: milestone 1 complete and product review
@@ -703,7 +724,7 @@ Tasks:
 - [ ] Add stock consumption safety model.
 - [ ] Add integration tests.
 
-### F-S04: Stocktake Adjustments
+### F-S05: Stocktake Adjustments
 
 - Status: `Future`
 - Depends on: milestone 1 complete and product review
@@ -714,7 +735,7 @@ Tasks:
 - [ ] Add confirmation and audit requirements.
 - [ ] Add operational scope tests.
 
-### F-S05: Systemd Notify And Watchdog Support
+### F-S06: Systemd Notify And Watchdog Support
 
 - Status: `Future`
 - Depends on: long-running HTTP server runtime, production HTTP OAuth startup behavior, and product review

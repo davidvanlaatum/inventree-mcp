@@ -13,13 +13,17 @@ Current fetched schema:
 - OpenAPI: `3.0.3`
 - API title: `InvenTree API`
 - API version: `511`
+- Runtime InvenTree version: `1.4.0`
+- Runtime commit: `0a9a8b1`
+- Runtime commit date: `2026-06-24`
 - Fetched at: `2026-07-03T23:21:00+09:30` approximately
 - Source instance: `inventory.internal.vanlaatum.id.au`
 - Authentication used for schema fetch: none from this workspace
 - SHA256: `a574d8c055e36e2efa16dfaad093b77b4126f3a230c12a56c31b90f224d526a1`
+- Runtime evidence: operator-provided InvenTree About dialog screenshot on `2026-07-04`, confirmed upstream Git tag `1.4.0` resolves to commit `0a9a8b1c54d0811ede0a61ffe3b0427f82ee28e5`.
 
 When `docs/api-schema.yaml` changes, update this provenance block and any endpoint capability tables in the same change.
-The manifest stores the same schema SHA256 and API version; schema drift tests fail until both this provenance block and `docs/endpoint-manifest.yaml` are updated.
+The manifest stores the same schema SHA256 and API version; schema drift tests fail until both this provenance block and `docs/endpoint-manifest.yaml` are updated. The blocking Testcontainers suite pins `inventree/inventree:1.4.0` and fails if the runtime version or API version differs from this provenance.
 
 ## Verified Auth and Token Endpoints
 

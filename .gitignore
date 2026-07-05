@@ -30,6 +30,7 @@ coverage.html
 go.work
 go.work.sum
 .gocache/
+.golangci-cache/
 .ai/
 
 # Testcontainers and local runtime artifacts
