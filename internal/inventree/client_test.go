@@ -344,6 +344,27 @@ func TestListAllFollowsPagination(t *testing.T) {
 	}, requested)
 }
 
+func TestListAllAcceptsUnpaginatedArrayResponses(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+
+	client, err := NewClient(Config{
+		BaseURL:    "https://inventory.example.test",
+		Credential: Credential{Scheme: AuthSchemeBearer, Token: "secret"},
+		HTTPClient: &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			return jsonResponse(req, http.StatusOK, `[{"pk":1},{"pk":2}]`), nil
+		})},
+	})
+	r.NoError(err)
+
+	type part struct {
+		PK int `json:"pk"`
+	}
+	parts, err := ListAll[part](context.Background(), client, "/api/part/", nil)
+	r.NoError(err)
+	r.Equal([]part{{PK: 1}, {PK: 2}}, parts)
+}
+
 func TestListAllRejectsInvalidInputs(t *testing.T) {
 	t.Parallel()
 	r := require.New(t)

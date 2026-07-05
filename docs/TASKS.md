@@ -295,9 +295,12 @@ Tasks:
 
 ### M1B-S03: Read-Only Client Methods
 
-- Status: `Ready`
+- Status: `Done`
 - Depends on: M1B-S01, M1B-S02, M1H-S02
 - Scope: implement read-only API methods needed by milestone 1.
+- Validation: `INVENTREE_TEST_SKIP_DOCKER=1 go test ./...` passed; `golangci-lint run` passed with 0 issues; `GOFLAGS=-trimpath go test -race ./...` passed with the Docker-backed shared InvenTree suite; `go mod tidy -diff` passed; `git diff --check` passed. Focused live validation `go test ./internal/inventree -run TestReadOnlyClientReads -count=1` passed after adding real parameter, link-attachment, and file-attachment fixtures.
+- Review: Senior Go Developer, Senior QA / Test Architect, and Senior Infosec Reviewer reviews run. Initial Go and QA findings found schema-shape mismatches for part parameters, category parameter template fields/filtering, and parameter-template choices; fixes made part-parameter lookup use schema-backed `model_type=part.part` plus `model_id`, corrected `template` decoding, represented template choices as the schema's comma-separated string, and filtered category parameter templates client-side because the schema exposes no category query filter. Infosec found sensitive attachment URL leakage risk and missing bounded read time; fixes redacted returned source URLs, hid transport URL details, rejected URL userinfo, and added a default download timeout when neither context nor client timeout is set. QA follow-up requested real file-attachment integration coverage for successful downloads; fixed with a multipart file attachment fixture. Focused Go, QA, and infosec reruns found no remaining actionable findings. PR comment follow-up split the live read-only client integration test into lookup-area subtests; focused QA review found no actionable findings. Operator follow-up then corrected the subtest ownership model; fixed so the parent only starts the shared environment and every subtest creates its own run, account, client, and run-prefixed fixtures, with `AGENTS.md` updated to make that rule explicit.
+- Residual risk: read-only client structs include the milestone fields needed by planned tools rather than full InvenTree response models; later tool work may add fields as contracts become concrete. Attachment download byte/time bounds are client-level safeguards, while final tool-level output limits and redaction policy remain owned by attachment tool tasks.
 - Acceptance:
   - Methods exist for part, category, company, stock location/item, parameter, attachment, and supplier-part lookup.
   - Default tests use fake transports, not live network.
@@ -306,12 +309,12 @@ Tasks:
 
 Tasks:
 
-- [ ] Add part/category lookup methods.
-- [ ] Add company/supplier/manufacturer lookup methods.
-- [ ] Add stock location/item lookup methods.
-- [ ] Add parameter template/value lookup methods.
-- [ ] Add attachment metadata/list/download methods.
-- [ ] Add supplier-part lookup methods for purchase preview.
+- [x] Add part/category lookup methods.
+- [x] Add company/supplier/manufacturer lookup methods.
+- [x] Add stock location/item lookup methods.
+- [x] Add parameter template/value lookup methods.
+- [x] Add attachment metadata/list/download methods.
+- [x] Add supplier-part lookup methods for purchase preview.
 
 ## Milestone 1C: HTTP OAuth Spike And Auth Layer
 
@@ -392,7 +395,7 @@ Tasks:
 
 ### M1D-S01: Lookup Tool Framework
 
-- Status: `Planned`
+- Status: `Ready`
 - Depends on: M1A-S03, M1B-S03
 - Scope: implement common tool schemas, structured outputs, ambiguity responses, and fake-client handler tests.
 - Acceptance:
