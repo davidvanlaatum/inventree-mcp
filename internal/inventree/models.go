@@ -16,6 +16,10 @@ type Part struct {
 	Image           *string `json:"image"`
 }
 
+type PartThumb struct {
+	Image string `json:"image"`
+}
+
 type Category struct {
 	PK          int    `json:"pk"`
 	Name        string `json:"name"`

@@ -48,6 +48,10 @@ func TestToolReferenceDocumentsLookupFrameworkSchema(t *testing.T) {
 		reflect.TypeOf(SearchInput{}),
 		reflect.TypeOf(IDInput{}),
 		reflect.TypeOf(ObjectLookupInput{}),
+		reflect.TypeOf(PartParametersInput{}),
+		reflect.TypeOf(StockItemsInput{}),
+		reflect.TypeOf(DownloadInput{}),
+		reflect.TypeOf(DownloadOutput{}),
 		reflect.TypeOf(ClarificationResponse{}),
 		reflect.TypeOf(ClarificationCandidate{}),
 	} {
@@ -58,6 +62,30 @@ func TestToolReferenceDocumentsLookupFrameworkSchema(t *testing.T) {
 			}
 			a.Contains(docs, "`"+jsonName+"`")
 		}
+	}
+}
+
+func TestToolReferenceDocumentsRegisteredLookupTools(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+
+	data, err := os.ReadFile("../../docs/tool-reference.md")
+	r.NoError(err)
+	docs := string(data)
+
+	a.Contains(docs, "## Registered Lookup Tools")
+	a.Contains(docs, "`"+ScopeInventreeRead+"`")
+	a.Contains(docs, "`readOnlyHint:true`")
+	a.Contains(docs, "`destructiveHint:false`")
+	a.Contains(docs, "`idempotentHint:true`")
+	a.Contains(docs, "`openWorldHint:false`")
+	for _, name := range lookupToolNames {
+		a.Contains(docs, "`"+name+"`")
+		auth, ok := ToolAuthorizations[name]
+		r.True(ok, "missing authorization for %s", name)
+		a.Equal("read_only", auth.MutationClass)
+		a.Equal([]string{ScopeInventreeRead}, auth.Scopes)
 	}
 }
 

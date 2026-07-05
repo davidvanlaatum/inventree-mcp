@@ -37,8 +37,15 @@ type DownloadedAttachment struct {
 	SourceURL   string
 }
 
-func (c *Client) SearchParts(ctx context.Context, query url.Values) ([]Part, error) {
-	return listAll[Part](ctx, c, "/api/part/", query)
+type DownloadedPartImage struct {
+	Part        Part
+	Content     []byte
+	ContentType string
+	SourceURL   string
+}
+
+func (c *Client) SearchParts(ctx context.Context, query SearchQuery) ([]Part, error) {
+	return listAll[Part](ctx, c, "/api/part/", query.values())
 }
 
 func (c *Client) GetPart(ctx context.Context, id int) (Part, error) {
@@ -47,8 +54,8 @@ func (c *Client) GetPart(ctx context.Context, id int) (Part, error) {
 	return out, err
 }
 
-func (c *Client) SearchPartCategories(ctx context.Context, query url.Values) ([]Category, error) {
-	return listAll[Category](ctx, c, "/api/part/category/", query)
+func (c *Client) SearchPartCategories(ctx context.Context, query SearchQuery) ([]Category, error) {
+	return listAll[Category](ctx, c, "/api/part/category/", query.values())
 }
 
 func (c *Client) GetPartCategory(ctx context.Context, id int) (Category, error) {
@@ -57,20 +64,20 @@ func (c *Client) GetPartCategory(ctx context.Context, id int) (Category, error) 
 	return out, err
 }
 
-func (c *Client) SearchCompanies(ctx context.Context, query url.Values) ([]Company, error) {
-	return listAll[Company](ctx, c, "/api/company/", query)
+func (c *Client) SearchCompanies(ctx context.Context, query SearchQuery) ([]Company, error) {
+	return listAll[Company](ctx, c, "/api/company/", query.values())
 }
 
-func (c *Client) SearchSuppliers(ctx context.Context, query url.Values) ([]Company, error) {
+func (c *Client) SearchSuppliers(ctx context.Context, query SearchQuery) ([]Company, error) {
 	return c.searchCompaniesWithRole(ctx, query, "is_supplier")
 }
 
-func (c *Client) SearchManufacturers(ctx context.Context, query url.Values) ([]Company, error) {
+func (c *Client) SearchManufacturers(ctx context.Context, query SearchQuery) ([]Company, error) {
 	return c.searchCompaniesWithRole(ctx, query, "is_manufacturer")
 }
 
-func (c *Client) SearchStockLocations(ctx context.Context, query url.Values) ([]StockLocation, error) {
-	return listAll[StockLocation](ctx, c, "/api/stock/location/", query)
+func (c *Client) SearchStockLocations(ctx context.Context, query SearchQuery) ([]StockLocation, error) {
+	return listAll[StockLocation](ctx, c, "/api/stock/location/", query.values())
 }
 
 func (c *Client) GetStockLocation(ctx context.Context, id int) (StockLocation, error) {
@@ -79,25 +86,16 @@ func (c *Client) GetStockLocation(ctx context.Context, id int) (StockLocation, e
 	return out, err
 }
 
-func (c *Client) SearchStockItems(ctx context.Context, query url.Values) ([]StockItem, error) {
-	return listAll[StockItem](ctx, c, "/api/stock/", query)
+func (c *Client) SearchStockItems(ctx context.Context, query StockItemQuery) ([]StockItem, error) {
+	return listAll[StockItem](ctx, c, "/api/stock/", query.values())
 }
 
-func (c *Client) SearchPartParameters(ctx context.Context, query url.Values) ([]Parameter, error) {
-	nextQuery := cloneValues(query)
-	if nextQuery == nil {
-		nextQuery = url.Values{}
-	}
-	if partID := nextQuery.Get("part"); partID != "" && nextQuery.Get("model_id") == "" {
-		nextQuery.Set("model_id", partID)
-	}
-	nextQuery.Del("part")
-	nextQuery.Set("model_type", parameterModelTypePart)
-	return listAll[Parameter](ctx, c, "/api/parameter/", nextQuery)
+func (c *Client) SearchPartParameters(ctx context.Context, query PartParameterQuery) ([]Parameter, error) {
+	return listAll[Parameter](ctx, c, "/api/parameter/", query.values())
 }
 
-func (c *Client) SearchParameterTemplates(ctx context.Context, query url.Values) ([]ParameterTemplate, error) {
-	return listAll[ParameterTemplate](ctx, c, "/api/parameter/template/", query)
+func (c *Client) SearchParameterTemplates(ctx context.Context, query SearchQuery) ([]ParameterTemplate, error) {
+	return listAll[ParameterTemplate](ctx, c, "/api/parameter/template/", query.values())
 }
 
 func (c *Client) SearchCategoryParameterTemplates(ctx context.Context, query url.Values) ([]CategoryParameterTemplate, error) {
@@ -120,8 +118,8 @@ func (c *Client) SearchCategoryParameterTemplates(ctx context.Context, query url
 	return filtered, nil
 }
 
-func (c *Client) ListAttachments(ctx context.Context, query url.Values) ([]Attachment, error) {
-	return listAll[Attachment](ctx, c, "/api/attachment/", query)
+func (c *Client) ListAttachments(ctx context.Context, query AttachmentQuery) ([]Attachment, error) {
+	return listAll[Attachment](ctx, c, "/api/attachment/", query.values())
 }
 
 func (c *Client) GetAttachmentMetadata(ctx context.Context, id int) (Attachment, error) {
@@ -185,6 +183,79 @@ func (c *Client) DownloadAttachment(ctx context.Context, id int, mode Attachment
 	}, nil
 }
 
+func (c *Client) DownloadPartImage(ctx context.Context, id int, mode AttachmentContentMode, maxBytes int64) (DownloadedPartImage, error) {
+	if maxBytes <= 0 {
+		return DownloadedPartImage{}, errors.New("part image download maxBytes must be positive")
+	}
+	part, err := c.GetPart(ctx, id)
+	if err != nil {
+		return DownloadedPartImage{}, err
+	}
+	rawURL, err := c.partImageURL(ctx, part, mode)
+	if err != nil {
+		return DownloadedPartImage{}, err
+	}
+	sourceURL, err := c.resolveInvenTreeContentURL(rawURL)
+	if err != nil {
+		return DownloadedPartImage{}, err
+	}
+
+	downloadCtx, cancel := boundedDownloadContext(ctx, c.httpClient)
+	defer cancel()
+	req, err := http.NewRequestWithContext(downloadCtx, http.MethodGet, sourceURL.String(), nil)
+	if err != nil {
+		return DownloadedPartImage{}, err
+	}
+	req.Header.Set("Accept", "image/*,*/*")
+	c.credential.Apply(req)
+
+	httpClient := noRedirectClient(c.httpClient)
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return DownloadedPartImage{}, errors.New("download InvenTree part image failed")
+	}
+	defer func() {
+		_ = resp.Body.Close()
+	}()
+	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+		if resp.StatusCode >= http.StatusMultipleChoices && resp.StatusCode < http.StatusBadRequest {
+			return DownloadedPartImage{}, fmt.Errorf("InvenTree part image redirected with status %d", resp.StatusCode)
+		}
+		return DownloadedPartImage{}, parseAPIError(resp)
+	}
+	content, err := readBounded(resp.Body, maxBytes)
+	if err != nil {
+		return DownloadedPartImage{}, err
+	}
+	return DownloadedPartImage{
+		Part:        part,
+		Content:     content,
+		ContentType: resp.Header.Get("Content-Type"),
+		SourceURL:   redactedURLString(sourceURL),
+	}, nil
+}
+
+func (c *Client) partImageURL(ctx context.Context, part Part, mode AttachmentContentMode) (string, error) {
+	switch mode {
+	case "", AttachmentContentOriginal:
+		if part.Image == nil || *part.Image == "" {
+			return "", errors.New("part has no primary image URL")
+		}
+		return *part.Image, nil
+	case AttachmentContentThumbnail:
+		var thumb PartThumb
+		if err := c.get(ctx, fmt.Sprintf("/api/part/thumbs/%d/", part.PK), &thumb); err != nil {
+			return "", err
+		}
+		if thumb.Image == "" {
+			return "", errors.New("part thumbnail response has no image URL")
+		}
+		return thumb.Image, nil
+	default:
+		return "", fmt.Errorf("unsupported part image content mode %q", mode)
+	}
+}
+
 func (c *Client) SearchSupplierParts(ctx context.Context, query url.Values) ([]SupplierPart, error) {
 	return listAll[SupplierPart](ctx, c, "/api/company/part/", query)
 }
@@ -215,13 +286,10 @@ func (c *Client) get(ctx context.Context, path string, out any) error {
 	return c.DoJSON(req, out)
 }
 
-func (c *Client) searchCompaniesWithRole(ctx context.Context, query url.Values, roleFilter string) ([]Company, error) {
-	nextQuery := cloneValues(query)
-	if nextQuery == nil {
-		nextQuery = url.Values{}
-	}
+func (c *Client) searchCompaniesWithRole(ctx context.Context, query SearchQuery, roleFilter string) ([]Company, error) {
+	nextQuery := query.values()
 	nextQuery.Set(roleFilter, "true")
-	return c.SearchCompanies(ctx, nextQuery)
+	return listAll[Company](ctx, c, "/api/company/", nextQuery)
 }
 
 func listAll[T any](ctx context.Context, client *Client, path string, query url.Values) ([]T, error) {

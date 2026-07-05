@@ -3,6 +3,7 @@ package inventree
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/url"
@@ -27,11 +28,11 @@ func TestReadMethodsUseExpectedEndpoints(t *testing.T) {
 		{
 			name: "search parts",
 			call: func(ctx context.Context, client *Client) error {
-				_, err := client.SearchParts(ctx, url.Values{"search": []string{"resistor"}})
+				_, err := client.SearchParts(ctx, SearchQuery{Search: "resistor", Limit: 7, Offset: 3})
 				return err
 			},
 			wantPath:  "/api/part/",
-			wantQuery: url.Values{"search": []string{"resistor"}},
+			wantQuery: url.Values{"search": []string{"resistor"}, "limit": []string{"7"}, "offset": []string{"3"}},
 			response:  `{"count":1,"next":null,"previous":null,"results":[{"pk":10,"name":"resistor"}]}`,
 		},
 		{
@@ -46,11 +47,11 @@ func TestReadMethodsUseExpectedEndpoints(t *testing.T) {
 		{
 			name: "search categories",
 			call: func(ctx context.Context, client *Client) error {
-				_, err := client.SearchPartCategories(ctx, url.Values{"name": []string{"passives"}})
+				_, err := client.SearchPartCategories(ctx, SearchQuery{Search: "passives"})
 				return err
 			},
 			wantPath:  "/api/part/category/",
-			wantQuery: url.Values{"name": []string{"passives"}},
+			wantQuery: url.Values{"search": []string{"passives"}},
 			response:  `{"count":1,"next":null,"previous":null,"results":[{"pk":20,"name":"passives"}]}`,
 		},
 		{
@@ -65,7 +66,7 @@ func TestReadMethodsUseExpectedEndpoints(t *testing.T) {
 		{
 			name: "search companies",
 			call: func(ctx context.Context, client *Client) error {
-				_, err := client.SearchCompanies(ctx, url.Values{"search": []string{"acme"}})
+				_, err := client.SearchCompanies(ctx, SearchQuery{Search: "acme"})
 				return err
 			},
 			wantPath:  "/api/company/",
@@ -75,7 +76,7 @@ func TestReadMethodsUseExpectedEndpoints(t *testing.T) {
 		{
 			name: "search suppliers",
 			call: func(ctx context.Context, client *Client) error {
-				_, err := client.SearchSuppliers(ctx, url.Values{"search": []string{"acme"}})
+				_, err := client.SearchSuppliers(ctx, SearchQuery{Search: "acme"})
 				return err
 			},
 			wantPath:  "/api/company/",
@@ -85,7 +86,7 @@ func TestReadMethodsUseExpectedEndpoints(t *testing.T) {
 		{
 			name: "search manufacturers",
 			call: func(ctx context.Context, client *Client) error {
-				_, err := client.SearchManufacturers(ctx, nil)
+				_, err := client.SearchManufacturers(ctx, SearchQuery{})
 				return err
 			},
 			wantPath:  "/api/company/",
@@ -95,7 +96,7 @@ func TestReadMethodsUseExpectedEndpoints(t *testing.T) {
 		{
 			name: "search stock locations",
 			call: func(ctx context.Context, client *Client) error {
-				_, err := client.SearchStockLocations(ctx, url.Values{"search": []string{"bin"}})
+				_, err := client.SearchStockLocations(ctx, SearchQuery{Search: "bin"})
 				return err
 			},
 			wantPath:  "/api/stock/location/",
@@ -114,27 +115,27 @@ func TestReadMethodsUseExpectedEndpoints(t *testing.T) {
 		{
 			name: "search stock items",
 			call: func(ctx context.Context, client *Client) error {
-				_, err := client.SearchStockItems(ctx, url.Values{"part": []string{"10"}})
+				_, err := client.SearchStockItems(ctx, StockItemQuery{PartID: 10, Limit: 8, Offset: 4})
 				return err
 			},
 			wantPath:  "/api/stock/",
-			wantQuery: url.Values{"part": []string{"10"}},
+			wantQuery: url.Values{"part": []string{"10"}, "limit": []string{"8"}, "offset": []string{"4"}},
 			response:  `{"count":1,"next":null,"previous":null,"results":[{"pk":50,"part":10,"quantity":2}]}`,
 		},
 		{
 			name: "search part parameters",
 			call: func(ctx context.Context, client *Client) error {
-				_, err := client.SearchPartParameters(ctx, url.Values{"part": []string{"10"}})
+				_, err := client.SearchPartParameters(ctx, PartParameterQuery{PartID: 10, Limit: 9, Offset: 5})
 				return err
 			},
 			wantPath:  "/api/parameter/",
-			wantQuery: url.Values{"model_id": []string{"10"}, "model_type": []string{"part.part"}},
+			wantQuery: url.Values{"model_id": []string{"10"}, "model_type": []string{"part.part"}, "limit": []string{"9"}, "offset": []string{"5"}},
 			response:  `{"count":1,"next":null,"previous":null,"results":[{"pk":60,"model_type":"part.part","model_id":10,"template":70,"data":"10k"}]}`,
 		},
 		{
 			name: "search parameter templates",
 			call: func(ctx context.Context, client *Client) error {
-				_, err := client.SearchParameterTemplates(ctx, url.Values{"search": []string{"Resistance"}})
+				_, err := client.SearchParameterTemplates(ctx, SearchQuery{Search: "Resistance"})
 				return err
 			},
 			wantPath:  "/api/parameter/template/",
@@ -154,11 +155,11 @@ func TestReadMethodsUseExpectedEndpoints(t *testing.T) {
 		{
 			name: "list attachments",
 			call: func(ctx context.Context, client *Client) error {
-				_, err := client.ListAttachments(ctx, url.Values{"model_type": []string{"part"}, "model_id": []string{"10"}})
+				_, err := client.ListAttachments(ctx, AttachmentQuery{ModelType: "part", ModelID: 10, Search: "datasheet", Limit: 10, Offset: 6})
 				return err
 			},
 			wantPath:  "/api/attachment/",
-			wantQuery: url.Values{"model_type": []string{"part"}, "model_id": []string{"10"}},
+			wantQuery: url.Values{"model_type": []string{"part"}, "model_id": []string{"10"}, "search": []string{"datasheet"}, "limit": []string{"10"}, "offset": []string{"6"}},
 			response:  `{"count":1,"next":null,"previous":null,"results":[{"pk":90,"model_type":"part","model_id":10,"filename":"datasheet.pdf"}]}`,
 		},
 		{
@@ -290,6 +291,208 @@ func TestDownloadAttachmentFetchesOnlyMetadataURLWithBounds(t *testing.T) {
 		"GET https://inventory.example.test/api/attachment/90/",
 		"GET https://inventory.example.test/media/attachments/datasheet.pdf?signature=secret",
 	}, requests)
+}
+
+func TestDownloadPartImageFetchesOnlyPartImageURLWithBounds(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+
+	var requests []string
+	client, err := NewClient(Config{
+		BaseURL:    "https://inventory.example.test",
+		Credential: Credential{Scheme: AuthSchemeToken, Token: "secret"},
+		HTTPClient: &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			requests = append(requests, req.Method+" "+req.URL.String())
+			a.Equal("Token secret", req.Header.Get("Authorization"))
+			switch req.URL.Path {
+			case "/api/part/10/":
+				body := `{"pk":10,"name":"resistor","image":"/media/part_images/resistor.png?signature=secret"}`
+				return jsonResponse(req, http.StatusOK, body), nil
+			case "/media/part_images/resistor.png":
+				_, hasDeadline := req.Context().Deadline()
+				a.True(hasDeadline)
+				a.Equal("signature=secret", req.URL.RawQuery)
+				return &http.Response{
+					StatusCode: http.StatusOK,
+					Header:     http.Header{"Content-Type": []string{"image/png"}},
+					Body:       io.NopCloser(strings.NewReader("png-bytes")),
+					Request:    req,
+				}, nil
+			default:
+				return jsonResponse(req, http.StatusNotFound, `{"detail":"unexpected path"}`), nil
+			}
+		})},
+	})
+	r.NoError(err)
+
+	download, err := client.DownloadPartImage(ctx, 10, AttachmentContentOriginal, 32)
+	r.NoError(err)
+
+	a.Equal("png-bytes", string(download.Content))
+	a.Equal("image/png", download.ContentType)
+	a.Equal("https://inventory.example.test/media/part_images/resistor.png", download.SourceURL)
+	a.Equal([]string{
+		"GET https://inventory.example.test/api/part/10/",
+		"GET https://inventory.example.test/media/part_images/resistor.png?signature=secret",
+	}, requests)
+}
+
+func TestDownloadPartImageThumbnailUsesPartThumbEndpoint(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+
+	var requests []string
+	client, err := NewClient(Config{
+		BaseURL:    "https://inventory.example.test",
+		Credential: Credential{Scheme: AuthSchemeToken, Token: "secret"},
+		HTTPClient: &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			requests = append(requests, req.Method+" "+req.URL.String())
+			a.Equal("Token secret", req.Header.Get("Authorization"))
+			switch req.URL.Path {
+			case "/api/part/10/":
+				return jsonResponse(req, http.StatusOK, `{"pk":10,"name":"resistor","image":"/media/part_images/resistor.png"}`), nil
+			case "/api/part/thumbs/10/":
+				return jsonResponse(req, http.StatusOK, `{"image":"/media/part_images/resistor.thumb.png?signature=secret"}`), nil
+			case "/media/part_images/resistor.thumb.png":
+				a.Equal("signature=secret", req.URL.RawQuery)
+				return &http.Response{
+					StatusCode: http.StatusOK,
+					Header:     http.Header{"Content-Type": []string{"image/png"}},
+					Body:       io.NopCloser(strings.NewReader("thumb-bytes")),
+					Request:    req,
+				}, nil
+			default:
+				return jsonResponse(req, http.StatusNotFound, `{"detail":"unexpected path"}`), nil
+			}
+		})},
+	})
+	r.NoError(err)
+
+	download, err := client.DownloadPartImage(ctx, 10, AttachmentContentThumbnail, 32)
+	r.NoError(err)
+
+	a.Equal("thumb-bytes", string(download.Content))
+	a.Equal("https://inventory.example.test/media/part_images/resistor.thumb.png", download.SourceURL)
+	a.Equal([]string{
+		"GET https://inventory.example.test/api/part/10/",
+		"GET https://inventory.example.test/api/part/thumbs/10/",
+		"GET https://inventory.example.test/media/part_images/resistor.thumb.png?signature=secret",
+	}, requests)
+}
+
+func TestDownloadPartImageRejectsUnsafeSourcesAndOversizedContent(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name      string
+		partBody  string
+		thumbBody string
+		imageBody string
+		status    int
+		mode      AttachmentContentMode
+		wantError string
+	}{
+		{
+			name:      "missing image",
+			partBody:  `{"pk":10,"name":"resistor"}`,
+			wantError: "no primary image URL",
+		},
+		{
+			name:      "external image URL",
+			partBody:  `{"pk":10,"name":"resistor","image":"https://evil.example.test/image.png"}`,
+			wantError: "outside configured InvenTree instance",
+		},
+		{
+			name:      "image URL with userinfo",
+			partBody:  `{"pk":10,"name":"resistor","image":"https://user:pass@inventory.example.test/image.png"}`,
+			wantError: "must not include userinfo",
+		},
+		{
+			name:      "redirect",
+			partBody:  `{"pk":10,"name":"resistor","image":"/media/image.png"}`,
+			status:    http.StatusFound,
+			wantError: "redirected with status 302",
+		},
+		{
+			name:      "oversized",
+			partBody:  `{"pk":10,"name":"resistor","image":"/media/image.png"}`,
+			imageBody: "too-large",
+			status:    http.StatusOK,
+			wantError: "exceeds maxBytes 4",
+		},
+		{
+			name:      "thumbnail URL outside configured instance",
+			partBody:  `{"pk":10,"name":"resistor","image":"/media/image.png"}`,
+			thumbBody: `{"image":"https://evil.example.test/thumb.png"}`,
+			mode:      AttachmentContentThumbnail,
+			wantError: "outside configured InvenTree instance",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			r := require.New(t)
+			ctx, _, _ := testhandler.SetupTestHandler(t)
+
+			client, err := NewClient(Config{
+				BaseURL:    "https://inventory.example.test",
+				Credential: Credential{Scheme: AuthSchemeToken, Token: "secret"},
+				HTTPClient: &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+					switch req.URL.Path {
+					case "/api/part/10/":
+						return jsonResponse(req, http.StatusOK, tt.partBody), nil
+					case "/api/part/thumbs/10/":
+						return jsonResponse(req, http.StatusOK, tt.thumbBody), nil
+					case "/media/image.png":
+						return &http.Response{
+							StatusCode: tt.status,
+							Header:     http.Header{"Content-Type": []string{"image/png"}},
+							Body:       io.NopCloser(strings.NewReader(tt.imageBody)),
+							Request:    req,
+						}, nil
+					default:
+						return jsonResponse(req, http.StatusNotFound, `{"detail":"unexpected path"}`), nil
+					}
+				})},
+			})
+			r.NoError(err)
+
+			_, err = client.DownloadPartImage(ctx, 10, tt.mode, 4)
+			r.ErrorContains(err, tt.wantError)
+		})
+	}
+}
+
+func TestDownloadPartImageDoesNotSurfaceSensitiveURLOnTransportError(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+
+	client, err := NewClient(Config{
+		BaseURL:    "https://inventory.example.test",
+		Credential: Credential{Scheme: AuthSchemeToken, Token: "secret"},
+		HTTPClient: &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			switch req.URL.Path {
+			case "/api/part/10/":
+				return jsonResponse(req, http.StatusOK, `{"pk":10,"name":"resistor","image":"/media/image.png?signature=secret"}`), nil
+			case "/media/image.png":
+				return nil, errors.New("dial tcp inventory.example.test:443 failed")
+			default:
+				return jsonResponse(req, http.StatusNotFound, `{"detail":"unexpected path"}`), nil
+			}
+		})},
+	})
+	r.NoError(err)
+
+	_, err = client.DownloadPartImage(ctx, 10, AttachmentContentOriginal, 1024)
+	r.Error(err)
+	a.Equal("download InvenTree part image failed", err.Error())
 }
 
 func TestDownloadAttachmentRejectsUnsafeSourcesAndOversizedContent(t *testing.T) {

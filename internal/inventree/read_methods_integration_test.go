@@ -45,7 +45,7 @@ func TestReadOnlyClientReads(t *testing.T) {
 		category := fixture.ensure(t, testenv.FixtureCategory)
 		part := fixture.ensure(t, testenv.FixturePart)
 
-		parts, err := fixture.client.SearchParts(ctx, url.Values{"name": []string{part.Name}})
+		parts, err := fixture.client.SearchParts(ctx, inventree.SearchQuery{Search: part.Name})
 		r.NoError(err)
 		r.NotEmpty(parts)
 		r.Equal(part.ID, parts[0].PK)
@@ -53,7 +53,7 @@ func TestReadOnlyClientReads(t *testing.T) {
 		r.NoError(err)
 		r.Equal(part.Name, gotPart.Name)
 
-		categories, err := fixture.client.SearchPartCategories(ctx, url.Values{"name": []string{category.Name}})
+		categories, err := fixture.client.SearchPartCategories(ctx, inventree.SearchQuery{Search: category.Name})
 		r.NoError(err)
 		r.NotEmpty(categories)
 		r.Equal(category.ID, categories[0].PK)
@@ -71,13 +71,13 @@ func TestReadOnlyClientReads(t *testing.T) {
 		part := fixture.ensure(t, testenv.FixturePart)
 		supplierPart := fixture.ensure(t, testenv.FixtureSupplierPart)
 
-		suppliers, err := fixture.client.SearchSuppliers(ctx, url.Values{"search": []string{supplier.Name}})
+		suppliers, err := fixture.client.SearchSuppliers(ctx, inventree.SearchQuery{Search: supplier.Name})
 		r.NoError(err)
 		r.NotEmpty(suppliers)
 		r.Equal(supplier.ID, suppliers[0].PK)
 		r.True(suppliers[0].IsSupplier)
 
-		manufacturers, err := fixture.client.SearchManufacturers(ctx, url.Values{"search": []string{manufacturer.Name}})
+		manufacturers, err := fixture.client.SearchManufacturers(ctx, inventree.SearchQuery{Search: manufacturer.Name})
 		r.NoError(err)
 		r.NotEmpty(manufacturers)
 		r.Equal(manufacturer.ID, manufacturers[0].PK)
@@ -98,7 +98,7 @@ func TestReadOnlyClientReads(t *testing.T) {
 		location := fixture.ensure(t, testenv.FixtureLocation)
 		part := fixture.ensure(t, testenv.FixturePart)
 
-		locations, err := fixture.client.SearchStockLocations(ctx, url.Values{"search": []string{location.Name}})
+		locations, err := fixture.client.SearchStockLocations(ctx, inventree.SearchQuery{Search: location.Name})
 		r.NoError(err)
 		r.NotEmpty(locations)
 		r.Equal(location.ID, locations[0].PK)
@@ -106,7 +106,7 @@ func TestReadOnlyClientReads(t *testing.T) {
 		r.NoError(err)
 		r.Equal(location.Name, gotLocation.Name)
 
-		stockItems, err := fixture.client.SearchStockItems(ctx, url.Values{"part": []string{strconv.Itoa(part.ID)}})
+		stockItems, err := fixture.client.SearchStockItems(ctx, inventree.StockItemQuery{PartID: part.ID})
 		r.NoError(err)
 		r.Empty(stockItems)
 	})
@@ -121,14 +121,14 @@ func TestReadOnlyClientReads(t *testing.T) {
 		categoryTemplate := createCategoryParameterTemplate(t, fixture.client, category.ID, template.PK)
 		parameter := createPartParameter(t, fixture.client, part.ID, template.PK, "10k")
 
-		parameters, err := fixture.client.SearchPartParameters(ctx, url.Values{"part": []string{strconv.Itoa(part.ID)}})
+		parameters, err := fixture.client.SearchPartParameters(ctx, inventree.PartParameterQuery{PartID: part.ID})
 		r.NoError(err)
 		r.NotEmpty(parameters)
 		r.Equal(parameter.PK, parameters[0].PK)
 		r.Equal("part.part", parameters[0].ModelType)
 		r.Equal(part.ID, parameters[0].ModelID)
 
-		templates, err := fixture.client.SearchParameterTemplates(ctx, url.Values{"search": []string{template.Name}})
+		templates, err := fixture.client.SearchParameterTemplates(ctx, inventree.SearchQuery{Search: template.Name})
 		r.NoError(err)
 		r.NotEmpty(templates)
 		r.Equal(template.PK, templates[0].PK)
@@ -150,10 +150,7 @@ func TestReadOnlyClientReads(t *testing.T) {
 		linkAttachment := createLinkAttachment(t, fixture.client, part.ID, "https://example.test/datasheet.pdf")
 		fileAttachment := createFileAttachment(t, shared.Environment().BaseURL, fixture.account.Token, part.ID, "datasheet.txt", "datasheet bytes")
 
-		attachments, err := fixture.client.ListAttachments(ctx, url.Values{
-			"model_type": []string{"part"},
-			"model_id":   []string{strconv.Itoa(part.ID)},
-		})
+		attachments, err := fixture.client.ListAttachments(ctx, inventree.AttachmentQuery{ModelType: "part", ModelID: part.ID})
 		r.NoError(err)
 		r.NotEmpty(attachments)
 		r.Contains(attachmentIDs(attachments), linkAttachment.PK)

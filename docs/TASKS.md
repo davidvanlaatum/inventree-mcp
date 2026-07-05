@@ -440,9 +440,12 @@ Tasks:
 
 ### M1D-S02: Part, Company, Stock, Parameter, And Attachment Lookup Tools
 
-- Status: `Ready`
+- Status: `Done`
 - Depends on: M1D-S01
 - Scope: add read-only milestone lookup tools.
+- Validation: `go test ./internal/tools ./internal/server ./internal/inventree` passed; `go test ./...` passed; `git diff --check` passed.
+- Review: Senior Go Developer, Senior QA / Test Architect, Senior Product Manager, and Senior Infosec Reviewer reviews run. Initial Go/QA/product reviews found get-by-ID tools returned API 404s as tool errors instead of structured `not_found`; fixed with shared API not-found mapping and handler coverage. Initial product review found clarification candidates lacked operator inspection URLs; fixed with stable API-path URLs in candidates and test coverage. Initial QA review found part-image download lacked negative safety coverage and thumbnail-mode docs drift; fixed with missing-image, external URL, userinfo, redirect, oversized, thumbnail external URL, and transport-error redaction tests plus updated docs. Initial product/infosec reviews found attachment metadata tools could expose deferred model types and raw URL-bearing attachment records; fixed with in-scope model validation, sanitized metadata DTOs, URL query/userinfo/fragment redaction, and regression coverage. Focused Go, QA, product, and infosec reruns found no remaining actionable findings.
+- Residual risk: HTTP OAuth and per-tool scope enforcement remain deferred to M1C-S04; registered lookup tool scope metadata declares `inventree.read` but is not enforced until that task. Testcontainers coverage exercises the lower-level InvenTree read client, while the new registered tool handlers are covered with fake-client unit tests. The in-scope attachment model list is duplicated between client download and tool metadata layers until a later shared manifest source is added.
 - Acceptance:
   - Implements milestone 1 read-only tools in `docs/tool-reference.md`.
   - Read-only annotations and `inventree.read` scopes are correct.
@@ -450,17 +453,17 @@ Tasks:
 
 Tasks:
 
-- [ ] Add part/category lookup tools.
-- [ ] Add company/supplier/manufacturer lookup tools.
-- [ ] Add stock location/item lookup tools.
-- [ ] Add parameter template/part parameter lookup tools.
-- [ ] Add attachment list/metadata/download tools.
+- [x] Add part/category lookup tools.
+- [x] Add company/supplier/manufacturer lookup tools.
+- [x] Add stock location/item lookup tools.
+- [x] Add parameter template/part parameter lookup tools.
+- [x] Add attachment list/metadata/download tools.
 
 ## Milestone 1E: Basic Write Tools
 
 ### M1E-S01: Part And Company Writes
 
-- Status: `Planned`
+- Status: `Ready`
 - Depends on: M1B-S01, M1D-S02
 - Scope: create/update parts and create supplier/manufacturer companies or links.
 - Acceptance:
@@ -482,7 +485,7 @@ Tasks:
 
 ### M1E-S02: Parameter Writes
 
-- Status: `Planned`
+- Status: `Ready`
 - Depends on: M1D-S02
 - Scope: set part parameters using existing templates only for milestone 1.
 - Acceptance:
@@ -501,7 +504,7 @@ Tasks:
 
 ### M1E-S03: Initial Stock Writes
 
-- Status: `Planned`
+- Status: `Ready`
 - Depends on: M1D-S02
 - Scope: create initial stock item with duplicate detection.
 - Acceptance:
