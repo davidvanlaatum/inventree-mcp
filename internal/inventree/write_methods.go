@@ -51,6 +51,13 @@ type ManufacturerPartCreate struct {
 	Link         *string `json:"link,omitempty"`
 }
 
+type ParameterCreate struct {
+	Template  int    `json:"template"`
+	ModelType string `json:"model_type"`
+	ModelID   int    `json:"model_id"`
+	Data      string `json:"data"`
+}
+
 func (c *Client) CreatePart(ctx context.Context, input PartCreate) (Part, error) {
 	var out Part
 	err := c.Post(ctx, "/api/part/", input, &out)
@@ -79,4 +86,25 @@ func (c *Client) CreateManufacturerPart(ctx context.Context, input ManufacturerP
 	var out ManufacturerPart
 	err := c.Post(ctx, "/api/company/part/manufacturer/", input, &out)
 	return out, err
+}
+
+func (c *Client) CreatePartParameter(ctx context.Context, input ParameterCreate) (Parameter, error) {
+	var out Parameter
+	err := c.Post(ctx, "/api/parameter/", input, &out)
+	return out, err
+}
+
+func (c *Client) UpdatePartParameter(ctx context.Context, id int, fields PatchFields) (Parameter, error) {
+	var out Parameter
+	err := c.Patch(ctx, fmt.Sprintf("/api/parameter/%d/", id), fields, &out)
+	return out, err
+}
+
+func NewPartParameter(partID int, templateID int, data string) ParameterCreate {
+	return ParameterCreate{
+		Template:  templateID,
+		ModelType: parameterModelTypePart,
+		ModelID:   partID,
+		Data:      data,
+	}
 }

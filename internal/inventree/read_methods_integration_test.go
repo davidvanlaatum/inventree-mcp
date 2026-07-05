@@ -9,7 +9,6 @@ import (
 	"io"
 	"mime/multipart"
 	"net/http"
-	"net/url"
 	"os"
 	"strconv"
 	"testing"
@@ -134,7 +133,7 @@ func TestReadOnlyClientReads(t *testing.T) {
 		r.Equal(template.PK, templates[0].PK)
 		r.Equal("10k,22k", templates[0].Choices)
 
-		categoryTemplates, err := fixture.client.SearchCategoryParameterTemplates(ctx, url.Values{"category": []string{strconv.Itoa(category.ID)}})
+		categoryTemplates, err := fixture.client.SearchCategoryParameterTemplates(ctx, inventree.CategoryParameterTemplateQuery{CategoryID: category.ID})
 		r.NoError(err)
 		r.NotEmpty(categoryTemplates)
 		r.Equal(categoryTemplate.PK, categoryTemplates[0].PK)

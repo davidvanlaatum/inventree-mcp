@@ -143,9 +143,18 @@ func TestReadMethodsUseExpectedEndpoints(t *testing.T) {
 			response:  `{"count":1,"next":null,"previous":null,"results":[{"pk":70,"name":"Resistance","units":"ohm","choices":"10k,22k"}]}`,
 		},
 		{
+			name: "get parameter template",
+			call: func(ctx context.Context, client *Client) error {
+				_, err := client.GetParameterTemplate(ctx, 70)
+				return err
+			},
+			wantPath: "/api/parameter/template/70/",
+			response: `{"pk":70,"name":"Resistance","units":"ohm","choices":"10k,22k","enabled":true}`,
+		},
+		{
 			name: "search category parameter templates",
 			call: func(ctx context.Context, client *Client) error {
-				_, err := client.SearchCategoryParameterTemplates(ctx, url.Values{"category": []string{"20"}})
+				_, err := client.SearchCategoryParameterTemplates(ctx, CategoryParameterTemplateQuery{CategoryID: 20})
 				return err
 			},
 			wantPath:  "/api/part/category/parameters/",

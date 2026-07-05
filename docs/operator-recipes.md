@@ -52,7 +52,7 @@ Each recipe should preserve omitted fields versus explicit zero/false/empty valu
 
 - Required inputs: part ID, requested parameter names/values, units where relevant.
 - Preferred lookup order: `search_parameter_templates`, existing `get_part_parameters`, category parameter links, then update existing values or create new values against unambiguous existing templates.
-- Clarify when: same-name templates differ by unit/choices/checkbox settings, category-linked versus global template choice is unclear, or creating a new template/category link would be required.
+- Clarify when: same-name linked templates differ by unit/choices/checkbox settings, only global/unlinked matches exist, or creating a new template/category link would be required. The milestone tool reports unlinked/global matches as context but does not write them.
 - Tool sequence: `search_parameter_templates`, `get_part_parameters`, `set_part_parameters`.
 - Expected output: parameter IDs updated/created and any unresolved parameter questions.
 

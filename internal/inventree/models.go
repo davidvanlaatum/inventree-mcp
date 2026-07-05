@@ -69,12 +69,14 @@ type ParameterTemplate struct {
 	Units    *string `json:"units"`
 	Choices  string  `json:"choices"`
 	Checkbox bool    `json:"checkbox"`
+	Enabled  bool    `json:"enabled"`
 }
 
 type CategoryParameterTemplate struct {
-	PK       int `json:"pk"`
-	Category int `json:"category"`
-	Template int `json:"template"`
+	PK           int    `json:"pk"`
+	Category     int    `json:"category"`
+	Template     int    `json:"template"`
+	DefaultValue string `json:"default_value"`
 }
 
 type Attachment struct {

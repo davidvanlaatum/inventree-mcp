@@ -488,9 +488,12 @@ Tasks:
 
 ### M1E-S02: Parameter Writes
 
-- Status: `Ready`
+- Status: `Done`
 - Depends on: M1D-S02
 - Scope: set part parameters using existing templates only for milestone 1.
+- Validation: `go test ./...` passed with the default Docker-backed Testcontainers suite; `golangci-lint run` passed with 0 issues; `go mod tidy -diff` passed; `git diff --check` passed. Focused validation also passed for `go test ./internal/schema ./internal/inventree ./internal/tools` after the parameter-template detail endpoint and preflight fixes, and `go test ./internal/tools` passed after the documentation follow-up.
+- Review: Senior Go Developer, Senior QA / Test Architect, and Senior Product Manager reviews run. Initial reviews found that multi-parameter requests could partially write before a later clarification, duplicate same-template inputs could create duplicate part parameters, explicit `template_id` could bypass disabled-template refusal, clarification candidates lacked enabled/category-link/existing-value context, and task/docs metadata needed completion updates. Fixes added `GetParameterTemplate` with endpoint-manifest coverage, refused disabled or unlinked templates for both name and ID paths, split `set_part_parameters` into preflight and apply phases, rejected duplicate requested templates before writes, enriched template clarification candidates with enabled/category/default/existing-value details, and aligned plan/operator/tool docs. Focused Go and QA reruns found no remaining actionable findings. Focused product rerun found stale linked-template wording in docs; after the documentation follow-up, the narrow product rerun found no remaining actionable findings.
+- Residual risk: `set_part_parameters` preflights all clarification and duplicate-template decisions before writing, but the apply phase is not transactional if an InvenTree API write succeeds and a later API write fails. Live Testcontainers coverage exercises the read client and shared environment, while the new parameter write tool behavior is covered with fake-client unit tests rather than an end-to-end live write-tool call.
 - Acceptance:
   - Searches templates, existing parameters, and category parameter links before writing.
   - Ambiguous template match asks the operator.
@@ -500,10 +503,10 @@ Tasks:
 
 Tasks:
 
-- [ ] Add parameter match logic.
-- [ ] Add `set_part_parameters`.
-- [ ] Add tests for disabled templates and same-name templates with different units/choices.
-- [ ] Add explicit empty/false/zero value tests.
+- [x] Add parameter match logic.
+- [x] Add `set_part_parameters`.
+- [x] Add tests for disabled templates and same-name templates with different units/choices.
+- [x] Add explicit empty/false/zero value tests.
 
 ### M1E-S03: Initial Stock Writes
 
@@ -605,7 +608,7 @@ Tasks:
 
 ### M1G-S01: Part Upsert Workflow
 
-- Status: `Planned`
+- Status: `Ready`
 - Depends on: M1E-S01, M1E-S02
 - Scope: safer multi-step workflow for adding/updating a purchasable part with supplier/manufacturer data.
 - Acceptance:

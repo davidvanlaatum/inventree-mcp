@@ -115,6 +115,35 @@ func TestWriteMethodsUseExpectedEndpoints(t *testing.T) {
 				a.Equal("MPN-1", body["MPN"])
 			},
 		},
+		{
+			name: "create part parameter preserves explicit empty",
+			call: func(ctx context.Context, client *Client) error {
+				_, err := client.CreatePartParameter(ctx, NewPartParameter(10, 70, ""))
+				return err
+			},
+			method:   http.MethodPost,
+			path:     "/api/parameter/",
+			response: `{"pk":60,"template":70,"model_type":"part.part","model_id":10,"data":""}`,
+			assert: func(a *assert.Assertions, body map[string]any) {
+				a.Equal(float64(70), body["template"])
+				a.Equal("part.part", body["model_type"])
+				a.Equal(float64(10), body["model_id"])
+				a.Equal("", body["data"])
+			},
+		},
+		{
+			name: "update part parameter preserves explicit zero",
+			call: func(ctx context.Context, client *Client) error {
+				_, err := client.UpdatePartParameter(ctx, 60, PatchFields{"data": Set("0")})
+				return err
+			},
+			method:   http.MethodPatch,
+			path:     "/api/parameter/60/",
+			response: `{"pk":60,"template":70,"model_type":"part.part","model_id":10,"data":"0"}`,
+			assert: func(a *assert.Assertions, body map[string]any) {
+				a.Equal("0", body["data"])
+			},
+		},
 	}
 
 	for _, tt := range tests {

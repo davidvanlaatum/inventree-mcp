@@ -98,8 +98,14 @@ func (c *Client) SearchParameterTemplates(ctx context.Context, query SearchQuery
 	return listAll[ParameterTemplate](ctx, c, "/api/parameter/template/", query.values())
 }
 
-func (c *Client) SearchCategoryParameterTemplates(ctx context.Context, query url.Values) ([]CategoryParameterTemplate, error) {
-	nextQuery := cloneValues(query)
+func (c *Client) GetParameterTemplate(ctx context.Context, id int) (ParameterTemplate, error) {
+	var out ParameterTemplate
+	err := c.get(ctx, fmt.Sprintf("/api/parameter/template/%d/", id), &out)
+	return out, err
+}
+
+func (c *Client) SearchCategoryParameterTemplates(ctx context.Context, query CategoryParameterTemplateQuery) ([]CategoryParameterTemplate, error) {
+	nextQuery := query.values()
 	var categoryFilter string
 	if nextQuery != nil {
 		categoryFilter = nextQuery.Get("category")

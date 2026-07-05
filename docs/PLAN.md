@@ -429,7 +429,7 @@ Important behaviors:
 - Return recommended-but-missing field warnings for conventions such as IPN format, units, revision, default location, purchaseability, assembly flags, templates, and custom parameters when they can be detected.
 - `set_part_parameters` should search `/api/parameter/template/`, `/api/parameter/`, and `/api/part/category/parameters/` first and reuse matching enabled templates where possible. Do not blindly create parameter templates from natural language.
 - If multiple parameter templates could match by name, units, choices, checkbox state, or category association, ask the operator which existing template to use.
-- Candidate ranking should prefer enabled category-linked templates with matching name and units, then enabled global templates with matching name and units, then name-only matches. Disabled templates should be reported but not selected automatically.
+- Candidate ranking should prefer enabled category-linked templates with matching name and units. Global or otherwise unlinked template matches may be reported as context, but the milestone `set_part_parameters` tool must not select or write them; it must refuse the request unless the template is linked to the part category. Disabled templates should be reported but not selected automatically.
 - Clarification candidates should include template ID, name, units, choices, checkbox state, category association, existing value if present, and URL.
 
 ### Company Tools
