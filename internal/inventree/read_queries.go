@@ -51,6 +51,18 @@ type ManufacturerPartQuery struct {
 	MPN          string
 }
 
+type PurchaseOrderQuery struct {
+	Supplier int
+	Limit    int
+	Offset   int
+}
+
+type PurchaseOrderLineQuery struct {
+	Order  int
+	Limit  int
+	Offset int
+}
+
 func (q SearchQuery) values() url.Values {
 	values := url.Values{}
 	if q.Search != "" {
@@ -124,6 +136,24 @@ func (q ManufacturerPartQuery) values() url.Values {
 	if q.MPN != "" {
 		values.Set("MPN", q.MPN)
 	}
+	return values
+}
+
+func (q PurchaseOrderQuery) values() url.Values {
+	values := url.Values{}
+	if q.Supplier != 0 {
+		values.Set("supplier", strconv.Itoa(q.Supplier))
+	}
+	setPagination(values, q.Limit, q.Offset)
+	return values
+}
+
+func (q PurchaseOrderLineQuery) values() url.Values {
+	values := url.Values{}
+	if q.Order != 0 {
+		values.Set("order", strconv.Itoa(q.Order))
+	}
+	setPagination(values, q.Limit, q.Offset)
 	return values
 }
 

@@ -203,7 +203,7 @@ func TestReadMethodsUseExpectedEndpoints(t *testing.T) {
 		{
 			name: "search purchase orders",
 			call: func(ctx context.Context, client *Client) error {
-				_, err := client.SearchPurchaseOrders(ctx, url.Values{"supplier": []string{"30"}})
+				_, err := client.SearchPurchaseOrders(ctx, PurchaseOrderQuery{Supplier: 30})
 				return err
 			},
 			wantPath:  "/api/order/po/",
@@ -222,7 +222,7 @@ func TestReadMethodsUseExpectedEndpoints(t *testing.T) {
 		{
 			name: "search purchase order lines",
 			call: func(ctx context.Context, client *Client) error {
-				_, err := client.SearchPurchaseOrderLines(ctx, url.Values{"order": []string{"120"}})
+				_, err := client.SearchPurchaseOrderLines(ctx, PurchaseOrderLineQuery{Order: 120})
 				return err
 			},
 			wantPath:  "/api/order/po-line/",
