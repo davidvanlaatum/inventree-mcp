@@ -674,7 +674,24 @@ Tasks:
 
 ## Future Backlog
 
-### F-S01: BOM Import Workflow
+### F-S01: Evaluate Docker Compose Testcontainers Stack
+
+- Status: `Future`
+- Depends on: M1H-S01
+- Scope: evaluate whether `github.com/testcontainers/testcontainers-go/modules/compose` can replace or complement the hand-wired InvenTree Testcontainers stack by using official InvenTree Docker Compose files plus test-specific overrides.
+- Acceptance:
+  - Compare compose-based startup against the current `internal/testenv` stack for startup time, log visibility, cleanup behavior, loopback-only published ports, readiness checks, and deterministic token creation.
+  - Determine whether the official compose topology starts all backend services needed for realistic MCP integration tests without introducing unnecessary CI cost.
+  - Document whether compose should replace the current stack, become an optional canary/compatibility path, or be rejected with reasons.
+
+Tasks:
+
+- [ ] Identify the official InvenTree compose files and required test overrides for pinned `inventree/inventree:1.4.0`.
+- [ ] Prototype a local compose stack using `testcontainers-go/modules/compose`.
+- [ ] Verify service logs, `ServiceContainer` inspection, endpoint discovery, and `Down` cleanup semantics.
+- [ ] Compare findings with the current direct-container `internal/testenv` implementation.
+
+### F-S02: BOM Import Workflow
 
 - Status: `Future`
 - Depends on: milestone 1 complete and product review
@@ -685,7 +702,7 @@ Tasks:
 - [ ] Implement structured row validation.
 - [ ] Add dry-run and row-level error tests.
 
-### F-S02: Purchase Order Write And Receiving
+### F-S03: Purchase Order Write And Receiving
 
 - Status: `Future`
 - Depends on: milestone 1 complete and product review
@@ -696,7 +713,7 @@ Tasks:
 - [ ] Define receiving workflow.
 - [ ] Add operational/destructive scope review.
 
-### F-S03: Build Order Workflows
+### F-S04: Build Order Workflows
 
 - Status: `Future`
 - Depends on: milestone 1 complete and product review
@@ -707,7 +724,7 @@ Tasks:
 - [ ] Add stock consumption safety model.
 - [ ] Add integration tests.
 
-### F-S04: Stocktake Adjustments
+### F-S05: Stocktake Adjustments
 
 - Status: `Future`
 - Depends on: milestone 1 complete and product review
@@ -718,7 +735,7 @@ Tasks:
 - [ ] Add confirmation and audit requirements.
 - [ ] Add operational scope tests.
 
-### F-S05: Systemd Notify And Watchdog Support
+### F-S06: Systemd Notify And Watchdog Support
 
 - Status: `Future`
 - Depends on: long-running HTTP server runtime, production HTTP OAuth startup behavior, and product review
