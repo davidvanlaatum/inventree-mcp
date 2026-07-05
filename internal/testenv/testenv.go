@@ -93,8 +93,34 @@ func DefaultOptions() Options {
 func DefaultTestOptions(tb testing.TB) Options {
 	tb.Helper()
 	opts := DefaultOptions()
+	migrationsComplete := false
+	skipNextStatement := false
+	droppedLogs := 0
 	opts.ContainerLogf = func(container string, stream string, line string) {
 		tb.Helper()
+		if !migrationsComplete && stream == "stdout" && strings.Contains(line, "database migrations completed") {
+			migrationsComplete = true
+		}
+		if !migrationsComplete && container == "postgres" && stream == "stderr" {
+			if strings.Contains(line, "ERROR:") {
+				skipNextStatement = true
+				droppedLogs++
+				return
+			}
+			if skipNextStatement {
+				droppedLogs++
+				skipNextStatement = false
+				return
+			}
+		}
+		skipNextStatement = false
+		if strings.Contains(line, "Could not detect git information.") {
+			return
+		}
+		if droppedLogs > 0 {
+			tb.Logf("Dropped %d migration error logs", droppedLogs)
+			droppedLogs = 0
+		}
 		tb.Logf("container[%s][%s] %s", container, stream, line)
 	}
 	return opts
@@ -219,15 +245,23 @@ func Start(ctx context.Context, opts Options) (*Environment, CleanupFunc, error)
 	serverOpts := []testcontainers.ContainerCustomizer{
 		tcnetwork.WithNetwork([]string{"inventree-server"}, nw),
 		testcontainers.WithEnv(inventreeContainerEnv(dbHost, cacheHost)),
-		testcontainers.WithCmd("sh", "-c", "invoke update --skip-backup --no-frontend --skip-static && exec gunicorn -c ./gunicorn.conf.py InvenTree.wsgi -b ${INVENTREE_WEB_ADDR}:${INVENTREE_WEB_PORT} --chdir ${INVENTREE_BACKEND_DIR}/InvenTree"),
+		testcontainers.WithCmd(
+			"sh",
+			"-c",
+			"invoke update --skip-backup --no-frontend --skip-static && exec gunicorn -c ./gunicorn.conf.py InvenTree.wsgi -b ${INVENTREE_WEB_ADDR}:${INVENTREE_WEB_PORT} --chdir ${INVENTREE_BACKEND_DIR}/InvenTree",
+		),
 		testcontainers.WithExposedPorts(defaultWebPort),
 		testcontainers.WithHostConfigModifier(loopbackPortBinding(defaultWebPort)),
-		testcontainers.WithWaitStrategyAndDeadline(opts.StartupTimeout, wait.ForHTTP("/api/version/").
-			WithPort(defaultWebPort).
-			WithStatusCodeMatcher(func(status int) bool {
-				return status == http.StatusOK || status == http.StatusUnauthorized || status == http.StatusForbidden
-			}).
-			WithStartupTimeout(opts.StartupTimeout)),
+		testcontainers.WithWaitStrategyAndDeadline(
+			opts.StartupTimeout, wait.ForHTTP("/api/version/").
+				WithPort(defaultWebPort).
+				WithStatusCodeMatcher(
+					func(status int) bool {
+						return status == http.StatusOK || status == http.StatusUnauthorized || status == http.StatusForbidden
+					},
+				).
+				WithStartupTimeout(opts.StartupTimeout),
+		),
 	}
 	serverOpts = appendContainerLogConsumer(serverOpts, "inventree", containerLogf)
 	server, err := testcontainers.Run(ctx, opts.Image, serverOpts...)
@@ -248,7 +282,13 @@ func Start(ctx context.Context, opts Options) (*Environment, CleanupFunc, error)
 	}
 	apiVersion := fmt.Sprintf("%d", version.Version.API)
 	if version.Version.Server != opts.ExpectedVersion || apiVersion != opts.ExpectedAPIVersion {
-		return nil, nil, fmt.Errorf("InvenTree runtime version mismatch: got version %q API %q, want version %q API %q", version.Version.Server, apiVersion, opts.ExpectedVersion, opts.ExpectedAPIVersion)
+		return nil, nil, fmt.Errorf(
+			"InvenTree runtime version mismatch: got version %q API %q, want version %q API %q",
+			version.Version.Server,
+			apiVersion,
+			opts.ExpectedVersion,
+			opts.ExpectedAPIVersion,
+		)
 	}
 	env.Version = version.Version.Server
 	env.APIVersion = apiVersion
@@ -300,17 +340,29 @@ func loopbackPortBinding(port string) func(*container.HostConfig) {
 	}
 }
 
-func appendContainerLogConsumer(opts []testcontainers.ContainerCustomizer, name string, logf func(container string, stream string, line string)) []testcontainers.ContainerCustomizer {
+func appendContainerLogConsumer(
+	opts []testcontainers.ContainerCustomizer,
+	name string,
+	logf func(container string, stream string, line string),
+) []testcontainers.ContainerCustomizer {
 	if logf == nil {
 		return opts
 	}
-	return append(opts, testcontainers.WithLogConsumers(containerLogConsumer{
-		name: name,
-		logf: logf,
-	}))
+	return append(
+		opts, testcontainers.WithLogConsumers(
+			containerLogConsumer{
+				name: name,
+				logf: logf,
+			},
+		),
+	)
 }
 
-func synchronizedContainerLogf(logf func(container string, stream string, line string)) func(container string, stream string, line string) {
+func synchronizedContainerLogf(logf func(container string, stream string, line string)) func(
+	container string,
+	stream string,
+	line string,
+) {
 	if logf == nil {
 		return nil
 	}
@@ -362,7 +414,13 @@ func inventreeContainerEnv(dbHost string, cacheHost string) map[string]string {
 	}
 }
 
-func fetchVersion(ctx context.Context, client *http.Client, baseURL string, username string, password string) (versionResponse, error) {
+func fetchVersion(
+	ctx context.Context,
+	client *http.Client,
+	baseURL string,
+	username string,
+	password string,
+) (versionResponse, error) {
 	var out versionResponse
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, baseURL+"/api/version/", nil)
 	if err != nil {
@@ -375,8 +433,16 @@ func fetchVersion(ctx context.Context, client *http.Client, baseURL string, user
 	return out, nil
 }
 
-func createToken(ctx context.Context, client *http.Client, baseURL string, username string, password string) (string, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, baseURL+"/api/user/me/token/?name="+defaultTokenName, nil)
+func createToken(ctx context.Context, client *http.Client, baseURL string, username string, password string) (
+	string,
+	error,
+) {
+	req, err := http.NewRequestWithContext(
+		ctx,
+		http.MethodGet,
+		baseURL+"/api/user/me/token/?name="+defaultTokenName,
+		nil,
+	)
 	if err != nil {
 		return "", err
 	}
@@ -392,14 +458,16 @@ func createToken(ctx context.Context, client *http.Client, baseURL string, usern
 }
 
 func proveToken(ctx context.Context, baseURL string, token string, client *http.Client) error {
-	invClient, err := inventree.NewClient(inventree.Config{
-		BaseURL: baseURL,
-		Credential: inventree.Credential{
-			Scheme: inventree.AuthSchemeToken,
-			Token:  token,
+	invClient, err := inventree.NewClient(
+		inventree.Config{
+			BaseURL: baseURL,
+			Credential: inventree.Credential{
+				Scheme: inventree.AuthSchemeToken,
+				Token:  token,
+			},
+			HTTPClient: client,
 		},
-		HTTPClient: client,
-	})
+	)
 	if err != nil {
 		return err
 	}
