@@ -2,6 +2,9 @@ package tools
 
 import (
 	"context"
+	"fmt"
+	"strconv"
+	"strings"
 
 	"github.com/davidvanlaatum/inventree-mcp/internal/inventree"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -26,6 +29,16 @@ type SupplierPartWriteClient interface {
 type ManufacturerPartWriteClient interface {
 	SearchManufacturerParts(context.Context, inventree.ManufacturerPartQuery) ([]inventree.ManufacturerPart, error)
 	CreateManufacturerPart(context.Context, inventree.ManufacturerPartCreate) (inventree.ManufacturerPart, error)
+}
+
+type ParameterWriteClient interface {
+	GetPart(context.Context, int) (inventree.Part, error)
+	SearchPartParameters(context.Context, inventree.PartParameterQuery) ([]inventree.Parameter, error)
+	SearchParameterTemplates(context.Context, inventree.SearchQuery) ([]inventree.ParameterTemplate, error)
+	GetParameterTemplate(context.Context, int) (inventree.ParameterTemplate, error)
+	SearchCategoryParameterTemplates(context.Context, inventree.CategoryParameterTemplateQuery) ([]inventree.CategoryParameterTemplate, error)
+	CreatePartParameter(context.Context, inventree.ParameterCreate) (inventree.Parameter, error)
+	UpdatePartParameter(context.Context, int, inventree.PatchFields) (inventree.Parameter, error)
 }
 
 type CreatePartInput struct {
@@ -89,15 +102,35 @@ type CreateManufacturerPartInput struct {
 	Link           *string `json:"link,omitempty" jsonschema:"Optional external manufacturer part URL."`
 }
 
+type SetPartParametersInput struct {
+	PartID     int                 `json:"part_id" jsonschema:"Existing part primary key."`
+	Parameters []ParameterSetInput `json:"parameters" jsonschema:"Parameter values to create or update."`
+}
+
+type ParameterSetInput struct {
+	Name        string   `json:"name,omitempty" jsonschema:"Existing parameter template name when template_id is not supplied."`
+	TemplateID  *int     `json:"template_id,omitempty" jsonschema:"Existing parameter template primary key."`
+	Value       *string  `json:"value,omitempty" jsonschema:"Explicit string parameter value. Empty string is preserved when supplied."`
+	BoolValue   *bool    `json:"bool_value,omitempty" jsonschema:"Explicit boolean parameter value. False is preserved when supplied."`
+	NumberValue *float64 `json:"number_value,omitempty" jsonschema:"Explicit numeric parameter value. Zero is preserved when supplied."`
+}
+
 type WriteRecordOutput[T any] struct {
 	Status        string                 `json:"status"`
 	Record        T                      `json:"record,omitempty"`
 	Clarification *ClarificationResponse `json:"clarification,omitempty"`
 }
 
+type parameterWritePlan struct {
+	data     string
+	template int
+	existing *inventree.Parameter
+}
+
 func registerWriteTools(server *mcp.Server, deps Dependencies) {
 	addWriteTool(server, CreatePartToolName, "Create part", "Creates an InvenTree part in an existing category.", createPart(deps))
 	addWriteTool(server, UpdatePartToolName, "Update part", "Partially updates an InvenTree part.", updatePart(deps))
+	addWriteTool(server, SetPartParametersToolName, "Set part parameters", "Creates or updates part parameter values using existing linked templates.", setPartParameters(deps))
 	addWriteTool(server, CreateCompanyToolName, "Create company", "Creates a supplier and/or manufacturer company.", createCompany(deps))
 	addWriteTool(server, CreateSupplierPartToolName, "Create supplier part", "Creates a supplier-part link for existing records.", createSupplierPart(deps))
 	addWriteTool(server, CreateManufacturerPartToolName, "Create manufacturer part", "Creates a manufacturer-part link for existing records.", createManufacturerPart(deps))
@@ -167,6 +200,83 @@ func updatePart(deps Dependencies) mcp.ToolHandlerFor[UpdatePartInput, WriteReco
 			}
 			record, err := client.UpdatePart(ctx, input.ID, fields)
 			return writeRecordOutput(record, err)
+		})
+}
+
+func setPartParameters(deps Dependencies) mcp.ToolHandlerFor[SetPartParametersInput, WriteRecordOutput[[]inventree.Parameter]] {
+	return LookupHandler[ParameterWriteClient, SetPartParametersInput, WriteRecordOutput[[]inventree.Parameter]](deps, SetPartParametersToolName,
+		func(ctx context.Context, _ *mcp.CallToolRequest, client ParameterWriteClient, input SetPartParametersInput) (*mcp.CallToolResult, WriteRecordOutput[[]inventree.Parameter], error) {
+			if input.PartID <= 0 {
+				return hardClarification[[]inventree.Parameter]("Which part should receive these parameters?", "part", "set_part_parameters requires a positive part_id", "part_id", map[string]any{"part_id": input.PartID})
+			}
+			if len(input.Parameters) == 0 {
+				return hardClarification[[]inventree.Parameter]("Which parameter values should be set?", "parameters", "set_part_parameters requires at least one parameter", "parameters", map[string]any{"part_id": input.PartID})
+			}
+			part, err := client.GetPart(ctx, input.PartID)
+			if err != nil {
+				return writeRecordOutput([]inventree.Parameter{}, err)
+			}
+			if part.Category == nil || *part.Category <= 0 {
+				return hardClarification[[]inventree.Parameter]("Which category parameter link should authorize these parameters?", "category_id", "part has no category for category parameter link validation", "category_id", map[string]any{"part_id": input.PartID})
+			}
+			links, err := client.SearchCategoryParameterTemplates(ctx, inventree.CategoryParameterTemplateQuery{CategoryID: *part.Category})
+			if err != nil {
+				return nil, WriteRecordOutput[[]inventree.Parameter]{}, err
+			}
+			existing, err := client.SearchPartParameters(ctx, inventree.PartParameterQuery{PartID: input.PartID})
+			if err != nil {
+				return nil, WriteRecordOutput[[]inventree.Parameter]{}, err
+			}
+			plans := make([]parameterWritePlan, 0, len(input.Parameters))
+			seenTemplates := map[int]ParameterSetInput{}
+			for _, parameter := range input.Parameters {
+				data, result, output, ok := parameterData(parameter, input.PartID)
+				if !ok {
+					return result, output, nil
+				}
+				templateID, result, output, ok, err := resolveParameterTemplate(ctx, client, *part.Category, links, existing, parameter)
+				if err != nil {
+					return nil, WriteRecordOutput[[]inventree.Parameter]{}, err
+				}
+				if !ok {
+					return result, output, nil
+				}
+				if prior, seen := seenTemplates[templateID]; seen {
+					retryValues := map[string]any{
+						"part_id":     input.PartID,
+						"template_id": templateID,
+						"first":       retryParameterValues(0, prior),
+						"duplicate":   retryParameterValues(0, parameter),
+					}
+					clarification := NewClarification("Which single value should be used for this parameter template?", "template_id", "multiple requested parameter values resolve to the same template", "template_id", true, nil, retryValues)
+					return TextResult(StatusClarificationRequired), WriteRecordOutput[[]inventree.Parameter]{Status: StatusClarificationRequired, Clarification: &clarification}, nil
+				}
+				seenTemplates[templateID] = parameter
+				matches := parametersByTemplate(existing, templateID)
+				if len(matches) > 1 {
+					clarification := NewClarification("Which existing part parameter should be updated?", "parameter_id", "multiple existing part parameters use the same template", "parameter_id", false, candidatesFor(matches), retryParameterValues(input.PartID, parameter))
+					return TextResult(StatusClarificationRequired), WriteRecordOutput[[]inventree.Parameter]{Status: StatusClarificationRequired, Clarification: &clarification}, nil
+				}
+				plan := parameterWritePlan{data: data, template: templateID}
+				if len(matches) == 1 {
+					plan.existing = &matches[0]
+				}
+				plans = append(plans, plan)
+			}
+			records := make([]inventree.Parameter, 0, len(plans))
+			for _, plan := range plans {
+				var record inventree.Parameter
+				if plan.existing != nil {
+					record, err = client.UpdatePartParameter(ctx, plan.existing.PK, inventree.PatchFields{"data": inventree.Set(plan.data)})
+				} else {
+					record, err = client.CreatePartParameter(ctx, inventree.NewPartParameter(input.PartID, plan.template, plan.data))
+				}
+				if err != nil {
+					return nil, WriteRecordOutput[[]inventree.Parameter]{}, err
+				}
+				records = append(records, record)
+			}
+			return TextResult(StatusOK), WriteRecordOutput[[]inventree.Parameter]{Status: StatusOK, Record: records}, nil
 		})
 }
 
@@ -266,6 +376,177 @@ func createManufacturerPart(deps Dependencies) mcp.ToolHandlerFor[CreateManufact
 			})
 			return writeRecordOutput(record, err)
 		})
+}
+
+func parameterData(input ParameterSetInput, partID int) (string, *mcp.CallToolResult, WriteRecordOutput[[]inventree.Parameter], bool) {
+	setCount := 0
+	var data string
+	if input.Value != nil {
+		setCount++
+		data = *input.Value
+	}
+	if input.BoolValue != nil {
+		setCount++
+		data = strconv.FormatBool(*input.BoolValue)
+	}
+	if input.NumberValue != nil {
+		setCount++
+		data = strconv.FormatFloat(*input.NumberValue, 'f', -1, 64)
+	}
+	if setCount == 1 {
+		return data, nil, WriteRecordOutput[[]inventree.Parameter]{}, true
+	}
+	retry := retryParameterValues(partID, input)
+	clarification := NewClarification("Which single value should be used for this parameter?", "value", "provide exactly one of value, bool_value, or number_value", "value", true, nil, retry)
+	return "", TextResult(StatusClarificationRequired), WriteRecordOutput[[]inventree.Parameter]{Status: StatusClarificationRequired, Clarification: &clarification}, false
+}
+
+func resolveParameterTemplate(ctx context.Context, client ParameterWriteClient, categoryID int, links []inventree.CategoryParameterTemplate, existing []inventree.Parameter, input ParameterSetInput) (int, *mcp.CallToolResult, WriteRecordOutput[[]inventree.Parameter], bool, error) {
+	if input.TemplateID != nil {
+		if *input.TemplateID <= 0 {
+			result, output, err := hardClarification[[]inventree.Parameter]("Which parameter template should be used?", "template_id", "template_id must be positive when provided", "template_id", retryParameterValues(0, input))
+			return 0, result, output, false, err
+		}
+		template, err := client.GetParameterTemplate(ctx, *input.TemplateID)
+		if err != nil {
+			return 0, nil, WriteRecordOutput[[]inventree.Parameter]{}, false, err
+		}
+		if !template.Enabled {
+			clarification := NewClarification("Which enabled parameter template should be used?", "template_id", "selected parameter template is disabled", "template_id", true, templateCandidates([]inventree.ParameterTemplate{template}, links, existing), retryParameterValues(0, input))
+			return 0, TextResult(StatusClarificationRequired), WriteRecordOutput[[]inventree.Parameter]{Status: StatusClarificationRequired, Clarification: &clarification}, false, nil
+		}
+		if strings.TrimSpace(input.Name) != "" && !templateNameMatches(template.Name, input.Name) {
+			clarification := NewClarification("Which parameter template should be used?", "template_id", "template_id does not match the supplied template name", "template_id", true, templateCandidates([]inventree.ParameterTemplate{template}, links, existing), retryParameterValues(0, input))
+			return 0, TextResult(StatusClarificationRequired), WriteRecordOutput[[]inventree.Parameter]{Status: StatusClarificationRequired, Clarification: &clarification}, false, nil
+		}
+		if !categoryLinksTemplate(links, *input.TemplateID) {
+			clarification := NewClarification("Which existing category-linked template should be used?", "template_id", "template is not linked to the part category and new category links are out of scope", "template_id", true, nil, retryParameterValues(0, input))
+			return 0, TextResult(StatusClarificationRequired), WriteRecordOutput[[]inventree.Parameter]{Status: StatusClarificationRequired, Clarification: &clarification}, false, nil
+		}
+		return *input.TemplateID, nil, WriteRecordOutput[[]inventree.Parameter]{}, true, nil
+	}
+	if strings.TrimSpace(input.Name) == "" {
+		result, output, err := hardClarification[[]inventree.Parameter]("Which existing parameter template should be used?", "template", "provide template_id or template name", "template_id", retryParameterValues(0, input))
+		return 0, result, output, false, err
+	}
+	templates, err := client.SearchParameterTemplates(ctx, inventree.SearchQuery{Search: input.Name, Limit: MaxLookupLimit})
+	if err != nil {
+		return 0, nil, WriteRecordOutput[[]inventree.Parameter]{}, false, err
+	}
+	candidates := matchingLinkedTemplates(input.Name, templates, links)
+	if len(candidates) == 1 {
+		return candidates[0].PK, nil, WriteRecordOutput[[]inventree.Parameter]{}, true, nil
+	}
+	if len(candidates) > 1 {
+		clarification := NewClarification("Which existing parameter template should be used?", "template", "multiple enabled category-linked templates match this name", "template_id", false, templateCandidates(candidates, links, existing), retryParameterValues(0, input))
+		return 0, TextResult(StatusClarificationRequired), WriteRecordOutput[[]inventree.Parameter]{Status: StatusClarificationRequired, Clarification: &clarification}, false, nil
+	}
+	disabled := matchingDisabledTemplates(input.Name, templates, links)
+	if len(disabled) > 0 {
+		clarification := NewClarification("Which enabled parameter template should be used?", "template", "matching category-linked templates are disabled", "template_id", true, templateCandidates(disabled, links, existing), retryParameterValues(0, input))
+		return 0, TextResult(StatusClarificationRequired), WriteRecordOutput[[]inventree.Parameter]{Status: StatusClarificationRequired, Clarification: &clarification}, false, nil
+	}
+	clarification := NewClarification("Which existing category-linked template should be used?", "template", fmt.Sprintf("no enabled template named %q is linked to category %d; creating templates or category links is out of scope", input.Name, categoryID), "template_id", true, templateCandidates(templates, links, existing), retryParameterValues(0, input))
+	return 0, TextResult(StatusClarificationRequired), WriteRecordOutput[[]inventree.Parameter]{Status: StatusClarificationRequired, Clarification: &clarification}, false, nil
+}
+
+func templateCandidates(templates []inventree.ParameterTemplate, links []inventree.CategoryParameterTemplate, existing []inventree.Parameter) []ClarificationCandidate {
+	candidates := make([]ClarificationCandidate, 0, len(templates))
+	for _, template := range templates {
+		candidate := candidateFor(template)
+		if candidate.Fields == nil {
+			candidate.Fields = map[string]any{}
+		}
+		if link, ok := categoryLinkForTemplate(links, template.PK); ok {
+			candidate.Fields["category_linked"] = true
+			candidate.Fields["category_link_id"] = link.PK
+			candidate.Fields["category_id"] = link.Category
+			if link.DefaultValue != "" {
+				candidate.Fields["default_value"] = link.DefaultValue
+			}
+		} else {
+			candidate.Fields["category_linked"] = false
+		}
+		if matches := parametersByTemplate(existing, template.PK); len(matches) == 1 {
+			candidate.Fields["existing_parameter_id"] = matches[0].PK
+			candidate.Fields["existing_value"] = matches[0].Data
+		} else if len(matches) > 1 {
+			candidate.Fields["existing_parameter_count"] = len(matches)
+		}
+		candidates = append(candidates, candidate)
+	}
+	return candidates
+}
+
+func matchingLinkedTemplates(name string, templates []inventree.ParameterTemplate, links []inventree.CategoryParameterTemplate) []inventree.ParameterTemplate {
+	matches := []inventree.ParameterTemplate{}
+	for _, template := range templates {
+		if template.Enabled && templateNameMatches(template.Name, name) && categoryLinksTemplate(links, template.PK) {
+			matches = append(matches, template)
+		}
+	}
+	return matches
+}
+
+func matchingDisabledTemplates(name string, templates []inventree.ParameterTemplate, links []inventree.CategoryParameterTemplate) []inventree.ParameterTemplate {
+	matches := []inventree.ParameterTemplate{}
+	for _, template := range templates {
+		if !template.Enabled && templateNameMatches(template.Name, name) && categoryLinksTemplate(links, template.PK) {
+			matches = append(matches, template)
+		}
+	}
+	return matches
+}
+
+func templateNameMatches(got string, want string) bool {
+	return strings.EqualFold(strings.TrimSpace(got), strings.TrimSpace(want))
+}
+
+func categoryLinksTemplate(links []inventree.CategoryParameterTemplate, templateID int) bool {
+	_, ok := categoryLinkForTemplate(links, templateID)
+	return ok
+}
+
+func categoryLinkForTemplate(links []inventree.CategoryParameterTemplate, templateID int) (inventree.CategoryParameterTemplate, bool) {
+	for _, link := range links {
+		if link.Template == templateID {
+			return link, true
+		}
+	}
+	return inventree.CategoryParameterTemplate{}, false
+}
+
+func parametersByTemplate(parameters []inventree.Parameter, templateID int) []inventree.Parameter {
+	matches := []inventree.Parameter{}
+	for _, parameter := range parameters {
+		if parameter.Template == templateID {
+			matches = append(matches, parameter)
+		}
+	}
+	return matches
+}
+
+func retryParameterValues(partID int, input ParameterSetInput) map[string]any {
+	values := map[string]any{}
+	if partID > 0 {
+		values["part_id"] = partID
+	}
+	if input.Name != "" {
+		values["name"] = input.Name
+	}
+	if input.TemplateID != nil {
+		values["template_id"] = *input.TemplateID
+	}
+	if input.Value != nil {
+		values["value"] = *input.Value
+	}
+	if input.BoolValue != nil {
+		values["bool_value"] = *input.BoolValue
+	}
+	if input.NumberValue != nil {
+		values["number_value"] = *input.NumberValue
+	}
+	return values
 }
 
 func writeRecordOutput[T any](record T, err error) (*mcp.CallToolResult, WriteRecordOutput[T], error) {

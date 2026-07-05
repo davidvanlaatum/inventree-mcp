@@ -9,7 +9,6 @@ import (
 	"io"
 	"mime/multipart"
 	"net/http"
-	"net/url"
 	"os"
 	"strconv"
 	"testing"
@@ -119,7 +118,18 @@ func TestReadOnlyClientReads(t *testing.T) {
 		part := fixture.ensure(t, testenv.FixturePart)
 		template := createParameterTemplate(t, fixture.client, fixture.run, "Resistance", "ohm", "10k,22k")
 		categoryTemplate := createCategoryParameterTemplate(t, fixture.client, category.ID, template.PK)
-		parameter := createPartParameter(t, fixture.client, part.ID, template.PK, "10k")
+		parameter, err := fixture.client.CreatePartParameter(ctx, inventree.NewPartParameter(part.ID, template.PK, "10k"))
+		r.NoError(err)
+		r.NotZero(parameter.PK)
+		r.Equal("part.part", parameter.ModelType)
+		r.Equal(part.ID, parameter.ModelID)
+		r.Equal(template.PK, parameter.Template)
+		r.Equal("10k", parameter.Data)
+
+		updated, err := fixture.client.UpdatePartParameter(ctx, parameter.PK, inventree.PatchFields{"data": inventree.Set("22k")})
+		r.NoError(err)
+		r.Equal(parameter.PK, updated.PK)
+		r.Equal("22k", updated.Data)
 
 		parameters, err := fixture.client.SearchPartParameters(ctx, inventree.PartParameterQuery{PartID: part.ID})
 		r.NoError(err)
@@ -127,6 +137,7 @@ func TestReadOnlyClientReads(t *testing.T) {
 		r.Equal(parameter.PK, parameters[0].PK)
 		r.Equal("part.part", parameters[0].ModelType)
 		r.Equal(part.ID, parameters[0].ModelID)
+		r.Equal("22k", parameters[0].Data)
 
 		templates, err := fixture.client.SearchParameterTemplates(ctx, inventree.SearchQuery{Search: template.Name})
 		r.NoError(err)
@@ -134,7 +145,12 @@ func TestReadOnlyClientReads(t *testing.T) {
 		r.Equal(template.PK, templates[0].PK)
 		r.Equal("10k,22k", templates[0].Choices)
 
-		categoryTemplates, err := fixture.client.SearchCategoryParameterTemplates(ctx, url.Values{"category": []string{strconv.Itoa(category.ID)}})
+		gotTemplate, err := fixture.client.GetParameterTemplate(ctx, template.PK)
+		r.NoError(err)
+		r.Equal(template.PK, gotTemplate.PK)
+		r.True(gotTemplate.Enabled)
+
+		categoryTemplates, err := fixture.client.SearchCategoryParameterTemplates(ctx, inventree.CategoryParameterTemplateQuery{CategoryID: category.ID})
 		r.NoError(err)
 		r.NotEmpty(categoryTemplates)
 		r.Equal(categoryTemplate.PK, categoryTemplates[0].PK)
@@ -246,26 +262,6 @@ func createCategoryParameterTemplate(t *testing.T, client *inventree.Client, cat
 	r.NotZero(created.PK)
 	r.Equal(categoryID, created.Category)
 	r.Equal(templateID, created.Template)
-	return created
-}
-
-func createPartParameter(t *testing.T, client *inventree.Client, partID int, templateID int, data string) inventree.Parameter {
-	t.Helper()
-	r := require.New(t)
-	ctx, _, _ := testhandler.SetupTestHandler(t)
-
-	req, err := client.NewRequest(ctx, http.MethodPost, "/api/parameter/", nil, map[string]any{
-		"template":   templateID,
-		"model_type": "part.part",
-		"model_id":   partID,
-		"data":       data,
-	})
-	r.NoError(err)
-	var created inventree.Parameter
-	r.NoError(client.DoJSON(req, &created))
-	r.NotZero(created.PK)
-	r.Equal("part.part", created.ModelType)
-	r.Equal(partID, created.ModelID)
 	return created
 }
 

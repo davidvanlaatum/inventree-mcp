@@ -225,6 +225,12 @@ endpoints:
     method: GET
     operation_id: parameter_template_list
     response_schema: '#/components/schemas/PaginatedParameterTemplateList'
+  - id: get_parameter_template
+    area: parameters
+    path: /api/parameter/template/{id}/
+    method: GET
+    operation_id: parameter_template_retrieve
+    response_schema: '#/components/schemas/ParameterTemplate'
   - id: search_category_parameter_templates
     area: parameters
     path: /api/part/category/parameters/

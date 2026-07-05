@@ -37,6 +37,7 @@ const (
 	DownloadPartImageToolName        = "download_part_image"
 	CreatePartToolName               = "create_part"
 	UpdatePartToolName               = "update_part"
+	SetPartParametersToolName        = "set_part_parameters"
 	CreateCompanyToolName            = "create_company"
 	CreateSupplierPartToolName       = "create_supplier_part"
 	CreateManufacturerPartToolName   = "create_manufacturer_part"
@@ -81,6 +82,7 @@ var lookupToolNames = []string{
 var writeToolNames = []string{
 	CreatePartToolName,
 	UpdatePartToolName,
+	SetPartParametersToolName,
 	CreateCompanyToolName,
 	CreateSupplierPartToolName,
 	CreateManufacturerPartToolName,
@@ -514,7 +516,9 @@ func candidateFor(record any) ClarificationCandidate {
 	case inventree.Category:
 		return ClarificationCandidate{ID: strconv.Itoa(v.PK), Label: v.Name, Summary: v.Description, URL: fmt.Sprintf("/api/part/category/%d/", v.PK), Fields: map[string]any{"structural": v.Structural}}
 	case inventree.ParameterTemplate:
-		return ClarificationCandidate{ID: strconv.Itoa(v.PK), Label: v.Name, URL: fmt.Sprintf("/api/parameter/template/%d/", v.PK), Fields: map[string]any{"units": v.Units, "choices": v.Choices, "checkbox": v.Checkbox}}
+		return ClarificationCandidate{ID: strconv.Itoa(v.PK), Label: v.Name, URL: fmt.Sprintf("/api/parameter/template/%d/", v.PK), Fields: map[string]any{"units": v.Units, "choices": v.Choices, "checkbox": v.Checkbox, "enabled": v.Enabled}}
+	case inventree.Parameter:
+		return ClarificationCandidate{ID: strconv.Itoa(v.PK), Label: strconv.Itoa(v.Template), URL: fmt.Sprintf("/api/parameter/%d/", v.PK), Fields: map[string]any{"template": v.Template, "model_type": v.ModelType, "model_id": v.ModelID, "data": v.Data}}
 	case inventree.Company:
 		return ClarificationCandidate{ID: strconv.Itoa(v.PK), Label: v.Name, Summary: v.Description, URL: fmt.Sprintf("/api/company/%d/", v.PK), Fields: map[string]any{"supplier": v.IsSupplier, "manufacturer": v.IsManufacturer, "active": v.Active}}
 	case inventree.SupplierPart:

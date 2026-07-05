@@ -37,10 +37,13 @@ func TestWriteToolInputsExcludeSalesAndCustomerWorkflowFields(t *testing.T) {
 		reflect.TypeOf(CreateCompanyInput{}),
 		reflect.TypeOf(CreateSupplierPartInput{}),
 		reflect.TypeOf(CreateManufacturerPartInput{}),
+		reflect.TypeOf(SetPartParametersInput{}),
+		reflect.TypeOf(ParameterSetInput{}),
 		reflect.TypeOf(inventree.PartCreate{}),
 		reflect.TypeOf(inventree.CompanyCreate{}),
 		reflect.TypeOf(inventree.SupplierPartCreate{}),
 		reflect.TypeOf(inventree.ManufacturerPartCreate{}),
+		reflect.TypeOf(inventree.ParameterCreate{}),
 	} {
 		for _, field := range reflect.VisibleFields(schemaType) {
 			jsonName := jsonFieldName(field.Tag.Get("json"))
@@ -301,4 +304,275 @@ func TestCreateSupplierAndManufacturerPartsAskForPositiveIDs(t *testing.T) {
 	a.Equal("manufacturer", manufacturerOutput.Clarification.Field)
 	a.True(manufacturerOutput.Clarification.HardError)
 	a.False(fake.createdManufacturerPart)
+}
+
+func TestSetPartParametersUpdatesExistingAndCreatesMissing(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	categoryID := 20
+	zero := 0.0
+	fake := &fakeMilestoneLookupClient{
+		part: inventree.Part{PK: 10, Category: &categoryID},
+		parameters: []inventree.Parameter{
+			{PK: 60, Template: 70, ModelType: "part.part", ModelID: 10, Data: "old"},
+		},
+		parameterTemplates: []inventree.ParameterTemplate{
+			{PK: 70, Name: "Resistance", Units: dvgoutils.Ptr("ohm"), Choices: "0,10k", Enabled: true},
+			{PK: 71, Name: "Tolerance", Units: dvgoutils.Ptr("%"), Enabled: true},
+		},
+		categoryParameterTemplates: []inventree.CategoryParameterTemplate{
+			{PK: 80, Category: categoryID, Template: 70},
+			{PK: 81, Category: categoryID, Template: 71},
+		},
+	}
+
+	_, output, err := setPartParameters(depsForFake(fake))(ctx, &mcp.CallToolRequest{}, SetPartParametersInput{
+		PartID: 10,
+		Parameters: []ParameterSetInput{
+			{Name: "Resistance", NumberValue: &zero},
+			{Name: "Tolerance", Value: dvgoutils.Ptr("")},
+		},
+	})
+
+	r.NoError(err)
+	a.Equal(StatusOK, output.Status)
+	r.Len(output.Record, 2)
+	a.Equal(inventree.CategoryParameterTemplateQuery{CategoryID: categoryID}, fake.lastSearchCategoryParameterTemplatesQuery)
+	a.Equal(inventree.PartParameterQuery{PartID: 10}, fake.lastSearchPartParametersQuery)
+	a.Equal(inventree.PatchFields{"data": inventree.Set("0")}, fake.lastUpdatePartParameterFields)
+	a.Equal(inventree.NewPartParameter(10, 71, ""), fake.lastCreatePartParameter)
+}
+
+func TestSetPartParametersPreservesExplicitFalse(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	categoryID := 20
+	falseValue := false
+	templateID := 70
+	fake := &fakeMilestoneLookupClient{
+		part: inventree.Part{PK: 10, Category: &categoryID},
+		categoryParameterTemplates: []inventree.CategoryParameterTemplate{
+			{PK: 80, Category: categoryID, Template: templateID},
+		},
+	}
+
+	_, output, err := setPartParameters(depsForFake(fake))(ctx, &mcp.CallToolRequest{}, SetPartParametersInput{
+		PartID:     10,
+		Parameters: []ParameterSetInput{{TemplateID: &templateID, BoolValue: &falseValue}},
+	})
+
+	r.NoError(err)
+	a.Equal(StatusOK, output.Status)
+	a.Equal(inventree.NewPartParameter(10, templateID, "false"), fake.lastCreatePartParameter)
+	a.Equal(templateID, fake.lastGetParameterTemplateID)
+}
+
+func TestSetPartParametersAsksForAmbiguousTemplate(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	categoryID := 20
+	fake := &fakeMilestoneLookupClient{
+		part: inventree.Part{PK: 10, Category: &categoryID},
+		parameters: []inventree.Parameter{
+			{PK: 60, Template: 70, ModelType: "part.part", ModelID: 10, Data: "old"},
+		},
+		parameterTemplates: []inventree.ParameterTemplate{
+			{PK: 70, Name: "Resistance", Units: dvgoutils.Ptr("ohm"), Enabled: true},
+			{PK: 71, Name: "Resistance", Units: dvgoutils.Ptr("kohm"), Enabled: true},
+		},
+		categoryParameterTemplates: []inventree.CategoryParameterTemplate{
+			{PK: 80, Category: categoryID, Template: 70, DefaultValue: "10k"},
+			{PK: 81, Category: categoryID, Template: 71},
+		},
+	}
+
+	_, output, err := setPartParameters(depsForFake(fake))(ctx, &mcp.CallToolRequest{}, SetPartParametersInput{
+		PartID:     10,
+		Parameters: []ParameterSetInput{{Name: "Resistance", Value: dvgoutils.Ptr("10k")}},
+	})
+
+	r.NoError(err)
+	a.Equal(StatusClarificationRequired, output.Status)
+	r.NotNil(output.Clarification)
+	a.Equal("template_id", output.Clarification.Retry)
+	a.Len(output.Clarification.Candidates, 2)
+	a.Equal(true, output.Clarification.Candidates[0].Fields["enabled"])
+	a.Equal(true, output.Clarification.Candidates[0].Fields["category_linked"])
+	a.Equal(80, output.Clarification.Candidates[0].Fields["category_link_id"])
+	a.Equal("old", output.Clarification.Candidates[0].Fields["existing_value"])
+	a.False(fake.createdPartParameter)
+	a.Nil(fake.lastUpdatePartParameterFields)
+}
+
+func TestSetPartParametersRefusesDisabledOrUnlinkedTemplates(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	categoryID := 20
+	fake := &fakeMilestoneLookupClient{
+		part: inventree.Part{PK: 10, Category: &categoryID},
+		parameterTemplates: []inventree.ParameterTemplate{
+			{PK: 70, Name: "Resistance", Enabled: false},
+			{PK: 71, Name: "Resistance", Enabled: true},
+		},
+		categoryParameterTemplates: []inventree.CategoryParameterTemplate{
+			{PK: 80, Category: categoryID, Template: 70},
+		},
+	}
+
+	_, output, err := setPartParameters(depsForFake(fake))(ctx, &mcp.CallToolRequest{}, SetPartParametersInput{
+		PartID:     10,
+		Parameters: []ParameterSetInput{{Name: "Resistance", Value: dvgoutils.Ptr("10k")}},
+	})
+
+	r.NoError(err)
+	a.Equal(StatusClarificationRequired, output.Status)
+	r.NotNil(output.Clarification)
+	a.Equal("template", output.Clarification.Field)
+	a.True(output.Clarification.HardError)
+	a.False(fake.createdPartParameter)
+	a.Nil(fake.lastUpdatePartParameterFields)
+
+	templateID := 71
+	_, output, err = setPartParameters(depsForFake(fake))(ctx, &mcp.CallToolRequest{}, SetPartParametersInput{
+		PartID:     10,
+		Parameters: []ParameterSetInput{{TemplateID: &templateID, Value: dvgoutils.Ptr("10k")}},
+	})
+	r.NoError(err)
+	a.Equal(StatusClarificationRequired, output.Status)
+	a.Equal("template_id", output.Clarification.Field)
+	a.True(output.Clarification.HardError)
+}
+
+func TestSetPartParametersRefusesDisabledTemplateID(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	categoryID := 20
+	templateID := 70
+	fake := &fakeMilestoneLookupClient{
+		part: inventree.Part{PK: 10, Category: &categoryID},
+		parameterTemplates: []inventree.ParameterTemplate{
+			{PK: templateID, Name: "Resistance", Enabled: false},
+		},
+		categoryParameterTemplates: []inventree.CategoryParameterTemplate{
+			{PK: 80, Category: categoryID, Template: templateID},
+		},
+	}
+
+	_, output, err := setPartParameters(depsForFake(fake))(ctx, &mcp.CallToolRequest{}, SetPartParametersInput{
+		PartID:     10,
+		Parameters: []ParameterSetInput{{TemplateID: &templateID, Value: dvgoutils.Ptr("10k")}},
+	})
+
+	r.NoError(err)
+	a.Equal(StatusClarificationRequired, output.Status)
+	r.NotNil(output.Clarification)
+	a.Equal("template_id", output.Clarification.Field)
+	a.True(output.Clarification.HardError)
+	a.False(fake.createdPartParameter)
+}
+
+func TestSetPartParametersPreflightsBeforeWriting(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	categoryID := 20
+	fake := &fakeMilestoneLookupClient{
+		part: inventree.Part{PK: 10, Category: &categoryID},
+		parameterTemplates: []inventree.ParameterTemplate{
+			{PK: 70, Name: "Resistance", Enabled: true},
+			{PK: 71, Name: "Tolerance", Enabled: true},
+			{PK: 72, Name: "Tolerance", Enabled: true},
+		},
+		categoryParameterTemplates: []inventree.CategoryParameterTemplate{
+			{PK: 80, Category: categoryID, Template: 70},
+			{PK: 81, Category: categoryID, Template: 71},
+			{PK: 82, Category: categoryID, Template: 72},
+		},
+	}
+
+	_, output, err := setPartParameters(depsForFake(fake))(ctx, &mcp.CallToolRequest{}, SetPartParametersInput{
+		PartID: 10,
+		Parameters: []ParameterSetInput{
+			{Name: "Resistance", Value: dvgoutils.Ptr("10k")},
+			{Name: "Tolerance", Value: dvgoutils.Ptr("1%")},
+		},
+	})
+
+	r.NoError(err)
+	a.Equal(StatusClarificationRequired, output.Status)
+	r.NotNil(output.Clarification)
+	a.Equal("template_id", output.Clarification.Retry)
+	a.False(fake.createdPartParameter)
+	a.Zero(fake.updatePartParameterCount)
+}
+
+func TestSetPartParametersRejectsDuplicateTemplatesBeforeWriting(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	categoryID := 20
+	fake := &fakeMilestoneLookupClient{
+		part: inventree.Part{PK: 10, Category: &categoryID},
+		parameterTemplates: []inventree.ParameterTemplate{
+			{PK: 70, Name: "Resistance", Enabled: true},
+		},
+		categoryParameterTemplates: []inventree.CategoryParameterTemplate{
+			{PK: 80, Category: categoryID, Template: 70},
+		},
+	}
+
+	_, output, err := setPartParameters(depsForFake(fake))(ctx, &mcp.CallToolRequest{}, SetPartParametersInput{
+		PartID: 10,
+		Parameters: []ParameterSetInput{
+			{Name: "Resistance", Value: dvgoutils.Ptr("10k")},
+			{Name: "Resistance", Value: dvgoutils.Ptr("22k")},
+		},
+	})
+
+	r.NoError(err)
+	a.Equal(StatusClarificationRequired, output.Status)
+	r.NotNil(output.Clarification)
+	a.Equal("template_id", output.Clarification.Field)
+	a.True(output.Clarification.HardError)
+	a.Zero(fake.createPartParameterCount)
+	a.Zero(fake.updatePartParameterCount)
+}
+
+func TestSetPartParametersAsksForInvalidInputs(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	categoryID := 20
+	fake := &fakeMilestoneLookupClient{part: inventree.Part{PK: 10, Category: &categoryID}}
+	value := "10k"
+	falseValue := false
+
+	_, output, err := setPartParameters(depsForFake(fake))(ctx, &mcp.CallToolRequest{}, SetPartParametersInput{PartID: 0, Parameters: []ParameterSetInput{{Value: &value}}})
+	r.NoError(err)
+	a.Equal(StatusClarificationRequired, output.Status)
+	a.Equal("part", output.Clarification.Field)
+
+	_, output, err = setPartParameters(depsForFake(fake))(ctx, &mcp.CallToolRequest{}, SetPartParametersInput{PartID: 10})
+	r.NoError(err)
+	a.Equal(StatusClarificationRequired, output.Status)
+	a.Equal("parameters", output.Clarification.Field)
+
+	_, output, err = setPartParameters(depsForFake(fake))(ctx, &mcp.CallToolRequest{}, SetPartParametersInput{PartID: 10, Parameters: []ParameterSetInput{{Name: "Resistance", Value: &value, BoolValue: &falseValue}}})
+	r.NoError(err)
+	a.Equal(StatusClarificationRequired, output.Status)
+	a.Equal("value", output.Clarification.Field)
+	a.False(fake.createdPartParameter)
 }

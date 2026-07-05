@@ -17,6 +17,12 @@ type PartParameterQuery struct {
 	Offset int
 }
 
+type CategoryParameterTemplateQuery struct {
+	CategoryID int
+	Limit      int
+	Offset     int
+}
+
 type StockItemQuery struct {
 	Search     string
 	PartID     int
@@ -60,6 +66,15 @@ func (q PartParameterQuery) values() url.Values {
 		values.Set("model_id", strconv.Itoa(q.PartID))
 	}
 	values.Set("model_type", parameterModelTypePart)
+	setPagination(values, q.Limit, q.Offset)
+	return values
+}
+
+func (q CategoryParameterTemplateQuery) values() url.Values {
+	values := url.Values{}
+	if q.CategoryID != 0 {
+		values.Set("category", strconv.Itoa(q.CategoryID))
+	}
 	setPagination(values, q.Limit, q.Offset)
 	return values
 }
