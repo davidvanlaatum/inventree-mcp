@@ -19,7 +19,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestReadOnlyClientMethodsAgainstSharedInvenTree(t *testing.T) {
+func TestReadOnlyClientReads(t *testing.T) {
 	r := require.New(t)
 	ctx := context.Background()
 
@@ -37,67 +37,50 @@ func TestReadOnlyClientMethodsAgainstSharedInvenTree(t *testing.T) {
 		return shared.Close(context.Background())
 	}))
 
-	run, err := shared.NewRun(t)
-	r.NoError(err)
-	account, err := shared.Account(context.Background(), run, testenv.AccountAdmin)
-	r.NoError(err)
-	client, err := shared.Client(account)
-	r.NoError(err)
-
-	category, err := shared.EnsureFixture(context.Background(), account, run, testenv.FixtureCategory)
-	r.NoError(err)
-	location, err := shared.EnsureFixture(context.Background(), account, run, testenv.FixtureLocation)
-	r.NoError(err)
-	supplier, err := shared.EnsureFixture(context.Background(), account, run, testenv.FixtureSupplier)
-	r.NoError(err)
-	manufacturer, err := shared.EnsureFixture(context.Background(), account, run, testenv.FixtureManufacturer)
-	r.NoError(err)
-	part, err := shared.EnsureFixture(context.Background(), account, run, testenv.FixturePart)
-	r.NoError(err)
-	supplierPart, err := shared.EnsureFixture(context.Background(), account, run, testenv.FixtureSupplierPart)
-	r.NoError(err)
-	template := createParameterTemplate(t, client, run, "Resistance", "ohm", "10k,22k")
-	categoryTemplate := createCategoryParameterTemplate(t, client, category.ID, template.PK)
-	parameter := createPartParameter(t, client, part.ID, template.PK, "10k")
-	linkAttachment := createLinkAttachment(t, client, part.ID, "https://example.test/datasheet.pdf")
-	fileAttachment := createFileAttachment(t, shared.Environment().BaseURL, account.Token, part.ID, "datasheet.txt", "datasheet bytes")
-
-	t.Run("part and category lookups", func(t *testing.T) {
+	t.Run("part_category", func(t *testing.T) {
 		r := require.New(t)
+		fixture := newReadOnlyClientFixture(t, shared)
+		category := fixture.ensure(t, testenv.FixtureCategory)
+		part := fixture.ensure(t, testenv.FixturePart)
 
-		parts, err := client.SearchParts(context.Background(), url.Values{"name": []string{part.Name}})
+		parts, err := fixture.client.SearchParts(context.Background(), url.Values{"name": []string{part.Name}})
 		r.NoError(err)
 		r.NotEmpty(parts)
 		r.Equal(part.ID, parts[0].PK)
-		gotPart, err := client.GetPart(context.Background(), part.ID)
+		gotPart, err := fixture.client.GetPart(context.Background(), part.ID)
 		r.NoError(err)
 		r.Equal(part.Name, gotPart.Name)
 
-		categories, err := client.SearchPartCategories(context.Background(), url.Values{"name": []string{category.Name}})
+		categories, err := fixture.client.SearchPartCategories(context.Background(), url.Values{"name": []string{category.Name}})
 		r.NoError(err)
 		r.NotEmpty(categories)
 		r.Equal(category.ID, categories[0].PK)
-		gotCategory, err := client.GetPartCategory(context.Background(), category.ID)
+		gotCategory, err := fixture.client.GetPartCategory(context.Background(), category.ID)
 		r.NoError(err)
 		r.Equal(category.Name, gotCategory.Name)
 	})
 
-	t.Run("company and supplier part lookups", func(t *testing.T) {
+	t.Run("company_supplier", func(t *testing.T) {
 		r := require.New(t)
+		fixture := newReadOnlyClientFixture(t, shared)
+		supplier := fixture.ensure(t, testenv.FixtureSupplier)
+		manufacturer := fixture.ensure(t, testenv.FixtureManufacturer)
+		part := fixture.ensure(t, testenv.FixturePart)
+		supplierPart := fixture.ensure(t, testenv.FixtureSupplierPart)
 
-		suppliers, err := client.SearchSuppliers(context.Background(), url.Values{"search": []string{supplier.Name}})
+		suppliers, err := fixture.client.SearchSuppliers(context.Background(), url.Values{"search": []string{supplier.Name}})
 		r.NoError(err)
 		r.NotEmpty(suppliers)
 		r.Equal(supplier.ID, suppliers[0].PK)
 		r.True(suppliers[0].IsSupplier)
 
-		manufacturers, err := client.SearchManufacturers(context.Background(), url.Values{"search": []string{manufacturer.Name}})
+		manufacturers, err := fixture.client.SearchManufacturers(context.Background(), url.Values{"search": []string{manufacturer.Name}})
 		r.NoError(err)
 		r.NotEmpty(manufacturers)
 		r.Equal(manufacturer.ID, manufacturers[0].PK)
 		r.True(manufacturers[0].IsManufacturer)
 
-		supplierParts, err := client.SearchSupplierParts(context.Background(), url.Values{"SKU": []string{supplierPart.Name}})
+		supplierParts, err := fixture.client.SearchSupplierParts(context.Background(), url.Values{"SKU": []string{supplierPart.Name}})
 		r.NoError(err)
 		r.NotEmpty(supplierParts)
 		r.Equal(supplierPart.ID, supplierParts[0].PK)
@@ -105,39 +88,48 @@ func TestReadOnlyClientMethodsAgainstSharedInvenTree(t *testing.T) {
 		r.Equal(supplier.ID, supplierParts[0].Supplier)
 	})
 
-	t.Run("stock lookups", func(t *testing.T) {
+	t.Run("stock", func(t *testing.T) {
 		r := require.New(t)
+		fixture := newReadOnlyClientFixture(t, shared)
+		location := fixture.ensure(t, testenv.FixtureLocation)
+		part := fixture.ensure(t, testenv.FixturePart)
 
-		locations, err := client.SearchStockLocations(context.Background(), url.Values{"search": []string{location.Name}})
+		locations, err := fixture.client.SearchStockLocations(context.Background(), url.Values{"search": []string{location.Name}})
 		r.NoError(err)
 		r.NotEmpty(locations)
 		r.Equal(location.ID, locations[0].PK)
-		gotLocation, err := client.GetStockLocation(context.Background(), location.ID)
+		gotLocation, err := fixture.client.GetStockLocation(context.Background(), location.ID)
 		r.NoError(err)
 		r.Equal(location.Name, gotLocation.Name)
 
-		stockItems, err := client.SearchStockItems(context.Background(), url.Values{"part": []string{strconv.Itoa(part.ID)}})
+		stockItems, err := fixture.client.SearchStockItems(context.Background(), url.Values{"part": []string{strconv.Itoa(part.ID)}})
 		r.NoError(err)
 		r.Empty(stockItems)
 	})
 
-	t.Run("parameter lookups", func(t *testing.T) {
+	t.Run("parameter", func(t *testing.T) {
 		r := require.New(t)
+		fixture := newReadOnlyClientFixture(t, shared)
+		category := fixture.ensure(t, testenv.FixtureCategory)
+		part := fixture.ensure(t, testenv.FixturePart)
+		template := createParameterTemplate(t, fixture.client, fixture.run, "Resistance", "ohm", "10k,22k")
+		categoryTemplate := createCategoryParameterTemplate(t, fixture.client, category.ID, template.PK)
+		parameter := createPartParameter(t, fixture.client, part.ID, template.PK, "10k")
 
-		parameters, err := client.SearchPartParameters(context.Background(), url.Values{"part": []string{strconv.Itoa(part.ID)}})
+		parameters, err := fixture.client.SearchPartParameters(context.Background(), url.Values{"part": []string{strconv.Itoa(part.ID)}})
 		r.NoError(err)
 		r.NotEmpty(parameters)
 		r.Equal(parameter.PK, parameters[0].PK)
 		r.Equal("part.part", parameters[0].ModelType)
 		r.Equal(part.ID, parameters[0].ModelID)
 
-		templates, err := client.SearchParameterTemplates(context.Background(), url.Values{"search": []string{template.Name}})
+		templates, err := fixture.client.SearchParameterTemplates(context.Background(), url.Values{"search": []string{template.Name}})
 		r.NoError(err)
 		r.NotEmpty(templates)
 		r.Equal(template.PK, templates[0].PK)
 		r.Equal("10k,22k", templates[0].Choices)
 
-		categoryTemplates, err := client.SearchCategoryParameterTemplates(context.Background(), url.Values{"category": []string{strconv.Itoa(category.ID)}})
+		categoryTemplates, err := fixture.client.SearchCategoryParameterTemplates(context.Background(), url.Values{"category": []string{strconv.Itoa(category.ID)}})
 		r.NoError(err)
 		r.NotEmpty(categoryTemplates)
 		r.Equal(categoryTemplate.PK, categoryTemplates[0].PK)
@@ -145,10 +137,14 @@ func TestReadOnlyClientMethodsAgainstSharedInvenTree(t *testing.T) {
 		r.Equal(template.PK, categoryTemplates[0].Template)
 	})
 
-	t.Run("attachment lookups and downloads", func(t *testing.T) {
+	t.Run("attachment", func(t *testing.T) {
 		r := require.New(t)
+		fixture := newReadOnlyClientFixture(t, shared)
+		part := fixture.ensure(t, testenv.FixturePart)
+		linkAttachment := createLinkAttachment(t, fixture.client, part.ID, "https://example.test/datasheet.pdf")
+		fileAttachment := createFileAttachment(t, shared.Environment().BaseURL, fixture.account.Token, part.ID, "datasheet.txt", "datasheet bytes")
 
-		attachments, err := client.ListAttachments(context.Background(), url.Values{
+		attachments, err := fixture.client.ListAttachments(context.Background(), url.Values{
 			"model_type": []string{"part"},
 			"model_id":   []string{strconv.Itoa(part.ID)},
 		})
@@ -156,20 +152,56 @@ func TestReadOnlyClientMethodsAgainstSharedInvenTree(t *testing.T) {
 		r.NotEmpty(attachments)
 		r.Contains(attachmentIDs(attachments), linkAttachment.PK)
 		r.Contains(attachmentIDs(attachments), fileAttachment.PK)
-		gotAttachment, err := client.GetAttachmentMetadata(context.Background(), linkAttachment.PK)
+		gotAttachment, err := fixture.client.GetAttachmentMetadata(context.Background(), linkAttachment.PK)
 		r.NoError(err)
 		r.Equal("part", gotAttachment.ModelType)
 		r.Equal(part.ID, gotAttachment.ModelID)
-		_, err = client.DownloadAttachment(context.Background(), linkAttachment.PK, inventree.AttachmentContentOriginal, 1024)
+		_, err = fixture.client.DownloadAttachment(context.Background(), linkAttachment.PK, inventree.AttachmentContentOriginal, 1024)
 		r.Error(err)
 		r.Contains(err.Error(), "no file attachment URL")
 
-		download, err := client.DownloadAttachment(context.Background(), fileAttachment.PK, inventree.AttachmentContentOriginal, 1024)
+		download, err := fixture.client.DownloadAttachment(context.Background(), fileAttachment.PK, inventree.AttachmentContentOriginal, 1024)
 		r.NoError(err)
 		r.Equal("datasheet bytes", string(download.Content))
 		r.Equal(fileAttachment.PK, download.Attachment.PK)
 		r.NotContains(download.SourceURL, "?")
 	})
+}
+
+type readOnlyClientFixture struct {
+	shared  *testenv.SharedInvenTree
+	run     *testenv.Run
+	account *testenv.Account
+	client  *inventree.Client
+}
+
+func newReadOnlyClientFixture(t *testing.T, shared *testenv.SharedInvenTree) readOnlyClientFixture {
+	t.Helper()
+	r := require.New(t)
+
+	run, err := shared.NewRun(t)
+	r.NoError(err)
+	account, err := shared.Account(context.Background(), run, testenv.AccountAdmin)
+	r.NoError(err)
+	client, err := shared.Client(account)
+	r.NoError(err)
+
+	return readOnlyClientFixture{
+		shared:  shared,
+		run:     run,
+		account: account,
+		client:  client,
+	}
+}
+
+func (f readOnlyClientFixture) ensure(t *testing.T, kind testenv.FixtureKind) testenv.FixtureRecord {
+	t.Helper()
+	r := require.New(t)
+
+	record, err := f.shared.EnsureFixture(context.Background(), f.account, f.run, kind)
+	r.NoError(err)
+	r.NoError(f.run.RequireOwnedName(record.Name))
+	return record
 }
 
 func createParameterTemplate(t *testing.T, client *inventree.Client, run *testenv.Run, suffix string, units string, choices string) inventree.ParameterTemplate {
