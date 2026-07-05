@@ -37,6 +37,13 @@ type DownloadedAttachment struct {
 	SourceURL   string
 }
 
+type DownloadedPartImage struct {
+	Part        Part
+	Content     []byte
+	ContentType string
+	SourceURL   string
+}
+
 func (c *Client) SearchParts(ctx context.Context, query url.Values) ([]Part, error) {
 	return listAll[Part](ctx, c, "/api/part/", query)
 }
@@ -183,6 +190,79 @@ func (c *Client) DownloadAttachment(ctx context.Context, id int, mode Attachment
 		ContentType: resp.Header.Get("Content-Type"),
 		SourceURL:   redactedURLString(sourceURL),
 	}, nil
+}
+
+func (c *Client) DownloadPartImage(ctx context.Context, id int, mode AttachmentContentMode, maxBytes int64) (DownloadedPartImage, error) {
+	if maxBytes <= 0 {
+		return DownloadedPartImage{}, errors.New("part image download maxBytes must be positive")
+	}
+	part, err := c.GetPart(ctx, id)
+	if err != nil {
+		return DownloadedPartImage{}, err
+	}
+	rawURL, err := c.partImageURL(ctx, part, mode)
+	if err != nil {
+		return DownloadedPartImage{}, err
+	}
+	sourceURL, err := c.resolveInvenTreeContentURL(rawURL)
+	if err != nil {
+		return DownloadedPartImage{}, err
+	}
+
+	downloadCtx, cancel := boundedDownloadContext(ctx, c.httpClient)
+	defer cancel()
+	req, err := http.NewRequestWithContext(downloadCtx, http.MethodGet, sourceURL.String(), nil)
+	if err != nil {
+		return DownloadedPartImage{}, err
+	}
+	req.Header.Set("Accept", "image/*,*/*")
+	c.credential.Apply(req)
+
+	httpClient := noRedirectClient(c.httpClient)
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return DownloadedPartImage{}, errors.New("download InvenTree part image failed")
+	}
+	defer func() {
+		_ = resp.Body.Close()
+	}()
+	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+		if resp.StatusCode >= http.StatusMultipleChoices && resp.StatusCode < http.StatusBadRequest {
+			return DownloadedPartImage{}, fmt.Errorf("InvenTree part image redirected with status %d", resp.StatusCode)
+		}
+		return DownloadedPartImage{}, parseAPIError(resp)
+	}
+	content, err := readBounded(resp.Body, maxBytes)
+	if err != nil {
+		return DownloadedPartImage{}, err
+	}
+	return DownloadedPartImage{
+		Part:        part,
+		Content:     content,
+		ContentType: resp.Header.Get("Content-Type"),
+		SourceURL:   redactedURLString(sourceURL),
+	}, nil
+}
+
+func (c *Client) partImageURL(ctx context.Context, part Part, mode AttachmentContentMode) (string, error) {
+	switch mode {
+	case "", AttachmentContentOriginal:
+		if part.Image == nil || *part.Image == "" {
+			return "", errors.New("part has no primary image URL")
+		}
+		return *part.Image, nil
+	case AttachmentContentThumbnail:
+		var thumb PartThumb
+		if err := c.get(ctx, fmt.Sprintf("/api/part/thumbs/%d/", part.PK), &thumb); err != nil {
+			return "", err
+		}
+		if thumb.Image == "" {
+			return "", errors.New("part thumbnail response has no image URL")
+		}
+		return thumb.Image, nil
+	default:
+		return "", fmt.Errorf("unsupported part image content mode %q", mode)
+	}
 }
 
 func (c *Client) SearchSupplierParts(ctx context.Context, query url.Values) ([]SupplierPart, error) {

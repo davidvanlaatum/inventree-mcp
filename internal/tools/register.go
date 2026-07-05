@@ -20,6 +20,7 @@ type HealthVersionOutput struct {
 
 func Register(server *mcp.Server, deps Dependencies) {
 	registerHealthVersion(server, deps)
+	registerLookupTools(server, deps)
 }
 
 func registerHealthVersion(server *mcp.Server, _ Dependencies) {

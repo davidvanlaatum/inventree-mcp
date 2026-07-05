@@ -39,13 +39,14 @@ func TestStdioServerCanInitializeAndListTools(t *testing.T) {
 
 	result, err := session.ListTools(ctx, nil)
 	r.NoError(err)
-	r.Len(result.Tools, 1)
-	a.Equal(tools.HealthVersionToolName, result.Tools[0].Name)
-	a.True(result.Tools[0].Annotations.ReadOnlyHint)
-	a.NotNil(result.Tools[0].Annotations.DestructiveHint)
-	a.False(*result.Tools[0].Annotations.DestructiveHint)
-	a.NotNil(result.Tools[0].Annotations.OpenWorldHint)
-	a.False(*result.Tools[0].Annotations.OpenWorldHint)
+	r.Len(result.Tools, len(tools.ToolAuthorizations))
+	for _, tool := range result.Tools {
+		a.True(tool.Annotations.ReadOnlyHint, tool.Name)
+		a.NotNil(tool.Annotations.DestructiveHint, tool.Name)
+		a.False(*tool.Annotations.DestructiveHint, tool.Name)
+		a.NotNil(tool.Annotations.OpenWorldHint, tool.Name)
+		a.False(*tool.Annotations.OpenWorldHint, tool.Name)
+	}
 
 	cancel()
 	<-serverDone

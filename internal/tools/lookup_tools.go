@@ -1,0 +1,543 @@
+package tools
+
+import (
+	"context"
+	"crypto/sha256"
+	"encoding/base64"
+	"encoding/hex"
+	"errors"
+	"fmt"
+	"mime"
+	"net/url"
+	"strconv"
+	"strings"
+	"unicode/utf8"
+
+	"github.com/davidvanlaatum/inventree-mcp/internal/inventree"
+	"github.com/modelcontextprotocol/go-sdk/mcp"
+)
+
+const (
+	ScopeInventreeRead = "inventree.read"
+
+	SearchPartsToolName              = "search_parts"
+	GetPartToolName                  = "get_part"
+	SearchPartCategoriesToolName     = "search_part_categories"
+	SearchParameterTemplatesToolName = "search_parameter_templates"
+	GetPartParametersToolName        = "get_part_parameters"
+	SearchCompaniesToolName          = "search_companies"
+	SearchSuppliersToolName          = "search_suppliers"
+	SearchManufacturersToolName      = "search_manufacturers"
+	SearchStockLocationsToolName     = "search_stock_locations"
+	SearchStockItemsToolName         = "search_stock_items"
+	ListAttachmentsToolName          = "list_attachments"
+	GetAttachmentMetadataToolName    = "get_attachment_metadata"
+	DownloadAttachmentToolName       = "download_attachment"
+	DownloadPartImageToolName        = "download_part_image"
+
+	defaultDownloadMaxBytes int64 = 5 * 1024 * 1024
+	maxDownloadMaxBytes     int64 = 25 * 1024 * 1024
+)
+
+var inScopeAttachmentModelTypes = map[string]bool{
+	"part":             true,
+	"stockitem":        true,
+	"company":          true,
+	"manufacturerpart": true,
+	"supplierpart":     true,
+	"purchaseorder":    true,
+}
+
+type ToolAuthorization struct {
+	Name          string
+	MutationClass string
+	Scopes        []string
+	Annotations   AnnotationClass
+}
+
+var lookupToolNames = []string{
+	SearchPartsToolName,
+	GetPartToolName,
+	SearchPartCategoriesToolName,
+	SearchParameterTemplatesToolName,
+	GetPartParametersToolName,
+	SearchCompaniesToolName,
+	SearchSuppliersToolName,
+	SearchManufacturersToolName,
+	SearchStockLocationsToolName,
+	SearchStockItemsToolName,
+	ListAttachmentsToolName,
+	GetAttachmentMetadataToolName,
+	DownloadAttachmentToolName,
+	DownloadPartImageToolName,
+}
+
+var ToolAuthorizations = map[string]ToolAuthorization{
+	HealthVersionToolName: {
+		Name:          HealthVersionToolName,
+		MutationClass: "read_only",
+		Scopes:        nil,
+		Annotations:   ReadOnlyAnnotations,
+	},
+}
+
+func init() {
+	for _, name := range lookupToolNames {
+		ToolAuthorizations[name] = ToolAuthorization{
+			Name:          name,
+			MutationClass: "read_only",
+			Scopes:        []string{ScopeInventreeRead},
+			Annotations:   ReadOnlyAnnotations,
+		}
+	}
+}
+
+type PartLookupClient interface {
+	SearchParts(context.Context, url.Values) ([]inventree.Part, error)
+	GetPart(context.Context, int) (inventree.Part, error)
+}
+
+type CategoryLookupClient interface {
+	SearchPartCategories(context.Context, url.Values) ([]inventree.Category, error)
+}
+
+type ParameterLookupClient interface {
+	SearchPartParameters(context.Context, url.Values) ([]inventree.Parameter, error)
+	SearchParameterTemplates(context.Context, url.Values) ([]inventree.ParameterTemplate, error)
+}
+
+type CompanyLookupClient interface {
+	SearchCompanies(context.Context, url.Values) ([]inventree.Company, error)
+	SearchSuppliers(context.Context, url.Values) ([]inventree.Company, error)
+	SearchManufacturers(context.Context, url.Values) ([]inventree.Company, error)
+}
+
+type StockLookupClient interface {
+	SearchStockLocations(context.Context, url.Values) ([]inventree.StockLocation, error)
+	SearchStockItems(context.Context, url.Values) ([]inventree.StockItem, error)
+}
+
+type AttachmentLookupClient interface {
+	ListAttachments(context.Context, url.Values) ([]inventree.Attachment, error)
+	GetAttachmentMetadata(context.Context, int) (inventree.Attachment, error)
+	DownloadAttachment(context.Context, int, inventree.AttachmentContentMode, int64) (inventree.DownloadedAttachment, error)
+	DownloadPartImage(context.Context, int, inventree.AttachmentContentMode, int64) (inventree.DownloadedPartImage, error)
+}
+
+type PartParametersInput struct {
+	PartID int `json:"part_id" jsonschema:"Stable InvenTree part primary key."`
+	Limit  int `json:"limit,omitempty" jsonschema:"Maximum number of records to return. Defaults to 20 and is capped at 100."`
+	Offset int `json:"offset,omitempty" jsonschema:"Pagination offset for deterministic retries."`
+}
+
+type StockItemsInput struct {
+	Search     string `json:"search,omitempty" jsonschema:"Optional search text passed to the InvenTree endpoint."`
+	PartID     int    `json:"part_id,omitempty" jsonschema:"Optional part primary key filter."`
+	LocationID int    `json:"location_id,omitempty" jsonschema:"Optional stock location primary key filter."`
+	Limit      int    `json:"limit,omitempty" jsonschema:"Maximum number of records to return. Defaults to 20 and is capped at 100."`
+	Offset     int    `json:"offset,omitempty" jsonschema:"Pagination offset for deterministic retries."`
+}
+
+type DownloadInput struct {
+	ID       int    `json:"id" jsonschema:"Stable InvenTree primary key."`
+	Mode     string `json:"mode,omitempty" jsonschema:"Download mode. Use original by default or thumbnail when supported."`
+	MaxBytes int64  `json:"max_bytes,omitempty" jsonschema:"Maximum content bytes to return. Defaults to 5 MiB and is capped at 25 MiB."`
+}
+
+type LookupOutput[T any] struct {
+	Status        string                 `json:"status"`
+	Count         int                    `json:"count,omitempty"`
+	Results       []T                    `json:"results,omitempty"`
+	Clarification *ClarificationResponse `json:"clarification,omitempty"`
+}
+
+type RecordOutput[T any] struct {
+	Status string `json:"status"`
+	Record T      `json:"record,omitempty"`
+}
+
+type DownloadOutput struct {
+	Status      string `json:"status"`
+	ID          int    `json:"id"`
+	Filename    string `json:"filename,omitempty"`
+	ContentType string `json:"content_type,omitempty"`
+	Size        int    `json:"size"`
+	SHA256      string `json:"sha256"`
+	Mode        string `json:"mode"`
+	SourceURL   string `json:"source_url,omitempty"`
+	Text        string `json:"text,omitempty"`
+	Base64      string `json:"base64,omitempty"`
+}
+
+type AttachmentMetadata struct {
+	PK            int      `json:"pk"`
+	ModelType     string   `json:"model_type"`
+	ModelID       int      `json:"model_id"`
+	Filename      string   `json:"filename"`
+	Comment       string   `json:"comment,omitempty"`
+	IsImage       bool     `json:"is_image"`
+	IsLink        bool     `json:"is_link"`
+	FileSize      *int64   `json:"file_size,omitempty"`
+	Tags          []string `json:"tags,omitempty"`
+	UploadDate    string   `json:"upload_date,omitempty"`
+	UploadUser    *int     `json:"upload_user,omitempty"`
+	HasFile       bool     `json:"has_file"`
+	HasThumbnail  bool     `json:"has_thumbnail"`
+	AttachmentURL string   `json:"attachment_url,omitempty"`
+	ThumbnailURL  string   `json:"thumbnail_url,omitempty"`
+	LinkURL       string   `json:"link_url,omitempty"`
+}
+
+func registerLookupTools(server *mcp.Server, deps Dependencies) {
+	addReadOnlyTool(server, SearchPartsToolName, "Search parts", "Searches InvenTree parts.", searchParts(deps))
+	addReadOnlyTool(server, GetPartToolName, "Get part", "Retrieves one InvenTree part by ID.", getPart(deps))
+	addReadOnlyTool(server, SearchPartCategoriesToolName, "Search part categories", "Searches InvenTree part categories.", searchPartCategories(deps))
+	addReadOnlyTool(server, SearchParameterTemplatesToolName, "Search parameter templates", "Searches InvenTree parameter templates.", searchParameterTemplates(deps))
+	addReadOnlyTool(server, GetPartParametersToolName, "Get part parameters", "Lists parameter values for one part.", getPartParameters(deps))
+	addReadOnlyTool(server, SearchCompaniesToolName, "Search companies", "Searches InvenTree companies.", searchCompanies(deps))
+	addReadOnlyTool(server, SearchSuppliersToolName, "Search suppliers", "Searches companies with the supplier role.", searchSuppliers(deps))
+	addReadOnlyTool(server, SearchManufacturersToolName, "Search manufacturers", "Searches companies with the manufacturer role.", searchManufacturers(deps))
+	addReadOnlyTool(server, SearchStockLocationsToolName, "Search stock locations", "Searches InvenTree stock locations.", searchStockLocations(deps))
+	addReadOnlyTool(server, SearchStockItemsToolName, "Search stock items", "Searches InvenTree stock items.", searchStockItems(deps))
+	addReadOnlyTool(server, ListAttachmentsToolName, "List attachments", "Lists attachment metadata for an in-scope InvenTree object.", listAttachments(deps))
+	addReadOnlyTool(server, GetAttachmentMetadataToolName, "Get attachment metadata", "Retrieves one attachment metadata record by ID.", getAttachmentMetadata(deps))
+	addReadOnlyTool(server, DownloadAttachmentToolName, "Download attachment", "Downloads bounded content for one file attachment.", downloadAttachment(deps))
+	addReadOnlyTool(server, DownloadPartImageToolName, "Download part image", "Downloads bounded content for a part primary image.", downloadPartImage(deps))
+}
+
+func addReadOnlyTool[In, Out any](server *mcp.Server, name string, title string, description string, handler mcp.ToolHandlerFor[In, Out]) {
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        name,
+		Title:       title,
+		Description: description,
+		Annotations: ToolAnnotations(ReadOnlyAnnotations),
+	}, handler)
+}
+
+func searchParts(deps Dependencies) mcp.ToolHandlerFor[SearchInput, LookupOutput[inventree.Part]] {
+	return LookupHandler[PartLookupClient, SearchInput, LookupOutput[inventree.Part]](deps, SearchPartsToolName,
+		func(ctx context.Context, _ *mcp.CallToolRequest, client PartLookupClient, input SearchInput) (*mcp.CallToolResult, LookupOutput[inventree.Part], error) {
+			records, err := client.SearchParts(ctx, SearchValues(input))
+			return searchOutput(records, input.Search, "part", "part_id", "Which part should be used?", err)
+		})
+}
+
+func getPart(deps Dependencies) mcp.ToolHandlerFor[IDInput, RecordOutput[inventree.Part]] {
+	return LookupHandler[PartLookupClient, IDInput, RecordOutput[inventree.Part]](deps, GetPartToolName,
+		func(ctx context.Context, _ *mcp.CallToolRequest, client PartLookupClient, input IDInput) (*mcp.CallToolResult, RecordOutput[inventree.Part], error) {
+			record, err := client.GetPart(ctx, input.ID)
+			return recordOutput(record, err)
+		})
+}
+
+func searchPartCategories(deps Dependencies) mcp.ToolHandlerFor[SearchInput, LookupOutput[inventree.Category]] {
+	return LookupHandler[CategoryLookupClient, SearchInput, LookupOutput[inventree.Category]](deps, SearchPartCategoriesToolName,
+		func(ctx context.Context, _ *mcp.CallToolRequest, client CategoryLookupClient, input SearchInput) (*mcp.CallToolResult, LookupOutput[inventree.Category], error) {
+			records, err := client.SearchPartCategories(ctx, SearchValues(input))
+			return searchOutput(records, input.Search, "category", "category_id", "Which category should be used?", err)
+		})
+}
+
+func searchParameterTemplates(deps Dependencies) mcp.ToolHandlerFor[SearchInput, LookupOutput[inventree.ParameterTemplate]] {
+	return LookupHandler[ParameterLookupClient, SearchInput, LookupOutput[inventree.ParameterTemplate]](deps, SearchParameterTemplatesToolName,
+		func(ctx context.Context, _ *mcp.CallToolRequest, client ParameterLookupClient, input SearchInput) (*mcp.CallToolResult, LookupOutput[inventree.ParameterTemplate], error) {
+			records, err := client.SearchParameterTemplates(ctx, SearchValues(input))
+			return searchOutput(records, input.Search, "template", "template_id", "Which parameter template should be used?", err)
+		})
+}
+
+func getPartParameters(deps Dependencies) mcp.ToolHandlerFor[PartParametersInput, LookupOutput[inventree.Parameter]] {
+	return LookupHandler[ParameterLookupClient, PartParametersInput, LookupOutput[inventree.Parameter]](deps, GetPartParametersToolName,
+		func(ctx context.Context, _ *mcp.CallToolRequest, client ParameterLookupClient, input PartParametersInput) (*mcp.CallToolResult, LookupOutput[inventree.Parameter], error) {
+			query := url.Values{"part": []string{strconv.Itoa(input.PartID)}}
+			setPagingValues(query, input.Limit, input.Offset)
+			records, err := client.SearchPartParameters(ctx, query)
+			return listOutput(records, err)
+		})
+}
+
+func searchCompanies(deps Dependencies) mcp.ToolHandlerFor[SearchInput, LookupOutput[inventree.Company]] {
+	return LookupHandler[CompanyLookupClient, SearchInput, LookupOutput[inventree.Company]](deps, SearchCompaniesToolName,
+		func(ctx context.Context, _ *mcp.CallToolRequest, client CompanyLookupClient, input SearchInput) (*mcp.CallToolResult, LookupOutput[inventree.Company], error) {
+			records, err := client.SearchCompanies(ctx, SearchValues(input))
+			return searchOutput(records, input.Search, "company", "company_id", "Which company should be used?", err)
+		})
+}
+
+func searchSuppliers(deps Dependencies) mcp.ToolHandlerFor[SearchInput, LookupOutput[inventree.Company]] {
+	return LookupHandler[CompanyLookupClient, SearchInput, LookupOutput[inventree.Company]](deps, SearchSuppliersToolName,
+		func(ctx context.Context, _ *mcp.CallToolRequest, client CompanyLookupClient, input SearchInput) (*mcp.CallToolResult, LookupOutput[inventree.Company], error) {
+			records, err := client.SearchSuppliers(ctx, SearchValues(input))
+			return searchOutput(records, input.Search, "supplier", "supplier_id", "Which supplier should be used?", err)
+		})
+}
+
+func searchManufacturers(deps Dependencies) mcp.ToolHandlerFor[SearchInput, LookupOutput[inventree.Company]] {
+	return LookupHandler[CompanyLookupClient, SearchInput, LookupOutput[inventree.Company]](deps, SearchManufacturersToolName,
+		func(ctx context.Context, _ *mcp.CallToolRequest, client CompanyLookupClient, input SearchInput) (*mcp.CallToolResult, LookupOutput[inventree.Company], error) {
+			records, err := client.SearchManufacturers(ctx, SearchValues(input))
+			return searchOutput(records, input.Search, "manufacturer", "manufacturer_id", "Which manufacturer should be used?", err)
+		})
+}
+
+func searchStockLocations(deps Dependencies) mcp.ToolHandlerFor[SearchInput, LookupOutput[inventree.StockLocation]] {
+	return LookupHandler[StockLookupClient, SearchInput, LookupOutput[inventree.StockLocation]](deps, SearchStockLocationsToolName,
+		func(ctx context.Context, _ *mcp.CallToolRequest, client StockLookupClient, input SearchInput) (*mcp.CallToolResult, LookupOutput[inventree.StockLocation], error) {
+			records, err := client.SearchStockLocations(ctx, SearchValues(input))
+			return searchOutput(records, input.Search, "location", "location_id", "Which stock location should be used?", err)
+		})
+}
+
+func searchStockItems(deps Dependencies) mcp.ToolHandlerFor[StockItemsInput, LookupOutput[inventree.StockItem]] {
+	return LookupHandler[StockLookupClient, StockItemsInput, LookupOutput[inventree.StockItem]](deps, SearchStockItemsToolName,
+		func(ctx context.Context, _ *mcp.CallToolRequest, client StockLookupClient, input StockItemsInput) (*mcp.CallToolResult, LookupOutput[inventree.StockItem], error) {
+			query := SearchValues(SearchInput{Search: input.Search, Limit: input.Limit, Offset: input.Offset})
+			if input.PartID != 0 {
+				query.Set("part", strconv.Itoa(input.PartID))
+			}
+			if input.LocationID != 0 {
+				query.Set("location", strconv.Itoa(input.LocationID))
+			}
+			records, err := client.SearchStockItems(ctx, query)
+			return listOutput(records, err)
+		})
+}
+
+func listAttachments(deps Dependencies) mcp.ToolHandlerFor[ObjectLookupInput, LookupOutput[AttachmentMetadata]] {
+	return LookupHandler[AttachmentLookupClient, ObjectLookupInput, LookupOutput[AttachmentMetadata]](deps, ListAttachmentsToolName,
+		func(ctx context.Context, _ *mcp.CallToolRequest, client AttachmentLookupClient, input ObjectLookupInput) (*mcp.CallToolResult, LookupOutput[AttachmentMetadata], error) {
+			if err := validateAttachmentModelType(input.ModelType); err != nil {
+				return nil, LookupOutput[AttachmentMetadata]{}, err
+			}
+			records, err := client.ListAttachments(ctx, ObjectLookupValues(input))
+			return listOutput(sanitizeAttachments(records), err)
+		})
+}
+
+func getAttachmentMetadata(deps Dependencies) mcp.ToolHandlerFor[IDInput, RecordOutput[AttachmentMetadata]] {
+	return LookupHandler[AttachmentLookupClient, IDInput, RecordOutput[AttachmentMetadata]](deps, GetAttachmentMetadataToolName,
+		func(ctx context.Context, _ *mcp.CallToolRequest, client AttachmentLookupClient, input IDInput) (*mcp.CallToolResult, RecordOutput[AttachmentMetadata], error) {
+			record, err := client.GetAttachmentMetadata(ctx, input.ID)
+			if err != nil {
+				return recordOutput(AttachmentMetadata{}, err)
+			}
+			if err := validateAttachmentModelType(record.ModelType); err != nil {
+				return nil, RecordOutput[AttachmentMetadata]{}, err
+			}
+			return recordOutput(sanitizeAttachment(record), nil)
+		})
+}
+
+func downloadAttachment(deps Dependencies) mcp.ToolHandlerFor[DownloadInput, DownloadOutput] {
+	return LookupHandler[AttachmentLookupClient, DownloadInput, DownloadOutput](deps, DownloadAttachmentToolName,
+		func(ctx context.Context, _ *mcp.CallToolRequest, client AttachmentLookupClient, input DownloadInput) (*mcp.CallToolResult, DownloadOutput, error) {
+			mode := attachmentMode(input.Mode)
+			download, err := client.DownloadAttachment(ctx, input.ID, mode, normalizeDownloadMaxBytes(input.MaxBytes))
+			if err != nil {
+				if isNotFound(err) {
+					return TextResult(StatusNotFound), DownloadOutput{Status: StatusNotFound, ID: input.ID}, nil
+				}
+				return nil, DownloadOutput{}, err
+			}
+			return downloadOutput(input.ID, download.Attachment.Filename, string(mode), download.ContentType, download.SourceURL, download.Content)
+		})
+}
+
+func downloadPartImage(deps Dependencies) mcp.ToolHandlerFor[DownloadInput, DownloadOutput] {
+	return LookupHandler[AttachmentLookupClient, DownloadInput, DownloadOutput](deps, DownloadPartImageToolName,
+		func(ctx context.Context, _ *mcp.CallToolRequest, client AttachmentLookupClient, input DownloadInput) (*mcp.CallToolResult, DownloadOutput, error) {
+			mode := attachmentMode(input.Mode)
+			download, err := client.DownloadPartImage(ctx, input.ID, mode, normalizeDownloadMaxBytes(input.MaxBytes))
+			if err != nil {
+				if isNotFound(err) {
+					return TextResult(StatusNotFound), DownloadOutput{Status: StatusNotFound, ID: input.ID}, nil
+				}
+				return nil, DownloadOutput{}, err
+			}
+			return downloadOutput(input.ID, "", string(mode), download.ContentType, download.SourceURL, download.Content)
+		})
+}
+
+func searchOutput[T any](records []T, search string, field string, retry string, question string, err error) (*mcp.CallToolResult, LookupOutput[T], error) {
+	if err != nil {
+		return nil, LookupOutput[T]{}, err
+	}
+	switch len(records) {
+	case 0:
+		return TextResult(StatusNotFound), LookupOutput[T]{Status: StatusNotFound}, nil
+	case 1:
+		return TextResult(StatusOK), LookupOutput[T]{Status: StatusOK, Count: 1, Results: records}, nil
+	default:
+		clarification := NewClarification(
+			question,
+			field,
+			fmt.Sprintf("search matched multiple %s records", field),
+			retry,
+			false,
+			candidatesFor(records),
+			retryValues(search),
+		)
+		return TextResult(StatusClarificationRequired), LookupOutput[T]{
+			Status:        StatusClarificationRequired,
+			Count:         len(records),
+			Results:       records,
+			Clarification: &clarification,
+		}, nil
+	}
+}
+
+func listOutput[T any](records []T, err error) (*mcp.CallToolResult, LookupOutput[T], error) {
+	if err != nil {
+		return nil, LookupOutput[T]{}, err
+	}
+	if len(records) == 0 {
+		return TextResult(StatusNotFound), LookupOutput[T]{Status: StatusNotFound}, nil
+	}
+	return TextResult(StatusOK), LookupOutput[T]{Status: StatusOK, Count: len(records), Results: records}, nil
+}
+
+func recordOutput[T any](record T, err error) (*mcp.CallToolResult, RecordOutput[T], error) {
+	if err != nil {
+		if isNotFound(err) {
+			return TextResult(StatusNotFound), RecordOutput[T]{Status: StatusNotFound}, nil
+		}
+		return nil, RecordOutput[T]{}, err
+	}
+	return TextResult(StatusOK), RecordOutput[T]{Status: StatusOK, Record: record}, nil
+}
+
+func attachmentMode(raw string) inventree.AttachmentContentMode {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "", string(inventree.AttachmentContentOriginal):
+		return inventree.AttachmentContentOriginal
+	case string(inventree.AttachmentContentThumbnail):
+		return inventree.AttachmentContentThumbnail
+	default:
+		return inventree.AttachmentContentMode(raw)
+	}
+}
+
+func normalizeDownloadMaxBytes(maxBytes int64) int64 {
+	if maxBytes <= 0 {
+		return defaultDownloadMaxBytes
+	}
+	if maxBytes > maxDownloadMaxBytes {
+		return maxDownloadMaxBytes
+	}
+	return maxBytes
+}
+
+func downloadOutput(id int, filename string, mode string, contentType string, sourceURL string, content []byte) (*mcp.CallToolResult, DownloadOutput, error) {
+	sum := sha256.Sum256(content)
+	out := DownloadOutput{
+		Status:      StatusOK,
+		ID:          id,
+		Filename:    filename,
+		ContentType: contentType,
+		Size:        len(content),
+		SHA256:      hex.EncodeToString(sum[:]),
+		Mode:        mode,
+		SourceURL:   sourceURL,
+	}
+	if isTextContent(contentType, content) {
+		out.Text = string(content)
+	} else {
+		out.Base64 = base64.StdEncoding.EncodeToString(content)
+	}
+	return TextResult(StatusOK), out, nil
+}
+
+func isTextContent(contentType string, content []byte) bool {
+	mediaType, _, err := mime.ParseMediaType(contentType)
+	if err == nil && (strings.HasPrefix(mediaType, "text/") || mediaType == "application/json" || strings.HasSuffix(mediaType, "+json")) {
+		return utf8.Valid(content)
+	}
+	return contentType == "" && utf8.Valid(content)
+}
+
+func retryValues(search string) map[string]any {
+	if search == "" {
+		return nil
+	}
+	return map[string]any{"search": search}
+}
+
+func candidatesFor[T any](records []T) []ClarificationCandidate {
+	candidates := make([]ClarificationCandidate, 0, len(records))
+	for _, record := range records {
+		candidates = append(candidates, candidateFor(record))
+	}
+	return candidates
+}
+
+func candidateFor(record any) ClarificationCandidate {
+	switch v := record.(type) {
+	case inventree.Part:
+		return ClarificationCandidate{ID: strconv.Itoa(v.PK), Label: v.Name, Summary: v.Description, URL: fmt.Sprintf("/api/part/%d/", v.PK)}
+	case inventree.Category:
+		return ClarificationCandidate{ID: strconv.Itoa(v.PK), Label: v.Name, Summary: v.Description, URL: fmt.Sprintf("/api/part/category/%d/", v.PK), Fields: map[string]any{"structural": v.Structural}}
+	case inventree.ParameterTemplate:
+		return ClarificationCandidate{ID: strconv.Itoa(v.PK), Label: v.Name, URL: fmt.Sprintf("/api/parameter/template/%d/", v.PK), Fields: map[string]any{"units": v.Units, "choices": v.Choices, "checkbox": v.Checkbox}}
+	case inventree.Company:
+		return ClarificationCandidate{ID: strconv.Itoa(v.PK), Label: v.Name, Summary: v.Description, URL: fmt.Sprintf("/api/company/%d/", v.PK), Fields: map[string]any{"supplier": v.IsSupplier, "manufacturer": v.IsManufacturer, "active": v.Active}}
+	case inventree.StockLocation:
+		return ClarificationCandidate{ID: strconv.Itoa(v.PK), Label: v.Name, Summary: v.Description, URL: fmt.Sprintf("/api/stock/location/%d/", v.PK), Fields: map[string]any{"structural": v.Structural, "external": v.External}}
+	default:
+		return ClarificationCandidate{ID: fmt.Sprint(record), Label: fmt.Sprint(record)}
+	}
+}
+
+func validateAttachmentModelType(modelType string) error {
+	if !inScopeAttachmentModelTypes[modelType] {
+		return fmt.Errorf("attachment model type %q is out of scope", modelType)
+	}
+	return nil
+}
+
+func sanitizeAttachments(records []inventree.Attachment) []AttachmentMetadata {
+	sanitized := make([]AttachmentMetadata, 0, len(records))
+	for _, record := range records {
+		sanitized = append(sanitized, sanitizeAttachment(record))
+	}
+	return sanitized
+}
+
+func sanitizeAttachment(record inventree.Attachment) AttachmentMetadata {
+	return AttachmentMetadata{
+		PK:            record.PK,
+		ModelType:     record.ModelType,
+		ModelID:       record.ModelID,
+		Filename:      record.Filename,
+		Comment:       record.Comment,
+		IsImage:       record.IsImage,
+		IsLink:        record.IsLink,
+		FileSize:      record.FileSize,
+		Tags:          record.Tags,
+		UploadDate:    record.UploadDate,
+		UploadUser:    record.UploadUser,
+		HasFile:       record.Attachment != nil && *record.Attachment != "",
+		HasThumbnail:  record.Thumbnail != nil && *record.Thumbnail != "",
+		AttachmentURL: redactedMetadataURL(record.Attachment),
+		ThumbnailURL:  redactedMetadataURL(record.Thumbnail),
+		LinkURL:       redactedMetadataURL(record.Link),
+	}
+}
+
+func redactedMetadataURL(raw *string) string {
+	if raw == nil || *raw == "" {
+		return ""
+	}
+	parsed, err := url.Parse(*raw)
+	if err != nil {
+		return ""
+	}
+	parsed.User = nil
+	parsed.RawQuery = ""
+	parsed.Fragment = ""
+	return parsed.String()
+}
+
+func isNotFound(err error) bool {
+	var apiErr *inventree.APIError
+	return errors.As(err, &apiErr) && apiErr.Kind == inventree.ErrorKindNotFound
+}

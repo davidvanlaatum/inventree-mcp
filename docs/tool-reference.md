@@ -32,6 +32,10 @@ Common lookup inputs:
 | `id` | get-by-id tools | Stable InvenTree primary key. |
 | `model_type` | object-scoped attachment/parameter tools | In-scope InvenTree object type such as `part`, `stockitem`, `company`, `manufacturerpart`, `supplierpart`, or `purchaseorder`. |
 | `model_id` | object-scoped attachment/parameter tools | Stable primary key for the selected object type. |
+| `part_id` | part parameter and stock-item tools | Stable part primary key for part-scoped reads or stock duplicate checks. |
+| `location_id` | stock-item tools | Optional stable stock location primary key for stock duplicate checks. |
+| `mode` | download tools | Optional download mode. `original` is the default; `thumbnail` is supported for generic attachment downloads when metadata exposes a thumbnail URL and for part-image downloads through `/api/part/thumbs/{id}/`. |
+| `max_bytes` | download tools | Optional maximum response content size. Defaults to `5242880` and is capped at `26214400`. |
 
 Structured lookup outputs must include `status`. Successful lookups use `ok`; absent stable records use `not_found`; ambiguous lookups use `clarification_required`.
 
@@ -59,6 +63,27 @@ Clarification `candidates` entries use:
 | `fields` | Optional non-sensitive structured details needed for the decision. |
 
 The Milestone 1 table below is a planning summary until each tool is registered. When a tool is implemented, its authoritative row must include every manifest field above, including milestone status and MCP annotations.
+
+## Registered Lookup Tools
+
+All tools in this section are implemented and registered. They use class `read_only`, milestone status `milestone_1`, MCP annotations `readOnlyHint:true`, `destructiveHint:false`, `idempotentHint:true`, and `openWorldHint:false`. They require OAuth scope `inventree.read` when HTTP OAuth scope enforcement lands. Upload sources are `None`.
+
+| Tool | Group | Inputs | Output | Ask operator when |
+| --- | --- | --- | --- | --- |
+| `search_parts` | Part lookup | `search`, `limit`, `offset` | `status`, `count`, `results`, optional `clarification` with retry `part_id` | Search returns multiple plausible parts. |
+| `get_part` | Part lookup | `id` | `status`, `record` | Provided ID does not exist. |
+| `search_part_categories` | Part lookup | `search`, `limit`, `offset` | `status`, `count`, `results`, optional `clarification` with retry `category_id` | Category path/name is ambiguous. |
+| `search_parameter_templates` | Parameters | `search`, `limit`, `offset` | `status`, `count`, `results`, optional `clarification` with retry `template_id` | Same-name templates differ by unit, choices, checkbox behavior, or category link. |
+| `get_part_parameters` | Parameters | `part_id`, `limit`, `offset` | `status`, `count`, `results` | Part ID is missing or ambiguous. |
+| `search_companies` | Company lookup | `search`, `limit`, `offset` | `status`, `count`, `results`, optional `clarification` with retry `company_id` | Supplier/manufacturer identity is ambiguous. |
+| `search_suppliers` | Company lookup | `search`, `limit`, `offset` | `status`, `count`, `results`, optional `clarification` with retry `supplier_id` | Supplier role is unclear. |
+| `search_manufacturers` | Company lookup | `search`, `limit`, `offset` | `status`, `count`, `results`, optional `clarification` with retry `manufacturer_id` | Manufacturer role is unclear. |
+| `search_stock_locations` | Stock lookup | `search`, `limit`, `offset` | `status`, `count`, `results`, optional `clarification` with retry `location_id` | Location name/path is ambiguous. |
+| `search_stock_items` | Stock lookup | `search`, `part_id`, `location_id`, `limit`, `offset` | `status`, `count`, `results` | Existing stock may duplicate the requested initial stock. |
+| `list_attachments` | Attachments | `model_type`, `model_id`, `search`, `limit`, `offset` | `status`, `count`, `results` | Target object is ambiguous. |
+| `get_attachment_metadata` | Attachments | `id` | `status`, `record` | Attachment ID is missing or ambiguous. |
+| `download_attachment` | Attachments | `id`, `mode`, `max_bytes` | `status`, `id`, `filename`, `content_type`, `size`, `sha256`, `mode`, `source_url`, plus `text` or `base64` content | Operator may mean stored-link metadata versus an external link target, or original file versus explicit thumbnail mode. |
+| `download_part_image` | Attachments | `id`, `mode`, `max_bytes` | `status`, `id`, `content_type`, `size`, `sha256`, `mode`, `source_url`, plus `text` or `base64` content | Operator may mean a generic attachment rather than the current primary image, or original image versus explicit thumbnail mode. |
 
 ## Skeleton Tools
 
