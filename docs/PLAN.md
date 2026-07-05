@@ -1020,6 +1020,8 @@ Implementation notes:
 
 Test suite classes:
 
+These commands are local defaults. When the same suite runs in CI, release, or another pipeline context, add `-v` to the `go test` invocation or configure the pipeline wrapper to pass verbose test arguments.
+
 | Suite | Command | Purpose |
 | --- | --- | --- |
 | Default | `GOFLAGS=-trimpath go test -race ./...` | Unit, contract, docs, and default-on pinned Testcontainers integration tests. |
@@ -1028,6 +1030,8 @@ Test suite classes:
 | HTTP auth | `GOFLAGS=-trimpath go test -race ./internal/server/... ./internal/oauth/...` | OAuth metadata, bearer challenge, token envelopes, and scope guards using fakes. |
 | Integration | `GOFLAGS=-trimpath go test -race ./internal/testenv ./internal/integration/...` | Shared Testcontainers suite with pinned version-tag/schema pair. |
 | Stable canary | CI-specific `inventree/inventree:stable` integration run | Non-blocking latest-stable compatibility and schema drift signal. |
+
+Local commands should add `-v` only when verbose logs are useful for diagnosis or evidence. CI, release, and other pipeline commands should always include `-v` so successful logs preserve integration-test and container-output evidence.
 
 ## Required Test Matrix
 

@@ -10,6 +10,10 @@ This backlog turns [PLAN.md](PLAN.md) into executable work. Status values are:
 
 Each story should be completed with tests, documentation updates, and reviewer follow-up. Code, behavior, task-status, operator workflow, or public documentation-contract changes require subagent review from the applicable roles in [reviewers.md](reviewers.md). Use the full Go, QA, product, and infosec panel when acceptance criteria touch auth, upload, Testcontainers, tool-surface behavior, or milestone completion. Manual-only review is reserved for typo-only or formatting-only documentation edits and must say why subagent review was not required.
 
+When selecting the next story, update the Codex thread title to include the story ID and short title. If the active story changes, update the thread title again before continuing.
+
+Local test commands do not need `-v` by default. Use verbose local test output when diagnosing failures, checking expected logs, or recording evidence that depends on test logs. CI, release, and other pipeline test commands should always run Go tests with `-v` so successful pipeline logs retain integration-test and container-output evidence.
+
 Go tests should use `github.com/stretchr/testify` assertion objects. Prefer `require.New(t)` and `assert.New(t)` instances over package-level free functions, with `require` for test-stopping preconditions and `assert` for related checks where collecting multiple failures helps.
 
 Interface mocks are generated with Mockery when needed. Mark interfaces with `//mockery:generate: true`, keep generation config in `.mockery.yml`, and generate all marked mocks in one run. Generated mocks live beside source packages under `mock/`, use package name `<parent>mock`, and use filenames shaped as `<InterfaceName>_mock.go`.
