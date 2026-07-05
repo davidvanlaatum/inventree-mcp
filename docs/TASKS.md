@@ -554,9 +554,19 @@ Tasks:
 
 ### M1E-S03: Initial Stock Writes
 
-- Status: `Ready`
+- Status: `Done`
 - Depends on: M1D-S02
 - Scope: create initial stock item with duplicate detection.
+- Validation:
+  - `go test ./internal/inventree ./internal/tools` passed.
+  - `go test ./...` passed.
+  - `git diff --check` passed.
+- Review:
+  - Senior Go Developer review: no actionable findings.
+  - Senior QA / Test Architect review found HTTP non-read-only exposure and stock-location filter coverage gaps; both were fixed, and focused QA rerereview reported no unresolved actionable findings.
+  - Senior Product Manager review found registered tool-reference gaps for `create_stock_item` and operational scope wording; both were fixed, and focused product rerereview reported no unresolved actionable findings.
+  - Senior Infosec review found the same HTTP exposure and scope-documentation gaps; both were fixed, and focused infosec rerereview reported no unresolved actionable findings.
+- Residual risk: duplicate detection is a preflight guard using same part and location, not a transactional uniqueness guarantee if another writer creates matching stock between preflight and create. `M1G-S02` remains `Planned` because it also depends on `M1G-S01`.
 - Acceptance:
   - Requires `inventree.operational` plus write scope.
   - Searches existing stock before creation.
@@ -566,9 +576,9 @@ Tasks:
 
 Tasks:
 
-- [ ] Add `create_stock_item`.
-- [ ] Add duplicate detection.
-- [ ] Add operational scope tests.
+- [x] Add `create_stock_item`.
+- [x] Add duplicate detection.
+- [x] Add operational scope tests.
 
 ## Milestone 1F: Uploads, Attachments, And Images
 

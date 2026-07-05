@@ -330,6 +330,7 @@ type fakeMilestoneLookupClient struct {
 	createdCompany             bool
 	createdSupplierPart        bool
 	createdManufacturerPart    bool
+	createdStockItem           bool
 
 	lastSearchPartsQuery                      inventree.SearchQuery
 	lastSearchPartCategoriesQuery             inventree.SearchQuery
@@ -350,6 +351,7 @@ type fakeMilestoneLookupClient struct {
 	lastCreateCompany                         inventree.CompanyCreate
 	lastCreateSupplierPart                    inventree.SupplierPartCreate
 	lastCreateManufacturerPart                inventree.ManufacturerPartCreate
+	lastCreateStockItem                       inventree.StockItemCreate
 	lastUpdatePartFields                      inventree.PatchFields
 	lastUpdatePartParameterFields             inventree.PatchFields
 	updatePartParameterCount                  int
@@ -503,4 +505,10 @@ func (f *fakeMilestoneLookupClient) CreateManufacturerPart(_ context.Context, in
 		mpn = *input.MPN
 	}
 	return inventree.ManufacturerPart{PK: 50, Part: input.Part, Manufacturer: input.Manufacturer, MPN: mpn}, nil
+}
+
+func (f *fakeMilestoneLookupClient) CreateStockItem(_ context.Context, input inventree.StockItemCreate) (inventree.StockItem, error) {
+	f.createdStockItem = true
+	f.lastCreateStockItem = input
+	return inventree.StockItem{PK: 50, Part: input.Part, Location: &input.Location, Quantity: input.Quantity, Status: 10, Batch: input.Batch, Serial: input.Serial, Notes: input.Notes}, nil
 }

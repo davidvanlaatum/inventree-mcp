@@ -56,7 +56,7 @@ func TestStdioServerCanInitializeAndListTools(t *testing.T) {
 func countNonWriteAuthorizations() int {
 	count := 0
 	for _, auth := range tools.ToolAuthorizations {
-		if auth.MutationClass != "write" {
+		if auth.MutationClass == "read_only" {
 			count++
 		}
 	}
@@ -94,6 +94,7 @@ func TestServerListsWriteToolsOnlyWhenEnabled(t *testing.T) {
 	}
 	a.True(names[tools.CreatePartToolName])
 	a.True(names[tools.CreateCompanyToolName])
+	a.True(names[tools.CreateStockItemToolName])
 
 	cancel()
 	<-serverDone
@@ -165,7 +166,7 @@ func TestHTTPHandlerUsesStatelessStreamableServer(t *testing.T) {
 	a.Empty(listRecorder.Header().Get("Mcp-Session-Id"))
 	a.Contains(listRecorder.Body.String(), tools.HealthVersionToolName)
 	for name, auth := range tools.ToolAuthorizations {
-		if auth.MutationClass == "write" {
+		if auth.MutationClass != "read_only" {
 			a.NotContains(listRecorder.Body.String(), name)
 		}
 	}

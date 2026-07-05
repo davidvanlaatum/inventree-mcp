@@ -144,6 +144,37 @@ func TestWriteMethodsUseExpectedEndpoints(t *testing.T) {
 				a.Equal("0", body["data"])
 			},
 		},
+		{
+			name: "create stock item decodes array response",
+			call: func(ctx context.Context, client *Client) error {
+				_, err := client.CreateStockItem(ctx, StockItemCreate{
+					Part:     10,
+					Location: 40,
+					Quantity: 7,
+					Status:   dvgoutils.Ptr(10),
+					Batch:    dvgoutils.Ptr("B-1"),
+					Serial:   dvgoutils.Ptr("S-1"),
+					Notes:    dvgoutils.Ptr("initial stock"),
+				})
+				return err
+			},
+			method:   http.MethodPost,
+			path:     "/api/stock/",
+			response: `[{"pk":50,"part":10,"location":40,"quantity":7,"status":10,"batch":"B-1","serial":"S-1","notes":"initial stock"}]`,
+			assert: func(a *assert.Assertions, body map[string]any) {
+				a.Equal(float64(10), body["part"])
+				a.Equal(float64(40), body["location"])
+				a.Equal(float64(7), body["quantity"])
+				a.Equal(float64(10), body["status"])
+				a.Equal("B-1", body["batch"])
+				a.Equal("S-1", body["serial"])
+				a.Equal("initial stock", body["notes"])
+				_, hasCustomer := body["customer"]
+				a.False(hasCustomer)
+				_, hasSalesOrder := body["sales_order"]
+				a.False(hasSalesOrder)
+			},
+		},
 	}
 
 	for _, tt := range tests {

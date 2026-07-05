@@ -62,7 +62,7 @@ Each recipe should preserve omitted fields versus explicit zero/false/empty valu
 - Preferred lookup order: `get_part`, `search_stock_locations`, `search_stock_items` for duplicate detection.
 - Clarify when: location is ambiguous, quantity/status is unclear, or existing stock at the same location may duplicate the requested initial stock.
 - Tool sequence: `search_parts` or `get_part`, `search_stock_locations`, `search_stock_items`, then `create_stock_item`.
-- Planned output when `create_stock_item` is implemented: stock item record and duplicate-detection status.
+- Expected output: created stock item record, or a structured duplicate clarification with candidate stock item IDs and retry values.
 
 ## Attach Datasheet Or Photo
 

@@ -111,8 +111,14 @@ func TestToolReferenceDocumentsRegisteredWriteTools(t *testing.T) {
 		a.Contains(docs, "`"+name+"`")
 		auth, ok := ToolAuthorizations[name]
 		r.True(ok, "missing authorization for %s", name)
-		a.Equal("write", auth.MutationClass)
-		a.Equal([]string{ScopeInventreeWrite}, auth.Scopes)
+		if name == CreateStockItemToolName {
+			a.Equal("operational", auth.MutationClass)
+			a.Equal([]string{ScopeInventreeWrite, ScopeInventreeOperational}, auth.Scopes)
+			a.Contains(docs, "`"+ScopeInventreeOperational+"`")
+		} else {
+			a.Equal("write", auth.MutationClass)
+			a.Equal([]string{ScopeInventreeWrite}, auth.Scopes)
+		}
 	}
 }
 

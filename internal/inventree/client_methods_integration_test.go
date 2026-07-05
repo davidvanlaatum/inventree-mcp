@@ -223,7 +223,13 @@ func TestClientMethodsAgainstInvenTree(t *testing.T) {
 		fixture := newClientMethodFixture(t, shared)
 		location := fixture.ensure(t, testenv.FixtureLocation)
 		part := fixture.ensure(t, testenv.FixturePart)
-		stockItem := createStockItem(t, fixture.client, part.ID, location.ID, 7)
+		stockItem, err := fixture.client.CreateStockItem(ctx, inventree.StockItemCreate{Part: part.ID, Location: location.ID, Quantity: 7})
+		r.NoError(err)
+		r.NotZero(stockItem.PK)
+		r.Equal(part.ID, stockItem.Part)
+		r.NotNil(stockItem.Location)
+		r.Equal(location.ID, *stockItem.Location)
+		r.Equal(float64(7), stockItem.Quantity)
 
 		locations, err := fixture.client.SearchStockLocations(ctx, inventree.SearchQuery{Search: location.Name})
 		r.NoError(err)
@@ -233,7 +239,7 @@ func TestClientMethodsAgainstInvenTree(t *testing.T) {
 		r.NoError(err)
 		r.Equal(location.Name, gotLocation.Name)
 
-		stockItems, err := fixture.client.SearchStockItems(ctx, inventree.StockItemQuery{PartID: part.ID})
+		stockItems, err := fixture.client.SearchStockItems(ctx, inventree.StockItemQuery{PartID: part.ID, LocationID: location.ID})
 		r.NoError(err)
 		r.NotEmpty(stockItems)
 		r.Equal(stockItem.PK, stockItems[0].PK)

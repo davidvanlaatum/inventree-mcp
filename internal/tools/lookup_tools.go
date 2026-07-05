@@ -18,8 +18,9 @@ import (
 )
 
 const (
-	ScopeInventreeRead  = "inventree.read"
-	ScopeInventreeWrite = "inventree.write"
+	ScopeInventreeRead        = "inventree.read"
+	ScopeInventreeWrite       = "inventree.write"
+	ScopeInventreeOperational = "inventree.operational"
 
 	SearchPartsToolName              = "search_parts"
 	GetPartToolName                  = "get_part"
@@ -41,6 +42,7 @@ const (
 	CreateCompanyToolName            = "create_company"
 	CreateSupplierPartToolName       = "create_supplier_part"
 	CreateManufacturerPartToolName   = "create_manufacturer_part"
+	CreateStockItemToolName          = "create_stock_item"
 
 	defaultDownloadMaxBytes int64 = 5 * 1024 * 1024
 	maxDownloadMaxBytes     int64 = 25 * 1024 * 1024
@@ -86,6 +88,7 @@ var writeToolNames = []string{
 	CreateCompanyToolName,
 	CreateSupplierPartToolName,
 	CreateManufacturerPartToolName,
+	CreateStockItemToolName,
 }
 
 var ToolAuthorizations = map[string]ToolAuthorization{
@@ -107,10 +110,16 @@ func init() {
 		}
 	}
 	for _, name := range writeToolNames {
+		scopes := []string{ScopeInventreeWrite}
+		mutationClass := "write"
+		if name == CreateStockItemToolName {
+			scopes = []string{ScopeInventreeWrite, ScopeInventreeOperational}
+			mutationClass = "operational"
+		}
 		ToolAuthorizations[name] = ToolAuthorization{
 			Name:          name,
-			MutationClass: "write",
-			Scopes:        []string{ScopeInventreeWrite},
+			MutationClass: mutationClass,
+			Scopes:        scopes,
 			Annotations:   WriteAnnotations,
 		}
 	}
@@ -527,6 +536,8 @@ func candidateFor(record any) ClarificationCandidate {
 		return ClarificationCandidate{ID: strconv.Itoa(v.PK), Label: v.MPN, Summary: v.Description, URL: fmt.Sprintf("/api/company/part/manufacturer/%d/", v.PK), Fields: map[string]any{"part": v.Part, "manufacturer": v.Manufacturer}}
 	case inventree.StockLocation:
 		return ClarificationCandidate{ID: strconv.Itoa(v.PK), Label: v.Name, Summary: v.Description, URL: fmt.Sprintf("/api/stock/location/%d/", v.PK), Fields: map[string]any{"structural": v.Structural, "external": v.External}}
+	case inventree.StockItem:
+		return ClarificationCandidate{ID: strconv.Itoa(v.PK), Label: fmt.Sprintf("stock item %d", v.PK), URL: fmt.Sprintf("/api/stock/%d/", v.PK), Fields: map[string]any{"part": v.Part, "location": v.Location, "quantity": v.Quantity, "status": v.Status, "serial": v.Serial, "batch": v.Batch}}
 	default:
 		return ClarificationCandidate{ID: fmt.Sprint(record), Label: fmt.Sprint(record)}
 	}

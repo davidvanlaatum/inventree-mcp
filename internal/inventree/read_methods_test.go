@@ -115,11 +115,11 @@ func TestReadMethodsUseExpectedEndpoints(t *testing.T) {
 		{
 			name: "search stock items",
 			call: func(ctx context.Context, client *Client) error {
-				_, err := client.SearchStockItems(ctx, StockItemQuery{PartID: 10, Limit: 8, Offset: 4})
+				_, err := client.SearchStockItems(ctx, StockItemQuery{PartID: 10, LocationID: 40, Limit: 8, Offset: 4})
 				return err
 			},
 			wantPath:  "/api/stock/",
-			wantQuery: url.Values{"part": []string{"10"}, "limit": []string{"8"}, "offset": []string{"4"}},
+			wantQuery: url.Values{"part": []string{"10"}, "location": []string{"40"}, "limit": []string{"8"}, "offset": []string{"4"}},
 			response:  `{"count":1,"next":null,"previous":null,"results":[{"pk":50,"part":10,"quantity":2}]}`,
 		},
 		{

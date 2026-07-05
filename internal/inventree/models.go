@@ -52,6 +52,8 @@ type StockItem struct {
 	Location *int    `json:"location"`
 	Quantity float64 `json:"quantity"`
 	Serial   *string `json:"serial"`
+	Batch    *string `json:"batch"`
+	Notes    *string `json:"notes"`
 	Status   int     `json:"status"`
 }
 
