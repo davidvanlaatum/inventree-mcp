@@ -857,22 +857,27 @@ Target API:
 
 ```go
 func TestIntegration(t *testing.T) {
-    env := testenv.SharedInvenTree(t, testenv.Options{
+    ctx := context.Background()
+    shared, err := testenv.StartSharedInvenTree(ctx, testenv.Options{
         Image: "inventree/inventree:1.4.0",
     })
-
-    client := inventree.NewClient(inventree.Config{
-        BaseURL: env.BaseURL,
-        Auth: inventree.Auth{
-            Scheme: "Token",
-            Token:  env.Token,
-        },
+    require.NoError(t, err)
+    t.Cleanup(func() {
+        require.NoError(t, shared.Close(context.Background()))
     })
 
     t.Run("create part", func(t *testing.T) {
         t.Parallel()
-        run := env.NewRun(t)
-        // Use run.Prefix for all created objects.
+        run, err := shared.NewRun(t)
+        require.NoError(t, err)
+        account, err := shared.Account(ctx, run, testenv.AccountAdmin)
+        require.NoError(t, err)
+        t.Logf("InvenTree test account username=%s run_prefix=%s", account.Username, run.Prefix)
+        client, err := shared.Client(account)
+        require.NoError(t, err)
+        category, err := shared.EnsureFixture(ctx, account, run, testenv.FixtureCategory)
+        require.NoError(t, err)
+        // Use run.Prefix for every created object.
     })
 }
 ```
@@ -883,31 +888,34 @@ Responsibilities:
 - Start the InvenTree services required for realistic API behavior. This may include the server, worker, proxy, and optional Redis/cache depending on the official stable deployment shape.
 - Start containers with deterministic admin credentials.
 - Run any required InvenTree setup, migrations, or startup commands.
-- Create or retrieve API tokens for integration tests, including at least two distinct users/tokens for auth-isolation tests.
+- Create or retrieve per-run InvenTree users and API tokens for integration tests. Each subtest should request its own account before requesting its client or fixtures.
 - Wait until authenticated API calls work before returning.
-- Expose `BaseURL`, `Token`, and cleanup helpers.
-- Seed minimal immutable lookup fixtures for categories, locations, companies, parts, supplier parts, and BOMs.
+- Expose `BaseURL`, `Token`, and environment cleanup helpers.
+- Provide helpers that create run-prefixed lookup fixtures for categories, locations, companies, parts, supplier parts, and BOMs only when a subtest asks for them.
 - Share the container set across subtests while ensuring each subtest uses a unique run prefix.
-- `SharedInvenTree` must be concurrency-safe, usually via `sync.Once` per package or suite. Parent tests must acquire the environment before parallel subtests start.
-- Ensure fixture seeding is idempotent and prefix-isolated for parallel runs.
-- Provide helpers for unique names, fixture lookup, and cleanup where cleanup is safe and useful. Prefix format should be deterministic and collision-resistant, for example `IT_<runid>_<pkg>_<test>_`.
-- Every mutating helper must take a per-test `Run` object and refuse to create or clean up mutable records without the current run prefix. Suite-level cleanup assertions must fail if destructive cleanup would touch unprefixed or foreign-prefixed records.
+- `SharedInvenTree` is owned by a parent suite test: the parent starts the environment once, runs child subtests underneath it, and cleans up only after those subtests complete. Do not add package-level or cross-package environment sharing unless the plan is explicitly changed.
+- Subtests request the InvenTree user account/token, client, and run-scoped fixtures they need. The shared helper must not pre-create unrelated fixtures before subtests start.
+- Ensure fixture helpers are idempotent within a run and prefix-isolated for parallel runs; sibling subtests should not need fixture-level coordination because every account and fixture name carries that subtest's run prefix.
+- Provide helpers for unique names and run-scoped fixture lookup. Prefix format should be deterministic and collision-resistant, for example `IT_<runid>_<pkg>_<test>_`.
+- Every account, mutating, or fixture helper must take a per-test `Run` object and refuse to create records without the current run prefix.
 - Redact admin password and API token from logs and failure output.
 
 Implementation notes:
 
 - Prefer official InvenTree container images.
 - Keep the module internal to avoid committing to a public testing API too early.
-- Use fixed fixture names with a unique test run prefix.
-- Use a package-level suite root or `TestMain` ownership model for shared environment lifecycle. Avoid first-caller-owned teardown for shared containers.
+- Use fixture names with the per-test run prefix.
+- Use a suite-root ownership model for shared environment lifecycle. Avoid first-caller-owned teardown for shared containers.
 - Teardown is owned only by `TestMain` or the suite root. No subtest cleanup may stop shared containers.
 - Cross-package container sharing is out of scope unless explicitly implemented.
 - Validate Testcontainers options before startup and treat them as immutable after the shared environment starts.
 - Use `t.Cleanup` only for per-run artifacts when safe, not for tearing down a shared container set that other subtests may still use.
 - Design integration tests so subtests can call `t.Parallel()` without sharing mutable InvenTree records unless the test explicitly owns those records.
-- Shared fixtures are immutable lookup-only data. Every mutating subtest must create and own its own prefixed records.
+- Run-scoped fixtures are lookup data owned by the subtest's prefix. Every mutating subtest must create and own its own prefixed records.
+- Do not provide shared destructive cleanup helpers for run-scoped records in the disposable Testcontainers environment. Leave data in place by default; tests that truly need cleanup because their data affects later assertions should be non-parallel and own narrowly scoped cleanup locally.
 - Avoid global mutable test data that would make parallel subtests order-dependent.
 - Keep destructive tests scoped to records created by that subtest's unique prefix.
+- Log each generated InvenTree test username with the Go test run prefix so InvenTree logs that include usernames can be traced back to the owning subtest.
 - Keep production credentials and user-provided `INVENTREE_TEST_URL` out of Testcontainers logs.
 - If InvenTree requires multiple services for a realistic setup, wrap them behind one `StartInvenTree` helper rather than leaking container wiring into tests.
 - Integration tests that require the shared InvenTree stack should live in one package or suite for milestone 1 so `GOFLAGS=-trimpath go test -race ./...` starts at most one shared stack. If additional packages need integration coverage, they should call into the same suite entrypoint or remain unit/fake-client tests until cross-package sharing is deliberately designed.

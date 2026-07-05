@@ -271,25 +271,31 @@ Tasks:
 
 ### M1H-S02: Shared Suite Fixtures And Isolation
 
-- Status: `Ready`
+- Status: `Done`
 - Depends on: M1H-S01
-- Scope: add suite-owned container lifecycle, immutable fixtures, run prefixes, and cleanup safety.
+- Scope: add suite-owned container lifecycle, per-run InvenTree test accounts, on-demand run-prefixed fixtures, and mutable-record ownership checks.
+- Validation: `GOFLAGS=-trimpath INVENTREE_TEST_SKIP_DOCKER=1 GOCACHE=/Users/david/Projects/inventree-mcp/.gocache GOMODCACHE=/private/tmp/inventree-mcp-gomodcache go test -race -count=1 ./...` passed; `GOFLAGS=-trimpath INVENTREE_TEST_SKIP_DOCKER=1 GOCACHE=/Users/david/Projects/inventree-mcp/.gocache GOMODCACHE=/private/tmp/inventree-mcp-gomodcache go test -race -covermode atomic -coverpkg ./... -coverprofile /private/tmp/inventree-mcp-cover.out ./...` passed; `GOFLAGS=-trimpath GOCACHE=/Users/david/Projects/inventree-mcp/.gocache GOMODCACHE=/private/tmp/inventree-mcp-gomodcache go test -race ./internal/testenv -run 'Test(StartInvenTreeStack|SharedInvenTreeFixturesAndParallelRuns)$' -count=1` passed with both top-level Docker integration tests marked parallel; focused `-v` Docker validation for `TestSharedInvenTreeFixturesAndParallelRuns` passed and logged both account create/retrieve intent and returned usernames for alpha and beta run prefixes while exercising live category, supplier-part, BOM, and mutable-company paths; `GOFLAGS=-trimpath GOCACHE=/Users/david/Projects/inventree-mcp/.gocache GOMODCACHE=/private/tmp/inventree-mcp-gomodcache go test -race -count=1 ./...` passed with the default Docker-backed Testcontainers stack; `GOFLAGS=-trimpath GOCACHE=/Users/david/Projects/inventree-mcp/.gocache GOMODCACHE=/private/tmp/inventree-mcp-gomodcache go mod tidy -diff` passed; `GOCACHE=/Users/david/Projects/inventree-mcp/.gocache GOMODCACHE=/private/tmp/inventree-mcp-gomodcache GOLANGCI_LINT_CACHE=/Users/david/Projects/inventree-mcp/.golangci-cache golangci-lint run` passed with 0 issues; `git diff --check` passed. Docker-backed validation requires sandbox escalation for the Docker socket.
+- Review: Senior Go Developer, Senior QA / Test Architect, Senior Product Manager, and Senior Infosec Reviewer reviews run. Initial Go/QA/Infosec reviews found account/run mismatch gaps, duplicate-account idempotency gaps, shared destructive cleanup risk, missing BOM fixture coverage, deterministic per-test passwords, and pending task metadata; fixes added account/run binding checks, create-or-retrieve account behavior, random per-account passwords, removed the shared destructive cleanup helper, added unit and live Docker BOM fixture coverage, and updated task metadata. Go final review found no actionable findings. Product and Infosec final reviews only found stale pending review/residual-risk notes; fixed in this note. QA final review requested BOM fixture coverage; fixed with unit and Docker-backed coverage. Focused QA follow-up requested stronger log-filter assertions; fixed by extracting the container-log filter callback and asserting the dropped startup-noise summary plus forwarded lines.
+- Residual risk: per-test accounts are admin-scoped for this Testcontainers helper so read/write permission isolation remains deferred to later auth-isolation work. Run-scoped users, tokens, fixtures, and mutable records are left in the disposable InvenTree environment until container teardown by design. `Environment()` still exposes the bootstrap admin token for setup and low-level testenv assertions; tests should prefer `shared.Account`, `shared.Client`, and run-scoped helpers for normal integration coverage.
 - Acceptance:
   - Parent test acquires environment before parallel subtests.
-  - Every mutating helper requires a `Run` object.
-  - Cleanup refuses unprefixed or foreign-prefixed records.
+  - Subtests request their own InvenTree user account/token, client, and only the run-prefixed fixtures they need.
+  - Every account, mutating, or fixture helper requires a `Run` object.
+  - Shared helpers leave run-scoped records in the disposable environment by default instead of providing destructive cleanup.
+  - Integration tests log generated InvenTree usernames with the owning run prefix for log correlation.
 
 Tasks:
 
-- [ ] Add `SharedInvenTree`.
-- [ ] Add immutable fixture seeding.
-- [ ] Add `Run` prefix format `IT_<runid>_<pkg>_<test>_`.
-- [ ] Add cleanup safety checks.
-- [ ] Add parallel isolation tests.
+- [x] Add `SharedInvenTree`.
+- [x] Add per-run InvenTree test account helpers.
+- [x] Add on-demand run-prefixed fixture helpers.
+- [x] Add `Run` prefix format `IT_<runid>_<pkg>_<test>_`.
+- [x] Add mutable-record ownership checks.
+- [x] Add parallel isolation tests.
 
 ### M1B-S03: Read-Only Client Methods
 
-- Status: `Planned`
+- Status: `Ready`
 - Depends on: M1B-S01, M1B-S02, M1H-S02
 - Scope: implement read-only API methods needed by milestone 1.
 - Acceptance:

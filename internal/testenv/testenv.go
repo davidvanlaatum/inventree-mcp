@@ -64,6 +64,7 @@ type Environment struct {
 
 	containers []testcontainers.Container
 	network    *testcontainers.DockerNetwork
+	httpClient *http.Client
 }
 
 // CleanupFunc tears down a started test environment with a bounded timeout.
@@ -93,11 +94,21 @@ func DefaultOptions() Options {
 func DefaultTestOptions(tb testing.TB) Options {
 	tb.Helper()
 	opts := DefaultOptions()
+	opts.ContainerLogf = filteredContainerLogf(func(format string, args ...any) {
+		tb.Helper()
+		tb.Logf(format, args...)
+	})
+	return opts
+}
+
+func filteredContainerLogf(logf func(format string, args ...any)) func(container string, stream string, line string) {
+	if logf == nil {
+		return nil
+	}
 	migrationsComplete := false
 	skipNextStatement := false
 	droppedLogs := 0
-	opts.ContainerLogf = func(container string, stream string, line string) {
-		tb.Helper()
+	return func(container string, stream string, line string) {
 		if !migrationsComplete && stream == "stdout" && strings.Contains(line, "database migrations completed") {
 			migrationsComplete = true
 		}
@@ -118,12 +129,11 @@ func DefaultTestOptions(tb testing.TB) Options {
 			return
 		}
 		if droppedLogs > 0 {
-			tb.Logf("Dropped %d migration error logs", droppedLogs)
+			logf("Dropped %d migration error logs", droppedLogs)
 			droppedLogs = 0
 		}
-		tb.Logf("container[%s][%s] %s", container, stream, line)
+		logf("container[%s][%s] %s", container, stream, line)
 	}
-	return opts
 }
 
 // CleanupForTest wraps cleanup so it can be passed directly to testing.T.Cleanup.
@@ -193,7 +203,7 @@ func Start(ctx context.Context, opts Options) (*Environment, CleanupFunc, error)
 	ctx, cancel := context.WithTimeout(ctx, opts.StartupTimeout)
 	defer cancel()
 
-	env := &Environment{Image: opts.Image}
+	env := &Environment{Image: opts.Image, httpClient: opts.HTTPClient}
 	var started bool
 	defer func() {
 		if !started {

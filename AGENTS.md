@@ -81,6 +81,6 @@ When picking up an implementation task from `docs/TASKS.md`:
 - Link attachments must not fetch remote bytes and should default to HTTP(S) links without credentials/userinfo.
 - STDIO local file uploads must reject symlink escapes and non-regular files.
 - Blocking Testcontainers integration tests should use an explicit InvenTree version tag, not a digest or floating tag, so the pinned version is readable in config and logs. Latest `inventree/inventree:stable` belongs in a non-blocking canary until schema/provenance updates are applied.
-- Testcontainers integration tests should share a suite-owned container set, use immutable shared fixtures, and create prefixed records for every mutating subtest.
+- Testcontainers integration tests should share a suite-owned container set. Parent tests own the environment lifecycle, and subtests request their own run-scoped InvenTree user/token, client, and only the run-prefixed fixtures they need.
 - Keep GitHub Actions CI, Dependabot, `.pre-commit-config.yaml`, and `.golangci.yml` aligned with the Go module as implementation is added.
 - Keep sales/customer workflows out of the initial implementation unless the plan is explicitly changed.
