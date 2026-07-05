@@ -270,8 +270,8 @@ func (c *Client) SearchManufacturerParts(ctx context.Context, query Manufacturer
 	return listAll[ManufacturerPart](ctx, c, "/api/company/part/manufacturer/", query.values())
 }
 
-func (c *Client) SearchPurchaseOrders(ctx context.Context, query url.Values) ([]PurchaseOrder, error) {
-	return listAll[PurchaseOrder](ctx, c, "/api/order/po/", query)
+func (c *Client) SearchPurchaseOrders(ctx context.Context, query PurchaseOrderQuery) ([]PurchaseOrder, error) {
+	return listAll[PurchaseOrder](ctx, c, "/api/order/po/", query.values())
 }
 
 func (c *Client) GetPurchaseOrder(ctx context.Context, id int) (PurchaseOrder, error) {
@@ -280,8 +280,8 @@ func (c *Client) GetPurchaseOrder(ctx context.Context, id int) (PurchaseOrder, e
 	return out, err
 }
 
-func (c *Client) SearchPurchaseOrderLines(ctx context.Context, query url.Values) ([]PurchaseOrderLineItem, error) {
-	return listAll[PurchaseOrderLineItem](ctx, c, "/api/order/po-line/", query)
+func (c *Client) SearchPurchaseOrderLines(ctx context.Context, query PurchaseOrderLineQuery) ([]PurchaseOrderLineItem, error) {
+	return listAll[PurchaseOrderLineItem](ctx, c, "/api/order/po-line/", query.values())
 }
 
 func (c *Client) get(ctx context.Context, path string, out any) error {

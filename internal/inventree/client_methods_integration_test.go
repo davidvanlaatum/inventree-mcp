@@ -13,13 +13,14 @@ import (
 	"strconv"
 	"testing"
 
+	"github.com/davidvanlaatum/dvgoutils"
 	"github.com/davidvanlaatum/dvgoutils/logging/testhandler"
 	"github.com/davidvanlaatum/inventree-mcp/internal/inventree"
 	"github.com/davidvanlaatum/inventree-mcp/internal/testenv"
 	"github.com/stretchr/testify/require"
 )
 
-func TestReadOnlyClientReads(t *testing.T) {
+func TestClientMethodsAgainstInvenTree(t *testing.T) {
 	r := require.New(t)
 	ctx, _, _ := testhandler.SetupTestHandler(t)
 
@@ -29,7 +30,7 @@ func TestReadOnlyClientReads(t *testing.T) {
 	t.Parallel()
 
 	opts := testenv.DefaultTestOptions(t)
-	t.Logf("starting read-only client integration stack with image %s, expected version %s, expected API %s", opts.Image, opts.ExpectedVersion, opts.ExpectedAPIVersion)
+	t.Logf("starting client method integration stack with image %s, expected version %s, expected API %s", opts.Image, opts.ExpectedVersion, opts.ExpectedAPIVersion)
 	shared, err := testenv.StartSharedInvenTree(ctx, opts)
 	r.NoError(err)
 	r.NotNil(shared)
@@ -40,7 +41,7 @@ func TestReadOnlyClientReads(t *testing.T) {
 	t.Run("part_category", func(t *testing.T) {
 		r := require.New(t)
 		ctx, _, _ := testhandler.SetupTestHandler(t)
-		fixture := newReadOnlyClientFixture(t, shared)
+		fixture := newClientMethodFixture(t, shared)
 		category := fixture.ensure(t, testenv.FixtureCategory)
 		part := fixture.ensure(t, testenv.FixturePart)
 
@@ -64,11 +65,16 @@ func TestReadOnlyClientReads(t *testing.T) {
 	t.Run("company_supplier", func(t *testing.T) {
 		r := require.New(t)
 		ctx, _, _ := testhandler.SetupTestHandler(t)
-		fixture := newReadOnlyClientFixture(t, shared)
+		fixture := newClientMethodFixture(t, shared)
 		supplier := fixture.ensure(t, testenv.FixtureSupplier)
 		manufacturer := fixture.ensure(t, testenv.FixtureManufacturer)
 		part := fixture.ensure(t, testenv.FixturePart)
 		supplierPart := fixture.ensure(t, testenv.FixtureSupplierPart)
+
+		companies, err := fixture.client.SearchCompanies(ctx, inventree.SearchQuery{Search: supplier.Name})
+		r.NoError(err)
+		r.NotEmpty(companies)
+		r.Equal(supplier.ID, companies[0].PK)
 
 		suppliers, err := fixture.client.SearchSuppliers(ctx, inventree.SearchQuery{Search: supplier.Name})
 		r.NoError(err)
@@ -90,12 +96,134 @@ func TestReadOnlyClientReads(t *testing.T) {
 		r.Equal(supplier.ID, supplierParts[0].Supplier)
 	})
 
+	t.Run("writes", func(t *testing.T) {
+		r := require.New(t)
+		ctx, _, _ := testhandler.SetupTestHandler(t)
+		fixture := newClientMethodFixture(t, shared)
+		category := fixture.ensure(t, testenv.FixtureCategory)
+		location := fixture.ensure(t, testenv.FixtureLocation)
+
+		partName, err := fixture.run.Name("part")
+		r.NoError(err)
+		part, err := fixture.client.CreatePart(ctx, inventree.PartCreate{
+			Name:            partName,
+			Description:     "created through client integration test",
+			Category:        dvgoutils.Ptr(category.ID),
+			DefaultLocation: dvgoutils.Ptr(location.ID),
+			Active:          dvgoutils.Ptr(true),
+			Assembly:        dvgoutils.Ptr(false),
+			Purchaseable:    dvgoutils.Ptr(true),
+			Component:       dvgoutils.Ptr(true),
+			Trackable:       dvgoutils.Ptr(false),
+			Virtual:         dvgoutils.Ptr(false),
+		})
+		r.NoError(err)
+		r.NotZero(part.PK)
+		r.Equal(partName, part.Name)
+		r.Equal(category.ID, *part.Category)
+
+		updated, err := fixture.client.UpdatePart(ctx, part.PK, inventree.PatchFields{
+			"description": inventree.Set("updated through client integration test"),
+			"active":      inventree.Set(false),
+		})
+		r.NoError(err)
+		r.Equal(part.PK, updated.PK)
+		r.False(updated.Active)
+		r.Equal("updated through client integration test", updated.Description)
+
+		supplierName, err := fixture.run.Name("supplier")
+		r.NoError(err)
+		supplier, err := fixture.client.CreateCompany(ctx, inventree.CompanyCreate{
+			Name:       supplierName,
+			Currency:   "USD",
+			IsSupplier: true,
+		})
+		r.NoError(err)
+		r.NotZero(supplier.PK)
+		r.True(supplier.IsSupplier)
+
+		manufacturerName, err := fixture.run.Name("mfg")
+		r.NoError(err)
+		manufacturer, err := fixture.client.CreateCompany(ctx, inventree.CompanyCreate{
+			Name:           manufacturerName,
+			Currency:       "USD",
+			IsManufacturer: true,
+		})
+		r.NoError(err)
+		r.NotZero(manufacturer.PK)
+		r.True(manufacturer.IsManufacturer)
+
+		sku, err := fixture.run.Name("sku")
+		r.NoError(err)
+		supplierPart, err := fixture.client.CreateSupplierPart(ctx, inventree.SupplierPartCreate{
+			Part:     part.PK,
+			Supplier: supplier.PK,
+			SKU:      sku,
+			Active:   dvgoutils.Ptr(false),
+		})
+		r.NoError(err)
+		r.NotZero(supplierPart.PK)
+		r.Equal(part.PK, supplierPart.Part)
+		r.Equal(supplier.PK, supplierPart.Supplier)
+		r.False(supplierPart.Active)
+
+		mpn, err := fixture.run.Name("mpn")
+		r.NoError(err)
+		manufacturerPart, err := fixture.client.CreateManufacturerPart(ctx, inventree.ManufacturerPartCreate{
+			Part:         part.PK,
+			Manufacturer: manufacturer.PK,
+			MPN:          dvgoutils.Ptr(mpn),
+		})
+		r.NoError(err)
+		r.NotZero(manufacturerPart.PK)
+		r.Equal(part.PK, manufacturerPart.Part)
+		r.Equal(manufacturer.PK, manufacturerPart.Manufacturer)
+		r.Equal(mpn, manufacturerPart.MPN)
+
+		manufacturerParts, err := fixture.client.SearchManufacturerParts(ctx, inventree.ManufacturerPartQuery{
+			Part:         part.PK,
+			Manufacturer: manufacturer.PK,
+			MPN:          mpn,
+		})
+		r.NoError(err)
+		r.NotEmpty(manufacturerParts)
+		r.Equal(manufacturerPart.PK, manufacturerParts[0].PK)
+	})
+
+	t.Run("helpers", func(t *testing.T) {
+		r := require.New(t)
+		ctx, _, _ := testhandler.SetupTestHandler(t)
+		fixture := newClientMethodFixture(t, shared)
+
+		name, err := fixture.run.Name("company")
+		r.NoError(err)
+		var created inventree.Company
+		r.NoError(fixture.client.Post(ctx, "/api/company/", map[string]any{
+			"name":            name,
+			"currency":        "USD",
+			"is_supplier":     true,
+			"is_manufacturer": false,
+			"is_customer":     false,
+		}, &created))
+		r.NotZero(created.PK)
+		r.Equal(name, created.Name)
+		r.True(created.IsSupplier)
+
+		var updated inventree.Company
+		r.NoError(fixture.client.Patch(ctx, "/api/company/"+strconv.Itoa(created.PK)+"/", inventree.PatchFields{
+			"description": inventree.Set("patched through low-level helper"),
+		}, &updated))
+		r.Equal(created.PK, updated.PK)
+		r.Equal("patched through low-level helper", updated.Description)
+	})
+
 	t.Run("stock", func(t *testing.T) {
 		r := require.New(t)
 		ctx, _, _ := testhandler.SetupTestHandler(t)
-		fixture := newReadOnlyClientFixture(t, shared)
+		fixture := newClientMethodFixture(t, shared)
 		location := fixture.ensure(t, testenv.FixtureLocation)
 		part := fixture.ensure(t, testenv.FixturePart)
+		stockItem := createStockItem(t, fixture.client, part.ID, location.ID, 7)
 
 		locations, err := fixture.client.SearchStockLocations(ctx, inventree.SearchQuery{Search: location.Name})
 		r.NoError(err)
@@ -107,13 +235,18 @@ func TestReadOnlyClientReads(t *testing.T) {
 
 		stockItems, err := fixture.client.SearchStockItems(ctx, inventree.StockItemQuery{PartID: part.ID})
 		r.NoError(err)
-		r.Empty(stockItems)
+		r.NotEmpty(stockItems)
+		r.Equal(stockItem.PK, stockItems[0].PK)
+		r.Equal(part.ID, stockItems[0].Part)
+		r.NotNil(stockItems[0].Location)
+		r.Equal(location.ID, *stockItems[0].Location)
+		r.Equal(float64(7), stockItems[0].Quantity)
 	})
 
 	t.Run("parameter", func(t *testing.T) {
 		r := require.New(t)
 		ctx, _, _ := testhandler.SetupTestHandler(t)
-		fixture := newReadOnlyClientFixture(t, shared)
+		fixture := newClientMethodFixture(t, shared)
 		category := fixture.ensure(t, testenv.FixtureCategory)
 		part := fixture.ensure(t, testenv.FixturePart)
 		template := createParameterTemplate(t, fixture.client, fixture.run, "Resistance", "ohm", "10k,22k")
@@ -161,7 +294,7 @@ func TestReadOnlyClientReads(t *testing.T) {
 	t.Run("attachment", func(t *testing.T) {
 		r := require.New(t)
 		ctx, _, _ := testhandler.SetupTestHandler(t)
-		fixture := newReadOnlyClientFixture(t, shared)
+		fixture := newClientMethodFixture(t, shared)
 		part := fixture.ensure(t, testenv.FixturePart)
 		linkAttachment := createLinkAttachment(t, fixture.client, part.ID, "https://example.test/datasheet.pdf")
 		fileAttachment := createFileAttachment(t, shared.Environment().BaseURL, fixture.account.Token, part.ID, "datasheet.txt", "datasheet bytes")
@@ -185,16 +318,57 @@ func TestReadOnlyClientReads(t *testing.T) {
 		r.Equal(fileAttachment.PK, download.Attachment.PK)
 		r.NotContains(download.SourceURL, "?")
 	})
+
+	t.Run("image", func(t *testing.T) {
+		r := require.New(t)
+		ctx, _, _ := testhandler.SetupTestHandler(t)
+		fixture := newClientMethodFixture(t, shared)
+		part := fixture.ensure(t, testenv.FixturePart)
+		setPartImage(t, shared.Environment().BaseURL, fixture.account.Token, part.ID, "part-image.png", tinyPNG())
+
+		download, err := fixture.client.DownloadPartImage(ctx, part.ID, inventree.AttachmentContentOriginal, 1024)
+		r.NoError(err)
+		r.Equal(tinyPNG(), download.Content)
+		r.Equal(part.ID, download.Part.PK)
+		r.Contains(download.ContentType, "image/png")
+		r.NotContains(download.SourceURL, "?")
+	})
+
+	t.Run("po", func(t *testing.T) {
+		r := require.New(t)
+		ctx, _, _ := testhandler.SetupTestHandler(t)
+		fixture := newClientMethodFixture(t, shared)
+		supplier := fixture.ensure(t, testenv.FixtureSupplier)
+		supplierPart := fixture.ensure(t, testenv.FixtureSupplierPart)
+		order := createPurchaseOrder(t, fixture.client, supplier.ID)
+		line := createPurchaseOrderLine(t, fixture.client, order.PK, supplierPart.ID, 3)
+
+		orders, err := fixture.client.SearchPurchaseOrders(ctx, inventree.PurchaseOrderQuery{Supplier: supplier.ID})
+		r.NoError(err)
+		r.NotEmpty(orders)
+		r.Contains(purchaseOrderIDs(orders), order.PK)
+
+		gotOrder, err := fixture.client.GetPurchaseOrder(ctx, order.PK)
+		r.NoError(err)
+		r.Equal(order.PK, gotOrder.PK)
+		r.Equal(order.Reference, gotOrder.Reference)
+		r.Equal(supplier.ID, gotOrder.Supplier)
+
+		lines, err := fixture.client.SearchPurchaseOrderLines(ctx, inventree.PurchaseOrderLineQuery{Order: order.PK})
+		r.NoError(err)
+		r.NotEmpty(lines)
+		r.Contains(purchaseOrderLineIDs(lines), line.PK)
+	})
 }
 
-type readOnlyClientFixture struct {
+type clientMethodFixture struct {
 	shared  *testenv.SharedInvenTree
 	run     *testenv.Run
 	account *testenv.Account
 	client  *inventree.Client
 }
 
-func newReadOnlyClientFixture(t *testing.T, shared *testenv.SharedInvenTree) readOnlyClientFixture {
+func newClientMethodFixture(t *testing.T, shared *testenv.SharedInvenTree) clientMethodFixture {
 	t.Helper()
 	r := require.New(t)
 	ctx, _, _ := testhandler.SetupTestHandler(t)
@@ -206,7 +380,7 @@ func newReadOnlyClientFixture(t *testing.T, shared *testenv.SharedInvenTree) rea
 	client, err := shared.Client(account)
 	r.NoError(err)
 
-	return readOnlyClientFixture{
+	return clientMethodFixture{
 		shared:  shared,
 		run:     run,
 		account: account,
@@ -214,7 +388,7 @@ func newReadOnlyClientFixture(t *testing.T, shared *testenv.SharedInvenTree) rea
 	}
 }
 
-func (f readOnlyClientFixture) ensure(t *testing.T, kind testenv.FixtureKind) testenv.FixtureRecord {
+func (f clientMethodFixture) ensure(t *testing.T, kind testenv.FixtureKind) testenv.FixtureRecord {
 	t.Helper()
 	r := require.New(t)
 	ctx, _, _ := testhandler.SetupTestHandler(t)
@@ -321,10 +495,131 @@ func createFileAttachment(t *testing.T, baseURL string, token string, partID int
 	return created
 }
 
+func setPartImage(t *testing.T, baseURL string, token string, partID int, filename string, content []byte) {
+	t.Helper()
+	r := require.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	fileWriter, err := writer.CreateFormFile("image", filename)
+	r.NoError(err)
+	_, err = fileWriter.Write(content)
+	r.NoError(err)
+	r.NoError(writer.Close())
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPatch, baseURL+"/api/part/"+strconv.Itoa(partID)+"/", &body)
+	r.NoError(err)
+	req.Header.Set("Authorization", "Token "+token)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	req.Header.Set("Accept", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	r.NoError(err)
+	defer func() {
+		r.NoError(resp.Body.Close())
+	}()
+	if resp.StatusCode != http.StatusOK {
+		body, err := io.ReadAll(resp.Body)
+		r.NoError(err)
+		r.Failf("part image upload failed", "status %d body %s", resp.StatusCode, string(body))
+	}
+}
+
+func createPurchaseOrder(t *testing.T, client *inventree.Client, supplierID int) inventree.PurchaseOrder {
+	t.Helper()
+	r := require.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+
+	reference := "PO-" + strconv.Itoa(supplierID)
+	req, err := client.NewRequest(ctx, http.MethodPost, "/api/order/po/", nil, map[string]any{
+		"reference":   reference,
+		"supplier":    supplierID,
+		"description": "Run-scoped integration fixture purchase order",
+	})
+	r.NoError(err)
+	var created inventree.PurchaseOrder
+	r.NoError(client.DoJSON(req, &created))
+	r.NotZero(created.PK)
+	r.Equal(reference, created.Reference)
+	r.Equal(supplierID, created.Supplier)
+	return created
+}
+
+func createPurchaseOrderLine(t *testing.T, client *inventree.Client, orderID int, supplierPartID int, quantity float64) inventree.PurchaseOrderLineItem {
+	t.Helper()
+	r := require.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+
+	req, err := client.NewRequest(ctx, http.MethodPost, "/api/order/po-line/", nil, map[string]any{
+		"order":    orderID,
+		"part":     supplierPartID,
+		"quantity": quantity,
+	})
+	r.NoError(err)
+	var created inventree.PurchaseOrderLineItem
+	r.NoError(client.DoJSON(req, &created))
+	r.NotZero(created.PK)
+	r.Equal(orderID, created.Order)
+	r.Equal(quantity, created.Quantity)
+	return created
+}
+
+func createStockItem(t *testing.T, client *inventree.Client, partID int, locationID int, quantity float64) inventree.StockItem {
+	t.Helper()
+	r := require.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+
+	req, err := client.NewRequest(ctx, http.MethodPost, "/api/stock/", nil, map[string]any{
+		"part":     partID,
+		"location": locationID,
+		"quantity": quantity,
+	})
+	r.NoError(err)
+	var created []inventree.StockItem
+	r.NoError(client.DoJSON(req, &created))
+	r.Len(created, 1)
+	r.NotZero(created[0].PK)
+	r.Equal(partID, created[0].Part)
+	r.NotNil(created[0].Location)
+	r.Equal(locationID, *created[0].Location)
+	r.Equal(quantity, created[0].Quantity)
+	return created[0]
+}
+
 func attachmentIDs(attachments []inventree.Attachment) []int {
 	ids := make([]int, 0, len(attachments))
 	for _, attachment := range attachments {
 		ids = append(ids, attachment.PK)
 	}
 	return ids
+}
+
+func purchaseOrderIDs(orders []inventree.PurchaseOrder) []int {
+	ids := make([]int, 0, len(orders))
+	for _, order := range orders {
+		ids = append(ids, order.PK)
+	}
+	return ids
+}
+
+func purchaseOrderLineIDs(lines []inventree.PurchaseOrderLineItem) []int {
+	ids := make([]int, 0, len(lines))
+	for _, line := range lines {
+		ids = append(ids, line.PK)
+	}
+	return ids
+}
+
+func tinyPNG() []byte {
+	return []byte{
+		0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
+		0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52,
+		0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
+		0x08, 0x06, 0x00, 0x00, 0x00, 0x1f, 0x15, 0xc4,
+		0x89, 0x00, 0x00, 0x00, 0x0a, 0x49, 0x44, 0x41,
+		0x54, 0x78, 0x9c, 0x63, 0x00, 0x01, 0x00, 0x00,
+		0x05, 0x00, 0x01, 0x0d, 0x0a, 0x2d, 0xb4, 0x00,
+		0x00, 0x00, 0x00, 0x49, 0x45, 0x4e, 0x44, 0xae,
+		0x42, 0x60, 0x82,
+	}
 }
