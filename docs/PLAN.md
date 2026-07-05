@@ -193,7 +193,7 @@ For SDK `v1.6.1`, `TokenVerifier` has the shape `func(context.Context, string, *
 
 ## Releases And Packages
 
-Releases are tag-driven through GitHub Actions and GoReleaser. Pushing a `vX.X.X` tag runs `.github/workflows/release.yml`, executes `go test ./...`, and publishes a GitHub release with checksums, Linux/macOS/Windows binary archives for `amd64` and `arm64`, and Linux `deb`, `rpm`, and `apk` packages.
+Releases are tag-driven through GitHub Actions and GoReleaser. Pushing a `vX.X.X` tag runs `.github/workflows/release.yml`, executes `GOFLAGS=-trimpath go test -v -race ./...`, and publishes a GitHub release with checksums, Linux/macOS/Windows binary archives for `amd64` and `arm64`, and Linux `deb`, `rpm`, and `apk` packages.
 
 The Linux packages install the `inventree-mcp` binary to `/usr/bin`, install `packaging/systemd/inventree-mcp.service` as `inventree-mcp.service`, and install `/etc/inventree-mcp/inventree-mcp.env` as a noreplace configuration file. Package maintainer scripts reload systemd and restart the service only when it is already enabled or active. The `apk` package carries the same files for artifact parity; Alpine/OpenRC service management is not implemented in the first release package.
 
@@ -760,7 +760,7 @@ Stock movement, purchase receiving, build allocation, and build completion shoul
 
 Validation:
 
-- `go test ./...`
+- `GOFLAGS=-trimpath go test -race ./...`
 - Manual MCP STDIO smoke test.
 - Manual HTTP initialize/list-tools smoke test.
 - Test that listed tools expose the expected mutation metadata.
@@ -910,8 +910,8 @@ Implementation notes:
 - Keep destructive tests scoped to records created by that subtest's unique prefix.
 - Keep production credentials and user-provided `INVENTREE_TEST_URL` out of Testcontainers logs.
 - If InvenTree requires multiple services for a realistic setup, wrap them behind one `StartInvenTree` helper rather than leaking container wiring into tests.
-- Integration tests that require the shared InvenTree stack should live in one package or suite for milestone 1 so `go test ./...` starts at most one shared stack. If additional packages need integration coverage, they should call into the same suite entrypoint or remain unit/fake-client tests until cross-package sharing is deliberately designed.
-- Invocation contract: `go test ./...` starts the pinned Testcontainers InvenTree stack by default. Local and CI runs may explicitly exclude Docker-backed integration tests with `INVENTREE_TEST_SKIP_DOCKER=1` or `go test -short`; otherwise missing Docker or failed container startup fails the test.
+- Integration tests that require the shared InvenTree stack should live in one package or suite for milestone 1 so `GOFLAGS=-trimpath go test -race ./...` starts at most one shared stack. If additional packages need integration coverage, they should call into the same suite entrypoint or remain unit/fake-client tests until cross-package sharing is deliberately designed.
+- Invocation contract: `GOFLAGS=-trimpath go test -race ./...` starts the pinned Testcontainers InvenTree stack by default. Local and CI runs may explicitly exclude Docker-backed integration tests with `INVENTREE_TEST_SKIP_DOCKER=1` or `GOFLAGS=-trimpath go test -race -short`; otherwise missing Docker or failed container startup fails the test.
 
 ### Phase 6: Integration Happy Paths
 
@@ -1022,11 +1022,11 @@ Test suite classes:
 
 | Suite | Command | Purpose |
 | --- | --- | --- |
-| Default | `go test ./...` | Unit, contract, docs, and default-on pinned Testcontainers integration tests. |
-| Unit-only | `INVENTREE_TEST_SKIP_DOCKER=1 go test ./...` or `go test -short ./...` | Fast tests with Docker-backed integration explicitly excluded. |
-| Contract/docs | `INVENTREE_TEST_SKIP_DOCKER=1 go test ./...` plus generated manifest checks | Tool annotations, scopes, schema references, and documentation drift without starting Docker. |
-| HTTP auth | `go test ./internal/server/... ./internal/oauth/...` | OAuth metadata, bearer challenge, token envelopes, and scope guards using fakes. |
-| Integration | `go test ./internal/testenv ./internal/integration/...` | Shared Testcontainers suite with pinned version-tag/schema pair. |
+| Default | `GOFLAGS=-trimpath go test -race ./...` | Unit, contract, docs, and default-on pinned Testcontainers integration tests. |
+| Unit-only | `GOFLAGS=-trimpath INVENTREE_TEST_SKIP_DOCKER=1 go test -race ./...` or `GOFLAGS=-trimpath go test -race -short ./...` | Fast tests with Docker-backed integration explicitly excluded. |
+| Contract/docs | `GOFLAGS=-trimpath INVENTREE_TEST_SKIP_DOCKER=1 go test -race ./...` plus generated manifest checks | Tool annotations, scopes, schema references, and documentation drift without starting Docker. |
+| HTTP auth | `GOFLAGS=-trimpath go test -race ./internal/server/... ./internal/oauth/...` | OAuth metadata, bearer challenge, token envelopes, and scope guards using fakes. |
+| Integration | `GOFLAGS=-trimpath go test -race ./internal/testenv ./internal/integration/...` | Shared Testcontainers suite with pinned version-tag/schema pair. |
 | Stable canary | CI-specific `inventree/inventree:stable` integration run | Non-blocking latest-stable compatibility and schema drift signal. |
 
 ## Required Test Matrix
@@ -1152,7 +1152,7 @@ Blocking milestone tests:
 
 Milestone test classification:
 
-- Blocking tests must have deterministic local execution paths. Docker-backed integration tests run by default and can be explicitly excluded for unit-only, fast, or Docker-unavailable runs with `INVENTREE_TEST_SKIP_DOCKER=1` or `go test -short`.
+- Blocking tests must have deterministic local execution paths. Docker-backed integration tests run by default and can be explicitly excluded for unit-only, fast, or Docker-unavailable runs with `INVENTREE_TEST_SKIP_DOCKER=1` or `GOFLAGS=-trimpath go test -race -short`.
 - Non-blocking tests may cover optional live external InvenTree instances, canary compatibility checks, and extended stress runs.
 - Future tests must be tied to deferred scope such as sales workflows, return orders, transfer orders, company primary images, and build attachment support.
 - Future image/file tests must cover deferred surfaces only when they enter scope, including notes image upload, generated report attachments, and stock test-result attachments.
