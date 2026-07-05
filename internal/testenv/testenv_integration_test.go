@@ -19,17 +19,12 @@ func TestStartInvenTreeStack(t *testing.T) {
 		t.Skipf("Docker-backed InvenTree integration test excluded by %s or -short", EnvSkipDocker)
 	}
 
-	opts := DefaultOptions()
-	opts.ContainerLogf = func(container string, stream string, line string) {
-		t.Logf("container[%s][%s] %s", container, stream, line)
-	}
+	opts := DefaultTestOptions(t)
 	t.Logf("starting InvenTree integration stack with image %s, expected version %s, expected API %s", opts.Image, opts.ExpectedVersion, opts.ExpectedAPIVersion)
-	env, err := Start(ctx, opts)
+	env, cleanup, err := Start(ctx, opts)
 	r.NoError(err)
 	r.NotNil(env)
-	t.Cleanup(func() {
-		r.NoError(closeWithTimeout(env))
-	})
+	t.Cleanup(CleanupForTest(t, cleanup))
 
 	r.Equal(DefaultInvenTreeImage, env.Image)
 	r.Equal(DefaultVersion, env.Version)

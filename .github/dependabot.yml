@@ -4,6 +4,11 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    groups:
+      testcontainers-go:
+        patterns:
+          - github.com/testcontainers/testcontainers-go
+          - github.com/testcontainers/testcontainers-go/modules/*
   - package-ecosystem: github-actions
     directory: /
     schedule:

@@ -28,6 +28,16 @@ func TestDefaultOptionsPinInvenTreeVersion(t *testing.T) {
 	a.NoError(ValidateOptions(opts))
 }
 
+func TestDefaultTestOptionsForwardsContainerLogs(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+
+	opts := DefaultTestOptions(t)
+
+	r.NotNil(opts.ContainerLogf)
+	opts.ContainerLogf("inventree", "stdout", "ready")
+}
+
 func TestValidateOptionsRejectsFloatingOrAmbiguousImages(t *testing.T) {
 	t.Parallel()
 

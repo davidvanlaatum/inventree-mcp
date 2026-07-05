@@ -9,6 +9,7 @@ import (
 	"net/netip"
 	"strings"
 	"sync"
+	"testing"
 	"time"
 
 	"github.com/davidvanlaatum/inventree-mcp/internal/inventree"
@@ -65,6 +66,9 @@ type Environment struct {
 	network    *testcontainers.DockerNetwork
 }
 
+// CleanupFunc tears down a started test environment with a bounded timeout.
+type CleanupFunc func() error
+
 type versionResponse struct {
 	Version struct {
 		Server string `json:"server"`
@@ -82,6 +86,31 @@ func DefaultOptions() Options {
 		ExpectedVersion:    DefaultVersion,
 		ExpectedAPIVersion: DefaultAPIVersion,
 		StartupTimeout:     3 * time.Minute,
+	}
+}
+
+// DefaultTestOptions returns default options with container logs forwarded to tb.
+func DefaultTestOptions(tb testing.TB) Options {
+	tb.Helper()
+	opts := DefaultOptions()
+	opts.ContainerLogf = func(container string, stream string, line string) {
+		tb.Helper()
+		tb.Logf("container[%s][%s] %s", container, stream, line)
+	}
+	return opts
+}
+
+// CleanupForTest wraps cleanup so it can be passed directly to testing.T.Cleanup.
+func CleanupForTest(tb testing.TB, cleanup CleanupFunc) func() {
+	tb.Helper()
+	return func() {
+		tb.Helper()
+		if cleanup == nil {
+			return
+		}
+		if err := cleanup(); err != nil {
+			tb.Errorf("clean up InvenTree test environment: %v", err)
+		}
 	}
 }
 
@@ -114,7 +143,7 @@ func ValidateOptions(opts Options) error {
 	return errors.Join(errs...)
 }
 
-func Start(ctx context.Context, opts Options) (*Environment, error) {
+func Start(ctx context.Context, opts Options) (*Environment, CleanupFunc, error) {
 	if opts.Image == "" {
 		opts.Image = DefaultInvenTreeImage
 	}
@@ -132,7 +161,7 @@ func Start(ctx context.Context, opts Options) (*Environment, error) {
 	}
 	containerLogf := synchronizedContainerLogf(opts.ContainerLogf)
 	if err := ValidateOptions(opts); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	ctx, cancel := context.WithTimeout(ctx, opts.StartupTimeout)
@@ -148,7 +177,7 @@ func Start(ctx context.Context, opts Options) (*Environment, error) {
 
 	nw, err := tcnetwork.New(ctx, tcnetwork.WithDriver("bridge"))
 	if err != nil {
-		return nil, fmt.Errorf("create InvenTree test network: %w", err)
+		return nil, nil, fmt.Errorf("create InvenTree test network: %w", err)
 	}
 	env.network = nw
 
@@ -163,12 +192,12 @@ func Start(ctx context.Context, opts Options) (*Environment, error) {
 	postgresOpts = appendContainerLogConsumer(postgresOpts, "postgres", containerLogf)
 	pg, err := postgres.Run(ctx, defaultPostgresImage, postgresOpts...)
 	if err != nil {
-		return nil, fmt.Errorf("start InvenTree postgres: %w", err)
+		return nil, nil, fmt.Errorf("start InvenTree postgres: %w", err)
 	}
 	env.containers = append(env.containers, pg)
 	dbHost, err := pg.ContainerIP(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("resolve InvenTree postgres IP: %w", err)
+		return nil, nil, fmt.Errorf("resolve InvenTree postgres IP: %w", err)
 	}
 
 	redisOpts := []testcontainers.ContainerCustomizer{
@@ -179,12 +208,12 @@ func Start(ctx context.Context, opts Options) (*Environment, error) {
 	redisOpts = appendContainerLogConsumer(redisOpts, "redis", containerLogf)
 	redis, err := testcontainers.Run(ctx, defaultRedisImage, redisOpts...)
 	if err != nil {
-		return nil, fmt.Errorf("start InvenTree redis: %w", err)
+		return nil, nil, fmt.Errorf("start InvenTree redis: %w", err)
 	}
 	env.containers = append(env.containers, redis)
 	cacheHost, err := redis.ContainerIP(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("resolve InvenTree redis IP: %w", err)
+		return nil, nil, fmt.Errorf("resolve InvenTree redis IP: %w", err)
 	}
 
 	serverOpts := []testcontainers.ContainerCustomizer{
@@ -203,39 +232,41 @@ func Start(ctx context.Context, opts Options) (*Environment, error) {
 	serverOpts = appendContainerLogConsumer(serverOpts, "inventree", containerLogf)
 	server, err := testcontainers.Run(ctx, opts.Image, serverOpts...)
 	if err != nil {
-		return nil, fmt.Errorf("start InvenTree server: %w", err)
+		return nil, nil, fmt.Errorf("start InvenTree server: %w", err)
 	}
 	env.containers = append(env.containers, server)
 
 	baseURL, err := server.PortEndpoint(ctx, defaultWebPort, "http")
 	if err != nil {
-		return nil, fmt.Errorf("resolve InvenTree endpoint: %w", err)
+		return nil, nil, fmt.Errorf("resolve InvenTree endpoint: %w", err)
 	}
 	env.BaseURL = strings.TrimRight(baseURL, "/")
 
 	version, err := fetchVersion(ctx, opts.HTTPClient, env.BaseURL, defaultAdminUser, defaultAdminPassword)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	apiVersion := fmt.Sprintf("%d", version.Version.API)
 	if version.Version.Server != opts.ExpectedVersion || apiVersion != opts.ExpectedAPIVersion {
-		return nil, fmt.Errorf("InvenTree runtime version mismatch: got version %q API %q, want version %q API %q", version.Version.Server, apiVersion, opts.ExpectedVersion, opts.ExpectedAPIVersion)
+		return nil, nil, fmt.Errorf("InvenTree runtime version mismatch: got version %q API %q, want version %q API %q", version.Version.Server, apiVersion, opts.ExpectedVersion, opts.ExpectedAPIVersion)
 	}
 	env.Version = version.Version.Server
 	env.APIVersion = apiVersion
 
 	token, err := createToken(ctx, opts.HTTPClient, env.BaseURL, defaultAdminUser, defaultAdminPassword)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	env.Token = token
 
 	if err := proveToken(ctx, env.BaseURL, token, opts.HTTPClient); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	started = true
-	return env, nil
+	return env, func() error {
+		return closeWithTimeout(env)
+	}, nil
 }
 
 func (e *Environment) Close(ctx context.Context) error {
