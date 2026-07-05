@@ -570,28 +570,6 @@ func createPurchaseOrderLine(t *testing.T, client *inventree.Client, orderID int
 	return created
 }
 
-func createStockItem(t *testing.T, client *inventree.Client, partID int, locationID int, quantity float64) inventree.StockItem {
-	t.Helper()
-	r := require.New(t)
-	ctx, _, _ := testhandler.SetupTestHandler(t)
-
-	req, err := client.NewRequest(ctx, http.MethodPost, "/api/stock/", nil, map[string]any{
-		"part":     partID,
-		"location": locationID,
-		"quantity": quantity,
-	})
-	r.NoError(err)
-	var created []inventree.StockItem
-	r.NoError(client.DoJSON(req, &created))
-	r.Len(created, 1)
-	r.NotZero(created[0].PK)
-	r.Equal(partID, created[0].Part)
-	r.NotNil(created[0].Location)
-	r.Equal(locationID, *created[0].Location)
-	r.Equal(quantity, created[0].Quantity)
-	return created[0]
-}
-
 func attachmentIDs(attachments []inventree.Attachment) []int {
 	ids := make([]int, 0, len(attachments))
 	for _, attachment := range attachments {
