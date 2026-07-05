@@ -3,7 +3,6 @@ package tools
 import (
 	"context"
 	"net/http"
-	"net/url"
 	"testing"
 
 	"github.com/davidvanlaatum/dvgoutils/logging/testhandler"
@@ -337,8 +336,8 @@ type fakeMilestoneLookupClient struct {
 	lastSearchStockLocationsQuery     inventree.SearchQuery
 	lastSearchStockItemsQuery         inventree.StockItemQuery
 	lastListAttachmentsQuery          inventree.AttachmentQuery
-	lastSearchSupplierPartsQuery      url.Values
-	lastSearchManufacturerPartsQuery  url.Values
+	lastSearchSupplierPartsQuery      inventree.SupplierPartQuery
+	lastSearchManufacturerPartsQuery  inventree.ManufacturerPartQuery
 	lastCreatePart                    inventree.PartCreate
 	lastCreateCompany                 inventree.CompanyCreate
 	lastCreateSupplierPart            inventree.SupplierPartCreate
@@ -439,7 +438,7 @@ func (f *fakeMilestoneLookupClient) UpdatePart(_ context.Context, id int, fields
 	return inventree.Part{PK: id}, nil
 }
 
-func (f *fakeMilestoneLookupClient) SearchSupplierParts(_ context.Context, query url.Values) ([]inventree.SupplierPart, error) {
+func (f *fakeMilestoneLookupClient) SearchSupplierParts(_ context.Context, query inventree.SupplierPartQuery) ([]inventree.SupplierPart, error) {
 	f.lastSearchSupplierPartsQuery = query
 	return f.supplierParts, nil
 }
@@ -450,7 +449,7 @@ func (f *fakeMilestoneLookupClient) CreateSupplierPart(_ context.Context, input 
 	return inventree.SupplierPart{PK: 40, Part: input.Part, Supplier: input.Supplier, SKU: input.SKU}, nil
 }
 
-func (f *fakeMilestoneLookupClient) SearchManufacturerParts(_ context.Context, query url.Values) ([]inventree.ManufacturerPart, error) {
+func (f *fakeMilestoneLookupClient) SearchManufacturerParts(_ context.Context, query inventree.ManufacturerPartQuery) ([]inventree.ManufacturerPart, error) {
 	f.lastSearchManufacturerPartsQuery = query
 	return f.manufacturerParts, nil
 }

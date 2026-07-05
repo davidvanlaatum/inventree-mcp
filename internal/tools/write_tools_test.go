@@ -1,7 +1,6 @@
 package tools
 
 import (
-	"net/url"
 	"reflect"
 	"strings"
 	"testing"
@@ -247,7 +246,7 @@ func TestCreateSupplierAndManufacturerPartsAskBeforeDuplicate(t *testing.T) {
 	r.NoError(err)
 	a.Equal(StatusClarificationRequired, supplierOutput.Status)
 	a.Equal("supplier_part_id", supplierOutput.Clarification.Retry)
-	a.Equal(url.Values{"part": []string{"10"}, "supplier": []string{"30"}, "SKU": []string{"SKU-1"}}, fakeSupplier.lastSearchSupplierPartsQuery)
+	a.Equal(inventree.SupplierPartQuery{Part: 10, Supplier: 30, SKU: "SKU-1"}, fakeSupplier.lastSearchSupplierPartsQuery)
 	a.False(fakeSupplier.createdSupplierPart)
 
 	fakeManufacturer := &fakeMilestoneLookupClient{
@@ -257,7 +256,7 @@ func TestCreateSupplierAndManufacturerPartsAskBeforeDuplicate(t *testing.T) {
 	r.NoError(err)
 	a.Equal(StatusClarificationRequired, manufacturerOutput.Status)
 	a.Equal("manufacturer_part_id", manufacturerOutput.Clarification.Retry)
-	a.Equal(url.Values{"part": []string{"10"}, "manufacturer": []string{"31"}, "MPN": []string{"MPN-1"}}, fakeManufacturer.lastSearchManufacturerPartsQuery)
+	a.Equal(inventree.ManufacturerPartQuery{Part: 10, Manufacturer: 31, MPN: "MPN-1"}, fakeManufacturer.lastSearchManufacturerPartsQuery)
 	a.False(fakeManufacturer.createdManufacturerPart)
 }
 

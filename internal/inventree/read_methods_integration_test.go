@@ -83,7 +83,7 @@ func TestReadOnlyClientReads(t *testing.T) {
 		r.Equal(manufacturer.ID, manufacturers[0].PK)
 		r.True(manufacturers[0].IsManufacturer)
 
-		supplierParts, err := fixture.client.SearchSupplierParts(ctx, url.Values{"SKU": []string{supplierPart.Name}})
+		supplierParts, err := fixture.client.SearchSupplierParts(ctx, inventree.SupplierPartQuery{SKU: supplierPart.Name})
 		r.NoError(err)
 		r.NotEmpty(supplierParts)
 		r.Equal(supplierPart.ID, supplierParts[0].PK)

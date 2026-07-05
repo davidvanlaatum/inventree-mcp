@@ -2,8 +2,6 @@ package tools
 
 import (
 	"context"
-	"net/url"
-	"strconv"
 
 	"github.com/davidvanlaatum/inventree-mcp/internal/inventree"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -21,12 +19,12 @@ type CompanyWriteClient interface {
 }
 
 type SupplierPartWriteClient interface {
-	SearchSupplierParts(context.Context, url.Values) ([]inventree.SupplierPart, error)
+	SearchSupplierParts(context.Context, inventree.SupplierPartQuery) ([]inventree.SupplierPart, error)
 	CreateSupplierPart(context.Context, inventree.SupplierPartCreate) (inventree.SupplierPart, error)
 }
 
 type ManufacturerPartWriteClient interface {
-	SearchManufacturerParts(context.Context, url.Values) ([]inventree.ManufacturerPart, error)
+	SearchManufacturerParts(context.Context, inventree.ManufacturerPartQuery) ([]inventree.ManufacturerPart, error)
 	CreateManufacturerPart(context.Context, inventree.ManufacturerPartCreate) (inventree.ManufacturerPart, error)
 }
 
@@ -213,10 +211,7 @@ func createSupplierPart(deps Dependencies) mcp.ToolHandlerFor[CreateSupplierPart
 			if input.ManufacturerPartID != nil && *input.ManufacturerPartID <= 0 {
 				return hardClarification[inventree.SupplierPart]("Which manufacturer part should be linked to this supplier part?", "manufacturer_part_id", "manufacturer_part_id must be positive when provided", "manufacturer_part_id", map[string]any{"manufacturer_part_id": *input.ManufacturerPartID})
 			}
-			query := url.Values{"part": []string{strconv.Itoa(input.PartID)}, "supplier": []string{strconv.Itoa(input.SupplierID)}}
-			if input.SKU != "" {
-				query.Set("SKU", input.SKU)
-			}
+			query := inventree.SupplierPartQuery{Part: input.PartID, Supplier: input.SupplierID, SKU: input.SKU}
 			records, err := client.SearchSupplierParts(ctx, query)
 			if err != nil {
 				return nil, WriteRecordOutput[inventree.SupplierPart]{}, err
@@ -250,9 +245,9 @@ func createManufacturerPart(deps Dependencies) mcp.ToolHandlerFor[CreateManufact
 			if input.ManufacturerID <= 0 {
 				return hardClarification[inventree.ManufacturerPart]("Which manufacturer should be linked to the part?", "manufacturer", "create_manufacturer_part requires a positive manufacturer_id", "manufacturer_id", map[string]any{"manufacturer_id": input.ManufacturerID})
 			}
-			query := url.Values{"part": []string{strconv.Itoa(input.PartID)}, "manufacturer": []string{strconv.Itoa(input.ManufacturerID)}}
+			query := inventree.ManufacturerPartQuery{Part: input.PartID, Manufacturer: input.ManufacturerID}
 			if input.MPN != nil {
-				query.Set("MPN", *input.MPN)
+				query.MPN = *input.MPN
 			}
 			records, err := client.SearchManufacturerParts(ctx, query)
 			if err != nil {
