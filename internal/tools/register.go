@@ -20,6 +20,7 @@ type HealthVersionOutput struct {
 
 func Register(server *mcp.Server, deps Dependencies) {
 	registerHealthVersion(server, deps)
+	registerPrompts(server)
 	registerLookupTools(server, deps)
 	if deps.EnableWriteTools {
 		registerWriteTools(server, deps)

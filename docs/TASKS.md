@@ -71,7 +71,7 @@ Before `M1C-S04` is complete, mutating, operational, destructive, and upload too
 | [M1F-S03](#m1f-s03-primary-part-image) | Add part primary image download and assignment/replacement. | Planned |
 | [M1G-S01](#m1g-s01-part-upsert-workflow) | Add safer part upsert workflow with supplier/manufacturer data. | Done |
 | [M1G-S02](#m1g-s02-initial-stock-and-purchase-preview-workflows) | Add initial-stock workflow helper and no-write purchase preview. | Done |
-| [M1G-S03](#m1g-s03-milestone-prompts) | Add milestone 1 prompts and prompt contract tests. | Planned |
+| [M1G-S03](#m1g-s03-milestone-prompts) | Add milestone 1 prompts and prompt contract tests. | Done |
 | [M1H-S03](#m1h-s03-milestone-integration-happy-paths) | Prove milestone catalog, stock, supplier, attachment, image, and preview happy paths. | Planned |
 | [M1I-S01](#m1i-s01-operator-docs-finalization) | Finalize README, operator recipes, and generated tool reference alignment. | Planned |
 | [M1I-S02](#m1i-s02-final-review-panel) | Run final Go, QA, product, and infosec review panel. | Planned |
@@ -713,9 +713,12 @@ Tasks:
 
 ### M1G-S03: Milestone Prompts
 
-- Status: `Planned`
+- Status: `Done`
 - Depends on: M1D-S01
 - Scope: add milestone 1 prompts and prompt contract tests.
+- Validation: `go test ./internal/tools ./internal/server ./docs` passed; `go test ./... && git diff --check` passed.
+- Review: Senior Go Developer, Senior QA / Test Architect, and Senior Product Manager reviews run because this adds MCP prompt behavior and operator-facing documentation. Initial review found protocol-boundary prompt tests covered only one prompt and did not assert future prompt fetch failures, and attachment/image wording could steer operators toward planned M1F write tools before registration. Fixes added table-driven MCP prompt fetch checks, negative future prompt fetch checks, current-versus-planned attachment/image wording, a separate planned M1F attachment/image tool table, and current/planned operator recipe sequences. Focused QA and product reruns found no remaining actionable prompt behavior findings; QA also flagged the new prompt files must be included in publication, which is addressed by staging the complete change.
+- Residual risk: prompt checklists are static guidance and do not inspect live InvenTree state; tool handlers remain responsible for enforcing clarification, dry-run, duplicate, and write-boundary contracts.
 - Acceptance:
   - Prompts are marked `milestone_1`.
   - Future prompts remain hidden or marked future.
@@ -723,12 +726,12 @@ Tasks:
 
 Tasks:
 
-- [ ] Add `new_part_entry_checklist`.
-- [ ] Add `parameter_reuse_checklist`.
-- [ ] Add `attachment_image_checklist`.
-- [ ] Add `initial_stock_entry_checklist`.
-- [ ] Add `purchase_preview_checklist`.
-- [ ] Add prompt manifest tests.
+- [x] Add `new_part_entry_checklist`.
+- [x] Add `parameter_reuse_checklist`.
+- [x] Add `attachment_image_checklist`.
+- [x] Add `initial_stock_entry_checklist`.
+- [x] Add `purchase_preview_checklist`.
+- [x] Add prompt manifest tests.
 
 ## Milestone 1H: Integration Happy Paths
 

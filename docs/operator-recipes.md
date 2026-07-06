@@ -66,11 +66,13 @@ Each recipe should preserve omitted fields versus explicit zero/false/empty valu
 
 ## Attach Datasheet Or Photo
 
+- Current status: upload, URL-copy, stored-link, metadata update, and delete tools are planned but not registered yet. Use this recipe today only to gather stable target IDs and attachment/image decisions before the M1F attachment tools land.
 - Required inputs: target object type and ID, filename, content type, and exactly one upload source.
 - Accepted sources: inline bytes in any mode; STDIO allowlisted local path; HTTP(S) URL only through `upload_attachment_from_url`; stored link only through `create_link_attachment`.
 - Clarify when: target object is ambiguous, URL intent could mean upload-copy or store-link, duplicate filename/content exists, or source policy rejects the input.
-- Tool sequence: `list_attachments`, then `upload_attachment`, `upload_attachment_from_url`, or `create_link_attachment`.
-- Expected output: attachment ID, target object, filename, size or link classification, content type, and thumbnail/image state when available.
+- Current tool sequence: `list_attachments`, then stop with the stable target ID, existing attachment context, and the explicit upload/link decision for the later M1F tools.
+- Planned M1F tool sequence: `list_attachments`, then `upload_attachment`, `upload_attachment_from_url`, or `create_link_attachment`.
+- Expected output after M1F registration: attachment ID, target object, filename, size or link classification, content type, and thumbnail/image state when available.
 
 ## Download Attachment Content
 
@@ -92,11 +94,13 @@ Each recipe should preserve omitted fields versus explicit zero/false/empty valu
 
 ## Set Or Replace Primary Part Image
 
+- Current status: primary-image replacement is planned but not registered yet. Use this recipe today only to inspect existing attachments/images and collect the explicit replacement decision before the M1F image tools land.
 - Required inputs: part ID and attachment/image ID, plus `confirm:true` when replacing an existing primary image.
 - Preferred lookup order: `list_attachments`, inspect image-capable attachments, then set primary image only when the candidate is unambiguous.
 - Clarify when: multiple images are plausible, the image is already attached elsewhere, or replacement lacks confirmation.
-- Tool sequence: `list_attachments`, optionally upload an image, then `set_primary_image`.
-- Planned output when `set_primary_image` is implemented: part record, selected attachment/image ID, and replacement confirmation status.
+- Current tool sequence: `list_attachments`, inspect current image-capable candidates, then stop with the stable part ID, candidate attachment/image ID, and explicit replacement decision for the later M1F tool.
+- Planned M1F tool sequence: `list_attachments`, optionally upload an image through a registered upload tool, then `set_primary_image`.
+- Expected output after `set_primary_image` is implemented: part record, selected attachment/image ID, and replacement confirmation status.
 
 ## Preview Purchase Order Lines
 
@@ -112,3 +116,10 @@ Each recipe should preserve omitted fields versus explicit zero/false/empty valu
 - Preferred flow: show the exact `question`, candidate IDs/URLs, and retry field to the operator; retry the original tool with the selected stable ID.
 - Clarify when: the operator chooses a free-form value that still does not identify a stable record.
 - Expected output: successful retry or a narrower clarification response.
+
+## Use Prompt Checklists
+
+- Required inputs: one of the registered prompt names: `new_part_entry_checklist`, `parameter_reuse_checklist`, `attachment_image_checklist`, `initial_stock_entry_checklist`, or `purchase_preview_checklist`.
+- Preferred flow: fetch the checklist before starting the workflow, run the listed searches or dry-run planner, show any structured clarification to the operator, and retry with the requested stable IDs.
+- Clarify when: the checklist exposes missing required fields, conflicting supplier/part identity, ambiguous parameter templates, duplicate stock, duplicate attachments, unclear upload/link intent, primary-image replacement without `confirm:true`, or purchase preview lines that do not resolve to exactly one supplier-part link.
+- Expected output: a stable-ID retry request, a dry-run plan for write-capable workflows, a no-write purchase preview, or a structured clarification object. Future prompt names such as `receive_purchase_order_checklist`, `bom_import_review`, and `stocktake_review` are not exposed until their workflows are implemented.

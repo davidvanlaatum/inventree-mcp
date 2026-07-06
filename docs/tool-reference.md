@@ -123,6 +123,24 @@ Tools in this section use milestone status `milestone_1`, MCP annotations `readO
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | `health_version` | Server health | `milestone_1` | `read_only` | `readOnlyHint:true`, `destructiveHint:false`, `idempotentHint:true`, `openWorldHint:false` | None until HTTP OAuth scope enforcement lands | None | Never; returns static server health and build metadata. |
 
+## Registered Prompts
+
+Prompts are static operator checklists registered through the MCP prompt surface. They do not call InvenTree directly and do not replace tool-level clarification responses. Milestone 1 prompts prefer existing records, stable ID retries, dry-run plans, and structured clarification over guessed categories, units, supplier SKUs, manufacturer part numbers, order states, prices, locations, stock status, or quantities.
+
+| Prompt | Milestone status | Purpose | Guardrail |
+| --- | --- | --- | --- |
+| `new_part_entry_checklist` | `milestone_1` | Add or update a purchasable part with supplier/manufacturer context. | Search existing records first, ask for stable IDs on ambiguity, and prefer `upsert_part_with_supplier_and_manufacturer` with `dry_run:true` before writing. |
+| `parameter_reuse_checklist` | `milestone_1` | Reuse existing parameter templates when setting part parameters. | Prefer category-linked templates and ask for `template_id` when same-name templates differ by unit, choices, checkbox behavior, or category link. |
+| `attachment_image_checklist` | `milestone_1` | Prepare current attachment/image reads and planned upload or replacement workflows. | Current milestone reads can list and download schema-exposed content; upload, link, metadata update, delete, and primary-image replacement steps stay planned until those tools are registered. |
+| `initial_stock_entry_checklist` | `milestone_1` | Create initial stock after duplicate preflight. | Resolve stable part/location IDs, require positive quantity, and prefer `create_initial_stock_entry` with `dry_run:true`. |
+| `purchase_preview_checklist` | `milestone_1` | Produce no-write purchase-order line previews. | Validate supplier-part identity and positive quantities; never create purchase orders or purchase-order lines. |
+
+Future prompts remain in the internal prompt manifest with status `future` and are not registered through MCP until their workflows are implemented:
+
+- `receive_purchase_order_checklist`
+- `bom_import_review`
+- `stocktake_review`
+
 ## Milestone 1 Tools
 
 | Tool | Group | Class | Scopes | Upload sources | Ask operator when |
@@ -151,6 +169,12 @@ Tools in this section use milestone status `milestone_1`, MCP annotations `readO
 | `upsert_part_with_supplier_and_manufacturer` | Part workflow | Write | `inventree.write` | None | See Registered Write Tools. |
 | `create_stock_item` | Initial stock | Operational | `inventree.write`, `inventree.operational` | None | Existing stock at the requested location may duplicate the new item. |
 | `create_initial_stock_entry` | Initial stock workflow | Operational | `inventree.write`, `inventree.operational` | None | Part or location search is ambiguous, quantity/status is invalid, or existing stock at the requested location may duplicate the new item. |
+## Planned M1F Attachment And Image Tools
+
+These Milestone 1 tools remain planned and are not registered until the M1F attachment/image stories are implemented.
+
+| Tool | Group | Class | Scopes | Upload sources | Ask operator when |
+| --- | --- | --- | --- | --- | --- |
 | `upload_attachment` | Attachments | Write | `inventree.write`, `inventree.upload` | Inline bytes; STDIO allowlisted local path | Filename/content duplicates an existing attachment without explicit replacement or metadata-update intent. |
 | `upload_attachment_from_url` | Attachments | Write, open-world | `inventree.write`, `inventree.upload` | HTTP(S) URL only | Intent could be upload-copy versus store-link, or URL policy rejects the target. |
 | `create_link_attachment` | Attachments | Write | `inventree.write`, `inventree.upload` | HTTP(S) link only, no fetch | URL has unsupported scheme, credentials/userinfo, local path shape, or allowlist ambiguity. |

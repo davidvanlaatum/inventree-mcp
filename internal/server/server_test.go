@@ -53,6 +53,83 @@ func TestStdioServerCanInitializeAndListTools(t *testing.T) {
 	<-serverDone
 }
 
+func TestStdioServerListsOnlyMilestonePrompts(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	clientTransport, serverTransport := mcp.NewInMemoryTransports()
+	serverDone := make(chan error, 1)
+	go func() {
+		serverDone <- New(tools.Dependencies{}).Run(ctx, serverTransport)
+	}()
+
+	client := mcp.NewClient(&mcp.Implementation{Name: "test-client", Version: "v0.0.0"}, nil)
+	session, err := client.Connect(ctx, clientTransport, nil)
+	r.NoError(err)
+	defer func() {
+		r.NoError(session.Close())
+	}()
+
+	result, err := session.ListPrompts(ctx, nil)
+	r.NoError(err)
+	names := make(map[string]bool, len(result.Prompts))
+	for _, prompt := range result.Prompts {
+		names[prompt.Name] = true
+	}
+
+	expectedPrompts := map[string][]string{
+		tools.NewPartEntryChecklistPromptName: {
+			"dry_run:true",
+			"structured clarification",
+			"stable IDs",
+		},
+		tools.ParameterReuseChecklistPromptName: {
+			"structured clarification",
+			"stable template_id",
+			"Do not create new parameter templates",
+		},
+		tools.AttachmentImageChecklistPromptName: {
+			"structured clarification",
+			"Current milestone reads",
+			"remain planned until their tools are registered",
+		},
+		tools.InitialStockEntryChecklistPromptName: {
+			"dry_run:true",
+			"structured clarification",
+			"stable part_id",
+		},
+		tools.PurchasePreviewChecklistPromptName: {
+			"no-write",
+			"structured clarification",
+			"must not create purchase orders",
+		},
+	}
+	for name, snippets := range expectedPrompts {
+		a.True(names[name], name)
+		prompt, err := session.GetPrompt(ctx, &mcp.GetPromptParams{Name: name})
+		r.NoError(err)
+		r.Len(prompt.Messages, 1)
+		text := prompt.Messages[0].Content.(*mcp.TextContent).Text
+		for _, snippet := range snippets {
+			a.Contains(text, snippet, name)
+		}
+	}
+
+	for _, name := range []string{"receive_purchase_order_checklist", "bom_import_review", "stocktake_review"} {
+		a.False(names[name], name)
+		_, err := session.GetPrompt(ctx, &mcp.GetPromptParams{Name: name})
+		a.Error(err, name)
+	}
+
+	cancel()
+	<-serverDone
+}
+
 func countNonWriteAuthorizations() int {
 	count := 0
 	for _, auth := range tools.ToolAuthorizations {
