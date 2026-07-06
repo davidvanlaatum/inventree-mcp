@@ -66,8 +66,8 @@ Before `M1C-S04` is complete, mutating, operational, destructive, and upload too
 | [M1E-S01](#m1e-s01-part-and-company-writes) | Add part and company write tools. | Done |
 | [M1E-S02](#m1e-s02-parameter-writes) | Add existing-template-only parameter writes. | Done |
 | [M1E-S03](#m1e-s03-initial-stock-writes) | Create initial stock items with duplicate detection. | Done |
-| [M1F-S01](#m1f-s01-upload-source-resolver) | Resolve inline, STDIO local-path, and URL upload sources safely. | Planned |
-| [M1F-S02](#m1f-s02-attachment-tools) | Add attachment download, upload, link, update, and delete tools. | Planned |
+| [M1F-S01](#m1f-s01-upload-source-resolver) | Resolve inline, STDIO local-path, and URL upload sources safely. | Done |
+| [M1F-S02](#m1f-s02-attachment-tools) | Add attachment upload, link, update, and delete tools. | Ready |
 | [M1F-S03](#m1f-s03-primary-part-image) | Add part primary image download and assignment/replacement. | Planned |
 | [M1G-S01](#m1g-s01-part-upsert-workflow) | Add safer part upsert workflow with supplier/manufacturer data. | Done |
 | [M1G-S02](#m1g-s02-initial-stock-and-purchase-preview-workflows) | Add initial-stock workflow helper and no-write purchase preview. | Done |
@@ -586,9 +586,16 @@ Tasks:
 
 ### M1F-S01: Upload Source Resolver
 
-- Status: `Planned`
+- Status: `Done`
 - Depends on: M1A-S02
 - Scope: implement inline bytes, STDIO allowlisted local paths, and URL fetch source handling.
+- Validation:
+  - `go test ./internal/upload` passed.
+  - `go test ./...` passed.
+  - `git diff --check` passed.
+- Review:
+  - Senior Go Developer, Senior QA / Test Architect, Senior Product Manager, and Senior Infosec Reviewer reviews run. Initial Go, QA, and Infosec findings found stale URL tests after secure-dialer changes, an unsafe arbitrary `http.Client` injection seam, missing bounded-read timeout coverage, non-default HTTPS URL allowlist handling during dial checks, and an undocumented local-file OS filesystem time-of-check/time-of-use residual. Product found incomplete validation evidence, pending-review wording, and unclear M1F-S02 remaining scope. Fixes removed arbitrary client injection, made URL fetches use a resolver-backed safe transport with request-scheme-aware dial checks, updated URL tests for allowlisted local listeners, added timeout coverage, documented the local-file residual risk, recorded full validation evidence, and narrowed M1F-S02 wording to the remaining attachment write/upload surface. Focused reruns for Go, QA, Infosec, and Product found no remaining actionable findings.
+- Residual risk: STDIO local-path resolution on `afero.OsFs` still has an OS-level time-of-check/time-of-use race between symlink resolution/policy checks and open. Operators must configure local upload allowlisted roots as trusted, operator-controlled paths that untrusted users cannot write to.
 - Acceptance:
   - HTTP mode rejects local paths before filesystem open/stat.
   - STDIO local path logic uses direct Afero in `internal/upload/local_file.go`.
@@ -599,28 +606,25 @@ Tasks:
 
 Tasks:
 
-- [ ] Add inline byte source resolver.
-- [ ] Add STDIO local file source resolver with Afero.
-- [ ] Add URL fetcher interface and policy.
-- [ ] Add maximum-size and bounded-read enforcement.
-- [ ] Add upload redaction tests.
-- [ ] Add SSRF bypass table tests.
-- [ ] Add local path canonicalization and symlink tests.
+- [x] Add inline byte source resolver.
+- [x] Add STDIO local file source resolver with Afero.
+- [x] Add URL fetcher interface and policy.
+- [x] Add maximum-size and bounded-read enforcement.
+- [x] Add upload redaction tests.
+- [x] Add SSRF bypass table tests.
+- [x] Add local path canonicalization and symlink tests.
 
 ### M1F-S02: Attachment Tools
 
-- Status: `Planned`
+- Status: `Ready`
 - Depends on: M1B-S02, M1F-S01
-- Scope: implement list/get/download/upload-url/link/update/delete attachment behavior for milestone object types.
+- Scope: implement upload, URL-copy, stored-link, metadata update, and delete attachment behavior for milestone object types. Attachment list/get/download reads are already registered and may be extended only where needed to support duplicate detection or write workflows.
 - Acceptance:
-  - `download_attachment` is read-only, requires `inventree.read`, and only downloads schema-supported file or thumbnail URLs belonging to the configured InvenTree instance.
-  - `download_attachment` resolves attachment metadata first and rejects out-of-scope `model_type` values before fetching content.
-  - `download_attachment` defaults to the original file URL and uses thumbnail URLs only in explicit thumbnail mode.
-  - `download_attachment` returns filename, content type when known, size, SHA-256 hash, selected download mode, and base64 content for binary files or text for allowlisted textual content types.
-  - Download limits enforce maximum size and bounded read time, redirects are blocked or revalidated against the configured InvenTree instance, and redaction tests prove downloaded bytes and sensitive URLs are not logged.
+  - Existing `list_attachments`, `get_attachment_metadata`, and `download_attachment` behavior remains registered and may be reused or extended only as needed for duplicate detection and attachment write workflows.
   - `upload_attachment` accepts inline bytes and STDIO allowlisted paths only.
   - `upload_attachment_from_url` is the only URL-fetch upload tool and has `openWorldHint:true`.
   - `create_link_attachment` stores links without fetching.
+  - `update_attachment_metadata` requires a stable attachment ID and uses PATCH-compatible partial updates.
   - Duplicate attachment behavior returns structured clarification unless intent is explicit.
   - Tool registration includes `inventree.upload` scope tests and `inventree.destructive` tests for delete.
   - HTTP registration is disabled or rejected until `M1C-S04` per-tool scope enforcement is complete.
@@ -629,7 +633,6 @@ Tasks:
 Tasks:
 
 - [ ] Add attachment client methods.
-- [ ] Add `download_attachment`.
 - [ ] Add `upload_attachment`.
 - [ ] Add `upload_attachment_from_url`.
 - [ ] Add `create_link_attachment`.
