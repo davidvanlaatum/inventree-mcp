@@ -125,6 +125,12 @@ endpoints:
     method: GET
     operation_id: company_part_list
     response_schema: '#/components/schemas/PaginatedSupplierPartList'
+  - id: get_supplier_part
+    area: purchasing_preview
+    path: /api/company/part/{id}/
+    method: GET
+    operation_id: company_part_retrieve
+    response_schema: '#/components/schemas/SupplierPart'
   - id: create_supplier_part
     area: companies
     path: /api/company/part/

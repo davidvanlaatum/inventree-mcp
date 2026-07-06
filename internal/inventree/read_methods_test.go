@@ -191,6 +191,15 @@ func TestReadMethodsUseExpectedEndpoints(t *testing.T) {
 			response:  `{"count":1,"next":null,"previous":null,"results":[{"pk":100,"part":10,"supplier":30,"SKU":"abc"}]}`,
 		},
 		{
+			name: "get supplier part",
+			call: func(ctx context.Context, client *Client) error {
+				_, err := client.GetSupplierPart(ctx, 100)
+				return err
+			},
+			wantPath: "/api/company/part/100/",
+			response: `{"pk":100,"part":10,"supplier":30,"SKU":"abc"}`,
+		},
+		{
 			name: "search manufacturer parts",
 			call: func(ctx context.Context, client *Client) error {
 				_, err := client.SearchManufacturerParts(ctx, ManufacturerPartQuery{Part: 10, Manufacturer: 31, MPN: "mfg-1"})

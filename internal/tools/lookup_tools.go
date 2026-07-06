@@ -36,6 +36,7 @@ const (
 	GetAttachmentMetadataToolName    = "get_attachment_metadata"
 	DownloadAttachmentToolName       = "download_attachment"
 	DownloadPartImageToolName        = "download_part_image"
+	PreviewPurchaseOrderToolName     = "preview_purchase_order_with_lines"
 	CreatePartToolName               = "create_part"
 	UpdatePartToolName               = "update_part"
 	SetPartParametersToolName        = "set_part_parameters"
@@ -44,6 +45,7 @@ const (
 	CreateManufacturerPartToolName   = "create_manufacturer_part"
 	UpsertPartWorkflowToolName       = "upsert_part_with_supplier_and_manufacturer"
 	CreateStockItemToolName          = "create_stock_item"
+	InitialStockWorkflowToolName     = "create_initial_stock_entry"
 
 	defaultDownloadMaxBytes int64 = 5 * 1024 * 1024
 	maxDownloadMaxBytes     int64 = 25 * 1024 * 1024
@@ -80,6 +82,7 @@ var lookupToolNames = []string{
 	GetAttachmentMetadataToolName,
 	DownloadAttachmentToolName,
 	DownloadPartImageToolName,
+	PreviewPurchaseOrderToolName,
 }
 
 var writeToolNames = []string{
@@ -91,6 +94,7 @@ var writeToolNames = []string{
 	CreateManufacturerPartToolName,
 	UpsertPartWorkflowToolName,
 	CreateStockItemToolName,
+	InitialStockWorkflowToolName,
 }
 
 var ToolAuthorizations = map[string]ToolAuthorization{
@@ -114,7 +118,7 @@ func init() {
 	for _, name := range writeToolNames {
 		scopes := []string{ScopeInventreeWrite}
 		mutationClass := "write"
-		if name == CreateStockItemToolName {
+		if name == CreateStockItemToolName || name == InitialStockWorkflowToolName {
 			scopes = []string{ScopeInventreeWrite, ScopeInventreeOperational}
 			mutationClass = "operational"
 		}
@@ -157,6 +161,11 @@ type AttachmentLookupClient interface {
 	GetAttachmentMetadata(context.Context, int) (inventree.Attachment, error)
 	DownloadAttachment(context.Context, int, inventree.AttachmentContentMode, int64) (inventree.DownloadedAttachment, error)
 	DownloadPartImage(context.Context, int, inventree.AttachmentContentMode, int64) (inventree.DownloadedPartImage, error)
+}
+
+type PurchasePreviewClient interface {
+	GetSupplierPart(context.Context, int) (inventree.SupplierPart, error)
+	SearchSupplierParts(context.Context, inventree.SupplierPartQuery) ([]inventree.SupplierPart, error)
 }
 
 type PartParametersInput struct {
@@ -204,6 +213,42 @@ type DownloadOutput struct {
 	Base64      string `json:"base64,omitempty"`
 }
 
+type PurchasePreviewInput struct {
+	SupplierID int                        `json:"supplier_id,omitempty" jsonschema:"Supplier company primary key used to validate line supplier parts."`
+	Lines      []PurchasePreviewLineInput `json:"lines" jsonschema:"Purchase-order lines to preview without writing."`
+}
+
+type PurchasePreviewLineInput struct {
+	PartID         int      `json:"part_id,omitempty" jsonschema:"Existing part primary key when supplier_part_id is not supplied."`
+	SupplierPartID int      `json:"supplier_part_id,omitempty" jsonschema:"Existing supplier-part primary key."`
+	SupplierSKU    string   `json:"supplier_sku,omitempty" jsonschema:"Supplier SKU used with part_id and supplier_id to find a supplier-part link."`
+	Quantity       float64  `json:"quantity" jsonschema:"Requested order quantity. Must be greater than zero."`
+	UnitPrice      *float64 `json:"unit_price,omitempty" jsonschema:"Optional unit price for preview totals."`
+	Currency       string   `json:"currency,omitempty" jsonschema:"Currency required when unit_price is supplied."`
+	Notes          string   `json:"notes,omitempty" jsonschema:"Optional operator-facing line note."`
+}
+
+type PurchasePreviewOutput struct {
+	Status        string                      `json:"status"`
+	SupplierID    int                         `json:"supplier_id,omitempty"`
+	Lines         []PurchasePreviewLineOutput `json:"lines,omitempty"`
+	Warnings      []string                    `json:"warnings,omitempty"`
+	Clarification *ClarificationResponse      `json:"clarification,omitempty"`
+}
+
+type PurchasePreviewLineOutput struct {
+	Index          int      `json:"index"`
+	PartID         int      `json:"part_id"`
+	SupplierID     int      `json:"supplier_id"`
+	SupplierPartID int      `json:"supplier_part_id"`
+	SupplierSKU    string   `json:"supplier_sku,omitempty"`
+	Quantity       float64  `json:"quantity"`
+	UnitPrice      *float64 `json:"unit_price,omitempty"`
+	Currency       string   `json:"currency,omitempty"`
+	LineTotal      *float64 `json:"line_total,omitempty"`
+	Notes          string   `json:"notes,omitempty"`
+}
+
 type AttachmentMetadata struct {
 	PK            int      `json:"pk"`
 	ModelType     string   `json:"model_type"`
@@ -238,6 +283,7 @@ func registerLookupTools(server *mcp.Server, deps Dependencies) {
 	addReadOnlyTool(server, GetAttachmentMetadataToolName, "Get attachment metadata", "Retrieves one attachment metadata record by ID.", getAttachmentMetadata(deps))
 	addReadOnlyTool(server, DownloadAttachmentToolName, "Download attachment", "Downloads bounded content for one file attachment.", downloadAttachment(deps))
 	addReadOnlyTool(server, DownloadPartImageToolName, "Download part image", "Downloads bounded content for a part primary image.", downloadPartImage(deps))
+	addReadOnlyTool(server, PreviewPurchaseOrderToolName, "Preview purchase order with lines", "Validates supplier-part lines and returns a no-write purchase-order preview.", previewPurchaseOrder(deps))
 }
 
 func addReadOnlyTool[In, Out any](server *mcp.Server, name string, title string, description string, handler mcp.ToolHandlerFor[In, Out]) {
@@ -398,6 +444,112 @@ func downloadPartImage(deps Dependencies) mcp.ToolHandlerFor[DownloadInput, Down
 			}
 			return downloadOutput(input.ID, "", string(mode), download.ContentType, download.SourceURL, download.Content)
 		})
+}
+
+func previewPurchaseOrder(deps Dependencies) mcp.ToolHandlerFor[PurchasePreviewInput, PurchasePreviewOutput] {
+	return LookupHandler[PurchasePreviewClient, PurchasePreviewInput, PurchasePreviewOutput](deps, PreviewPurchaseOrderToolName,
+		func(ctx context.Context, _ *mcp.CallToolRequest, client PurchasePreviewClient, input PurchasePreviewInput) (*mcp.CallToolResult, PurchasePreviewOutput, error) {
+			if input.SupplierID < 0 {
+				clarification := NewClarification("Which supplier should be used for this preview?", "supplier", "supplier_id must be positive when provided", "supplier_id", true, nil, map[string]any{"supplier_id": input.SupplierID})
+				return TextResult(StatusClarificationRequired), PurchasePreviewOutput{Status: StatusClarificationRequired, Clarification: &clarification}, nil
+			}
+			if len(input.Lines) == 0 {
+				clarification := NewClarification("Which purchase-order lines should be previewed?", "lines", "preview_purchase_order_with_lines requires at least one line", "lines", true, nil, nil)
+				return TextResult(StatusClarificationRequired), PurchasePreviewOutput{Status: StatusClarificationRequired, Clarification: &clarification}, nil
+			}
+
+			output := PurchasePreviewOutput{Status: StatusOK, SupplierID: input.SupplierID}
+			for index, line := range input.Lines {
+				if line.Quantity <= 0 {
+					clarification := NewClarification("What quantity should be ordered for this line?", "quantity", "quantity must be greater than zero", "quantity", true, nil, map[string]any{"line_index": index, "part_id": line.PartID, "supplier_part_id": line.SupplierPartID})
+					return TextResult(StatusClarificationRequired), PurchasePreviewOutput{Status: StatusClarificationRequired, SupplierID: output.SupplierID, Clarification: &clarification}, nil
+				}
+				if line.UnitPrice != nil && strings.TrimSpace(line.Currency) == "" {
+					clarification := NewClarification("Which currency applies to this preview price?", "currency", "currency is required when unit_price is supplied", "currency", true, nil, map[string]any{"line_index": index, "unit_price": *line.UnitPrice})
+					return TextResult(StatusClarificationRequired), PurchasePreviewOutput{Status: StatusClarificationRequired, SupplierID: output.SupplierID, Clarification: &clarification}, nil
+				}
+
+				supplierPart, result, clarificationOutput, ok, err := resolvePreviewSupplierPart(ctx, client, input.SupplierID, index, line)
+				if err != nil || !ok {
+					return result, clarificationOutput, err
+				}
+				if input.SupplierID == 0 && output.SupplierID == 0 {
+					output.SupplierID = supplierPart.Supplier
+				}
+				if output.SupplierID != 0 && supplierPart.Supplier != output.SupplierID {
+					clarification := NewClarification("Which supplier should be used for this preview?", "supplier", "supplier_part does not belong to the requested supplier", "supplier_id", true, candidatesFor([]inventree.SupplierPart{supplierPart}), map[string]any{"supplier_id": input.SupplierID, "line_index": index, "supplier_part_id": supplierPart.PK})
+					return TextResult(StatusClarificationRequired), PurchasePreviewOutput{Status: StatusClarificationRequired, SupplierID: output.SupplierID, Clarification: &clarification}, nil
+				}
+
+				lineOutput := PurchasePreviewLineOutput{
+					Index:          index,
+					PartID:         supplierPart.Part,
+					SupplierID:     supplierPart.Supplier,
+					SupplierPartID: supplierPart.PK,
+					SupplierSKU:    supplierPart.SKU,
+					Quantity:       line.Quantity,
+					UnitPrice:      line.UnitPrice,
+					Currency:       line.Currency,
+					Notes:          line.Notes,
+				}
+				if line.UnitPrice != nil {
+					total := *line.UnitPrice * line.Quantity
+					lineOutput.LineTotal = &total
+				} else {
+					output.Warnings = append(output.Warnings, fmt.Sprintf("line %d has no unit_price; total omitted", index))
+				}
+				output.Lines = append(output.Lines, lineOutput)
+			}
+			return TextResult(StatusOK), output, nil
+		})
+}
+
+func resolvePreviewSupplierPart(ctx context.Context, client PurchasePreviewClient, supplierID int, index int, line PurchasePreviewLineInput) (inventree.SupplierPart, *mcp.CallToolResult, PurchasePreviewOutput, bool, error) {
+	if line.SupplierPartID < 0 {
+		clarification := NewClarification("Which supplier part should be previewed?", "supplier_part", "supplier_part_id must be positive when provided", "supplier_part_id", true, nil, map[string]any{"line_index": index, "supplier_part_id": line.SupplierPartID})
+		return inventree.SupplierPart{}, TextResult(StatusClarificationRequired), PurchasePreviewOutput{Status: StatusClarificationRequired, SupplierID: supplierID, Clarification: &clarification}, false, nil
+	}
+	if line.SupplierPartID > 0 {
+		record, err := client.GetSupplierPart(ctx, line.SupplierPartID)
+		if err != nil {
+			return inventree.SupplierPart{}, nil, PurchasePreviewOutput{}, false, err
+		}
+		if line.PartID < 0 {
+			clarification := NewClarification("Which part should be ordered on this preview line?", "part", "part_id must be positive when provided", "part_id", true, candidatesFor([]inventree.SupplierPart{record}), map[string]any{"line_index": index, "part_id": line.PartID, "supplier_part_id": line.SupplierPartID})
+			return inventree.SupplierPart{}, TextResult(StatusClarificationRequired), PurchasePreviewOutput{Status: StatusClarificationRequired, SupplierID: supplierID, Clarification: &clarification}, false, nil
+		}
+		if line.PartID > 0 && record.Part != line.PartID {
+			clarification := NewClarification("Which part should be ordered on this preview line?", "part", "supplier_part does not belong to the requested part", "part_id", true, candidatesFor([]inventree.SupplierPart{record}), map[string]any{"line_index": index, "part_id": line.PartID, "supplier_part_id": line.SupplierPartID})
+			return inventree.SupplierPart{}, TextResult(StatusClarificationRequired), PurchasePreviewOutput{Status: StatusClarificationRequired, SupplierID: supplierID, Clarification: &clarification}, false, nil
+		}
+		if strings.TrimSpace(line.SupplierSKU) != "" && line.SupplierSKU != record.SKU {
+			clarification := NewClarification("Which supplier SKU should be used for this preview line?", "supplier_sku", "supplier_sku does not match the requested supplier_part_id", "supplier_sku", true, candidatesFor([]inventree.SupplierPart{record}), map[string]any{"line_index": index, "supplier_sku": line.SupplierSKU, "supplier_part_id": line.SupplierPartID})
+			return inventree.SupplierPart{}, TextResult(StatusClarificationRequired), PurchasePreviewOutput{Status: StatusClarificationRequired, SupplierID: supplierID, Clarification: &clarification}, false, nil
+		}
+		return record, nil, PurchasePreviewOutput{}, true, nil
+	}
+	if line.PartID <= 0 {
+		clarification := NewClarification("Which part should be ordered on this preview line?", "part", "part_id is required when supplier_part_id is omitted", "part_id", true, nil, map[string]any{"line_index": index, "part_id": line.PartID})
+		return inventree.SupplierPart{}, TextResult(StatusClarificationRequired), PurchasePreviewOutput{Status: StatusClarificationRequired, SupplierID: supplierID, Clarification: &clarification}, false, nil
+	}
+	if supplierID <= 0 {
+		clarification := NewClarification("Which supplier should be used for this preview line?", "supplier", "supplier_id is required when supplier_part_id is omitted", "supplier_id", true, nil, map[string]any{"line_index": index, "part_id": line.PartID})
+		return inventree.SupplierPart{}, TextResult(StatusClarificationRequired), PurchasePreviewOutput{Status: StatusClarificationRequired, SupplierID: supplierID, Clarification: &clarification}, false, nil
+	}
+	records, err := client.SearchSupplierParts(ctx, inventree.SupplierPartQuery{Part: line.PartID, Supplier: supplierID, SKU: line.SupplierSKU})
+	if err != nil {
+		return inventree.SupplierPart{}, nil, PurchasePreviewOutput{}, false, err
+	}
+	switch len(records) {
+	case 0:
+		clarification := NewClarification("Which supplier part should be used for this purchase preview line?", "supplier_part", "no supplier-part link matches the requested part and supplier", "supplier_part_id", true, nil, map[string]any{"line_index": index, "part_id": line.PartID, "supplier_id": supplierID, "supplier_sku": line.SupplierSKU})
+		return inventree.SupplierPart{}, TextResult(StatusClarificationRequired), PurchasePreviewOutput{Status: StatusClarificationRequired, SupplierID: supplierID, Clarification: &clarification}, false, nil
+	case 1:
+		return records[0], nil, PurchasePreviewOutput{}, true, nil
+	default:
+		clarification := NewClarification("Which supplier part should be used for this purchase preview line?", "supplier_part", "multiple supplier-part links match the requested part and supplier", "supplier_part_id", false, candidatesFor(records), map[string]any{"line_index": index, "part_id": line.PartID, "supplier_id": supplierID, "supplier_sku": line.SupplierSKU})
+		return inventree.SupplierPart{}, TextResult(StatusClarificationRequired), PurchasePreviewOutput{Status: StatusClarificationRequired, SupplierID: supplierID, Clarification: &clarification}, false, nil
+	}
 }
 
 func searchOutput[T any](records []T, search string, field string, retry string, question string, err error) (*mcp.CallToolResult, LookupOutput[T], error) {

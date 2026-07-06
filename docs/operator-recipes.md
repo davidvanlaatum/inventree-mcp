@@ -61,8 +61,8 @@ Each recipe should preserve omitted fields versus explicit zero/false/empty valu
 - Required inputs: part ID, stock location ID, quantity, status when required by local convention.
 - Preferred lookup order: `get_part`, `search_stock_locations`, `search_stock_items` for duplicate detection.
 - Clarify when: location is ambiguous, quantity/status is unclear, or existing stock at the same location may duplicate the requested initial stock.
-- Tool sequence: `search_parts` or `get_part`, `search_stock_locations`, `search_stock_items`, then `create_stock_item`.
-- Expected output: created stock item record, or a structured duplicate clarification with candidate stock item IDs and retry values.
+- Tool sequence: use `create_initial_stock_entry` with `dry_run:true` when the operator wants a single workflow-level plan, then retry without `dry_run` after reviewing the duplicate preflight. Use `search_parts` or `get_part`, `search_stock_locations`, `search_stock_items`, then `create_stock_item` when the operator needs step-by-step control.
+- Expected output: `status`, `dry_run`, ordered `actions`, selected part and location records, and the created stock item record when executed, or a structured duplicate clarification with candidate stock item IDs and retry values. In `dry_run` responses, the planned stock create appears in `actions` because the stock item has no stable ID yet.
 
 ## Attach Datasheet Or Photo
 
@@ -101,10 +101,10 @@ Each recipe should preserve omitted fields versus explicit zero/false/empty valu
 ## Preview Purchase Order Lines
 
 - Required inputs: supplier ID or supplier part IDs, quantities, and any known pricing/currency.
-- Preferred lookup order: search supplier, search supplier parts for requested part IDs, validate purchasability, then produce a no-write preview.
-- Clarify when: supplier part is ambiguous, price/currency is missing and required for the operator's decision, or quantities conflict with package multiples/minimum order quantities.
-- Tool sequence: `search_suppliers`, `search_parts`, `preview_purchase_order_with_lines`.
-- Expected output: proposed lines, supplier part IDs, warnings, and confirmation that no purchase order was created.
+- Preferred lookup order: search supplier, search supplier parts for requested part IDs, validate that each line resolves to exactly one supplier-part link for a single supplier, then produce a no-write preview.
+- Clarify when: supplier part is ambiguous, a supplier-part ID conflicts with the requested supplier or part, quantity is missing or non-positive, or price/currency is missing and required for the operator's decision.
+- Tool sequence: `search_suppliers`, `search_parts`, then `preview_purchase_order_with_lines`. Provide `supplier_part_id` when known; otherwise provide `supplier_id`, `part_id`, and optional `supplier_sku` so the preview can validate that exactly one supplier-part link matches.
+- Expected output: proposed lines, supplier part IDs, optional line totals when price and currency are supplied, warnings for omitted preview-only pricing, and confirmation by tool class that no purchase order was created. The tool does not create purchase orders or purchase-order lines.
 
 ## Resolve Structured Clarification Prompts
 

@@ -43,6 +43,9 @@ Common lookup inputs:
 | `supplier_sku`, `mpn` | `upsert_part_with_supplier_and_manufacturer` | Stable supplier and manufacturer identifiers for supplier/manufacturer part links. |
 | `actions`, `record_type`, `reason` | workflow outputs | Ordered plan or execution summary for workflow-level tools. In `dry_run` responses, planned creates are authoritative here because they do not have stable IDs yet. |
 | `part`, `supplier`, `manufacturer`, `supplier_part`, `manufacturer_part` | `upsert_part_with_supplier_and_manufacturer` output | Stable records selected, reused, updated, or created by the workflow. Dry-run planned creates may appear only in `actions` until the write is executed. |
+| `part_search`, `location_search` | `create_initial_stock_entry` | Human-readable lookup text used only when stable `part_id` or `location_id` is omitted. Ambiguous matches return clarification. |
+| `location`, `stock_item` | `create_initial_stock_entry` output | Stable location and created stock item selected or written by the workflow. Dry-run planned stock creates appear only in `actions`. |
+| `lines`, `supplier_part_id`, `supplier_sku`, `unit_price`, `currency`, `line_total`, `warnings`, `index` | `preview_purchase_order_with_lines` | No-write purchase preview line inputs and outputs. Supplier-part IDs are validated directly; part/supplier/SKU lookup must resolve to exactly one supplier-part link. |
 | `omitted_recommended_fields` | workflow outputs | Recommended fields the caller did not provide, such as IPN, units, purchaseability, default location, supplier SKU, or MPN. |
 | `mode` | download tools | Optional download mode. `original` is the default; `thumbnail` is supported for generic attachment downloads when metadata exposes a thumbnail URL and for part-image downloads through `/api/part/thumbs/{id}/`. |
 | `max_bytes` | download tools | Optional maximum response content size. Defaults to `5242880` and is capped at `26214400`. |
@@ -94,6 +97,7 @@ All tools in this section are implemented and registered. They use class `read_o
 | `get_attachment_metadata` | Attachments | `id` | `status`, `record` | Attachment ID is missing or ambiguous. |
 | `download_attachment` | Attachments | `id`, `mode`, `max_bytes` | `status`, `id`, `filename`, `content_type`, `size`, `sha256`, `mode`, `source_url`, plus `text` or `base64` content | Operator may mean stored-link metadata versus an external link target, or original file versus explicit thumbnail mode. |
 | `download_part_image` | Attachments | `id`, `mode`, `max_bytes` | `status`, `id`, `content_type`, `size`, `sha256`, `mode`, `source_url`, plus `text` or `base64` content | Operator may mean a generic attachment rather than the current primary image, or original image versus explicit thumbnail mode. |
+| `preview_purchase_order_with_lines` | Purchasing preview | `supplier_id`, `lines` with `supplier_part_id` or `part_id` plus supplier context, `quantity`, optional `unit_price`, `currency`, `notes` | `status`, `supplier_id`, `lines`, optional `warnings`, optional `clarification` | Supplier part, supplier, part, quantity, or price currency is ambiguous. |
 
 ## Registered Write Tools
 
@@ -111,6 +115,7 @@ Tools in this section use milestone status `milestone_1`, MCP annotations `readO
 | `create_manufacturer_part` | Manufacturer link | `part_id`, `manufacturer_id`, optional `mpn`, `description`, `link` | `status`, `record`, optional `clarification` with retry `manufacturer_part_id`, `part_id`, or `manufacturer_id` | Part or manufacturer ID is invalid, or matching manufacturer-part links already exist. |
 | `upsert_part_with_supplier_and_manufacturer` | Part workflow | `dry_run`, `part_id` or `name`, optional part fields, optional supplier/manufacturer IDs or names, `supplier_sku`, `mpn`, and currencies when creating companies | `status`, `dry_run`, `actions`, selected/reused/created `part`, `supplier`, `manufacturer`, `supplier_part`, `manufacturer_part` when stable, `omitted_recommended_fields`, optional `clarification` | Part, supplier, manufacturer, supplier-part, or manufacturer-part matches are ambiguous; category or currency is missing before creation; supplier SKU is missing before linking. |
 | `create_stock_item` | Initial stock | `part_id`, `location_id`, `quantity`, optional `status`, `batch`, `serial`, `notes` | `status`, `record`, optional `clarification` with retry `stock_item_id`, `part_id`, `location_id`, `quantity`, or `status` | Part, location, quantity, or status is invalid, or existing stock already matches the requested part and location. |
+| `create_initial_stock_entry` | Initial stock workflow | `dry_run`, `part_id` or `part_search`, `location_id` or `location_search`, `quantity`, optional `status`, `batch`, `serial`, `notes` | `status`, `dry_run`, `actions`, selected `part`, selected `location`, optional created `stock_item`, optional `clarification` | Part or location search is ambiguous, quantity/status is invalid, or existing stock already matches the requested part and location. |
 
 ## Skeleton Tools
 
@@ -145,6 +150,7 @@ Tools in this section use milestone status `milestone_1`, MCP annotations `readO
 | `create_manufacturer_part` | Manufacturer link | Write | `inventree.write` | None | See Registered Write Tools. |
 | `upsert_part_with_supplier_and_manufacturer` | Part workflow | Write | `inventree.write` | None | See Registered Write Tools. |
 | `create_stock_item` | Initial stock | Operational | `inventree.write`, `inventree.operational` | None | Existing stock at the requested location may duplicate the new item. |
+| `create_initial_stock_entry` | Initial stock workflow | Operational | `inventree.write`, `inventree.operational` | None | Part or location search is ambiguous, quantity/status is invalid, or existing stock at the requested location may duplicate the new item. |
 | `upload_attachment` | Attachments | Write | `inventree.write`, `inventree.upload` | Inline bytes; STDIO allowlisted local path | Filename/content duplicates an existing attachment without explicit replacement or metadata-update intent. |
 | `upload_attachment_from_url` | Attachments | Write, open-world | `inventree.write`, `inventree.upload` | HTTP(S) URL only | Intent could be upload-copy versus store-link, or URL policy rejects the target. |
 | `create_link_attachment` | Attachments | Write | `inventree.write`, `inventree.upload` | HTTP(S) link only, no fetch | URL has unsupported scheme, credentials/userinfo, local path shape, or allowlist ambiguity. |
