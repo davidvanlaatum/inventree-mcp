@@ -21,7 +21,7 @@ func TestWriteToolAuthorizationsUseWriteScope(t *testing.T) {
 	for _, name := range writeToolNames {
 		auth, ok := ToolAuthorizations[name]
 		r.True(ok, "missing authorization for %s", name)
-		if name == CreateStockItemToolName {
+		if name == CreateStockItemToolName || name == InitialStockWorkflowToolName {
 			a.Equal("operational", auth.MutationClass)
 			a.Equal([]string{ScopeInventreeWrite, ScopeInventreeOperational}, auth.Scopes)
 		} else {
@@ -43,6 +43,7 @@ func TestWriteToolInputsExcludeSalesAndCustomerWorkflowFields(t *testing.T) {
 		reflect.TypeOf(CreateSupplierPartInput{}),
 		reflect.TypeOf(CreateManufacturerPartInput{}),
 		reflect.TypeOf(UpsertPartWorkflowInput{}),
+		reflect.TypeOf(InitialStockWorkflowInput{}),
 		reflect.TypeOf(CreateStockItemInput{}),
 		reflect.TypeOf(SetPartParametersInput{}),
 		reflect.TypeOf(ParameterSetInput{}),
@@ -373,6 +374,110 @@ func TestCreateStockItemWritesAfterDuplicatePreflight(t *testing.T) {
 	a.True(fake.createdStockItem)
 	a.Equal(inventree.StockItemQuery{PartID: 10, LocationID: 40, Limit: DefaultLookupLimit}, fake.lastSearchStockItemsQuery)
 	a.Equal(inventree.StockItemCreate{Part: 10, Location: 40, Quantity: 7, Status: dvgoutils.Ptr(10), Batch: dvgoutils.Ptr("B-1"), Notes: dvgoutils.Ptr("initial stock")}, fake.lastCreateStockItem)
+}
+
+func TestInitialStockWorkflowDryRunPlansWithoutWrite(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	fake := &fakeMilestoneLookupClient{
+		parts:          []inventree.Part{{PK: 10, Name: "10k resistor"}},
+		stockLocations: []inventree.StockLocation{{PK: 40, Name: "bin 1"}},
+	}
+
+	_, output, err := initialStockWorkflow(depsForFake(fake))(ctx, &mcp.CallToolRequest{}, InitialStockWorkflowInput{
+		DryRun:         true,
+		PartSearch:     "10k",
+		LocationSearch: "bin",
+		Quantity:       7,
+		Status:         dvgoutils.Ptr(10),
+	})
+
+	r.NoError(err)
+	a.Equal(StatusOK, output.Status)
+	a.True(output.DryRun)
+	r.NotNil(output.Part)
+	r.NotNil(output.Location)
+	a.Equal(10, output.Part.PK)
+	a.Equal(40, output.Location.PK)
+	a.Equal([]InitialStockWorkflowAction{
+		{Name: "reuse_part", Status: "reused", RecordType: "part", ID: 10, Reason: "single matching part found"},
+		{Name: "reuse_location", Status: "reused", RecordType: "stocklocation", ID: 40, Reason: "single matching stock location found"},
+		{Name: "create_stock_item", Status: "planned", RecordType: "stockitem", Reason: "no matching stock item found"},
+	}, output.Actions)
+	a.Equal(inventree.SearchQuery{Search: "10k", Limit: DefaultLookupLimit}, fake.lastSearchPartsQuery)
+	a.Equal(inventree.SearchQuery{Search: "bin", Limit: DefaultLookupLimit}, fake.lastSearchStockLocationsQuery)
+	a.Equal(inventree.StockItemQuery{PartID: 10, LocationID: 40, Limit: DefaultLookupLimit}, fake.lastSearchStockItemsQuery)
+	a.False(fake.createdStockItem)
+}
+
+func TestInitialStockWorkflowWritesAfterDuplicatePreflight(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	fake := &fakeMilestoneLookupClient{
+		part:           inventree.Part{PK: 10, Name: "10k resistor"},
+		stockLocations: []inventree.StockLocation{{PK: 40, Name: "bin 1"}},
+	}
+
+	_, output, err := initialStockWorkflow(depsForFake(fake))(ctx, &mcp.CallToolRequest{}, InitialStockWorkflowInput{
+		PartID:     10,
+		LocationID: 40,
+		Quantity:   7,
+		Batch:      dvgoutils.Ptr("B-1"),
+		Notes:      dvgoutils.Ptr("initial stock"),
+	})
+
+	r.NoError(err)
+	a.Equal(StatusOK, output.Status)
+	a.False(output.DryRun)
+	r.NotNil(output.Part)
+	r.NotNil(output.Location)
+	a.Equal("10k resistor", output.Part.Name)
+	a.Equal("bin 1", output.Location.Name)
+	r.NotNil(output.StockItem)
+	a.Equal(50, output.StockItem.PK)
+	a.True(fake.createdStockItem)
+	a.Equal(40, fake.lastGetStockLocationID)
+	a.Equal(inventree.StockItemQuery{PartID: 10, LocationID: 40, Limit: DefaultLookupLimit}, fake.lastSearchStockItemsQuery)
+	a.Equal(inventree.StockItemCreate{Part: 10, Location: 40, Quantity: 7, Batch: dvgoutils.Ptr("B-1"), Notes: dvgoutils.Ptr("initial stock")}, fake.lastCreateStockItem)
+}
+
+func TestInitialStockWorkflowClarifiesAmbiguousInputsAndDuplicates(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	locationID := 40
+	fake := &fakeMilestoneLookupClient{
+		parts: []inventree.Part{
+			{PK: 10, Name: "10k resistor"},
+			{PK: 11, Name: "10k resistor precision"},
+		},
+	}
+
+	_, output, err := initialStockWorkflow(depsForFake(fake))(ctx, &mcp.CallToolRequest{}, InitialStockWorkflowInput{PartSearch: "10k", LocationID: 40, Quantity: 1})
+	r.NoError(err)
+	a.Equal(StatusClarificationRequired, output.Status)
+	a.Equal("part", output.Clarification.Field)
+	a.False(fake.createdStockItem)
+
+	fake = &fakeMilestoneLookupClient{
+		stockItems: []inventree.StockItem{{PK: 50, Part: 10, Location: &locationID, Quantity: 2}},
+	}
+	_, output, err = initialStockWorkflow(depsForFake(fake))(ctx, &mcp.CallToolRequest{}, InitialStockWorkflowInput{PartID: 10, LocationID: locationID, Quantity: 1})
+	r.NoError(err)
+	a.Equal(StatusClarificationRequired, output.Status)
+	a.Equal("stock_item", output.Clarification.Field)
+	a.Equal("stock_item_id", output.Clarification.Retry)
+	a.False(fake.createdStockItem)
+
+	_, output, err = initialStockWorkflow(depsForFake(fake))(ctx, &mcp.CallToolRequest{}, InitialStockWorkflowInput{PartID: 10, LocationID: 40})
+	r.NoError(err)
+	a.Equal(StatusClarificationRequired, output.Status)
+	a.Equal("quantity", output.Clarification.Field)
 }
 
 func TestCreatePartAsksBeforeDuplicateCreate(t *testing.T) {

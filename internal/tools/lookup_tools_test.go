@@ -164,6 +164,146 @@ func TestSearchStockItemsUsesStableFilters(t *testing.T) {
 	a.Equal(inventree.StockItemQuery{PartID: 10, LocationID: 40, Limit: 100}, fake.lastSearchStockItemsQuery)
 }
 
+func TestPreviewPurchaseOrderUsesSupplierPartIDWithoutWrites(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	fake := &fakeMilestoneLookupClient{
+		supplierPart: inventree.SupplierPart{PK: 40, Part: 10, Supplier: 30, SKU: "ACME-10K"},
+	}
+	price := 1.25
+
+	_, output, err := previewPurchaseOrder(depsForFake(fake))(ctx, &mcp.CallToolRequest{}, PurchasePreviewInput{
+		SupplierID: 30,
+		Lines: []PurchasePreviewLineInput{{
+			SupplierPartID: 40,
+			Quantity:       4,
+			UnitPrice:      &price,
+			Currency:       "AUD",
+			Notes:          "prototype stock",
+		}},
+	})
+
+	r.NoError(err)
+	a.Equal(StatusOK, output.Status)
+	a.Equal(30, output.SupplierID)
+	r.Len(output.Lines, 1)
+	a.Equal(40, output.Lines[0].SupplierPartID)
+	a.Equal(10, output.Lines[0].PartID)
+	a.Equal(5.0, *output.Lines[0].LineTotal)
+	a.Equal(40, fake.lastGetSupplierPartID)
+	a.False(fake.createdSupplierPart)
+	a.False(fake.createdStockItem)
+}
+
+func TestPreviewPurchaseOrderSearchesAndClarifiesSupplierParts(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	fake := &fakeMilestoneLookupClient{
+		supplierParts: []inventree.SupplierPart{
+			{PK: 40, Part: 10, Supplier: 30, SKU: "ACME-10K-A"},
+			{PK: 41, Part: 10, Supplier: 30, SKU: "ACME-10K-B"},
+		},
+	}
+
+	_, output, err := previewPurchaseOrder(depsForFake(fake))(ctx, &mcp.CallToolRequest{}, PurchasePreviewInput{
+		SupplierID: 30,
+		Lines:      []PurchasePreviewLineInput{{PartID: 10, Quantity: 4}},
+	})
+
+	r.NoError(err)
+	a.Equal(StatusClarificationRequired, output.Status)
+	r.NotNil(output.Clarification)
+	a.Equal("supplier_part", output.Clarification.Field)
+	a.Equal("supplier_part_id", output.Clarification.Retry)
+	a.Len(output.Clarification.Candidates, 2)
+	a.Equal(inventree.SupplierPartQuery{Part: 10, Supplier: 30}, fake.lastSearchSupplierPartsQuery)
+	a.False(fake.createdSupplierPart)
+}
+
+func TestPreviewPurchaseOrderValidatesAmbiguousInputs(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	fake := &fakeMilestoneLookupClient{}
+	price := 1.25
+
+	_, output, err := previewPurchaseOrder(depsForFake(fake))(ctx, &mcp.CallToolRequest{}, PurchasePreviewInput{})
+	r.NoError(err)
+	a.Equal(StatusClarificationRequired, output.Status)
+	a.Equal("lines", output.Clarification.Field)
+
+	_, output, err = previewPurchaseOrder(depsForFake(fake))(ctx, &mcp.CallToolRequest{}, PurchasePreviewInput{Lines: []PurchasePreviewLineInput{{SupplierPartID: 40}}})
+	r.NoError(err)
+	a.Equal(StatusClarificationRequired, output.Status)
+	a.Equal("quantity", output.Clarification.Field)
+
+	_, output, err = previewPurchaseOrder(depsForFake(fake))(ctx, &mcp.CallToolRequest{}, PurchasePreviewInput{Lines: []PurchasePreviewLineInput{{PartID: 10, Quantity: 1}}})
+	r.NoError(err)
+	a.Equal(StatusClarificationRequired, output.Status)
+	a.Equal("supplier", output.Clarification.Field)
+
+	_, output, err = previewPurchaseOrder(depsForFake(fake))(ctx, &mcp.CallToolRequest{}, PurchasePreviewInput{SupplierID: 30, Lines: []PurchasePreviewLineInput{{PartID: 10, Quantity: 1, UnitPrice: &price}}})
+	r.NoError(err)
+	a.Equal(StatusClarificationRequired, output.Status)
+	a.Equal("currency", output.Clarification.Field)
+}
+
+func TestPreviewPurchaseOrderRejectsMismatchedStableSupplierPartIDs(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+
+	fake := &fakeMilestoneLookupClient{
+		supplierParts: []inventree.SupplierPart{
+			{PK: 40, Part: 10, Supplier: 30, SKU: "ACME-10K"},
+			{PK: 41, Part: 11, Supplier: 31, SKU: "OTHER-11K"},
+		},
+	}
+	_, output, err := previewPurchaseOrder(depsForFake(fake))(ctx, &mcp.CallToolRequest{}, PurchasePreviewInput{
+		Lines: []PurchasePreviewLineInput{
+			{SupplierPartID: 40, Quantity: 1},
+			{SupplierPartID: 41, Quantity: 1},
+		},
+	})
+	r.NoError(err)
+	a.Equal(StatusClarificationRequired, output.Status)
+	a.Equal("supplier", output.Clarification.Field)
+	a.Equal(30, output.SupplierID)
+
+	fake = &fakeMilestoneLookupClient{
+		supplierPart: inventree.SupplierPart{PK: 40, Part: 10, Supplier: 30, SKU: "ACME-10K"},
+	}
+	_, output, err = previewPurchaseOrder(depsForFake(fake))(ctx, &mcp.CallToolRequest{}, PurchasePreviewInput{
+		SupplierID: 30,
+		Lines:      []PurchasePreviewLineInput{{SupplierPartID: 40, PartID: 11, Quantity: 1}},
+	})
+	r.NoError(err)
+	a.Equal(StatusClarificationRequired, output.Status)
+	a.Equal("part", output.Clarification.Field)
+
+	_, output, err = previewPurchaseOrder(depsForFake(fake))(ctx, &mcp.CallToolRequest{}, PurchasePreviewInput{
+		SupplierID: 30,
+		Lines:      []PurchasePreviewLineInput{{SupplierPartID: 40, PartID: -1, Quantity: 1}},
+	})
+	r.NoError(err)
+	a.Equal(StatusClarificationRequired, output.Status)
+	a.Equal("part", output.Clarification.Field)
+
+	_, output, err = previewPurchaseOrder(depsForFake(fake))(ctx, &mcp.CallToolRequest{}, PurchasePreviewInput{
+		SupplierID: 30,
+		Lines:      []PurchasePreviewLineInput{{SupplierPartID: 40, SupplierSKU: "wrong", Quantity: 1}},
+	})
+	r.NoError(err)
+	a.Equal(StatusClarificationRequired, output.Status)
+	a.Equal("supplier_sku", output.Clarification.Field)
+}
+
 func TestLookupHandlersPassStructuredQueriesToClient(t *testing.T) {
 	t.Parallel()
 
@@ -319,6 +459,7 @@ type fakeMilestoneLookupClient struct {
 	attachments                []inventree.Attachment
 	supplierParts              []inventree.SupplierPart
 	manufacturerParts          []inventree.ManufacturerPart
+	supplierPart               inventree.SupplierPart
 	attachment                 inventree.Attachment
 	downloadedAttachment       inventree.DownloadedAttachment
 	downloadedPartImage        inventree.DownloadedPartImage
@@ -343,9 +484,11 @@ type fakeMilestoneLookupClient struct {
 	lastSearchManufacturersQuery              inventree.SearchQuery
 	lastSearchStockLocationsQuery             inventree.SearchQuery
 	lastSearchStockItemsQuery                 inventree.StockItemQuery
+	lastGetStockLocationID                    int
 	lastListAttachmentsQuery                  inventree.AttachmentQuery
 	lastSearchSupplierPartsQuery              inventree.SupplierPartQuery
 	lastSearchManufacturerPartsQuery          inventree.ManufacturerPartQuery
+	lastGetSupplierPartID                     int
 	lastCreatePart                            inventree.PartCreate
 	lastCreatePartParameter                   inventree.ParameterCreate
 	lastCreateCompany                         inventree.CompanyCreate
@@ -430,6 +573,16 @@ func (f *fakeMilestoneLookupClient) SearchStockLocations(_ context.Context, quer
 	return f.stockLocations, nil
 }
 
+func (f *fakeMilestoneLookupClient) GetStockLocation(_ context.Context, id int) (inventree.StockLocation, error) {
+	f.lastGetStockLocationID = id
+	for _, location := range f.stockLocations {
+		if location.PK == id {
+			return location, nil
+		}
+	}
+	return inventree.StockLocation{PK: id, Name: "location"}, nil
+}
+
 func (f *fakeMilestoneLookupClient) SearchStockItems(_ context.Context, query inventree.StockItemQuery) ([]inventree.StockItem, error) {
 	f.lastSearchStockItemsQuery = query
 	return f.stockItems, nil
@@ -484,6 +637,19 @@ func (f *fakeMilestoneLookupClient) UpdatePartParameter(_ context.Context, id in
 func (f *fakeMilestoneLookupClient) SearchSupplierParts(_ context.Context, query inventree.SupplierPartQuery) ([]inventree.SupplierPart, error) {
 	f.lastSearchSupplierPartsQuery = query
 	return f.supplierParts, nil
+}
+
+func (f *fakeMilestoneLookupClient) GetSupplierPart(_ context.Context, id int) (inventree.SupplierPart, error) {
+	f.lastGetSupplierPartID = id
+	if f.supplierPart.PK != 0 {
+		return f.supplierPart, nil
+	}
+	for _, record := range f.supplierParts {
+		if record.PK == id {
+			return record, nil
+		}
+	}
+	return inventree.SupplierPart{PK: id, Part: 10, Supplier: 30, SKU: "SKU-1"}, nil
 }
 
 func (f *fakeMilestoneLookupClient) CreateSupplierPart(_ context.Context, input inventree.SupplierPartCreate) (inventree.SupplierPart, error) {

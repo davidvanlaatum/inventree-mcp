@@ -162,7 +162,7 @@ The initial endpoint manifest covers schema-confirmed paths, methods, operation 
 - Manufacturer part and supplier part link creation.
 - Stock location search, stock item search, and stock item creation.
 - Parameter values, parameter templates, and category parameter template links.
-- Purchase order preview inputs and supplier-part validation dependencies.
+- Purchase order preview inputs and supplier-part validation dependencies, including direct supplier-part retrieval for stable `supplier_part_id` validation.
 - Attachment, link attachment, URL upload, and primary-image update behavior.
 
 Future endpoint-specific client methods must use manifest entries rather than ad hoc path strings. Adding a method without a manifest entry or changing `docs/api-schema.yaml` without updating the manifest/provenance should fail the schema checks.

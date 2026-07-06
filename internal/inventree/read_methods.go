@@ -266,6 +266,12 @@ func (c *Client) SearchSupplierParts(ctx context.Context, query SupplierPartQuer
 	return listAll[SupplierPart](ctx, c, "/api/company/part/", query.values())
 }
 
+func (c *Client) GetSupplierPart(ctx context.Context, id int) (SupplierPart, error) {
+	var out SupplierPart
+	err := c.get(ctx, fmt.Sprintf("/api/company/part/%d/", id), &out)
+	return out, err
+}
+
 func (c *Client) SearchManufacturerParts(ctx context.Context, query ManufacturerPartQuery) ([]ManufacturerPart, error) {
 	return listAll[ManufacturerPart](ctx, c, "/api/company/part/manufacturer/", query.values())
 }

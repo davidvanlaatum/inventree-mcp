@@ -70,7 +70,7 @@ Before `M1C-S04` is complete, mutating, operational, destructive, and upload too
 | [M1F-S02](#m1f-s02-attachment-tools) | Add attachment download, upload, link, update, and delete tools. | Planned |
 | [M1F-S03](#m1f-s03-primary-part-image) | Add part primary image download and assignment/replacement. | Planned |
 | [M1G-S01](#m1g-s01-part-upsert-workflow) | Add safer part upsert workflow with supplier/manufacturer data. | Done |
-| [M1G-S02](#m1g-s02-initial-stock-and-purchase-preview-workflows) | Add initial-stock workflow helper and no-write purchase preview. | Ready |
+| [M1G-S02](#m1g-s02-initial-stock-and-purchase-preview-workflows) | Add initial-stock workflow helper and no-write purchase preview. | Done |
 | [M1G-S03](#m1g-s03-milestone-prompts) | Add milestone 1 prompts and prompt contract tests. | Planned |
 | [M1H-S03](#m1h-s03-milestone-integration-happy-paths) | Prove milestone catalog, stock, supplier, attachment, image, and preview happy paths. | Planned |
 | [M1I-S01](#m1i-s01-operator-docs-finalization) | Finalize README, operator recipes, and generated tool reference alignment. | Planned |
@@ -694,9 +694,12 @@ Tasks:
 
 ### M1G-S02: Initial Stock And Purchase Preview Workflows
 
-- Status: `Ready`
+- Status: `Done`
 - Depends on: M1D-S02, M1E-S03, M1G-S01
 - Scope: finish the useful operator loop with initial stock and no-write purchase preview.
+- Validation: `go test ./internal/inventree ./internal/tools ./internal/schema ./docs` passed; `go test ./internal/tools` passed after supplier consistency follow-up; `go test ./internal/tools ./docs` passed after review fixes; `go test ./... && git diff --check` passed before review and again after review fixes.
+- Review: Senior Go Developer, Senior QA / Test Architect, Senior Product Manager, and Senior Infosec Reviewer subagent reviews run. Initial review found stale task completion notes, purchase-preview recipe wording that overpromised purchasability/package checks, missing stable-ID validation in the initial-stock workflow, missing direct supplier-part contradiction checks, and a missing milestone matrix row for `create_initial_stock_entry`. Fixes narrowed the recipe wording, resolved stable part/location IDs with `GetPart` and `GetStockLocation`, rejected negative/mismatched direct supplier-part identity fields, documented the new operational workflow in the milestone matrix, and added deterministic tests. Focused Go, QA, product, and infosec reruns found no remaining actionable findings.
+- Residual risk: initial stock duplicate detection remains a preflight guard rather than a transactional uniqueness guarantee if another writer creates matching stock between the duplicate search and create. Purchase preview validates supplier-part identity, single-supplier consistency, positive quantity, and price/currency pairing, but it intentionally does not validate supplier price breaks, package multiples, or minimum-order constraints because those fields are not modeled for this milestone.
 - Acceptance:
   - Purchase preview performs no writes.
   - Supplier-part validation is explicit.
@@ -704,9 +707,9 @@ Tasks:
 
 Tasks:
 
-- [ ] Add `preview_purchase_order_with_lines`.
-- [ ] Add initial stock workflow helper.
-- [ ] Add purchase preview no-write tests.
+- [x] Add `preview_purchase_order_with_lines`.
+- [x] Add initial stock workflow helper.
+- [x] Add purchase preview no-write tests.
 
 ### M1G-S03: Milestone Prompts
 

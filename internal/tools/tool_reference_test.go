@@ -52,11 +52,18 @@ func TestToolReferenceDocumentsLookupFrameworkSchema(t *testing.T) {
 		reflect.TypeOf(StockItemsInput{}),
 		reflect.TypeOf(DownloadInput{}),
 		reflect.TypeOf(DownloadOutput{}),
+		reflect.TypeOf(PurchasePreviewInput{}),
+		reflect.TypeOf(PurchasePreviewLineInput{}),
+		reflect.TypeOf(PurchasePreviewOutput{}),
+		reflect.TypeOf(PurchasePreviewLineOutput{}),
 		reflect.TypeOf(SetPartParametersInput{}),
 		reflect.TypeOf(ParameterSetInput{}),
 		reflect.TypeOf(UpsertPartWorkflowInput{}),
 		reflect.TypeOf(PartUpsertWorkflowOutput{}),
 		reflect.TypeOf(PartUpsertWorkflowAction{}),
+		reflect.TypeOf(InitialStockWorkflowInput{}),
+		reflect.TypeOf(InitialStockWorkflowOutput{}),
+		reflect.TypeOf(InitialStockWorkflowAction{}),
 		reflect.TypeOf(ClarificationResponse{}),
 		reflect.TypeOf(ClarificationCandidate{}),
 	} {
@@ -114,7 +121,7 @@ func TestToolReferenceDocumentsRegisteredWriteTools(t *testing.T) {
 		a.Contains(docs, "`"+name+"`")
 		auth, ok := ToolAuthorizations[name]
 		r.True(ok, "missing authorization for %s", name)
-		if name == CreateStockItemToolName {
+		if name == CreateStockItemToolName || name == InitialStockWorkflowToolName {
 			a.Equal("operational", auth.MutationClass)
 			a.Equal([]string{ScopeInventreeWrite, ScopeInventreeOperational}, auth.Scopes)
 			a.Contains(docs, "`"+ScopeInventreeOperational+"`")

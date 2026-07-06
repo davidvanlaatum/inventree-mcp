@@ -36,6 +36,15 @@ type StockItemWriteClient interface {
 	CreateStockItem(context.Context, inventree.StockItemCreate) (inventree.StockItem, error)
 }
 
+type InitialStockWorkflowClient interface {
+	SearchParts(context.Context, inventree.SearchQuery) ([]inventree.Part, error)
+	GetPart(context.Context, int) (inventree.Part, error)
+	SearchStockLocations(context.Context, inventree.SearchQuery) ([]inventree.StockLocation, error)
+	GetStockLocation(context.Context, int) (inventree.StockLocation, error)
+	SearchStockItems(context.Context, inventree.StockItemQuery) ([]inventree.StockItem, error)
+	CreateStockItem(context.Context, inventree.StockItemCreate) (inventree.StockItem, error)
+}
+
 type ParameterWriteClient interface {
 	GetPart(context.Context, int) (inventree.Part, error)
 	SearchPartParameters(context.Context, inventree.PartParameterQuery) ([]inventree.Parameter, error)
@@ -157,6 +166,19 @@ type UpsertPartWorkflowInput struct {
 	Link                 *string `json:"link,omitempty" jsonschema:"Optional supplier/manufacturer part URL."`
 }
 
+type InitialStockWorkflowInput struct {
+	DryRun         bool    `json:"dry_run,omitempty" jsonschema:"When true, return a stock-entry plan without creating stock."`
+	PartID         int     `json:"part_id,omitempty" jsonschema:"Existing part primary key."`
+	PartSearch     string  `json:"part_search,omitempty" jsonschema:"Part search text when part_id is omitted."`
+	LocationID     int     `json:"location_id,omitempty" jsonschema:"Existing stock location primary key."`
+	LocationSearch string  `json:"location_search,omitempty" jsonschema:"Stock location search text when location_id is omitted."`
+	Quantity       float64 `json:"quantity" jsonschema:"Initial stock quantity. Must be greater than zero."`
+	Status         *int    `json:"status,omitempty" jsonschema:"Optional InvenTree stock status code."`
+	Batch          *string `json:"batch,omitempty" jsonschema:"Optional batch code."`
+	Serial         *string `json:"serial,omitempty" jsonschema:"Optional serial number."`
+	Notes          *string `json:"notes,omitempty" jsonschema:"Optional markdown notes."`
+}
+
 type ParameterSetInput struct {
 	Name        string   `json:"name,omitempty" jsonschema:"Existing parameter template name when template_id is not supplied."`
 	TemplateID  *int     `json:"template_id,omitempty" jsonschema:"Existing parameter template primary key."`
@@ -184,6 +206,24 @@ type PartUpsertWorkflowOutput struct {
 	Clarification            *ClarificationResponse      `json:"clarification,omitempty"`
 }
 
+type InitialStockWorkflowOutput struct {
+	Status        string                       `json:"status"`
+	DryRun        bool                         `json:"dry_run"`
+	Actions       []InitialStockWorkflowAction `json:"actions,omitempty"`
+	Part          *inventree.Part              `json:"part,omitempty"`
+	Location      *inventree.StockLocation     `json:"location,omitempty"`
+	StockItem     *inventree.StockItem         `json:"stock_item,omitempty"`
+	Clarification *ClarificationResponse       `json:"clarification,omitempty"`
+}
+
+type InitialStockWorkflowAction struct {
+	Name       string `json:"name"`
+	Status     string `json:"status"`
+	RecordType string `json:"record_type,omitempty"`
+	ID         int    `json:"id,omitempty"`
+	Reason     string `json:"reason,omitempty"`
+}
+
 type PartUpsertWorkflowAction struct {
 	Name       string `json:"name"`
 	Status     string `json:"status"`
@@ -207,6 +247,7 @@ func registerWriteTools(server *mcp.Server, deps Dependencies) {
 	addWriteTool(server, CreateManufacturerPartToolName, "Create manufacturer part", "Creates a manufacturer-part link for existing records.", createManufacturerPart(deps))
 	addWriteTool(server, UpsertPartWorkflowToolName, "Upsert part with supplier and manufacturer", "Plans or performs a safe part upsert with supplier and manufacturer links.", upsertPartWorkflow(deps))
 	addWriteTool(server, CreateStockItemToolName, "Create stock item", "Creates initial stock after checking for duplicate stock at the same part and location.", createStockItem(deps))
+	addWriteTool(server, InitialStockWorkflowToolName, "Create initial stock entry", "Plans or creates initial stock after resolving the part, location, and duplicate guard.", initialStockWorkflow(deps))
 }
 
 func addWriteTool[In, Out any](server *mcp.Server, name string, title string, description string, handler mcp.ToolHandlerFor[In, Out]) {
@@ -541,6 +582,135 @@ func createStockItem(deps Dependencies) mcp.ToolHandlerFor[CreateStockItemInput,
 			})
 			return writeRecordOutput(record, err)
 		})
+}
+
+func initialStockWorkflow(deps Dependencies) mcp.ToolHandlerFor[InitialStockWorkflowInput, InitialStockWorkflowOutput] {
+	return LookupHandler[InitialStockWorkflowClient, InitialStockWorkflowInput, InitialStockWorkflowOutput](deps, InitialStockWorkflowToolName,
+		func(ctx context.Context, _ *mcp.CallToolRequest, client InitialStockWorkflowClient, input InitialStockWorkflowInput) (*mcp.CallToolResult, InitialStockWorkflowOutput, error) {
+			output := InitialStockWorkflowOutput{Status: StatusOK, DryRun: input.DryRun}
+			if input.Quantity <= 0 {
+				return initialStockClarification(input.DryRun, "What initial stock quantity should be created?", "quantity", "quantity must be greater than zero", "quantity", map[string]any{"quantity": input.Quantity, "part_id": input.PartID, "location_id": input.LocationID})
+			}
+			if input.Status != nil && *input.Status < 0 {
+				return initialStockClarification(input.DryRun, "Which stock status should be used?", "status", "status must be a non-negative InvenTree stock status code when provided", "status", map[string]any{"status": *input.Status})
+			}
+
+			part, ok, result, clarificationOutput, err := resolveInitialStockPart(ctx, client, input, &output)
+			if err != nil || !ok {
+				return result, clarificationOutput, err
+			}
+			output.Part = &part
+
+			location, ok, result, clarificationOutput, err := resolveInitialStockLocation(ctx, client, input, &output)
+			if err != nil || !ok {
+				return result, clarificationOutput, err
+			}
+			output.Location = &location
+
+			records, err := client.SearchStockItems(ctx, inventree.StockItemQuery{PartID: part.PK, LocationID: location.PK, Limit: DefaultLookupLimit})
+			if err != nil {
+				return nil, InitialStockWorkflowOutput{}, err
+			}
+			if len(records) > 0 {
+				clarification := NewClarification("Should an existing stock item be used instead of creating duplicate initial stock?", "stock_item", "existing stock items already match the requested part and location", "stock_item_id", false, candidatesFor(records), map[string]any{"part_id": part.PK, "location_id": location.PK, "quantity": input.Quantity})
+				return TextResult(StatusClarificationRequired), InitialStockWorkflowOutput{Status: StatusClarificationRequired, DryRun: input.DryRun, Part: &part, Location: &location, Clarification: &clarification}, nil
+			}
+
+			if input.DryRun {
+				output.Actions = append(output.Actions, initialStockAction("create_stock_item", "planned", "stockitem", 0, "no matching stock item found"))
+				return TextResult(StatusOK), output, nil
+			}
+			record, err := client.CreateStockItem(ctx, inventree.StockItemCreate{
+				Part:     part.PK,
+				Location: location.PK,
+				Quantity: input.Quantity,
+				Status:   input.Status,
+				Batch:    input.Batch,
+				Serial:   input.Serial,
+				Notes:    input.Notes,
+			})
+			if err != nil {
+				return nil, InitialStockWorkflowOutput{}, err
+			}
+			output.StockItem = &record
+			output.Actions = append(output.Actions, initialStockAction("create_stock_item", "created", "stockitem", record.PK, "no matching stock item found"))
+			return TextResult(StatusOK), output, nil
+		})
+}
+
+func resolveInitialStockPart(ctx context.Context, client InitialStockWorkflowClient, input InitialStockWorkflowInput, output *InitialStockWorkflowOutput) (inventree.Part, bool, *mcp.CallToolResult, InitialStockWorkflowOutput, error) {
+	if input.PartID < 0 {
+		result, clarificationOutput, err := initialStockClarification(input.DryRun, "Which part should receive initial stock?", "part", "part_id must be positive when provided", "part_id", map[string]any{"part_id": input.PartID})
+		return inventree.Part{}, false, result, clarificationOutput, err
+	}
+	if input.PartID > 0 {
+		part, err := client.GetPart(ctx, input.PartID)
+		if err != nil {
+			return inventree.Part{}, false, nil, InitialStockWorkflowOutput{}, err
+		}
+		output.Actions = append(output.Actions, initialStockAction("reuse_part", "reused", "part", input.PartID, "part_id supplied"))
+		return part, true, nil, InitialStockWorkflowOutput{}, nil
+	}
+	if strings.TrimSpace(input.PartSearch) == "" {
+		result, clarificationOutput, err := initialStockClarification(input.DryRun, "Which part should receive initial stock?", "part", "provide part_id or part_search", "part_id", map[string]any{"part_search": input.PartSearch})
+		return inventree.Part{}, false, result, clarificationOutput, err
+	}
+	records, err := client.SearchParts(ctx, inventree.SearchQuery{Search: input.PartSearch, Limit: DefaultLookupLimit})
+	if err != nil {
+		return inventree.Part{}, false, nil, InitialStockWorkflowOutput{}, err
+	}
+	if len(records) == 1 {
+		output.Actions = append(output.Actions, initialStockAction("reuse_part", "reused", "part", records[0].PK, "single matching part found"))
+		return records[0], true, nil, InitialStockWorkflowOutput{}, nil
+	}
+	if len(records) > 1 {
+		clarification := NewClarification("Which part should receive initial stock?", "part", "multiple matching parts found", "part_id", false, candidatesFor(records), map[string]any{"part_search": input.PartSearch})
+		return inventree.Part{}, false, TextResult(StatusClarificationRequired), InitialStockWorkflowOutput{Status: StatusClarificationRequired, DryRun: input.DryRun, Clarification: &clarification}, nil
+	}
+	result, clarificationOutput, err := initialStockClarification(input.DryRun, "Which existing part should receive initial stock?", "part", "no matching part found; create or select a part before adding stock", "part_id", map[string]any{"part_search": input.PartSearch})
+	return inventree.Part{}, false, result, clarificationOutput, err
+}
+
+func resolveInitialStockLocation(ctx context.Context, client InitialStockWorkflowClient, input InitialStockWorkflowInput, output *InitialStockWorkflowOutput) (inventree.StockLocation, bool, *mcp.CallToolResult, InitialStockWorkflowOutput, error) {
+	if input.LocationID < 0 {
+		result, clarificationOutput, err := initialStockClarification(input.DryRun, "Which stock location should receive initial stock?", "location", "location_id must be positive when provided", "location_id", map[string]any{"location_id": input.LocationID})
+		return inventree.StockLocation{}, false, result, clarificationOutput, err
+	}
+	if input.LocationID > 0 {
+		location, err := client.GetStockLocation(ctx, input.LocationID)
+		if err != nil {
+			return inventree.StockLocation{}, false, nil, InitialStockWorkflowOutput{}, err
+		}
+		output.Actions = append(output.Actions, initialStockAction("reuse_location", "reused", "stocklocation", input.LocationID, "location_id supplied"))
+		return location, true, nil, InitialStockWorkflowOutput{}, nil
+	}
+	if strings.TrimSpace(input.LocationSearch) == "" {
+		result, clarificationOutput, err := initialStockClarification(input.DryRun, "Which stock location should receive initial stock?", "location", "provide location_id or location_search", "location_id", map[string]any{"location_search": input.LocationSearch})
+		return inventree.StockLocation{}, false, result, clarificationOutput, err
+	}
+	records, err := client.SearchStockLocations(ctx, inventree.SearchQuery{Search: input.LocationSearch, Limit: DefaultLookupLimit})
+	if err != nil {
+		return inventree.StockLocation{}, false, nil, InitialStockWorkflowOutput{}, err
+	}
+	if len(records) == 1 {
+		output.Actions = append(output.Actions, initialStockAction("reuse_location", "reused", "stocklocation", records[0].PK, "single matching stock location found"))
+		return records[0], true, nil, InitialStockWorkflowOutput{}, nil
+	}
+	if len(records) > 1 {
+		clarification := NewClarification("Which stock location should receive initial stock?", "location", "multiple matching stock locations found", "location_id", false, candidatesFor(records), map[string]any{"location_search": input.LocationSearch})
+		return inventree.StockLocation{}, false, TextResult(StatusClarificationRequired), InitialStockWorkflowOutput{Status: StatusClarificationRequired, DryRun: input.DryRun, Clarification: &clarification}, nil
+	}
+	result, clarificationOutput, err := initialStockClarification(input.DryRun, "Which existing stock location should receive initial stock?", "location", "no matching stock location found; create or select a location before adding stock", "location_id", map[string]any{"location_search": input.LocationSearch})
+	return inventree.StockLocation{}, false, result, clarificationOutput, err
+}
+
+func initialStockClarification(dryRun bool, question string, field string, reason string, retry string, retryValues map[string]any) (*mcp.CallToolResult, InitialStockWorkflowOutput, error) {
+	clarification := NewClarification(question, field, reason, retry, true, nil, retryValues)
+	return TextResult(StatusClarificationRequired), InitialStockWorkflowOutput{Status: StatusClarificationRequired, DryRun: dryRun, Clarification: &clarification}, nil
+}
+
+func initialStockAction(name string, status string, recordType string, id int, reason string) InitialStockWorkflowAction {
+	return InitialStockWorkflowAction{Name: name, Status: status, RecordType: recordType, ID: id, Reason: reason}
 }
 
 func resolveWorkflowPart(ctx context.Context, client PartUpsertWorkflowClient, input UpsertPartWorkflowInput, output *PartUpsertWorkflowOutput) (inventree.Part, bool, *mcp.CallToolResult, PartUpsertWorkflowOutput, error) {
