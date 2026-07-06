@@ -42,6 +42,7 @@ const (
 	CreateCompanyToolName            = "create_company"
 	CreateSupplierPartToolName       = "create_supplier_part"
 	CreateManufacturerPartToolName   = "create_manufacturer_part"
+	UpsertPartWorkflowToolName       = "upsert_part_with_supplier_and_manufacturer"
 	CreateStockItemToolName          = "create_stock_item"
 
 	defaultDownloadMaxBytes int64 = 5 * 1024 * 1024
@@ -88,6 +89,7 @@ var writeToolNames = []string{
 	CreateCompanyToolName,
 	CreateSupplierPartToolName,
 	CreateManufacturerPartToolName,
+	UpsertPartWorkflowToolName,
 	CreateStockItemToolName,
 }
 

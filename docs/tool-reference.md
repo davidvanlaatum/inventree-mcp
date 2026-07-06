@@ -37,6 +37,13 @@ Common lookup inputs:
 | `quantity` | `create_stock_item` | Initial stock quantity. Must be greater than zero. |
 | `status` | `create_stock_item` | Optional InvenTree stock status code when local convention requires one. |
 | `batch`, `serial`, `notes` | `create_stock_item` | Optional stock-item metadata passed through to the schema-backed stock endpoint. |
+| `dry_run` | workflow tools | Return planned actions without writing when true. |
+| `supplier_name`, `manufacturer_name` | `upsert_part_with_supplier_and_manufacturer` | Company names used to prefer existing supplier/manufacturer records or create them when unambiguous. |
+| `supplier_currency`, `manufacturer_currency` | `upsert_part_with_supplier_and_manufacturer` | Currency required before creating a supplier or manufacturer company. |
+| `supplier_sku`, `mpn` | `upsert_part_with_supplier_and_manufacturer` | Stable supplier and manufacturer identifiers for supplier/manufacturer part links. |
+| `actions`, `record_type`, `reason` | workflow outputs | Ordered plan or execution summary for workflow-level tools. In `dry_run` responses, planned creates are authoritative here because they do not have stable IDs yet. |
+| `part`, `supplier`, `manufacturer`, `supplier_part`, `manufacturer_part` | `upsert_part_with_supplier_and_manufacturer` output | Stable records selected, reused, updated, or created by the workflow. Dry-run planned creates may appear only in `actions` until the write is executed. |
+| `omitted_recommended_fields` | workflow outputs | Recommended fields the caller did not provide, such as IPN, units, purchaseability, default location, supplier SKU, or MPN. |
 | `mode` | download tools | Optional download mode. `original` is the default; `thumbnail` is supported for generic attachment downloads when metadata exposes a thumbnail URL and for part-image downloads through `/api/part/thumbs/{id}/`. |
 | `max_bytes` | download tools | Optional maximum response content size. Defaults to `5242880` and is capped at `26214400`. |
 
@@ -102,6 +109,7 @@ Tools in this section use milestone status `milestone_1`, MCP annotations `readO
 | `create_company` | Company entry | `name`, `currency`, at least one of `is_supplier` or `is_manufacturer`, optional `description`, `website` | `status`, `record`, optional `clarification` with retry `company_id`, `currency`, or `is_supplier` | Matching companies already exist, currency is missing, no supported role is selected, or the caller asks for a customer/sales workflow. |
 | `create_supplier_part` | Supplier link | `part_id`, `supplier_id`, `sku`, optional `description`, `link`, `active`, `primary`, `manufacturer_part_id`, `packaging`, `note` | `status`, `record`, optional `clarification` with retry `supplier_part_id`, `part_id`, `supplier_id`, or `manufacturer_part_id` | Part, supplier, or manufacturer-part ID is invalid, or matching supplier-part links already exist. |
 | `create_manufacturer_part` | Manufacturer link | `part_id`, `manufacturer_id`, optional `mpn`, `description`, `link` | `status`, `record`, optional `clarification` with retry `manufacturer_part_id`, `part_id`, or `manufacturer_id` | Part or manufacturer ID is invalid, or matching manufacturer-part links already exist. |
+| `upsert_part_with_supplier_and_manufacturer` | Part workflow | `dry_run`, `part_id` or `name`, optional part fields, optional supplier/manufacturer IDs or names, `supplier_sku`, `mpn`, and currencies when creating companies | `status`, `dry_run`, `actions`, selected/reused/created `part`, `supplier`, `manufacturer`, `supplier_part`, `manufacturer_part` when stable, `omitted_recommended_fields`, optional `clarification` | Part, supplier, manufacturer, supplier-part, or manufacturer-part matches are ambiguous; category or currency is missing before creation; supplier SKU is missing before linking. |
 | `create_stock_item` | Initial stock | `part_id`, `location_id`, `quantity`, optional `status`, `batch`, `serial`, `notes` | `status`, `record`, optional `clarification` with retry `stock_item_id`, `part_id`, `location_id`, `quantity`, or `status` | Part, location, quantity, or status is invalid, or existing stock already matches the requested part and location. |
 
 ## Skeleton Tools
@@ -135,6 +143,7 @@ Tools in this section use milestone status `milestone_1`, MCP annotations `readO
 | `create_company` | Company entry | Write | `inventree.write` | None | See Registered Write Tools. |
 | `create_supplier_part` | Supplier link | Write | `inventree.write` | None | See Registered Write Tools. |
 | `create_manufacturer_part` | Manufacturer link | Write | `inventree.write` | None | See Registered Write Tools. |
+| `upsert_part_with_supplier_and_manufacturer` | Part workflow | Write | `inventree.write` | None | See Registered Write Tools. |
 | `create_stock_item` | Initial stock | Operational | `inventree.write`, `inventree.operational` | None | Existing stock at the requested location may duplicate the new item. |
 | `upload_attachment` | Attachments | Write | `inventree.write`, `inventree.upload` | Inline bytes; STDIO allowlisted local path | Filename/content duplicates an existing attachment without explicit replacement or metadata-update intent. |
 | `upload_attachment_from_url` | Attachments | Write, open-world | `inventree.write`, `inventree.upload` | HTTP(S) URL only | Intent could be upload-copy versus store-link, or URL policy rejects the target. |

@@ -44,8 +44,8 @@ Each recipe should preserve omitted fields versus explicit zero/false/empty valu
 - Required inputs: part name or IPN/SKU, category or category ID, units where required, supplier/manufacturer details when available.
 - Preferred lookup order: search parts, search categories, search companies, search supplier/manufacturer part records, then create or update only the missing pieces.
 - Clarify when: part/category/company matches are ambiguous, an existing part may already represent the requested item, or supplier/manufacturer identifiers conflict.
-- Tool sequence: `search_parts`, `search_part_categories`, `search_companies` or role-specific search, then `create_part`/`update_part`, `create_supplier_part`, `create_manufacturer_part`.
-- Expected output: `status` plus the created or updated part, supplier-part, and manufacturer-part records. If a required stable ID, currency, supported company role, or duplicate decision is missing, the tool returns structured clarification.
+- Tool sequence: use `upsert_part_with_supplier_and_manufacturer` with `dry_run:true` first when the operator wants one safer workflow-level plan, then retry without `dry_run` after reviewing the plan. Use lower-level `search_parts`, `search_part_categories`, role-specific company searches, `create_part`/`update_part`, `create_supplier_part`, and `create_manufacturer_part` when the operator needs step-by-step control.
+- Expected output: `status`, `actions`, stable selected or created part, supplier, manufacturer, supplier-part, and manufacturer-part records when available, plus `omitted_recommended_fields` for missing recommended values. In `dry_run` responses, planned creates are represented by `actions` because stable IDs do not exist until the write runs. If a required stable ID, currency, supported company role, SKU, or duplicate decision is missing, the tool returns structured clarification.
 - HTTP note: write tools are STDIO-only until per-tool OAuth scope enforcement is implemented.
 
 ## Add Or Update Part Parameters
