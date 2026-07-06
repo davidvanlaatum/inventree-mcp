@@ -13,7 +13,6 @@ permissions:
 
 env:
   GOFLAGS: -trimpath
-  GREMLINS_VERSION: v0.6.0
 
 jobs:
   test:
@@ -63,11 +62,24 @@ jobs:
       - uses: actions/setup-go@v6
         with:
           go-version: 'stable'
-      - name: Cache Gremlins binary
+          cache: false
+      - name: Locate Go cache paths
+        id: go-cache-paths
+        shell: bash
+        run: |
+          echo "build=$(go env GOCACHE)" >> "$GITHUB_OUTPUT"
+          echo "mod=$(go env GOMODCACHE)" >> "$GITHUB_OUTPUT"
+          echo "version=$(go env GOVERSION)" >> "$GITHUB_OUTPUT"
+      - name: Cache Gremlins Go test caches
         uses: actions/cache@v6
         with:
-          path: ${{ runner.tool_cache }}/gremlins
-          key: ${{ runner.os }}-${{ runner.arch }}-gremlins-${{ env.GREMLINS_VERSION }}
+          path: |
+            ${{ steps.go-cache-paths.outputs.build }}
+            ${{ steps.go-cache-paths.outputs.mod }}
+          key: ${{ runner.os }}-${{ runner.arch }}-${{ steps.go-cache-paths.outputs.version }}-gremlins-go-${{ hashFiles('go.mod', 'go.sum') }}-${{ hashFiles('.gremlins.yaml', '**/*.go') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ runner.arch }}-${{ steps.go-cache-paths.outputs.version }}-gremlins-go-${{ hashFiles('go.mod', 'go.sum') }}-
+            ${{ runner.os }}-${{ runner.arch }}-${{ steps.go-cache-paths.outputs.version }}-gremlins-go-
       - uses: go-gremlins/gremlins-action@v1
         with:
-          version: ${{ env.GREMLINS_VERSION }}
+          version: latest
