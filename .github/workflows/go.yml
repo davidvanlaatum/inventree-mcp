@@ -13,6 +13,7 @@ permissions:
 
 env:
   GOFLAGS: -trimpath
+  GREMLINS_VERSION: v0.6.0
 
 jobs:
   test:
@@ -62,6 +63,11 @@ jobs:
       - uses: actions/setup-go@v6
         with:
           go-version: 'stable'
+      - name: Cache Gremlins binary
+        uses: actions/cache@v6
+        with:
+          path: ${{ runner.tool_cache }}/gremlins
+          key: ${{ runner.os }}-${{ runner.arch }}-gremlins-${{ env.GREMLINS_VERSION }}
       - uses: go-gremlins/gremlins-action@v1
         with:
-          version: latest
+          version: ${{ env.GREMLINS_VERSION }}
