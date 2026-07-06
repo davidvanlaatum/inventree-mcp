@@ -94,6 +94,13 @@ func TestClientMethodsAgainstInvenTree(t *testing.T) {
 		r.Equal(supplierPart.ID, supplierParts[0].PK)
 		r.Equal(part.ID, supplierParts[0].Part)
 		r.Equal(supplier.ID, supplierParts[0].Supplier)
+
+		gotSupplierPart, err := fixture.client.GetSupplierPart(ctx, supplierPart.ID)
+		r.NoError(err)
+		r.Equal(supplierPart.ID, gotSupplierPart.PK)
+		r.Equal(part.ID, gotSupplierPart.Part)
+		r.Equal(supplier.ID, gotSupplierPart.Supplier)
+		r.Equal(supplierPart.Name, gotSupplierPart.SKU)
 	})
 
 	t.Run("writes", func(t *testing.T) {
