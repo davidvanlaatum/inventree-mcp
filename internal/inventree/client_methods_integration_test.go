@@ -223,7 +223,13 @@ func TestClientMethodsAgainstInvenTree(t *testing.T) {
 		fixture := newClientMethodFixture(t, shared)
 		location := fixture.ensure(t, testenv.FixtureLocation)
 		part := fixture.ensure(t, testenv.FixturePart)
-		stockItem := createStockItem(t, fixture.client, part.ID, location.ID, 7)
+		stockItem, err := fixture.client.CreateStockItem(ctx, inventree.StockItemCreate{Part: part.ID, Location: location.ID, Quantity: 7})
+		r.NoError(err)
+		r.NotZero(stockItem.PK)
+		r.Equal(part.ID, stockItem.Part)
+		r.NotNil(stockItem.Location)
+		r.Equal(location.ID, *stockItem.Location)
+		r.Equal(float64(7), stockItem.Quantity)
 
 		locations, err := fixture.client.SearchStockLocations(ctx, inventree.SearchQuery{Search: location.Name})
 		r.NoError(err)
@@ -233,7 +239,7 @@ func TestClientMethodsAgainstInvenTree(t *testing.T) {
 		r.NoError(err)
 		r.Equal(location.Name, gotLocation.Name)
 
-		stockItems, err := fixture.client.SearchStockItems(ctx, inventree.StockItemQuery{PartID: part.ID})
+		stockItems, err := fixture.client.SearchStockItems(ctx, inventree.StockItemQuery{PartID: part.ID, LocationID: location.ID})
 		r.NoError(err)
 		r.NotEmpty(stockItems)
 		r.Equal(stockItem.PK, stockItems[0].PK)
@@ -562,28 +568,6 @@ func createPurchaseOrderLine(t *testing.T, client *inventree.Client, orderID int
 	r.Equal(orderID, created.Order)
 	r.Equal(quantity, created.Quantity)
 	return created
-}
-
-func createStockItem(t *testing.T, client *inventree.Client, partID int, locationID int, quantity float64) inventree.StockItem {
-	t.Helper()
-	r := require.New(t)
-	ctx, _, _ := testhandler.SetupTestHandler(t)
-
-	req, err := client.NewRequest(ctx, http.MethodPost, "/api/stock/", nil, map[string]any{
-		"part":     partID,
-		"location": locationID,
-		"quantity": quantity,
-	})
-	r.NoError(err)
-	var created []inventree.StockItem
-	r.NoError(client.DoJSON(req, &created))
-	r.Len(created, 1)
-	r.NotZero(created[0].PK)
-	r.Equal(partID, created[0].Part)
-	r.NotNil(created[0].Location)
-	r.Equal(locationID, *created[0].Location)
-	r.Equal(quantity, created[0].Quantity)
-	return created[0]
 }
 
 func attachmentIDs(attachments []inventree.Attachment) []int {

@@ -21,8 +21,13 @@ func TestWriteToolAuthorizationsUseWriteScope(t *testing.T) {
 	for _, name := range writeToolNames {
 		auth, ok := ToolAuthorizations[name]
 		r.True(ok, "missing authorization for %s", name)
-		a.Equal("write", auth.MutationClass)
-		a.Equal([]string{ScopeInventreeWrite}, auth.Scopes)
+		if name == CreateStockItemToolName {
+			a.Equal("operational", auth.MutationClass)
+			a.Equal([]string{ScopeInventreeWrite, ScopeInventreeOperational}, auth.Scopes)
+		} else {
+			a.Equal("write", auth.MutationClass)
+			a.Equal([]string{ScopeInventreeWrite}, auth.Scopes)
+		}
 		a.Equal(WriteAnnotations, auth.Annotations)
 	}
 }
@@ -37,12 +42,14 @@ func TestWriteToolInputsExcludeSalesAndCustomerWorkflowFields(t *testing.T) {
 		reflect.TypeOf(CreateCompanyInput{}),
 		reflect.TypeOf(CreateSupplierPartInput{}),
 		reflect.TypeOf(CreateManufacturerPartInput{}),
+		reflect.TypeOf(CreateStockItemInput{}),
 		reflect.TypeOf(SetPartParametersInput{}),
 		reflect.TypeOf(ParameterSetInput{}),
 		reflect.TypeOf(inventree.PartCreate{}),
 		reflect.TypeOf(inventree.CompanyCreate{}),
 		reflect.TypeOf(inventree.SupplierPartCreate{}),
 		reflect.TypeOf(inventree.ManufacturerPartCreate{}),
+		reflect.TypeOf(inventree.StockItemCreate{}),
 		reflect.TypeOf(inventree.ParameterCreate{}),
 	} {
 		for _, field := range reflect.VisibleFields(schemaType) {
@@ -55,6 +62,82 @@ func TestWriteToolInputsExcludeSalesAndCustomerWorkflowFields(t *testing.T) {
 			a.NotContains(strings.ToLower(jsonName), "sales")
 		}
 	}
+}
+
+func TestCreateStockItemAsksBeforeDuplicateCreate(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	locationID := 40
+	fake := &fakeMilestoneLookupClient{
+		stockItems: []inventree.StockItem{{PK: 50, Part: 10, Location: &locationID, Quantity: 2}},
+	}
+
+	_, output, err := createStockItem(depsForFake(fake))(ctx, &mcp.CallToolRequest{}, CreateStockItemInput{PartID: 10, LocationID: locationID, Quantity: 7})
+
+	r.NoError(err)
+	a.Equal(StatusClarificationRequired, output.Status)
+	r.NotNil(output.Clarification)
+	a.Equal("stock_item", output.Clarification.Field)
+	a.Equal("stock_item_id", output.Clarification.Retry)
+	a.Equal("50", output.Clarification.Candidates[0].ID)
+	a.Equal(inventree.StockItemQuery{PartID: 10, LocationID: locationID, Limit: DefaultLookupLimit}, fake.lastSearchStockItemsQuery)
+	a.False(fake.createdStockItem)
+}
+
+func TestCreateStockItemValidatesInputsBeforeWrite(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	fake := &fakeMilestoneLookupClient{}
+
+	_, output, err := createStockItem(depsForFake(fake))(ctx, &mcp.CallToolRequest{}, CreateStockItemInput{LocationID: 40, Quantity: 1})
+	r.NoError(err)
+	a.Equal(StatusClarificationRequired, output.Status)
+	a.Equal("part", output.Clarification.Field)
+
+	_, output, err = createStockItem(depsForFake(fake))(ctx, &mcp.CallToolRequest{}, CreateStockItemInput{PartID: 10, Quantity: 1})
+	r.NoError(err)
+	a.Equal(StatusClarificationRequired, output.Status)
+	a.Equal("location", output.Clarification.Field)
+
+	_, output, err = createStockItem(depsForFake(fake))(ctx, &mcp.CallToolRequest{}, CreateStockItemInput{PartID: 10, LocationID: 40})
+	r.NoError(err)
+	a.Equal(StatusClarificationRequired, output.Status)
+	a.Equal("quantity", output.Clarification.Field)
+
+	_, output, err = createStockItem(depsForFake(fake))(ctx, &mcp.CallToolRequest{}, CreateStockItemInput{PartID: 10, LocationID: 40, Quantity: 1, Status: dvgoutils.Ptr(-1)})
+	r.NoError(err)
+	a.Equal(StatusClarificationRequired, output.Status)
+	a.Equal("status", output.Clarification.Field)
+
+	a.False(fake.createdStockItem)
+	a.Equal(inventree.StockItemQuery{}, fake.lastSearchStockItemsQuery)
+}
+
+func TestCreateStockItemWritesAfterDuplicatePreflight(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	fake := &fakeMilestoneLookupClient{}
+
+	_, output, err := createStockItem(depsForFake(fake))(ctx, &mcp.CallToolRequest{}, CreateStockItemInput{
+		PartID:     10,
+		LocationID: 40,
+		Quantity:   7,
+		Status:     dvgoutils.Ptr(10),
+		Batch:      dvgoutils.Ptr("B-1"),
+		Notes:      dvgoutils.Ptr("initial stock"),
+	})
+
+	r.NoError(err)
+	a.Equal(StatusOK, output.Status)
+	a.True(fake.createdStockItem)
+	a.Equal(inventree.StockItemQuery{PartID: 10, LocationID: 40, Limit: DefaultLookupLimit}, fake.lastSearchStockItemsQuery)
+	a.Equal(inventree.StockItemCreate{Part: 10, Location: 40, Quantity: 7, Status: dvgoutils.Ptr(10), Batch: dvgoutils.Ptr("B-1"), Notes: dvgoutils.Ptr("initial stock")}, fake.lastCreateStockItem)
 }
 
 func TestCreatePartAsksBeforeDuplicateCreate(t *testing.T) {

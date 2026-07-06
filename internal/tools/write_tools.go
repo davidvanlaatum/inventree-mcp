@@ -31,6 +31,11 @@ type ManufacturerPartWriteClient interface {
 	CreateManufacturerPart(context.Context, inventree.ManufacturerPartCreate) (inventree.ManufacturerPart, error)
 }
 
+type StockItemWriteClient interface {
+	SearchStockItems(context.Context, inventree.StockItemQuery) ([]inventree.StockItem, error)
+	CreateStockItem(context.Context, inventree.StockItemCreate) (inventree.StockItem, error)
+}
+
 type ParameterWriteClient interface {
 	GetPart(context.Context, int) (inventree.Part, error)
 	SearchPartParameters(context.Context, inventree.PartParameterQuery) ([]inventree.Parameter, error)
@@ -102,6 +107,16 @@ type CreateManufacturerPartInput struct {
 	Link           *string `json:"link,omitempty" jsonschema:"Optional external manufacturer part URL."`
 }
 
+type CreateStockItemInput struct {
+	PartID     int     `json:"part_id" jsonschema:"Existing part primary key."`
+	LocationID int     `json:"location_id" jsonschema:"Existing stock location primary key."`
+	Quantity   float64 `json:"quantity" jsonschema:"Initial stock quantity. Must be greater than zero."`
+	Status     *int    `json:"status,omitempty" jsonschema:"Optional InvenTree stock status code."`
+	Batch      *string `json:"batch,omitempty" jsonschema:"Optional batch code."`
+	Serial     *string `json:"serial,omitempty" jsonschema:"Optional serial number."`
+	Notes      *string `json:"notes,omitempty" jsonschema:"Optional markdown notes."`
+}
+
 type SetPartParametersInput struct {
 	PartID     int                 `json:"part_id" jsonschema:"Existing part primary key."`
 	Parameters []ParameterSetInput `json:"parameters" jsonschema:"Parameter values to create or update."`
@@ -134,6 +149,7 @@ func registerWriteTools(server *mcp.Server, deps Dependencies) {
 	addWriteTool(server, CreateCompanyToolName, "Create company", "Creates a supplier and/or manufacturer company.", createCompany(deps))
 	addWriteTool(server, CreateSupplierPartToolName, "Create supplier part", "Creates a supplier-part link for existing records.", createSupplierPart(deps))
 	addWriteTool(server, CreateManufacturerPartToolName, "Create manufacturer part", "Creates a manufacturer-part link for existing records.", createManufacturerPart(deps))
+	addWriteTool(server, CreateStockItemToolName, "Create stock item", "Creates initial stock after checking for duplicate stock at the same part and location.", createStockItem(deps))
 }
 
 func addWriteTool[In, Out any](server *mcp.Server, name string, title string, description string, handler mcp.ToolHandlerFor[In, Out]) {
@@ -373,6 +389,45 @@ func createManufacturerPart(deps Dependencies) mcp.ToolHandlerFor[CreateManufact
 				MPN:          input.MPN,
 				Description:  input.Description,
 				Link:         input.Link,
+			})
+			return writeRecordOutput(record, err)
+		})
+}
+
+func createStockItem(deps Dependencies) mcp.ToolHandlerFor[CreateStockItemInput, WriteRecordOutput[inventree.StockItem]] {
+	return LookupHandler[StockItemWriteClient, CreateStockItemInput, WriteRecordOutput[inventree.StockItem]](deps, CreateStockItemToolName,
+		func(ctx context.Context, _ *mcp.CallToolRequest, client StockItemWriteClient, input CreateStockItemInput) (*mcp.CallToolResult, WriteRecordOutput[inventree.StockItem], error) {
+			if input.PartID <= 0 {
+				return hardClarification[inventree.StockItem]("Which part should receive initial stock?", "part", "create_stock_item requires a positive part_id", "part_id", map[string]any{"part_id": input.PartID})
+			}
+			if input.LocationID <= 0 {
+				return hardClarification[inventree.StockItem]("Which stock location should receive initial stock?", "location", "create_stock_item requires a positive location_id", "location_id", map[string]any{"location_id": input.LocationID})
+			}
+			if input.Quantity <= 0 {
+				return hardClarification[inventree.StockItem]("What initial stock quantity should be created?", "quantity", "create_stock_item requires quantity greater than zero", "quantity", map[string]any{"part_id": input.PartID, "location_id": input.LocationID, "quantity": input.Quantity})
+			}
+			if input.Status != nil && *input.Status < 0 {
+				return hardClarification[inventree.StockItem]("Which stock status should be used?", "status", "status must be a non-negative InvenTree stock status code when provided", "status", map[string]any{"status": *input.Status})
+			}
+
+			query := inventree.StockItemQuery{PartID: input.PartID, LocationID: input.LocationID, Limit: DefaultLookupLimit}
+			records, err := client.SearchStockItems(ctx, query)
+			if err != nil {
+				return nil, WriteRecordOutput[inventree.StockItem]{}, err
+			}
+			if len(records) > 0 {
+				clarification := NewClarification("Should an existing stock item be used instead of creating duplicate initial stock?", "stock_item", "existing stock items already match the requested part and location", "stock_item_id", false, candidatesFor(records), map[string]any{"part_id": input.PartID, "location_id": input.LocationID, "quantity": input.Quantity})
+				return TextResult(StatusClarificationRequired), WriteRecordOutput[inventree.StockItem]{Status: StatusClarificationRequired, Clarification: &clarification}, nil
+			}
+
+			record, err := client.CreateStockItem(ctx, inventree.StockItemCreate{
+				Part:     input.PartID,
+				Location: input.LocationID,
+				Quantity: input.Quantity,
+				Status:   input.Status,
+				Batch:    input.Batch,
+				Serial:   input.Serial,
+				Notes:    input.Notes,
 			})
 			return writeRecordOutput(record, err)
 		})

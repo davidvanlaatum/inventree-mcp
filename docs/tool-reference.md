@@ -33,7 +33,10 @@ Common lookup inputs:
 | `model_type` | object-scoped attachment/parameter tools | In-scope InvenTree object type such as `part`, `stockitem`, `company`, `manufacturerpart`, `supplierpart`, or `purchaseorder`. |
 | `model_id` | object-scoped attachment/parameter tools | Stable primary key for the selected object type. |
 | `part_id` | part parameter and stock-item tools | Stable part primary key for part-scoped reads or stock duplicate checks. |
-| `location_id` | stock-item tools | Optional stable stock location primary key for stock duplicate checks. |
+| `location_id` | stock-item tools | Stable stock location primary key. Required for `create_stock_item`; optional for stock duplicate-check searches. |
+| `quantity` | `create_stock_item` | Initial stock quantity. Must be greater than zero. |
+| `status` | `create_stock_item` | Optional InvenTree stock status code when local convention requires one. |
+| `batch`, `serial`, `notes` | `create_stock_item` | Optional stock-item metadata passed through to the schema-backed stock endpoint. |
 | `mode` | download tools | Optional download mode. `original` is the default; `thumbnail` is supported for generic attachment downloads when metadata exposes a thumbnail URL and for part-image downloads through `/api/part/thumbs/{id}/`. |
 | `max_bytes` | download tools | Optional maximum response content size. Defaults to `5242880` and is capped at `26214400`. |
 
@@ -89,7 +92,7 @@ All tools in this section are implemented and registered. They use class `read_o
 
 The tools in this section are implemented and registered only when write tools are explicitly enabled by the server dependency configuration. The current CLI enables them for STDIO mode. HTTP mode does not register them until `M1C-S04` implements per-tool OAuth scope enforcement.
 
-All tools in this section use class `write`, milestone status `milestone_1`, MCP annotations `readOnlyHint:false`, `destructiveHint:false`, `idempotentHint:false`, and `openWorldHint:false`. They require OAuth scope `inventree.write` when HTTP OAuth scope enforcement lands. Upload sources are `None`.
+Tools in this section use milestone status `milestone_1`, MCP annotations `readOnlyHint:false`, `destructiveHint:false`, `idempotentHint:false`, and `openWorldHint:false`. Most use class `write` and require OAuth scope `inventree.write` when HTTP OAuth scope enforcement lands. Operational stock tools use class `operational` and require both `inventree.write` and `inventree.operational`. Upload sources are `None`.
 
 | Tool | Group | Inputs | Output | Ask operator when |
 | --- | --- | --- | --- | --- |
@@ -99,6 +102,7 @@ All tools in this section use class `write`, milestone status `milestone_1`, MCP
 | `create_company` | Company entry | `name`, `currency`, at least one of `is_supplier` or `is_manufacturer`, optional `description`, `website` | `status`, `record`, optional `clarification` with retry `company_id`, `currency`, or `is_supplier` | Matching companies already exist, currency is missing, no supported role is selected, or the caller asks for a customer/sales workflow. |
 | `create_supplier_part` | Supplier link | `part_id`, `supplier_id`, `sku`, optional `description`, `link`, `active`, `primary`, `manufacturer_part_id`, `packaging`, `note` | `status`, `record`, optional `clarification` with retry `supplier_part_id`, `part_id`, `supplier_id`, or `manufacturer_part_id` | Part, supplier, or manufacturer-part ID is invalid, or matching supplier-part links already exist. |
 | `create_manufacturer_part` | Manufacturer link | `part_id`, `manufacturer_id`, optional `mpn`, `description`, `link` | `status`, `record`, optional `clarification` with retry `manufacturer_part_id`, `part_id`, or `manufacturer_id` | Part or manufacturer ID is invalid, or matching manufacturer-part links already exist. |
+| `create_stock_item` | Initial stock | `part_id`, `location_id`, `quantity`, optional `status`, `batch`, `serial`, `notes` | `status`, `record`, optional `clarification` with retry `stock_item_id`, `part_id`, `location_id`, `quantity`, or `status` | Part, location, quantity, or status is invalid, or existing stock already matches the requested part and location. |
 
 ## Skeleton Tools
 
