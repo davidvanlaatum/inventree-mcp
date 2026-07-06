@@ -50,6 +50,18 @@ Common lookup inputs:
 | `mode` | download tools | Optional download mode. `original` is the default; `thumbnail` is supported for generic attachment downloads when metadata exposes a thumbnail URL and for part-image downloads through `/api/part/thumbs/{id}/`. |
 | `max_bytes` | download tools | Optional maximum response content size. Defaults to `5242880` and is capped at `26214400`. |
 
+## Upload Source Resolver
+
+`internal/upload` now owns upload source acquisition for planned attachment/image write tools. It resolves three source kinds before any InvenTree multipart upload code receives bytes:
+
+| Source | Current behavior |
+| --- | --- |
+| Inline bytes | Copies caller-provided bytes, cleans the supplied filename, preserves the supplied content type, and rejects content above the configured maximum size. |
+| STDIO local path | Available only when the caller's mode is STDIO. It uses direct Afero access in `internal/upload/local_file.go`, canonicalizes allowlisted roots and requested paths, rejects paths outside the allowlist, resolves symlink escapes on `OsFs`, opens only after policy checks, and rejects non-regular files. Allowlisted roots must be trusted operator-controlled paths; `OsFs` still has a residual OS-level race if an untrusted user can swap files between policy checks and open. |
+| URL fetch | Accepts only HTTP(S) URLs without userinfo, resolves hostnames before fetch and every redirect, blocks local/private/link-local/multicast/reserved/documentation/cloud-metadata-style address ranges by default, caps redirects, does not forward MCP or InvenTree authorization headers, and enforces the configured maximum size and timeout. Private/internal URL targets require an explicit normalized scheme/host/port allowlist entry. |
+
+The resolver returns in-memory content, filename, content type, size, and source kind. Attachment tools in `M1F-S02` remain responsible for target object validation, duplicate handling, multipart upload, tool annotations, and OAuth scope registration.
+
 Structured lookup outputs must include `status`. Successful lookups use `ok`; absent stable records use `not_found`; ambiguous lookups use `clarification_required`.
 
 Clarification outputs must include:

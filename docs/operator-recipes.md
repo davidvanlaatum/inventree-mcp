@@ -69,6 +69,7 @@ Each recipe should preserve omitted fields versus explicit zero/false/empty valu
 - Current status: upload, URL-copy, stored-link, metadata update, and delete tools are planned but not registered yet. Use this recipe today only to gather stable target IDs and attachment/image decisions before the M1F attachment tools land.
 - Required inputs: target object type and ID, filename, content type, and exactly one upload source.
 - Accepted sources: inline bytes in any mode; STDIO allowlisted local path; HTTP(S) URL only through `upload_attachment_from_url`; stored link only through `create_link_attachment`.
+- Source resolver behavior: inline bytes are size-capped before upload, STDIO local paths must sit under trusted operator-controlled allowlisted roots and are rejected in HTTP mode before filesystem access, and URL-copy sources must pass SSRF checks without forwarding MCP or InvenTree auth headers.
 - Clarify when: target object is ambiguous, URL intent could mean upload-copy or store-link, duplicate filename/content exists, or source policy rejects the input.
 - Current tool sequence: `list_attachments`, then stop with the stable target ID, existing attachment context, and the explicit upload/link decision for the later M1F tools.
 - Planned M1F tool sequence: `list_attachments`, then `upload_attachment`, `upload_attachment_from_url`, or `create_link_attachment`.
