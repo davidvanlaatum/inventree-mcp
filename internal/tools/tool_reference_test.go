@@ -54,6 +54,9 @@ func TestToolReferenceDocumentsLookupFrameworkSchema(t *testing.T) {
 		reflect.TypeOf(DownloadOutput{}),
 		reflect.TypeOf(SetPartParametersInput{}),
 		reflect.TypeOf(ParameterSetInput{}),
+		reflect.TypeOf(UpsertPartWorkflowInput{}),
+		reflect.TypeOf(PartUpsertWorkflowOutput{}),
+		reflect.TypeOf(PartUpsertWorkflowAction{}),
 		reflect.TypeOf(ClarificationResponse{}),
 		reflect.TypeOf(ClarificationCandidate{}),
 	} {

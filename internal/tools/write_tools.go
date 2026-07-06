@@ -46,6 +46,20 @@ type ParameterWriteClient interface {
 	UpdatePartParameter(context.Context, int, inventree.PatchFields) (inventree.Parameter, error)
 }
 
+type PartUpsertWorkflowClient interface {
+	SearchParts(context.Context, inventree.SearchQuery) ([]inventree.Part, error)
+	GetPart(context.Context, int) (inventree.Part, error)
+	CreatePart(context.Context, inventree.PartCreate) (inventree.Part, error)
+	UpdatePart(context.Context, int, inventree.PatchFields) (inventree.Part, error)
+	SearchSuppliers(context.Context, inventree.SearchQuery) ([]inventree.Company, error)
+	SearchManufacturers(context.Context, inventree.SearchQuery) ([]inventree.Company, error)
+	CreateCompany(context.Context, inventree.CompanyCreate) (inventree.Company, error)
+	SearchSupplierParts(context.Context, inventree.SupplierPartQuery) ([]inventree.SupplierPart, error)
+	CreateSupplierPart(context.Context, inventree.SupplierPartCreate) (inventree.SupplierPart, error)
+	SearchManufacturerParts(context.Context, inventree.ManufacturerPartQuery) ([]inventree.ManufacturerPart, error)
+	CreateManufacturerPart(context.Context, inventree.ManufacturerPartCreate) (inventree.ManufacturerPart, error)
+}
+
 type CreatePartInput struct {
 	Name            string  `json:"name" jsonschema:"Part name."`
 	Description     string  `json:"description,omitempty" jsonschema:"Optional part description."`
@@ -122,6 +136,27 @@ type SetPartParametersInput struct {
 	Parameters []ParameterSetInput `json:"parameters" jsonschema:"Parameter values to create or update."`
 }
 
+type UpsertPartWorkflowInput struct {
+	DryRun               bool    `json:"dry_run,omitempty" jsonschema:"When true, return a write plan without creating or updating records."`
+	PartID               int     `json:"part_id,omitempty" jsonschema:"Existing part primary key to update or link."`
+	Name                 string  `json:"name,omitempty" jsonschema:"Part name to search or create when part_id is omitted."`
+	Description          *string `json:"description,omitempty" jsonschema:"Optional replacement or creation part description."`
+	CategoryID           int     `json:"category_id,omitempty" jsonschema:"Existing category primary key required when creating a part."`
+	IPN                  *string `json:"ipn,omitempty" jsonschema:"Optional internal part number."`
+	Units                *string `json:"units,omitempty" jsonschema:"Optional unit of measure."`
+	Purchaseable         *bool   `json:"purchaseable,omitempty" jsonschema:"Optional explicit purchasable flag."`
+	DefaultLocation      *int    `json:"default_location_id,omitempty" jsonschema:"Optional existing stock location primary key."`
+	SupplierID           int     `json:"supplier_id,omitempty" jsonschema:"Existing supplier company primary key."`
+	SupplierName         string  `json:"supplier_name,omitempty" jsonschema:"Supplier company name to search or create when supplier_id is omitted."`
+	SupplierCurrency     string  `json:"supplier_currency,omitempty" jsonschema:"Currency required when creating a supplier company."`
+	SupplierSKU          string  `json:"supplier_sku,omitempty" jsonschema:"Supplier SKU required when creating a supplier-part link."`
+	ManufacturerID       int     `json:"manufacturer_id,omitempty" jsonschema:"Existing manufacturer company primary key."`
+	ManufacturerName     string  `json:"manufacturer_name,omitempty" jsonschema:"Manufacturer company name to search or create when manufacturer_id is omitted."`
+	ManufacturerCurrency string  `json:"manufacturer_currency,omitempty" jsonschema:"Currency required when creating a manufacturer company."`
+	MPN                  *string `json:"mpn,omitempty" jsonschema:"Optional manufacturer part number."`
+	Link                 *string `json:"link,omitempty" jsonschema:"Optional supplier/manufacturer part URL."`
+}
+
 type ParameterSetInput struct {
 	Name        string   `json:"name,omitempty" jsonschema:"Existing parameter template name when template_id is not supplied."`
 	TemplateID  *int     `json:"template_id,omitempty" jsonschema:"Existing parameter template primary key."`
@@ -134,6 +169,27 @@ type WriteRecordOutput[T any] struct {
 	Status        string                 `json:"status"`
 	Record        T                      `json:"record,omitempty"`
 	Clarification *ClarificationResponse `json:"clarification,omitempty"`
+}
+
+type PartUpsertWorkflowOutput struct {
+	Status                   string                      `json:"status"`
+	DryRun                   bool                        `json:"dry_run"`
+	Actions                  []PartUpsertWorkflowAction  `json:"actions"`
+	Part                     *inventree.Part             `json:"part,omitempty"`
+	Supplier                 *inventree.Company          `json:"supplier,omitempty"`
+	Manufacturer             *inventree.Company          `json:"manufacturer,omitempty"`
+	SupplierPart             *inventree.SupplierPart     `json:"supplier_part,omitempty"`
+	ManufacturerPart         *inventree.ManufacturerPart `json:"manufacturer_part,omitempty"`
+	OmittedRecommendedFields []string                    `json:"omitted_recommended_fields,omitempty"`
+	Clarification            *ClarificationResponse      `json:"clarification,omitempty"`
+}
+
+type PartUpsertWorkflowAction struct {
+	Name       string `json:"name"`
+	Status     string `json:"status"`
+	RecordType string `json:"record_type,omitempty"`
+	ID         int    `json:"id,omitempty"`
+	Reason     string `json:"reason,omitempty"`
 }
 
 type parameterWritePlan struct {
@@ -149,6 +205,7 @@ func registerWriteTools(server *mcp.Server, deps Dependencies) {
 	addWriteTool(server, CreateCompanyToolName, "Create company", "Creates a supplier and/or manufacturer company.", createCompany(deps))
 	addWriteTool(server, CreateSupplierPartToolName, "Create supplier part", "Creates a supplier-part link for existing records.", createSupplierPart(deps))
 	addWriteTool(server, CreateManufacturerPartToolName, "Create manufacturer part", "Creates a manufacturer-part link for existing records.", createManufacturerPart(deps))
+	addWriteTool(server, UpsertPartWorkflowToolName, "Upsert part with supplier and manufacturer", "Plans or performs a safe part upsert with supplier and manufacturer links.", upsertPartWorkflow(deps))
 	addWriteTool(server, CreateStockItemToolName, "Create stock item", "Creates initial stock after checking for duplicate stock at the same part and location.", createStockItem(deps))
 }
 
@@ -394,6 +451,59 @@ func createManufacturerPart(deps Dependencies) mcp.ToolHandlerFor[CreateManufact
 		})
 }
 
+func upsertPartWorkflow(deps Dependencies) mcp.ToolHandlerFor[UpsertPartWorkflowInput, PartUpsertWorkflowOutput] {
+	return LookupHandler[PartUpsertWorkflowClient, UpsertPartWorkflowInput, PartUpsertWorkflowOutput](deps, UpsertPartWorkflowToolName,
+		func(ctx context.Context, _ *mcp.CallToolRequest, client PartUpsertWorkflowClient, input UpsertPartWorkflowInput) (*mcp.CallToolResult, PartUpsertWorkflowOutput, error) {
+			if !input.DryRun {
+				preflightInput := input
+				preflightInput.DryRun = true
+				result, preflightOutput, err := runPartUpsertWorkflow(ctx, client, preflightInput)
+				if err != nil || preflightOutput.Status != StatusOK {
+					preflightOutput.DryRun = false
+					return result, preflightOutput, err
+				}
+			}
+			return runPartUpsertWorkflow(ctx, client, input)
+		})
+}
+
+func runPartUpsertWorkflow(ctx context.Context, client PartUpsertWorkflowClient, input UpsertPartWorkflowInput) (*mcp.CallToolResult, PartUpsertWorkflowOutput, error) {
+	output := PartUpsertWorkflowOutput{Status: StatusOK, DryRun: input.DryRun, OmittedRecommendedFields: omittedPartUpsertFields(input)}
+	part, ok, result, clarificationOutput, err := resolveWorkflowPart(ctx, client, input, &output)
+	if err != nil || !ok {
+		return result, clarificationOutput, err
+	}
+	output.Part = &part
+
+	manufacturer, manufacturerOK, result, clarificationOutput, err := resolveWorkflowCompany(ctx, client, "manufacturer", input.ManufacturerID, input.ManufacturerName, input.ManufacturerCurrency, input.DryRun, &output)
+	if err != nil || !manufacturerOK {
+		return result, clarificationOutput, err
+	}
+	if manufacturer != nil {
+		output.Manufacturer = manufacturer
+		manufacturerPart, ok, result, clarificationOutput, err := resolveWorkflowManufacturerPart(ctx, client, part.PK, *manufacturer, input, &output)
+		if err != nil || !ok {
+			return result, clarificationOutput, err
+		}
+		output.ManufacturerPart = manufacturerPart
+	}
+
+	supplier, supplierOK, result, clarificationOutput, err := resolveWorkflowCompany(ctx, client, "supplier", input.SupplierID, input.SupplierName, input.SupplierCurrency, input.DryRun, &output)
+	if err != nil || !supplierOK {
+		return result, clarificationOutput, err
+	}
+	if supplier != nil {
+		output.Supplier = supplier
+		supplierPart, ok, result, clarificationOutput, err := resolveWorkflowSupplierPart(ctx, client, part.PK, *supplier, output.ManufacturerPart, input, &output)
+		if err != nil || !ok {
+			return result, clarificationOutput, err
+		}
+		output.SupplierPart = supplierPart
+	}
+
+	return TextResult(StatusOK), output, nil
+}
+
 func createStockItem(deps Dependencies) mcp.ToolHandlerFor[CreateStockItemInput, WriteRecordOutput[inventree.StockItem]] {
 	return LookupHandler[StockItemWriteClient, CreateStockItemInput, WriteRecordOutput[inventree.StockItem]](deps, CreateStockItemToolName,
 		func(ctx context.Context, _ *mcp.CallToolRequest, client StockItemWriteClient, input CreateStockItemInput) (*mcp.CallToolResult, WriteRecordOutput[inventree.StockItem], error) {
@@ -431,6 +541,287 @@ func createStockItem(deps Dependencies) mcp.ToolHandlerFor[CreateStockItemInput,
 			})
 			return writeRecordOutput(record, err)
 		})
+}
+
+func resolveWorkflowPart(ctx context.Context, client PartUpsertWorkflowClient, input UpsertPartWorkflowInput, output *PartUpsertWorkflowOutput) (inventree.Part, bool, *mcp.CallToolResult, PartUpsertWorkflowOutput, error) {
+	if input.PartID < 0 {
+		return workflowClarification[inventree.Part](input.DryRun, "Which part should be created or updated?", "part", "part_id must be positive when provided", "part_id", map[string]any{"part_id": input.PartID})
+	}
+	if input.PartID > 0 {
+		if input.CategoryID < 0 {
+			return workflowClarification[inventree.Part](input.DryRun, "Which category should contain this part?", "category_id", "category_id must be positive when provided", "category_id", map[string]any{"category_id": input.CategoryID})
+		}
+		if input.DefaultLocation != nil && *input.DefaultLocation <= 0 {
+			return workflowClarification[inventree.Part](input.DryRun, "Which default stock location should be used?", "default_location_id", "default_location_id must be positive when provided", "default_location_id", map[string]any{"default_location_id": *input.DefaultLocation})
+		}
+		part, err := client.GetPart(ctx, input.PartID)
+		if err != nil {
+			return inventree.Part{}, false, nil, PartUpsertWorkflowOutput{}, err
+		}
+		output.Actions = append(output.Actions, workflowAction("reuse_part", "reused", "part", part.PK, "part_id supplied"))
+		fields := partWorkflowPatchFields(input)
+		if len(fields) == 0 {
+			return part, true, nil, PartUpsertWorkflowOutput{}, nil
+		}
+		if input.DryRun {
+			output.Actions = append(output.Actions, workflowAction("update_part", "planned", "part", part.PK, "supplied fields would be patched"))
+			return part, true, nil, PartUpsertWorkflowOutput{}, nil
+		}
+		updated, err := client.UpdatePart(ctx, input.PartID, fields)
+		if err != nil {
+			return inventree.Part{}, false, nil, PartUpsertWorkflowOutput{}, err
+		}
+		output.Actions = append(output.Actions, workflowAction("update_part", "updated", "part", updated.PK, "supplied fields patched"))
+		return updated, true, nil, PartUpsertWorkflowOutput{}, nil
+	}
+	if input.CategoryID < 0 {
+		return workflowClarification[inventree.Part](input.DryRun, "Which category should contain this part?", "category_id", "category_id must be positive when provided", "category_id", map[string]any{"category_id": input.CategoryID})
+	}
+	if input.DefaultLocation != nil && *input.DefaultLocation <= 0 {
+		return workflowClarification[inventree.Part](input.DryRun, "Which default stock location should be used?", "default_location_id", "default_location_id must be positive when provided", "default_location_id", map[string]any{"default_location_id": *input.DefaultLocation})
+	}
+	if strings.TrimSpace(input.Name) == "" {
+		return workflowClarification[inventree.Part](input.DryRun, "Which part should be created or updated?", "part", "provide part_id or name", "part_id", map[string]any{"name": input.Name})
+	}
+	parts, err := client.SearchParts(ctx, inventree.SearchQuery{Search: input.Name, Limit: DefaultLookupLimit})
+	if err != nil {
+		return inventree.Part{}, false, nil, PartUpsertWorkflowOutput{}, err
+	}
+	if len(parts) == 1 {
+		output.Actions = append(output.Actions, workflowAction("reuse_part", "reused", "part", parts[0].PK, "single matching part found"))
+		fields := partWorkflowPatchFields(input)
+		if len(fields) == 0 {
+			return parts[0], true, nil, PartUpsertWorkflowOutput{}, nil
+		}
+		if input.DryRun {
+			output.Actions = append(output.Actions, workflowAction("update_part", "planned", "part", parts[0].PK, "supplied fields would be patched"))
+			return parts[0], true, nil, PartUpsertWorkflowOutput{}, nil
+		}
+		updated, err := client.UpdatePart(ctx, parts[0].PK, fields)
+		if err != nil {
+			return inventree.Part{}, false, nil, PartUpsertWorkflowOutput{}, err
+		}
+		output.Actions = append(output.Actions, workflowAction("update_part", "updated", "part", updated.PK, "supplied fields patched"))
+		return updated, true, nil, PartUpsertWorkflowOutput{}, nil
+	}
+	if len(parts) > 1 {
+		clarification := NewClarification("Which existing part should be used?", "part", "multiple matching parts found", "part_id", false, candidatesFor(parts), map[string]any{"name": input.Name})
+		return inventree.Part{}, false, TextResult(StatusClarificationRequired), workflowClarificationOutput(clarification, input.DryRun), nil
+	}
+	if input.CategoryID <= 0 {
+		return workflowClarification[inventree.Part](input.DryRun, "Which existing category should contain the new part?", "category_id", "category_id is required when creating a part", "category_id", map[string]any{"name": input.Name})
+	}
+	if input.DryRun {
+		output.Actions = append(output.Actions, workflowAction("create_part", "planned", "part", 0, "no matching part found"))
+		return inventree.Part{Name: input.Name, Category: &input.CategoryID}, true, nil, PartUpsertWorkflowOutput{}, nil
+	}
+	part, err := client.CreatePart(ctx, inventree.PartCreate{
+		Name:            input.Name,
+		Description:     derefString(input.Description),
+		Category:        &input.CategoryID,
+		IPN:             derefString(input.IPN),
+		Units:           input.Units,
+		Purchaseable:    input.Purchaseable,
+		DefaultLocation: input.DefaultLocation,
+	})
+	if err != nil {
+		return inventree.Part{}, false, nil, PartUpsertWorkflowOutput{}, err
+	}
+	output.Actions = append(output.Actions, workflowAction("create_part", "created", "part", part.PK, "no matching part found"))
+	return part, true, nil, PartUpsertWorkflowOutput{}, nil
+}
+
+func resolveWorkflowCompany(ctx context.Context, client PartUpsertWorkflowClient, role string, id int, name string, currency string, dryRun bool, output *PartUpsertWorkflowOutput) (*inventree.Company, bool, *mcp.CallToolResult, PartUpsertWorkflowOutput, error) {
+	if id < 0 {
+		clarification := NewClarification("Which "+role+" company should be used?", role, role+"_id must be positive when provided", role+"_id", true, nil, map[string]any{role + "_id": id})
+		return nil, false, TextResult(StatusClarificationRequired), workflowClarificationOutput(clarification, dryRun), nil
+	}
+	if id > 0 {
+		company := inventree.Company{PK: id}
+		output.Actions = append(output.Actions, workflowAction("reuse_"+role, "reused", "company", id, role+"_id supplied"))
+		return &company, true, nil, PartUpsertWorkflowOutput{}, nil
+	}
+	if strings.TrimSpace(name) == "" {
+		return nil, true, nil, PartUpsertWorkflowOutput{}, nil
+	}
+	var records []inventree.Company
+	var err error
+	if role == "supplier" {
+		records, err = client.SearchSuppliers(ctx, inventree.SearchQuery{Search: name, Limit: DefaultLookupLimit})
+	} else {
+		records, err = client.SearchManufacturers(ctx, inventree.SearchQuery{Search: name, Limit: DefaultLookupLimit})
+	}
+	if err != nil {
+		return nil, false, nil, PartUpsertWorkflowOutput{}, err
+	}
+	if len(records) == 1 {
+		output.Actions = append(output.Actions, workflowAction("reuse_"+role, "reused", "company", records[0].PK, "single matching "+role+" found"))
+		return &records[0], true, nil, PartUpsertWorkflowOutput{}, nil
+	}
+	if len(records) > 1 {
+		clarification := NewClarification("Which "+role+" company should be used?", role, "multiple matching "+role+" companies found", role+"_id", false, candidatesFor(records), map[string]any{role + "_name": name})
+		return nil, false, TextResult(StatusClarificationRequired), workflowClarificationOutput(clarification, dryRun), nil
+	}
+	if strings.TrimSpace(currency) == "" {
+		clarification := NewClarification("Which currency should be used for the new "+role+" company?", role+"_currency", role+"_currency is required when creating a company", role+"_currency", true, nil, map[string]any{role + "_name": name})
+		return nil, false, TextResult(StatusClarificationRequired), workflowClarificationOutput(clarification, dryRun), nil
+	}
+	if dryRun {
+		output.Actions = append(output.Actions, workflowAction("create_"+role, "planned", "company", 0, "no matching "+role+" found"))
+		return &inventree.Company{Name: name, Currency: currency}, true, nil, PartUpsertWorkflowOutput{}, nil
+	}
+	input := inventree.CompanyCreate{Name: name, Currency: currency}
+	if role == "supplier" {
+		input.IsSupplier = true
+	} else {
+		input.IsManufacturer = true
+	}
+	company, err := client.CreateCompany(ctx, input)
+	if err != nil {
+		return nil, false, nil, PartUpsertWorkflowOutput{}, err
+	}
+	output.Actions = append(output.Actions, workflowAction("create_"+role, "created", "company", company.PK, "no matching "+role+" found"))
+	return &company, true, nil, PartUpsertWorkflowOutput{}, nil
+}
+
+func resolveWorkflowManufacturerPart(ctx context.Context, client PartUpsertWorkflowClient, partID int, manufacturer inventree.Company, input UpsertPartWorkflowInput, output *PartUpsertWorkflowOutput) (*inventree.ManufacturerPart, bool, *mcp.CallToolResult, PartUpsertWorkflowOutput, error) {
+	if input.DryRun && (partID <= 0 || manufacturer.PK <= 0) {
+		output.Actions = append(output.Actions, workflowAction("create_manufacturer_part", "planned", "manufacturerpart", 0, "new part or manufacturer would be created first"))
+		return nil, true, nil, PartUpsertWorkflowOutput{}, nil
+	}
+	query := inventree.ManufacturerPartQuery{Part: partID, Manufacturer: manufacturer.PK}
+	if input.MPN != nil {
+		query.MPN = *input.MPN
+	}
+	records, err := client.SearchManufacturerParts(ctx, query)
+	if err != nil {
+		return nil, false, nil, PartUpsertWorkflowOutput{}, err
+	}
+	if len(records) == 1 {
+		output.Actions = append(output.Actions, workflowAction("reuse_manufacturer_part", "reused", "manufacturerpart", records[0].PK, "single matching manufacturer-part found"))
+		return &records[0], true, nil, PartUpsertWorkflowOutput{}, nil
+	}
+	if len(records) > 1 {
+		clarification := NewClarification("Which manufacturer part should be used?", "manufacturer_part", "multiple matching manufacturer-part records found", "manufacturer_part_id", false, candidatesFor(records), nil)
+		return nil, false, TextResult(StatusClarificationRequired), workflowClarificationOutput(clarification, input.DryRun), nil
+	}
+	if input.DryRun {
+		output.Actions = append(output.Actions, workflowAction("create_manufacturer_part", "planned", "manufacturerpart", 0, "no matching manufacturer-part found"))
+		return nil, true, nil, PartUpsertWorkflowOutput{}, nil
+	}
+	record, err := client.CreateManufacturerPart(ctx, inventree.ManufacturerPartCreate{Part: partID, Manufacturer: manufacturer.PK, MPN: input.MPN, Link: input.Link})
+	if err != nil {
+		return nil, false, nil, PartUpsertWorkflowOutput{}, err
+	}
+	output.Actions = append(output.Actions, workflowAction("create_manufacturer_part", "created", "manufacturerpart", record.PK, "no matching manufacturer-part found"))
+	return &record, true, nil, PartUpsertWorkflowOutput{}, nil
+}
+
+func resolveWorkflowSupplierPart(ctx context.Context, client PartUpsertWorkflowClient, partID int, supplier inventree.Company, manufacturerPart *inventree.ManufacturerPart, input UpsertPartWorkflowInput, output *PartUpsertWorkflowOutput) (*inventree.SupplierPart, bool, *mcp.CallToolResult, PartUpsertWorkflowOutput, error) {
+	if strings.TrimSpace(input.SupplierSKU) == "" {
+		clarification := NewClarification("Which supplier SKU should be linked to this part?", "supplier_sku", "supplier_sku is required when creating or matching a supplier-part link", "supplier_sku", true, nil, map[string]any{"part_id": partID, "supplier_id": supplier.PK})
+		return nil, false, TextResult(StatusClarificationRequired), workflowClarificationOutput(clarification, input.DryRun), nil
+	}
+	if input.DryRun && (partID <= 0 || supplier.PK <= 0) {
+		output.Actions = append(output.Actions, workflowAction("create_supplier_part", "planned", "supplierpart", 0, "new part or supplier would be created first"))
+		return nil, true, nil, PartUpsertWorkflowOutput{}, nil
+	}
+	records, err := client.SearchSupplierParts(ctx, inventree.SupplierPartQuery{Part: partID, Supplier: supplier.PK, SKU: input.SupplierSKU})
+	if err != nil {
+		return nil, false, nil, PartUpsertWorkflowOutput{}, err
+	}
+	if len(records) == 1 {
+		output.Actions = append(output.Actions, workflowAction("reuse_supplier_part", "reused", "supplierpart", records[0].PK, "single matching supplier-part found"))
+		return &records[0], true, nil, PartUpsertWorkflowOutput{}, nil
+	}
+	if len(records) > 1 {
+		clarification := NewClarification("Which supplier part should be used?", "supplier_part", "multiple matching supplier-part records found", "supplier_part_id", false, candidatesFor(records), nil)
+		return nil, false, TextResult(StatusClarificationRequired), workflowClarificationOutput(clarification, input.DryRun), nil
+	}
+	if input.DryRun {
+		output.Actions = append(output.Actions, workflowAction("create_supplier_part", "planned", "supplierpart", 0, "no matching supplier-part found"))
+		return nil, true, nil, PartUpsertWorkflowOutput{}, nil
+	}
+	var manufacturerPartID *int
+	if manufacturerPart != nil {
+		manufacturerPartID = &manufacturerPart.PK
+	}
+	record, err := client.CreateSupplierPart(ctx, inventree.SupplierPartCreate{Part: partID, Supplier: supplier.PK, SKU: input.SupplierSKU, ManufacturerPart: manufacturerPartID, Link: input.Link})
+	if err != nil {
+		return nil, false, nil, PartUpsertWorkflowOutput{}, err
+	}
+	output.Actions = append(output.Actions, workflowAction("create_supplier_part", "created", "supplierpart", record.PK, "no matching supplier-part found"))
+	return &record, true, nil, PartUpsertWorkflowOutput{}, nil
+}
+
+func workflowClarification[T any](dryRun bool, question string, field string, reason string, retry string, retryValues map[string]any) (T, bool, *mcp.CallToolResult, PartUpsertWorkflowOutput, error) {
+	clarification := NewClarification(question, field, reason, retry, true, nil, retryValues)
+	return *new(T), false, TextResult(StatusClarificationRequired), workflowClarificationOutput(clarification, dryRun), nil
+}
+
+func workflowClarificationOutput(clarification ClarificationResponse, dryRun bool) PartUpsertWorkflowOutput {
+	return PartUpsertWorkflowOutput{Status: StatusClarificationRequired, DryRun: dryRun, Clarification: &clarification}
+}
+
+func workflowAction(name string, status string, recordType string, id int, reason string) PartUpsertWorkflowAction {
+	return PartUpsertWorkflowAction{Name: name, Status: status, RecordType: recordType, ID: id, Reason: reason}
+}
+
+func partWorkflowPatchFields(input UpsertPartWorkflowInput) inventree.PatchFields {
+	fields := inventree.PatchFields{}
+	if input.Description != nil {
+		fields["description"] = inventree.Set(*input.Description)
+	}
+	if input.CategoryID > 0 {
+		fields["category"] = inventree.Set(input.CategoryID)
+	}
+	if input.IPN != nil {
+		fields["IPN"] = inventree.Set(*input.IPN)
+	}
+	if input.Units != nil {
+		fields["units"] = inventree.Set(*input.Units)
+	}
+	if input.Purchaseable != nil {
+		fields["purchaseable"] = inventree.Set(*input.Purchaseable)
+	}
+	if input.DefaultLocation != nil {
+		fields["default_location"] = inventree.Set(*input.DefaultLocation)
+	}
+	return fields
+}
+
+func omittedPartUpsertFields(input UpsertPartWorkflowInput) []string {
+	fields := []string{}
+	if input.IPN == nil || strings.TrimSpace(*input.IPN) == "" {
+		fields = append(fields, "ipn")
+	}
+	if input.Units == nil || strings.TrimSpace(*input.Units) == "" {
+		fields = append(fields, "units")
+	}
+	if input.Purchaseable == nil {
+		fields = append(fields, "purchaseable")
+	}
+	if input.DefaultLocation == nil {
+		fields = append(fields, "default_location_id")
+	}
+	if input.SupplierName != "" || input.SupplierID > 0 {
+		if strings.TrimSpace(input.SupplierSKU) == "" {
+			fields = append(fields, "supplier_sku")
+		}
+	}
+	if input.ManufacturerName != "" || input.ManufacturerID > 0 {
+		if input.MPN == nil || strings.TrimSpace(*input.MPN) == "" {
+			fields = append(fields, "mpn")
+		}
+	}
+	return fields
+}
+
+func derefString(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return *value
 }
 
 func parameterData(input ParameterSetInput, partID int) (string, *mcp.CallToolResult, WriteRecordOutput[[]inventree.Parameter], bool) {

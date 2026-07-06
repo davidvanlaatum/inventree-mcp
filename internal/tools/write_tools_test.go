@@ -42,6 +42,7 @@ func TestWriteToolInputsExcludeSalesAndCustomerWorkflowFields(t *testing.T) {
 		reflect.TypeOf(CreateCompanyInput{}),
 		reflect.TypeOf(CreateSupplierPartInput{}),
 		reflect.TypeOf(CreateManufacturerPartInput{}),
+		reflect.TypeOf(UpsertPartWorkflowInput{}),
 		reflect.TypeOf(CreateStockItemInput{}),
 		reflect.TypeOf(SetPartParametersInput{}),
 		reflect.TypeOf(ParameterSetInput{}),
@@ -62,6 +63,240 @@ func TestWriteToolInputsExcludeSalesAndCustomerWorkflowFields(t *testing.T) {
 			a.NotContains(strings.ToLower(jsonName), "sales")
 		}
 	}
+}
+
+func TestUpsertPartWorkflowDryRunPlansWithoutWrites(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	fake := &fakeMilestoneLookupClient{}
+	purchaseable := true
+
+	_, output, err := upsertPartWorkflow(depsForFake(fake))(ctx, &mcp.CallToolRequest{}, UpsertPartWorkflowInput{
+		DryRun:               true,
+		Name:                 "10k resistor",
+		CategoryID:           20,
+		Purchaseable:         &purchaseable,
+		SupplierName:         "Acme",
+		SupplierCurrency:     "AUD",
+		SupplierSKU:          "ACME-10K",
+		ManufacturerName:     "PartsCo",
+		ManufacturerCurrency: "AUD",
+		MPN:                  dvgoutils.Ptr("RC0603-10K"),
+	})
+
+	r.NoError(err)
+	a.Equal(StatusOK, output.Status)
+	a.True(output.DryRun)
+	a.Equal([]PartUpsertWorkflowAction{
+		{Name: "create_part", Status: "planned", RecordType: "part", Reason: "no matching part found"},
+		{Name: "create_manufacturer", Status: "planned", RecordType: "company", Reason: "no matching manufacturer found"},
+		{Name: "create_manufacturer_part", Status: "planned", RecordType: "manufacturerpart", Reason: "new part or manufacturer would be created first"},
+		{Name: "create_supplier", Status: "planned", RecordType: "company", Reason: "no matching supplier found"},
+		{Name: "create_supplier_part", Status: "planned", RecordType: "supplierpart", Reason: "new part or supplier would be created first"},
+	}, output.Actions)
+	a.False(fake.createdPart)
+	a.False(fake.createdCompany)
+	a.False(fake.createdManufacturerPart)
+	a.False(fake.createdSupplierPart)
+	a.Contains(output.OmittedRecommendedFields, "ipn")
+	a.Contains(output.OmittedRecommendedFields, "units")
+	a.Contains(output.OmittedRecommendedFields, "default_location_id")
+	a.NotContains(output.OmittedRecommendedFields, "purchaseable")
+}
+
+func TestUpsertPartWorkflowReusesExistingRecords(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	fake := &fakeMilestoneLookupClient{
+		parts:             []inventree.Part{{PK: 10, Name: "10k resistor"}},
+		suppliers:         []inventree.Company{{PK: 30, Name: "Acme", IsSupplier: true}},
+		manufacturers:     []inventree.Company{{PK: 31, Name: "PartsCo", IsManufacturer: true}},
+		supplierParts:     []inventree.SupplierPart{{PK: 40, Part: 10, Supplier: 30, SKU: "ACME-10K"}},
+		manufacturerParts: []inventree.ManufacturerPart{{PK: 50, Part: 10, Manufacturer: 31, MPN: "RC0603-10K"}},
+	}
+
+	_, output, err := upsertPartWorkflow(depsForFake(fake))(ctx, &mcp.CallToolRequest{}, UpsertPartWorkflowInput{
+		Name:             "10k resistor",
+		SupplierName:     "Acme",
+		SupplierSKU:      "ACME-10K",
+		ManufacturerName: "PartsCo",
+		MPN:              dvgoutils.Ptr("RC0603-10K"),
+	})
+
+	r.NoError(err)
+	a.Equal(StatusOK, output.Status)
+	r.NotNil(output.Part)
+	r.NotNil(output.Supplier)
+	r.NotNil(output.Manufacturer)
+	r.NotNil(output.SupplierPart)
+	r.NotNil(output.ManufacturerPart)
+	a.Equal(10, output.Part.PK)
+	a.Equal(40, output.SupplierPart.PK)
+	a.Equal(50, output.ManufacturerPart.PK)
+	a.Equal(inventree.SearchQuery{Search: "10k resistor", Limit: DefaultLookupLimit}, fake.lastSearchPartsQuery)
+	a.Equal(inventree.SearchQuery{Search: "Acme", Limit: DefaultLookupLimit}, fake.lastSearchSuppliersQuery)
+	a.Equal(inventree.SearchQuery{Search: "PartsCo", Limit: DefaultLookupLimit}, fake.lastSearchManufacturersQuery)
+	a.Equal(inventree.SupplierPartQuery{Part: 10, Supplier: 30, SKU: "ACME-10K"}, fake.lastSearchSupplierPartsQuery)
+	a.Equal(inventree.ManufacturerPartQuery{Part: 10, Manufacturer: 31, MPN: "RC0603-10K"}, fake.lastSearchManufacturerPartsQuery)
+	a.False(fake.createdPart)
+	a.False(fake.createdCompany)
+	a.False(fake.createdSupplierPart)
+	a.False(fake.createdManufacturerPart)
+}
+
+func TestUpsertPartWorkflowUpdatesSingleNameMatch(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	fake := &fakeMilestoneLookupClient{
+		parts: []inventree.Part{{PK: 10, Name: "10k resistor"}},
+	}
+	units := "pcs"
+	purchaseable := true
+
+	_, output, err := upsertPartWorkflow(depsForFake(fake))(ctx, &mcp.CallToolRequest{}, UpsertPartWorkflowInput{
+		Name:         "10k resistor",
+		Units:        &units,
+		Purchaseable: &purchaseable,
+	})
+
+	r.NoError(err)
+	a.Equal(StatusOK, output.Status)
+	a.Equal(inventree.PatchFields{"units": inventree.Set("pcs"), "purchaseable": inventree.Set(true)}, fake.lastUpdatePartFields)
+	a.False(fake.createdPart)
+}
+
+func TestUpsertPartWorkflowCreatesUnambiguousMissingRecords(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	fake := &fakeMilestoneLookupClient{}
+	units := "pcs"
+	purchaseable := true
+
+	_, output, err := upsertPartWorkflow(depsForFake(fake))(ctx, &mcp.CallToolRequest{}, UpsertPartWorkflowInput{
+		Name:                 "10k resistor",
+		CategoryID:           20,
+		Units:                &units,
+		Purchaseable:         &purchaseable,
+		SupplierName:         "Acme",
+		SupplierCurrency:     "AUD",
+		SupplierSKU:          "ACME-10K",
+		ManufacturerName:     "PartsCo",
+		ManufacturerCurrency: "AUD",
+		MPN:                  dvgoutils.Ptr("RC0603-10K"),
+	})
+
+	r.NoError(err)
+	a.Equal(StatusOK, output.Status)
+	a.True(fake.createdPart)
+	a.True(fake.createdCompany)
+	a.True(fake.createdManufacturerPart)
+	a.True(fake.createdSupplierPart)
+	a.Equal(inventree.PartCreate{Name: "10k resistor", Category: dvgoutils.Ptr(20), Units: &units, Purchaseable: &purchaseable}, fake.lastCreatePart)
+	a.Equal(inventree.CompanyCreate{Name: "Acme", Currency: "AUD", IsSupplier: true}, fake.lastCreateCompany)
+	a.Equal(inventree.ManufacturerPartCreate{Part: 10, Manufacturer: 30, MPN: dvgoutils.Ptr("RC0603-10K")}, fake.lastCreateManufacturerPart)
+	a.Equal(inventree.SupplierPartCreate{Part: 10, Supplier: 30, SKU: "ACME-10K", ManufacturerPart: dvgoutils.Ptr(50)}, fake.lastCreateSupplierPart)
+}
+
+func TestUpsertPartWorkflowAsksForAmbiguousPart(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	fake := &fakeMilestoneLookupClient{
+		parts: []inventree.Part{{PK: 10, Name: "10k resistor"}, {PK: 11, Name: "10k resistor precision"}},
+	}
+
+	_, output, err := upsertPartWorkflow(depsForFake(fake))(ctx, &mcp.CallToolRequest{}, UpsertPartWorkflowInput{Name: "10k resistor", CategoryID: 20})
+
+	r.NoError(err)
+	a.Equal(StatusClarificationRequired, output.Status)
+	r.NotNil(output.Clarification)
+	a.Equal("part", output.Clarification.Field)
+	a.Equal("part_id", output.Clarification.Retry)
+	a.Len(output.Clarification.Candidates, 2)
+	a.False(fake.createdPart)
+}
+
+func TestUpsertPartWorkflowAsksForMissingCreateInputs(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	fake := &fakeMilestoneLookupClient{}
+
+	_, output, err := upsertPartWorkflow(depsForFake(fake))(ctx, &mcp.CallToolRequest{}, UpsertPartWorkflowInput{Name: "10k resistor"})
+	r.NoError(err)
+	a.Equal(StatusClarificationRequired, output.Status)
+	a.Equal("category_id", output.Clarification.Field)
+	a.False(fake.createdPart)
+
+	_, output, err = upsertPartWorkflow(depsForFake(fake))(ctx, &mcp.CallToolRequest{}, UpsertPartWorkflowInput{Name: "10k resistor", CategoryID: 20, SupplierName: "Acme"})
+	r.NoError(err)
+	a.Equal(StatusClarificationRequired, output.Status)
+	a.Equal("supplier_currency", output.Clarification.Field)
+	a.False(fake.createdCompany)
+}
+
+func TestUpsertPartWorkflowPreflightsClarificationsBeforeWriting(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	fake := &fakeMilestoneLookupClient{}
+
+	_, output, err := upsertPartWorkflow(depsForFake(fake))(ctx, &mcp.CallToolRequest{}, UpsertPartWorkflowInput{
+		Name:                 "10k resistor",
+		CategoryID:           20,
+		SupplierName:         "Acme",
+		SupplierCurrency:     "AUD",
+		ManufacturerName:     "PartsCo",
+		ManufacturerCurrency: "AUD",
+		MPN:                  dvgoutils.Ptr("RC0603-10K"),
+	})
+
+	r.NoError(err)
+	a.Equal(StatusClarificationRequired, output.Status)
+	r.NotNil(output.Clarification)
+	a.Equal("supplier_sku", output.Clarification.Field)
+	a.False(output.DryRun)
+	a.False(fake.createdPart)
+	a.False(fake.createdCompany)
+	a.False(fake.createdManufacturerPart)
+	a.False(fake.createdSupplierPart)
+}
+
+func TestUpsertPartWorkflowAsksForInvalidExplicitIDs(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	fake := &fakeMilestoneLookupClient{}
+
+	_, output, err := upsertPartWorkflow(depsForFake(fake))(ctx, &mcp.CallToolRequest{}, UpsertPartWorkflowInput{PartID: -1, Name: "10k resistor", CategoryID: 20})
+	r.NoError(err)
+	a.Equal(StatusClarificationRequired, output.Status)
+	a.Equal("part", output.Clarification.Field)
+	a.False(fake.createdPart)
+
+	_, output, err = upsertPartWorkflow(depsForFake(fake))(ctx, &mcp.CallToolRequest{}, UpsertPartWorkflowInput{Name: "10k resistor", CategoryID: 20, SupplierID: -1, SupplierName: "Acme", SupplierCurrency: "AUD", SupplierSKU: "ACME-10K"})
+	r.NoError(err)
+	a.Equal(StatusClarificationRequired, output.Status)
+	a.Equal("supplier", output.Clarification.Field)
+	a.False(fake.createdCompany)
+
+	_, output, err = upsertPartWorkflow(depsForFake(fake))(ctx, &mcp.CallToolRequest{}, UpsertPartWorkflowInput{Name: "10k resistor", CategoryID: 20, ManufacturerID: -1, ManufacturerName: "PartsCo", ManufacturerCurrency: "AUD"})
+	r.NoError(err)
+	a.Equal(StatusClarificationRequired, output.Status)
+	a.Equal("manufacturer", output.Clarification.Field)
+	a.False(fake.createdCompany)
 }
 
 func TestCreateStockItemAsksBeforeDuplicateCreate(t *testing.T) {

@@ -32,6 +32,8 @@ Before marking a story `Done`, add or update story-local completion notes:
 - `Review`: reviewer roles run, findings addressed, or why subagent review was not required for a typo-only or formatting-only documentation edit.
 - `Residual risk`: accepted unresolved risk, or `none`.
 
+When any story status changes, update both the Task Index row and the story-local `Status:` line in the same change. Before handoff, re-read both locations for every edited story and fix any mismatch.
+
 When updating an already-pushed branch or existing PR, prefer fresh follow-up commits over amending or force-pushing. Rewrite published history only for an explicit operator request or a concrete repository hygiene issue, and use `--force-with-lease` when a rewrite is unavoidable. Keep existing PR titles, descriptions, checklists, validation notes, review summaries, residual risks, and follow-up lists current whenever follow-up commits change the branch scope or status. Prefer squash merge when merging PRs unless the operator or repository policy requires another strategy.
 
 Remove draft status once the PR is ready for human review: all automated or subagent review feedback has been addressed or explicitly documented, required rerun reviews are complete, the PR title/body/checklist are current, and the pipeline has passed on the latest pushed commit. Do not mark the PR ready while CI is pending, failing, or stale for an older head SHA.
@@ -63,12 +65,12 @@ Before `M1C-S04` is complete, mutating, operational, destructive, and upload too
 | [M1D-S02](#m1d-s02-part-company-stock-parameter-and-attachment-lookup-tools) | Add read-only part, company, stock, parameter, and attachment lookup tools. | Done |
 | [M1E-S01](#m1e-s01-part-and-company-writes) | Add part and company write tools. | Done |
 | [M1E-S02](#m1e-s02-parameter-writes) | Add existing-template-only parameter writes. | Done |
-| [M1E-S03](#m1e-s03-initial-stock-writes) | Create initial stock items with duplicate detection. | Ready |
+| [M1E-S03](#m1e-s03-initial-stock-writes) | Create initial stock items with duplicate detection. | Done |
 | [M1F-S01](#m1f-s01-upload-source-resolver) | Resolve inline, STDIO local-path, and URL upload sources safely. | Planned |
 | [M1F-S02](#m1f-s02-attachment-tools) | Add attachment download, upload, link, update, and delete tools. | Planned |
 | [M1F-S03](#m1f-s03-primary-part-image) | Add part primary image download and assignment/replacement. | Planned |
-| [M1G-S01](#m1g-s01-part-upsert-workflow) | Add safer part upsert workflow with supplier/manufacturer data. | Ready |
-| [M1G-S02](#m1g-s02-initial-stock-and-purchase-preview-workflows) | Add initial-stock workflow helper and no-write purchase preview. | Planned |
+| [M1G-S01](#m1g-s01-part-upsert-workflow) | Add safer part upsert workflow with supplier/manufacturer data. | Done |
+| [M1G-S02](#m1g-s02-initial-stock-and-purchase-preview-workflows) | Add initial-stock workflow helper and no-write purchase preview. | Ready |
 | [M1G-S03](#m1g-s03-milestone-prompts) | Add milestone 1 prompts and prompt contract tests. | Planned |
 | [M1H-S03](#m1h-s03-milestone-integration-happy-paths) | Prove milestone catalog, stock, supplier, attachment, image, and preview happy paths. | Planned |
 | [M1I-S01](#m1i-s01-operator-docs-finalization) | Finalize README, operator recipes, and generated tool reference alignment. | Planned |
@@ -566,7 +568,7 @@ Tasks:
   - Senior QA / Test Architect review found HTTP non-read-only exposure and stock-location filter coverage gaps; both were fixed, and focused QA rerereview reported no unresolved actionable findings.
   - Senior Product Manager review found registered tool-reference gaps for `create_stock_item` and operational scope wording; both were fixed, and focused product rerereview reported no unresolved actionable findings.
   - Senior Infosec review found the same HTTP exposure and scope-documentation gaps; both were fixed, and focused infosec rerereview reported no unresolved actionable findings.
-- Residual risk: duplicate detection is a preflight guard using same part and location, not a transactional uniqueness guarantee if another writer creates matching stock between preflight and create. `M1G-S02` remains `Planned` because it also depends on `M1G-S01`.
+- Residual risk: duplicate detection is a preflight guard using same part and location, not a transactional uniqueness guarantee if another writer creates matching stock between preflight and create. `M1G-S02` moved to `Ready` after `M1G-S01` completed.
 - Acceptance:
   - Requires `inventree.operational` plus write scope.
   - Searches existing stock before creation.
@@ -662,23 +664,37 @@ Tasks:
 
 ### M1G-S01: Part Upsert Workflow
 
-- Status: `Ready`
+- Status: `Done`
 - Depends on: M1E-S01, M1E-S02
 - Scope: safer multi-step workflow for adding/updating a purchasable part with supplier/manufacturer data.
+- Validation:
+  - `go test ./internal/tools` passed.
+  - `go test ./internal/tools ./docs` passed after review follow-ups.
+  - `go test ./...` passed.
+  - `golangci-lint run` passed with 0 issues.
+  - `go mod tidy -diff` passed.
+  - `git diff --check` passed.
+- Review:
+  - Senior Go Developer, Senior QA / Test Architect, Senior Product Manager, and Senior Infosec reviews run because this adds a mutating workflow tool.
+  - Initial reviews found non-dry-run could partially write before later clarification, a single name-matched part ignored supplied update fields, negative explicit workflow IDs could fall back to lookup/create paths, dry-run docs overpromised stable records for planned creates, task status metadata was stale, and the status-sync rule lacked executable coverage.
+  - Fixes added non-dry-run dry-run preflight before writes, patched single name matches with supplied part fields, rejected negative explicit IDs with clarification, clarified dry-run docs, completed task metadata, and added a docs test that enforces Task Index and story-local status sync.
+  - Focused Senior Infosec rerun found no actionable issues in the preflight-before-write safety fix or HTTP write-tool boundary.
+- Residual risk: duplicate/preference checks remain preflight guards rather than transactional guarantees if another writer creates or changes matching records between lookup and write.
 - Acceptance:
   - Supports `dry_run`.
   - Prefers existing records.
   - Returns stable IDs and omitted recommended fields.
+  - Remains behind the existing write-tool HTTP registration boundary until `M1C-S04` scope enforcement is complete.
 
 Tasks:
 
-- [ ] Add workflow planner.
-- [ ] Add `upsert_part_with_supplier_and_manufacturer`.
-- [ ] Add dry-run no-write tests.
+- [x] Add workflow planner.
+- [x] Add `upsert_part_with_supplier_and_manufacturer`.
+- [x] Add dry-run no-write tests.
 
 ### M1G-S02: Initial Stock And Purchase Preview Workflows
 
-- Status: `Planned`
+- Status: `Ready`
 - Depends on: M1D-S02, M1E-S03, M1G-S01
 - Scope: finish the useful operator loop with initial stock and no-write purchase preview.
 - Acceptance:
