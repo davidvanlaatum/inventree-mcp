@@ -73,6 +73,7 @@ Before `M1C-S04` is complete, mutating, operational, destructive, and upload too
 | [M1G-S02](#m1g-s02-initial-stock-and-purchase-preview-workflows) | Add initial-stock workflow helper and no-write purchase preview. | Done |
 | [M1G-S03](#m1g-s03-milestone-prompts) | Add milestone 1 prompts and prompt contract tests. | Done |
 | [M1H-S03](#m1h-s03-milestone-integration-happy-paths) | Prove milestone catalog, stock, supplier, attachment, image, and preview happy paths. | Done |
+| [M1H-S04](#m1h-s04-delete-attachment-confirmation-clarification) | Preserve structured delete confirmation clarification through MCP. | Done |
 | [M1I-S01](#m1i-s01-operator-docs-finalization) | Finalize README, operator recipes, and generated tool reference alignment. | Done |
 | [M1I-S02](#m1i-s02-final-review-panel) | Run final Go, QA, product, and infosec review panel. | Ready |
 | [F-S01](#f-s01-evaluate-docker-compose-testcontainers-stack) | Evaluate Docker Compose-based Testcontainers stack. | Future |
@@ -800,6 +801,27 @@ Review:
 Residual risk:
 
 - none.
+
+### M1H-S04: Delete Attachment Confirmation Clarification
+
+- Status: `Done`
+- Depends on: M1F-S02, M1H-S03
+- Scope: fix the MCP protocol-boundary regression where calling `delete_attachment` without `confirm:true` returned a tool error before the handler could return the structured confirmation clarification promised by the tool contract.
+- Validation: `go test ./internal/tools -run TestDeleteAttachmentMissingConfirmReturnsStructuredClarificationThroughMCP -count=1` passed; `GOFLAGS=-trimpath go test ./internal/tools -run 'TestMilestoneHappyPathToolsAgainstInvenTree/delete_attachment_missing_confirm_returns_structured_clarification_through_mcp' -count=1` passed against Docker-backed Testcontainers InvenTree; `INVENTREE_TEST_SKIP_DOCKER=1 go test ./internal/tools ./docs` passed; `go test ./internal/server ./internal/inventree` passed; `INVENTREE_TEST_SKIP_DOCKER=1 go test ./...` passed; `git diff --check` passed.
+- Review: Focused Senior Go Developer, Senior QA / Test Architect, and Senior Product Manager subagent reviews found no actionable findings. Go noted residual risk is limited to broader MCP SDK schema behavior outside the covered `delete_attachment` missing-confirm path. QA noted the live MCP-boundary proof depends on Docker/Testcontainers being enabled, with the in-memory MCP regression covering the same protocol behavior when Docker is skipped. Product noted the diff preserves the intended operator contract.
+- Residual risk: none for the fixed `delete_attachment` missing-confirm path.
+- Acceptance:
+  - Omitting `confirm` from `delete_attachment` reaches the handler and returns structured `clarification_required` output with retry `confirm`.
+  - `confirm:true` remains required before any attachment delete occurs.
+  - A Docker-backed integration regression covers the missing-confirm path against a real Testcontainers InvenTree attachment through an MCP client session.
+  - Tool reference and operator recipe semantics remain unchanged: destructive delete still requires explicit confirmation.
+
+Tasks:
+
+- [x] Make `confirm` optional in the input schema while preserving destructive behavior only for `confirm:true`.
+- [x] Add an MCP protocol-boundary regression test.
+- [x] Add a Testcontainers integration regression for the live missing-confirm path.
+- [x] Run validation and review.
 
 ## Milestone 1I: Documentation And Release Readiness
 

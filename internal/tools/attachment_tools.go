@@ -67,7 +67,7 @@ type UpdateAttachmentMetadataInput struct {
 
 type DeleteAttachmentInput struct {
 	ID      int  `json:"id" jsonschema:"Stable attachment primary key."`
-	Confirm bool `json:"confirm" jsonschema:"Required true before deleting an attachment."`
+	Confirm bool `json:"confirm,omitempty" jsonschema:"Required true before deleting an attachment."`
 }
 
 type SetPrimaryImageInput struct {
