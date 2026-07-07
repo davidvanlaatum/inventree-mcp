@@ -57,6 +57,22 @@ OAuth spike acceptance criteria:
 - If `fosite` is used, prove configured/static clients, PKCE S256, token endpoint validation, refresh grants, custom opaque token generation, envelope validation, and no persistent access-token store.
 - Assume some authorization-code or setup-session storage may be required. Prove whether access and refresh tokens can remain sealed stateless envelopes while authorization codes use only a bounded in-memory or optional external store. Reject any design that requires a persistent access-token lookup table unless the product plan changes.
 
+OAuth spike results verified on 2026-07-07 from official OpenAI docs:
+
+- MCP Go SDK baseline remains `github.com/modelcontextprotocol/go-sdk` `v1.6.1` for the first auth implementation pass.
+- `auth.TokenVerifier` has signature `func(context.Context, string, *http.Request) (*auth.TokenInfo, error)`, so the verifier can validate the bearer token against request URL/resource context before dispatch.
+- `auth.RequireBearerToken` rejects missing, invalid, expired, or insufficient-scope bearer tokens before the streamable HTTP handler runs, and emits a `WWW-Authenticate: Bearer` challenge with configured `resource_metadata` and `scope` parameters.
+- `auth.TokenInfoFromContext` is visible inside `tools/call` handlers when `auth.RequireBearerToken` wraps `mcp.NewStreamableHTTPHandler` running with `mcp.StreamableHTTPOptions{Stateless: true}`.
+- `auth.ProtectedResourceMetadataHandler` can serve RFC 9728 protected-resource metadata with resource, authorization server, supported scope, and resource-name fields. It does not validate metadata correctness, so production issuer/resource URL validation remains an `internal/oauth` responsibility.
+- [OpenAI Apps SDK Authentication](https://developers.openai.com/apps-sdk/build/auth) says ChatGPT expects OAuth 2.1-compatible MCP authorization: protected-resource metadata on the MCP server, authorization-server metadata, authorization-code flow with PKCE `S256`, and the `resource` parameter echoed through authorization and token requests.
+- ChatGPT supports Client ID Metadata Documents as the preferred client registration path when supported and selected, dynamic client registration when `registration_endpoint` is advertised, and predefined OAuth clients. For CIMD, ChatGPT supports public-client token exchange with `none` and signed client assertions with `private_key_jwt`.
+- Initial implementation decision: support CIMD with public-client token exchange method `none` first. Do not advertise DCR or predefined-client support in metadata until those paths are implemented and tested. M1C-S03 authorization-code and token envelopes should bind to the CIMD `client_id` URL. DCR and `private_key_jwt` remain future compatibility options, not first-pass behavior.
+- Because first-pass CIMD uses public-client token exchange with `none`, validating the HTTPS client metadata document and exact redirect URI is the client-registration control. Fetch client metadata with bounded reads, context timeouts, and safe redirect policy; accept only expected ChatGPT metadata origins and shapes; and reject bad `client_id`, wrong redirect URI, fetch failure, metadata mismatch, or non-HTTPS metadata URLs before issuing authorization codes or tokens.
+- The production ChatGPT redirect URI is `https://chatgpt.com/connector/oauth/{callback_id}` as shown in the app management page. Previously published apps may still use the legacy `https://chatgpt.com/connector_platform_oauth_redirect` redirect.
+- [OpenAI Apps SDK Deploy](https://developers.openai.com/apps-sdk/deploy) says local development should expose the local MCP server through an HTTPS tunnel such as ngrok and refresh connector metadata after server changes. No separate local callback URL shape is documented for bypassing the ChatGPT redirect URI.
+- The docs do not require unauthenticated MCP method dispatch for connector discovery. The implementation should keep `/mcp` protected by default and expose only OAuth metadata/challenge endpoints unauthenticated unless later live connector testing proves a specific static discovery exception is required.
+- Tool-level auth UI depends on per-tool `securitySchemes`, protected-resource metadata, and runtime error results carrying `_meta["mcp/www_authenticate"]`. This belongs with M1C-S04 scope enforcement and tool authorization metadata; M1C-S03 should avoid implementing tool dispatch behavior beyond envelope validation and auth-code/token issuance.
+
 ## Operating Modes
 
 ### STDIO Mode
@@ -110,8 +126,9 @@ OAuth discovery and challenge endpoints:
 - Unauthenticated protected requests return `401` with `WWW-Authenticate: Bearer resource_metadata="<metadata-url>"`.
 - The authorization endpoint supports authorization-code flow with PKCE for ChatGPT.
 - The token endpoint supports `authorization_code` and `refresh_token` grants.
-- ChatGPT redirect URI compatibility must be verified against current official OpenAI documentation during implementation. If the exact redirect URI shape or registration model is not confirmed, keep it as an open product decision instead of guessing.
-- Before implementing HTTP OAuth, complete the connector-compatibility spike and record redirect URI format, client registration mode, required metadata fields, supported scopes, and local/dev callback constraints. This is a blocking prerequisite for Phase 2 HTTP OAuth work and the first beta milestone.
+- ChatGPT redirects authorization responses to `https://chatgpt.com/connector/oauth/{callback_id}`. Add that production redirect URI from the app management page to the authorization server allowlist. Previously published apps may still use the legacy `https://chatgpt.com/connector_platform_oauth_redirect` redirect.
+- Support Client ID Metadata Documents first with public-client token endpoint authentication method `none`. Do not advertise dynamic client registration or predefined clients until those paths are implemented and tested.
+- Echo the `resource` parameter through authorization and token requests, bind issued tokens to the configured resource audience, and reject tokens missing the expected resource/audience.
 - Production deployments are expected to run behind a reverse proxy that terminates HTTPS. The public issuer, authorization, token, redirect, and `/mcp` resource URLs must be configured as HTTPS canonical URLs, even if the Go process receives HTTP from the proxy. Issuer and resource URLs must come from explicit configuration, not untrusted `Host` headers. `X-Forwarded-*` headers may only be used from configured trusted proxies. Metadata, token envelopes, redirects, and audience validation must use the configured canonical URLs exactly. Production deployments must expose the Go HTTP listener only to the trusted reverse proxy or private service network; do not publish the internal HTTP port directly.
 
 OAuth setup flow:
@@ -735,8 +752,7 @@ Stock movement, purchase receiving, build allocation, and build completion shoul
 - STDIO auth behavior: read the upstream InvenTree token only from `INVENTREE_TOKEN`. Non-secret connection settings, such as URL, auth scheme, and timeouts, may come from environment or flags.
 - HTTP auth behavior: use MCP-owned OAuth bearer tokens with encrypted upstream InvenTree credential envelopes.
 - HTTP statelessness: no database-backed access-token mapping is required for the initial implementation. Authorization codes still require bounded one-time-use code ID storage before beta.
-- Open product decision: exact ChatGPT Developer Connector client registration and redirect URI shape must be verified from current official OpenAI documentation before implementation.
-- Blocking compatibility decision: resolve ChatGPT Developer Connector registration, redirect, metadata, and local/dev callback behavior before starting HTTP OAuth implementation.
+- ChatGPT connector compatibility: official docs verified on 2026-07-07. Use OAuth 2.1-compatible MCP auth with protected-resource metadata, authorization-server metadata, authorization-code + PKCE `S256`, `resource` parameter binding, CIMD public-client registration with token endpoint auth method `none`, production redirect `https://chatgpt.com/connector/oauth/{callback_id}`, and HTTPS tunnel-based local development.
 - Production deployment assumes HTTPS is terminated by a reverse proxy. The server must be configured with canonical public HTTPS issuer/resource URLs and trusted-proxy configuration for any forwarded headers.
 - Required fields: only require fields that the InvenTree API requires, plus fields needed to disambiguate lookups safely.
 - Destructive operations: allowed when supported by the API, but gated by `confirm: true`, dry-run where practical, and destructive tool annotations.
