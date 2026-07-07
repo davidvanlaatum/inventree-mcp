@@ -1,23 +1,20 @@
 package tools
 
 import (
-	"os"
 	"reflect"
 	"strconv"
 	"testing"
 
+	"github.com/davidvanlaatum/inventree-mcp/docs"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 func TestToolReferenceDocumentsLookupFrameworkSchema(t *testing.T) {
 	t.Parallel()
-	r := require.New(t)
 	a := assert.New(t)
 
-	data, err := os.ReadFile("../../docs/tool-reference.md")
-	r.NoError(err)
-	docs := string(data)
+	toolReference := docs.ToolReferenceMarkdown()
 
 	for _, required := range []string{
 		"## Lookup Tool Framework",
@@ -42,7 +39,7 @@ func TestToolReferenceDocumentsLookupFrameworkSchema(t *testing.T) {
 		"`" + strconv.Itoa(DefaultLookupLimit) + "`",
 		"`" + strconv.Itoa(MaxLookupLimit) + "`",
 	} {
-		a.Contains(docs, required)
+		a.Contains(toolReference, required)
 	}
 
 	for _, schemaType := range []reflect.Type{
@@ -80,7 +77,7 @@ func TestToolReferenceDocumentsLookupFrameworkSchema(t *testing.T) {
 			if jsonName == "" || jsonName == "-" {
 				continue
 			}
-			a.Contains(docs, "`"+jsonName+"`")
+			a.Contains(toolReference, "`"+jsonName+"`")
 		}
 	}
 }
@@ -90,18 +87,16 @@ func TestToolReferenceDocumentsRegisteredLookupTools(t *testing.T) {
 	r := require.New(t)
 	a := assert.New(t)
 
-	data, err := os.ReadFile("../../docs/tool-reference.md")
-	r.NoError(err)
-	docs := string(data)
+	toolReference := docs.ToolReferenceMarkdown()
 
-	a.Contains(docs, "## Registered Lookup Tools")
-	a.Contains(docs, "`"+ScopeInventreeRead+"`")
-	a.Contains(docs, "`readOnlyHint:true`")
-	a.Contains(docs, "`destructiveHint:false`")
-	a.Contains(docs, "`idempotentHint:true`")
-	a.Contains(docs, "`openWorldHint:false`")
+	a.Contains(toolReference, "## Registered Lookup Tools")
+	a.Contains(toolReference, "`"+ScopeInventreeRead+"`")
+	a.Contains(toolReference, "`readOnlyHint:true`")
+	a.Contains(toolReference, "`destructiveHint:false`")
+	a.Contains(toolReference, "`idempotentHint:true`")
+	a.Contains(toolReference, "`openWorldHint:false`")
 	for _, name := range lookupToolNames {
-		a.Contains(docs, "`"+name+"`")
+		a.Contains(toolReference, "`"+name+"`")
 		auth, ok := ToolAuthorizations[name]
 		r.True(ok, "missing authorization for %s", name)
 		a.Equal("read_only", auth.MutationClass)
@@ -114,30 +109,28 @@ func TestToolReferenceDocumentsRegisteredWriteTools(t *testing.T) {
 	r := require.New(t)
 	a := assert.New(t)
 
-	data, err := os.ReadFile("../../docs/tool-reference.md")
-	r.NoError(err)
-	docs := string(data)
+	toolReference := docs.ToolReferenceMarkdown()
 
-	a.Contains(docs, "## Registered Write Tools")
-	a.Contains(docs, "`"+ScopeInventreeWrite+"`")
-	a.Contains(docs, "`"+ScopeInventreeUpload+"`")
-	a.Contains(docs, "`"+ScopeInventreeDestructive+"`")
-	a.Contains(docs, "`readOnlyHint:false`")
-	a.Contains(docs, "`destructiveHint:false`")
-	a.Contains(docs, "`idempotentHint:false`")
-	a.Contains(docs, "`openWorldHint:false`")
-	a.Contains(docs, "`openWorldHint:true`")
-	a.Contains(docs, "`destructiveHint:true`")
-	a.Contains(docs, "HTTP mode does not register them until `M1C-S04`")
+	a.Contains(toolReference, "## Registered Write Tools")
+	a.Contains(toolReference, "`"+ScopeInventreeWrite+"`")
+	a.Contains(toolReference, "`"+ScopeInventreeUpload+"`")
+	a.Contains(toolReference, "`"+ScopeInventreeDestructive+"`")
+	a.Contains(toolReference, "`readOnlyHint:false`")
+	a.Contains(toolReference, "`destructiveHint:false`")
+	a.Contains(toolReference, "`idempotentHint:false`")
+	a.Contains(toolReference, "`openWorldHint:false`")
+	a.Contains(toolReference, "`openWorldHint:true`")
+	a.Contains(toolReference, "`destructiveHint:true`")
+	a.Contains(toolReference, "HTTP mode does not register them until `M1C-S04`")
 	for _, name := range writeToolNames {
-		a.Contains(docs, "`"+name+"`")
+		a.Contains(toolReference, "`"+name+"`")
 		auth, ok := ToolAuthorizations[name]
 		r.True(ok, "missing authorization for %s", name)
 		switch name {
 		case CreateStockItemToolName, InitialStockWorkflowToolName:
 			a.Equal("operational", auth.MutationClass)
 			a.Equal([]string{ScopeInventreeWrite, ScopeInventreeOperational}, auth.Scopes)
-			a.Contains(docs, "`"+ScopeInventreeOperational+"`")
+			a.Contains(toolReference, "`"+ScopeInventreeOperational+"`")
 		case UploadAttachmentToolName, UploadAttachmentFromURLToolName, CreateLinkAttachmentToolName, UpdateAttachmentMetadataToolName, SetPrimaryImageToolName:
 			a.Equal("write", auth.MutationClass)
 			a.Equal([]string{ScopeInventreeWrite, ScopeInventreeUpload}, auth.Scopes)

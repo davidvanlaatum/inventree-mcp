@@ -5,15 +5,15 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/davidvanlaatum/inventree-mcp/docs"
 	"github.com/davidvanlaatum/inventree-mcp/internal/schema"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 const (
-	openAPIPath    = "../../docs/api-schema.yaml"
-	manifestPath   = "../../docs/endpoint-manifest.yaml"
-	schemaDocsPath = "../../docs/api-schema.md"
+	openAPIPath  = "../../docs/api-schema.yaml"
+	manifestPath = "../../docs/endpoint-manifest.yaml"
 )
 
 func TestEndpointManifestMatchesOpenAPISchema(t *testing.T) {
@@ -35,12 +35,11 @@ func TestSchemaProvenanceDocumentsCurrentDigest(t *testing.T) {
 
 	openapi, data, err := schema.LoadOpenAPI(openAPIPath)
 	r.NoError(err)
-	docs, err := os.ReadFile(schemaDocsPath)
-	r.NoError(err)
+	schemaDocs := docs.APISchemaMarkdown()
 
-	a.Contains(string(docs), "SHA256: `"+schema.SHA256Hex(data)+"`")
-	a.Contains(string(docs), "- OpenAPI: `"+openapi.OpenAPI+"`")
-	a.Contains(string(docs), "- API version: `"+openapi.Info.Version+"`")
+	a.Contains(schemaDocs, "SHA256: `"+schema.SHA256Hex(data)+"`")
+	a.Contains(schemaDocs, "- OpenAPI: `"+openapi.OpenAPI+"`")
+	a.Contains(schemaDocs, "- API version: `"+openapi.Info.Version+"`")
 }
 
 func TestManifestBlocksDeferredFileSurfaces(t *testing.T) {
