@@ -1,28 +1,23 @@
 package schema_test
 
 import (
-	"os"
 	"strings"
 	"testing"
 
+	"github.com/davidvanlaatum/inventree-mcp/docs"
 	"github.com/davidvanlaatum/inventree-mcp/internal/schema"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-)
-
-const (
-	openAPIPath    = "../../docs/api-schema.yaml"
-	manifestPath   = "../../docs/endpoint-manifest.yaml"
-	schemaDocsPath = "../../docs/api-schema.md"
 )
 
 func TestEndpointManifestMatchesOpenAPISchema(t *testing.T) {
 	t.Parallel()
 	r := require.New(t)
 
-	openapi, data, err := schema.LoadOpenAPI(openAPIPath)
+	data := docs.APISchemaYAML()
+	openapi, err := schema.ParseOpenAPI(data)
 	r.NoError(err)
-	manifest, err := schema.LoadManifest(manifestPath)
+	manifest, err := schema.ParseManifest(docs.EndpointManifestYAML())
 	r.NoError(err)
 
 	r.NoError(manifest.Validate(openapi, schema.SHA256Hex(data)))
@@ -33,14 +28,14 @@ func TestSchemaProvenanceDocumentsCurrentDigest(t *testing.T) {
 	r := require.New(t)
 	a := assert.New(t)
 
-	openapi, data, err := schema.LoadOpenAPI(openAPIPath)
+	data := docs.APISchemaYAML()
+	openapi, err := schema.ParseOpenAPI(data)
 	r.NoError(err)
-	docs, err := os.ReadFile(schemaDocsPath)
-	r.NoError(err)
+	schemaDocs := docs.APISchemaMarkdown()
 
-	a.Contains(string(docs), "SHA256: `"+schema.SHA256Hex(data)+"`")
-	a.Contains(string(docs), "- OpenAPI: `"+openapi.OpenAPI+"`")
-	a.Contains(string(docs), "- API version: `"+openapi.Info.Version+"`")
+	a.Contains(schemaDocs, "SHA256: `"+schema.SHA256Hex(data)+"`")
+	a.Contains(schemaDocs, "- OpenAPI: `"+openapi.OpenAPI+"`")
+	a.Contains(schemaDocs, "- API version: `"+openapi.Info.Version+"`")
 }
 
 func TestManifestBlocksDeferredFileSurfaces(t *testing.T) {
@@ -48,9 +43,9 @@ func TestManifestBlocksDeferredFileSurfaces(t *testing.T) {
 	r := require.New(t)
 	a := assert.New(t)
 
-	openapi, _, err := schema.LoadOpenAPI(openAPIPath)
+	openapi, err := schema.ParseOpenAPI(docs.APISchemaYAML())
 	r.NoError(err)
-	manifest, err := schema.LoadManifest(manifestPath)
+	manifest, err := schema.ParseManifest(docs.EndpointManifestYAML())
 	r.NoError(err)
 
 	for _, path := range manifest.ForbiddenPaths {
@@ -69,9 +64,10 @@ func TestManifestRequiresStrictSchemaContracts(t *testing.T) {
 	r := require.New(t)
 	a := assert.New(t)
 
-	openapi, data, err := schema.LoadOpenAPI(openAPIPath)
+	data := docs.APISchemaYAML()
+	openapi, err := schema.ParseOpenAPI(data)
 	r.NoError(err)
-	manifest, err := schema.LoadManifest(manifestPath)
+	manifest, err := schema.ParseManifest(docs.EndpointManifestYAML())
 	r.NoError(err)
 
 	requestCase := *manifest
@@ -100,9 +96,10 @@ func TestManifestRequiresKnownQueryParameters(t *testing.T) {
 	r := require.New(t)
 	a := assert.New(t)
 
-	openapi, data, err := schema.LoadOpenAPI(openAPIPath)
+	data := docs.APISchemaYAML()
+	openapi, err := schema.ParseOpenAPI(data)
 	r.NoError(err)
-	manifest, err := schema.LoadManifest(manifestPath)
+	manifest, err := schema.ParseManifest(docs.EndpointManifestYAML())
 	r.NoError(err)
 
 	badQuery := *manifest
@@ -121,12 +118,8 @@ func TestManifestRejectsUnknownYAMLFields(t *testing.T) {
 	t.Parallel()
 	r := require.New(t)
 
-	tmp := t.TempDir() + "/endpoint-manifest.yaml"
-	data, err := os.ReadFile(manifestPath)
-	r.NoError(err)
-	r.NoError(os.WriteFile(tmp, append(data, []byte("\nunknown_field: true\n")...), 0o600))
-
-	_, err = schema.LoadManifest(tmp)
+	data := append(docs.EndpointManifestYAML(), []byte("\nunknown_field: true\n")...)
+	_, err := schema.ParseManifest(data)
 	r.ErrorContains(err, "field unknown_field not found")
 }
 

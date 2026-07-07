@@ -1,11 +1,11 @@
 package docs_test
 
 import (
-	"os"
 	"regexp"
 	"strings"
 	"testing"
 
+	"github.com/davidvanlaatum/inventree-mcp/docs"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -15,10 +15,7 @@ func TestTaskIndexStatusesMatchStoryStatuses(t *testing.T) {
 	r := require.New(t)
 	a := assert.New(t)
 
-	data, err := os.ReadFile("TASKS.md")
-	r.NoError(err)
-
-	text := string(data)
+	text := docs.TasksMarkdown()
 	indexStatuses := taskIndexStatuses(text)
 	r.NotEmpty(indexStatuses)
 

@@ -65,14 +65,22 @@ func LoadOpenAPI(path string) (*OpenAPI, []byte, error) {
 	if err != nil {
 		return nil, nil, fmt.Errorf("read OpenAPI schema: %w", err)
 	}
+	doc, err := ParseOpenAPI(data)
+	if err != nil {
+		return nil, nil, err
+	}
+	return doc, data, nil
+}
+
+func ParseOpenAPI(data []byte) (*OpenAPI, error) {
 	var doc OpenAPI
 	if err := yaml.Unmarshal(data, &doc); err != nil {
-		return nil, nil, fmt.Errorf("parse OpenAPI schema: %w", err)
+		return nil, fmt.Errorf("parse OpenAPI schema: %w", err)
 	}
 	if len(doc.Paths) == 0 {
-		return nil, nil, errors.New("OpenAPI schema has no paths")
+		return nil, errors.New("OpenAPI schema has no paths")
 	}
-	return &doc, data, nil
+	return &doc, nil
 }
 
 func SHA256Hex(data []byte) string {
