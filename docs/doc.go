@@ -14,6 +14,9 @@ var apiSchemaYAML []byte
 //go:embed endpoint-manifest.yaml
 var endpointManifestYAML []byte
 
+//go:embed tool-manifest.json
+var toolManifestJSON []byte
+
 //go:embed tool-reference.md
 var toolReferenceMarkdown string
 
@@ -31,6 +34,10 @@ func APISchemaYAML() []byte {
 
 func EndpointManifestYAML() []byte {
 	return append([]byte(nil), endpointManifestYAML...)
+}
+
+func ToolManifestJSON() []byte {
+	return append([]byte(nil), toolManifestJSON...)
 }
 
 func ToolReferenceMarkdown() string {

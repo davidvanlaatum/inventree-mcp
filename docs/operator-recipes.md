@@ -4,12 +4,21 @@ This file is the source of truth for first-release operator workflows. README sh
 
 Each recipe should preserve omitted fields versus explicit zero/false/empty values, prefer existing InvenTree records, and return a structured clarification instead of guessing when lookup results are ambiguous.
 
-## ChatGPT Connector OAuth Setup
+## First-Release Tool Surface
 
-- Required inputs: public connector URL, configured canonical HTTPS issuer/resource URLs, InvenTree credential supplied during setup.
-- Preferred flow: verify connector metadata, start OAuth authorization, collect InvenTree credential on the setup page, validate with `/api/user/me/` or `/api/user/me/roles/`, create or seal a dedicated connector token, exchange authorization code for MCP OAuth tokens.
-- Clarify when: redirect URI/client registration behavior has not been verified against current OpenAI docs, token creation is permission-denied, or the operator must choose between canceling setup and sealing a supplied token.
-- Expected output: connector authorization success with non-sensitive credential-source metadata.
+- STDIO mode registers read-only lookup/download tools, prompt checklists, write workflow tools, attachment/image tools, and the read-only `health_version` tool.
+- HTTP development mode registers read-only tools and `health_version`; mutating, operational, upload, image-write, and destructive tools stay STDIO-only until `M1C-S04` implements per-tool OAuth scope enforcement.
+- The checked machine-readable source is `docs/tool-manifest.json`, generated with `go generate ./internal/tools`.
+- Use `docs/tool-reference.md` for field-level contracts, mutation classes, upload sources, required scopes, MCP annotations, and clarification retry fields.
+
+## Future ChatGPT Connector OAuth Setup
+
+HTTP OAuth is not implemented in milestone 1. Production HTTP mode remains disabled, and mutating tools are not registered on HTTP until `M1C-S04` adds per-tool OAuth scope enforcement.
+
+- Required future inputs: public connector URL, configured canonical HTTPS issuer/resource URLs, InvenTree credential supplied during setup.
+- Future preferred flow: verify connector metadata, start OAuth authorization, collect InvenTree credential on the setup page, validate with `/api/user/me/` or `/api/user/me/roles/`, create or seal a dedicated connector token, exchange authorization code for MCP OAuth tokens.
+- Clarify when: an operator tries to use ChatGPT Connector OAuth before the `M1C` OAuth tasks are complete, redirect URI/client registration behavior has not been verified against current OpenAI docs, token creation is permission-denied, or the operator must choose between canceling setup and sealing a supplied token.
+- Expected milestone 1 output: no production connector authorization path; use STDIO for implemented workflows. Expected future output: connector authorization success with non-sensitive credential-source metadata.
 
 ## STDIO Setup
 
@@ -19,12 +28,14 @@ Each recipe should preserve omitted fields versus explicit zero/false/empty valu
 - Clarify when: auth scheme is neither `Token` nor `Bearer`, URL is missing, upload allowlisted roots are not trusted, or TLS skip verify is requested outside local/test use.
 - Expected output: STDIO MCP server ready for local clients.
 
-## Reverse-Proxy HTTP Deployment
+## Future Reverse-Proxy HTTP Deployment
 
-- Required inputs: internal listen address, public canonical HTTPS issuer/resource URLs, trusted proxy settings, envelope keys, rate-limit settings.
-- Preferred flow: configure reverse proxy TLS, expose only the proxy-facing listener, set canonical URLs explicitly, configure trusted forwarded headers, validate metadata/challenge URLs.
-- Clarify when: public URL differs from proxy routing, path prefix handling is unclear, or production config enables TLS skip verify.
-- Expected output: HTTP MCP endpoint with OAuth metadata that never leaks internal hostnames or ports.
+Production reverse-proxy HTTP deployment depends on the future HTTP OAuth milestone. In milestone 1, HTTP remains development-only and should be used only for pre-OAuth smoke tests of the skeleton server surface.
+
+- Required future inputs: internal listen address, public canonical HTTPS issuer/resource URLs, trusted proxy settings, envelope keys, rate-limit settings.
+- Future preferred flow: configure reverse proxy TLS, expose only the proxy-facing listener, set canonical URLs explicitly, configure trusted forwarded headers, validate metadata/challenge URLs.
+- Clarify when: an operator tries to deploy production HTTP before OAuth is implemented, public URL differs from proxy routing, path prefix handling is unclear, or production config enables TLS skip verify.
+- Expected milestone 1 output: no production reverse-proxy HTTP deployment path. Expected future output: HTTP MCP endpoint with OAuth metadata that never leaks internal hostnames or ports.
 
 ## Packaged Systemd Deployment
 

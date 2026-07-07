@@ -6,10 +6,10 @@ import (
 )
 
 type AnnotationClass struct {
-	ReadOnly    bool
-	Destructive bool
-	Idempotent  bool
-	OpenWorld   bool
+	ReadOnly    bool `json:"read_only"`
+	Destructive bool `json:"destructive"`
+	Idempotent  bool `json:"idempotent"`
+	OpenWorld   bool `json:"open_world"`
 }
 
 var ReadOnlyAnnotations = AnnotationClass{
