@@ -57,9 +57,9 @@ Before `M1C-S04` is complete, mutating, operational, destructive, and upload too
 | [M1H-S01](#m1h-s01-testcontainers-stack-spike) | Prove the pinned InvenTree Testcontainers stack. | Done |
 | [M1H-S02](#m1h-s02-shared-suite-fixtures-and-isolation) | Add shared suite fixtures, per-run accounts, and isolation checks. | Done |
 | [M1B-S03](#m1b-s03-read-only-client-methods) | Implement read-only client methods needed by milestone 1. | Done |
-| [M1C-S01](#m1c-s01-mcp-sdk-auth-spike) | Spike official MCP SDK auth behavior for HTTP. | Planned |
-| [M1C-S02](#m1c-s02-chatgpt-connector-compatibility-spike) | Verify ChatGPT connector OAuth compatibility. | Blocked |
-| [M1C-S03](#m1c-s03-oauth-envelope-and-code-storage) | Implement OAuth token envelopes and auth-code storage. | Planned |
+| [M1C-S01](#m1c-s01-mcp-sdk-auth-spike) | Spike official MCP SDK auth behavior for HTTP. | Done |
+| [M1C-S02](#m1c-s02-chatgpt-connector-compatibility-spike) | Verify ChatGPT connector OAuth compatibility. | Done |
+| [M1C-S03](#m1c-s03-oauth-envelope-and-code-storage) | Implement OAuth token envelopes and auth-code storage. | Ready |
 | [M1C-S04](#m1c-s04-scope-guard-and-credential-propagation) | Enforce per-tool OAuth scopes and credential propagation. | Planned |
 | [M1D-S01](#m1d-s01-lookup-tool-framework) | Add common lookup tool framework and clarification contracts. | Done |
 | [M1D-S02](#m1d-s02-part-company-stock-parameter-and-attachment-lookup-tools) | Add read-only part, company, stock, parameter, and attachment lookup tools. | Done |
@@ -392,7 +392,7 @@ Tasks:
 
 ### M1C-S01: MCP SDK Auth Spike
 
-- Status: `Planned`
+- Status: `Done`
 - Depends on: M1A-S03
 - Scope: prove official MCP SDK `auth`/`oauthex` behavior against the planned HTTP architecture.
 - Acceptance:
@@ -403,16 +403,19 @@ Tasks:
 
 Tasks:
 
-- [ ] Add spike tests around HTTP handler auth middleware.
-- [ ] Verify `TokenVerifier` signature.
-- [ ] Verify context propagation into `CallTool`.
-- [ ] Document results in `docs/PLAN.md`.
+- [x] Add spike tests around HTTP handler auth middleware.
+- [x] Verify `TokenVerifier` signature.
+- [x] Verify context propagation into `CallTool`.
+- [x] Document results in `docs/PLAN.md`.
+
+- Validation: `go test ./internal/server ./docs`; `go test -race ./internal/server`; `go test ./...`; `git diff --check`.
+- Review: Senior Go Developer, Senior QA / Test Architect, Senior Product Manager, and Senior InfoSec Engineer reviews run. Initial reviews found missing invalid/expired/insufficient-scope SDK failure cases, missing official source links for connector assumptions, unclear first-pass client registration behavior, and missing tool-level auth UI tracking. Follow-up added failure-mode tests, official OpenAI docs links, CIMD public-client `none` as the initial registration model, and M1C-S04 tracking for tool `securitySchemes` plus `_meta["mcp/www_authenticate"]`. Focused QA rerun found a data race from parallel failure subtests; fixed by making those subtests serial, and `go test -race ./internal/server` passed. Final focused Go, QA, product, and infosec reruns found no remaining actionable findings.
+- Residual risk: this story proves SDK fit only. It does not implement encrypted token envelopes, authorization-code storage, setup pages, token refresh, or per-tool scope enforcement.
 
 ### M1C-S02: ChatGPT Connector Compatibility Spike
 
-- Status: `Blocked`
+- Status: `Done`
 - Depends on: M1C-S01
-- Blocker: requires current official OpenAI connector/OAuth documentation verification.
 - Scope: confirm redirect URI, metadata, client registration, local/dev callback, and pre-auth discovery expectations.
 - Acceptance:
   - Connector assumptions are documented with exact dates and source links.
@@ -420,17 +423,23 @@ Tasks:
 
 Tasks:
 
-- [ ] Verify current OpenAI connector OAuth docs.
-- [ ] Record redirect URI shape and registration model.
-- [ ] Record required metadata fields and scopes behavior.
-- [ ] Decide whether unauthenticated static MCP discovery is required.
+- [x] Verify current OpenAI connector OAuth docs.
+- [x] Record redirect URI shape and registration model.
+- [x] Record required metadata fields and scopes behavior.
+- [x] Decide whether unauthenticated static MCP discovery is required.
+
+- Validation: `go test ./internal/server ./docs`; `go test -race ./internal/server`; `go test ./...`; `git diff --check`.
+- Review: Senior Go Developer, Senior QA / Test Architect, Senior Product Manager, and Senior InfoSec Engineer reviews run. Initial reviews found missing invalid/expired/insufficient-scope SDK failure cases, missing official source links for connector assumptions, unclear first-pass client registration behavior, and missing tool-level auth UI tracking. Follow-up added failure-mode tests, official OpenAI docs links, CIMD public-client `none` as the initial registration model, and M1C-S04 tracking for tool `securitySchemes` plus `_meta["mcp/www_authenticate"]`. Focused QA rerun found a data race from parallel failure subtests; fixed by making those subtests serial, and `go test -race ./internal/server` passed. Final focused Go, QA, product, and infosec reruns found no remaining actionable findings.
+- Residual risk: official docs require HTTPS production metadata and callback URLs. Local development should use an HTTPS tunnel such as ngrok and refresh connector metadata after server changes; no separate local callback URL shape is documented for bypassing the production ChatGPT redirect.
 
 ### M1C-S03: OAuth Envelope And Code Storage
 
-- Status: `Planned`
+- Status: `Ready`
 - Depends on: M1C-S01, M1C-S02
 - Scope: implement encrypted access/refresh envelopes and one-time authorization code storage.
 - Acceptance:
+  - CIMD `client_id` metadata documents are fetched with bounded reads, context timeouts, safe redirect policy, expected ChatGPT metadata origin/shape validation, and no credential forwarding.
+  - Authorization code issuance rejects bad `client_id`, non-HTTPS metadata URLs, wrong redirect URI, metadata fetch failure, and metadata mismatch before storing or returning a code.
   - Access token default lifetime is 15 minutes.
   - Refresh token default lifetime is 30 days.
   - Absolute connector session default is 90 days.
@@ -439,10 +448,13 @@ Tasks:
 
 Tasks:
 
+- [ ] Add CIMD client metadata fetch and validation.
+- [ ] Add redirect URI validation against the fetched CIMD metadata document.
 - [ ] Add `internal/oauth` envelope codec.
 - [ ] Add keyring config and validation.
 - [ ] Add one-time auth-code ID store.
 - [ ] Add refresh flow.
+- [ ] Add negative tests for bad `client_id`, non-HTTPS metadata URL, wrong redirect URI, metadata fetch failure, and metadata mismatch.
 - [ ] Add redaction tests.
 
 ### M1C-S04: Scope Guard And Credential Propagation
@@ -454,12 +466,16 @@ Tasks:
   - Global bearer auth only authenticates and populates context.
   - Tool-specific guard checks manifest before handler dispatch.
   - Credential carrier is type-safe and not logged or serialized.
+  - Tool descriptors expose OAuth `securitySchemes` and any ChatGPT compatibility mirror metadata required for tool-level OAuth prompts.
+  - Tool auth failures that need ChatGPT linking or reauthorization return `_meta["mcp/www_authenticate"]` without leaking credentials or sensitive request details.
 
 Tasks:
 
 - [ ] Add tool authorization manifest.
 - [ ] Add per-tool scope wrapper in `internal/tools` or `internal/server`.
 - [ ] Add `internal/oauth.CredentialFromTokenInfo` or selected private carrier.
+- [ ] Add OAuth `securitySchemes` and compatibility metadata to registered tools.
+- [ ] Add tool auth error results carrying safe `_meta["mcp/www_authenticate"]` challenges where ChatGPT linking or reauthorization is required.
 - [ ] Add scope rejection tests.
 - [ ] Add concurrent credential isolation tests.
 
