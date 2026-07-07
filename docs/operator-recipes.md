@@ -67,7 +67,7 @@ Each recipe should preserve omitted fields versus explicit zero/false/empty valu
 
 ## Attach Datasheet Or Photo
 
-- Required inputs: target object type and ID plus exactly one upload source. Inline uploads require filename and content type; local-file uploads require content type and may derive filename from the path; URL-copy uploads may derive filename and content type from the HTTP response; stored links require only the target URL, with filename optional.
+- Required inputs: target object type and ID plus exactly one upload source. Inline uploads require filename and content type; local-file uploads require content type and may derive filename from the path; URL-copy uploads may derive filename and content type from the HTTP response; stored links require only the target URL, with any supplied filename used only for duplicate preflight because InvenTree assigns stored-link filename metadata.
 - Accepted sources: inline bytes in any mode; STDIO allowlisted local path; HTTP(S) URL only through `upload_attachment_from_url`; stored link only through `create_link_attachment`.
 - Source resolver behavior: inline bytes are size-capped before upload, STDIO local paths must sit under trusted operator-controlled allowlisted roots and are rejected in HTTP mode before filesystem access, and URL-copy sources must pass SSRF checks without forwarding MCP or InvenTree auth headers.
 - Clarify when: target object is ambiguous, URL intent could mean upload-copy or store-link, duplicate filename/content/link exists, or source policy rejects the input.

@@ -267,6 +267,7 @@ func TestAttachmentWriteMethodsUseExpectedEndpoints(t *testing.T) {
 				case "POST /api/attachment/":
 					fields, _ := readMultipartRequest(t, req)
 					a.Equal("https://example.test/datasheet.pdf", fields["link"])
+					a.NotContains(fields, "filename")
 					return jsonResponse(req, http.StatusOK, `{"pk":91,"model_type":"part","model_id":10,"filename":"datasheet","link":"https://example.test/datasheet.pdf"}`), nil
 				case "PATCH /api/attachment/91/":
 					var body map[string]any

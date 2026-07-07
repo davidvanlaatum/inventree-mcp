@@ -229,6 +229,20 @@ func TestAttachmentLinkUpdateAndDeleteToolsValidateIntent(t *testing.T) {
 	a.True(fake.createdLinkAttachment)
 	a.Equal("https://example.test/datasheet.pdf", fake.lastAttachmentCreate.Link)
 
+	duplicateFake := &fakeMilestoneLookupClient{
+		attachments: []inventree.Attachment{{PK: 91, ModelType: "part", ModelID: 10, Filename: "datasheet.pdf"}},
+	}
+	_, output, err = createLinkAttachment(depsForFake(duplicateFake))(ctx, &mcp.CallToolRequest{}, CreateLinkAttachmentInput{
+		ModelType: "part",
+		ModelID:   10,
+		URL:       "https://example.test/other.pdf",
+		Filename:  " /tmp/datasheet.pdf ",
+	})
+	r.NoError(err)
+	a.Equal(StatusClarificationRequired, output.Status)
+	a.Equal("allow_duplicate", output.Clarification.Retry)
+	a.False(duplicateFake.createdLinkAttachment)
+
 	_, _, err = createLinkAttachment(depsForFake(fake))(ctx, &mcp.CallToolRequest{}, CreateLinkAttachmentInput{
 		ModelType: "part",
 		ModelID:   10,

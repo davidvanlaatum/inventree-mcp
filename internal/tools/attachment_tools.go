@@ -49,7 +49,7 @@ type CreateLinkAttachmentInput struct {
 	ModelType      string   `json:"model_type" jsonschema:"In-scope InvenTree attachment target type."`
 	ModelID        int      `json:"model_id" jsonschema:"Stable target object primary key."`
 	URL            string   `json:"url" jsonschema:"HTTP(S) URL to store as a link attachment without fetching."`
-	Filename       string   `json:"filename,omitempty" jsonschema:"Optional display filename."`
+	Filename       string   `json:"filename,omitempty" jsonschema:"Optional filename for duplicate preflight. InvenTree assigns stored-link filename metadata."`
 	Comment        *string  `json:"comment,omitempty" jsonschema:"Optional attachment comment."`
 	Tags           []string `json:"tags,omitempty" jsonschema:"Optional attachment tags."`
 	AllowDuplicate bool     `json:"allow_duplicate,omitempty" jsonschema:"Set true to explicitly allow matching filename or link duplicates."`
@@ -159,13 +159,13 @@ func createLinkAttachment(deps Dependencies) mcp.ToolHandlerFor[CreateLinkAttach
 			if err != nil {
 				return nil, AttachmentWriteOutput{}, err
 			}
-			if result, output, ok, err := clarifyDuplicateAttachment(ctx, client, input.ModelType, input.ModelID, input.Filename, 0, linkURL, input.AllowDuplicate); err != nil || !ok {
+			filename := normalizedAttachmentFilename(input.Filename)
+			if result, output, ok, err := clarifyDuplicateAttachment(ctx, client, input.ModelType, input.ModelID, filename, 0, linkURL, input.AllowDuplicate); err != nil || !ok {
 				return result, output, err
 			}
 			record, err := client.CreateLinkAttachment(ctx, inventree.AttachmentCreate{
 				ModelType: input.ModelType,
 				ModelID:   input.ModelID,
-				Filename:  input.Filename,
 				Link:      linkURL,
 				Comment:   input.Comment,
 				Tags:      input.Tags,

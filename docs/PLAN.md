@@ -920,6 +920,7 @@ Implementation notes:
 - Keep production credentials and user-provided `INVENTREE_TEST_URL` out of Testcontainers logs.
 - If InvenTree requires multiple services for a realistic setup, wrap them behind one `StartInvenTree` helper rather than leaking container wiring into tests.
 - Integration tests that require the shared InvenTree stack should live in one package or suite for milestone 1 so `GOFLAGS=-trimpath go test -race ./...` starts at most one shared stack. If additional packages need integration coverage, they should call into the same suite entrypoint or remain unit/fake-client tests until cross-package sharing is deliberately designed.
+- Every exported InvenTree client method must have default-on Testcontainers integration coverage against the real InvenTree API before its implementation task is marked done. Unit and `httptest` coverage should still cover edge cases, error mapping, redaction, payload shape, and policy branches, but it is not a substitute for at least one live successful API-path exercise per client method.
 - Invocation contract: `GOFLAGS=-trimpath go test -race ./...` starts the pinned Testcontainers InvenTree stack by default. Local and CI runs may explicitly exclude Docker-backed integration tests with `INVENTREE_TEST_SKIP_DOCKER=1` or `GOFLAGS=-trimpath go test -race -short`; otherwise missing Docker or failed container startup fails the test.
 
 ### Phase 6: Integration Happy Paths

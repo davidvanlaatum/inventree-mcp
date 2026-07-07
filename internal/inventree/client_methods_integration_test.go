@@ -5,7 +5,6 @@ package inventree_test
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"io"
 	"mime/multipart"
 	"net/http"
@@ -309,8 +308,25 @@ func TestClientMethodsAgainstInvenTree(t *testing.T) {
 		ctx, _, _ := testhandler.SetupTestHandler(t)
 		fixture := newClientMethodFixture(t, shared)
 		part := fixture.ensure(t, testenv.FixturePart)
-		linkAttachment := createLinkAttachment(t, fixture.client, part.ID, "https://example.test/datasheet.pdf")
-		fileAttachment := createFileAttachment(t, shared.Environment().BaseURL, fixture.account.Token, part.ID, "datasheet.txt", "datasheet bytes")
+		comment := "Run-scoped integration fixture attachment"
+		linkAttachment, err := fixture.client.CreateLinkAttachment(ctx, inventree.AttachmentCreate{
+			ModelType: "part",
+			ModelID:   part.ID,
+			Link:      "https://example.test/datasheet.pdf",
+			Comment:   &comment,
+		})
+		r.NoError(err)
+		r.NotZero(linkAttachment.PK)
+		fileAttachment, err := fixture.client.UploadAttachment(ctx, inventree.AttachmentCreate{
+			ModelType:   "part",
+			ModelID:     part.ID,
+			Filename:    "datasheet.txt",
+			ContentType: "text/plain",
+			Content:     []byte("datasheet bytes"),
+			Comment:     &comment,
+		})
+		r.NoError(err)
+		r.NotZero(fileAttachment.PK)
 
 		attachments, err := fixture.client.ListAttachments(ctx, inventree.AttachmentQuery{ModelType: "part", ModelID: part.ID})
 		r.NoError(err)
@@ -330,6 +346,24 @@ func TestClientMethodsAgainstInvenTree(t *testing.T) {
 		r.Equal("datasheet bytes", string(download.Content))
 		r.Equal(fileAttachment.PK, download.Attachment.PK)
 		r.NotContains(download.SourceURL, "?")
+
+		updated, err := fixture.client.UpdateAttachmentMetadata(ctx, linkAttachment.PK, inventree.PatchFields{
+			"comment": inventree.Set("updated through client integration test"),
+		})
+		r.NoError(err)
+		r.Equal(linkAttachment.PK, updated.PK)
+		r.Equal("updated through client integration test", updated.Comment)
+
+		deleteAttachment, err := fixture.client.CreateLinkAttachment(ctx, inventree.AttachmentCreate{
+			ModelType: "part",
+			ModelID:   part.ID,
+			Link:      "https://example.test/delete-me.pdf",
+		})
+		r.NoError(err)
+		r.NotZero(deleteAttachment.PK)
+		r.NoError(fixture.client.DeleteAttachment(ctx, deleteAttachment.PK))
+		_, err = fixture.client.GetAttachmentMetadata(ctx, deleteAttachment.PK)
+		r.Error(err)
 	})
 
 	t.Run("image", func(t *testing.T) {
@@ -449,62 +483,6 @@ func createCategoryParameterTemplate(t *testing.T, client *inventree.Client, cat
 	r.NotZero(created.PK)
 	r.Equal(categoryID, created.Category)
 	r.Equal(templateID, created.Template)
-	return created
-}
-
-func createLinkAttachment(t *testing.T, client *inventree.Client, partID int, link string) inventree.Attachment {
-	t.Helper()
-	r := require.New(t)
-	ctx, _, _ := testhandler.SetupTestHandler(t)
-
-	req, err := client.NewRequest(ctx, http.MethodPost, "/api/attachment/", nil, map[string]any{
-		"model_type": "part",
-		"model_id":   partID,
-		"link":       link,
-		"comment":    "Run-scoped integration fixture link attachment",
-	})
-	r.NoError(err)
-	var created inventree.Attachment
-	r.NoError(client.DoJSON(req, &created))
-	r.NotZero(created.PK)
-	r.Equal("part", created.ModelType)
-	r.Equal(partID, created.ModelID)
-	return created
-}
-
-func createFileAttachment(t *testing.T, baseURL string, token string, partID int, filename string, content string) inventree.Attachment {
-	t.Helper()
-	r := require.New(t)
-	ctx, _, _ := testhandler.SetupTestHandler(t)
-
-	var body bytes.Buffer
-	writer := multipart.NewWriter(&body)
-	r.NoError(writer.WriteField("model_type", "part"))
-	r.NoError(writer.WriteField("model_id", strconv.Itoa(partID)))
-	r.NoError(writer.WriteField("comment", "Run-scoped integration fixture file attachment"))
-	fileWriter, err := writer.CreateFormFile("attachment", filename)
-	r.NoError(err)
-	_, err = io.WriteString(fileWriter, content)
-	r.NoError(err)
-	r.NoError(writer.Close())
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, baseURL+"/api/attachment/", &body)
-	r.NoError(err)
-	req.Header.Set("Authorization", "Token "+token)
-	req.Header.Set("Content-Type", writer.FormDataContentType())
-	req.Header.Set("Accept", "application/json")
-	resp, err := http.DefaultClient.Do(req)
-	r.NoError(err)
-	defer func() {
-		r.NoError(resp.Body.Close())
-	}()
-	r.Equal(http.StatusCreated, resp.StatusCode)
-	var created inventree.Attachment
-	r.NoError(json.NewDecoder(resp.Body).Decode(&created))
-	r.NotZero(created.PK)
-	r.Equal("part", created.ModelType)
-	r.Equal(partID, created.ModelID)
-	r.NotNil(created.Attachment)
 	return created
 }
 

@@ -178,9 +178,6 @@ func (c *Client) CreateLinkAttachment(ctx context.Context, input AttachmentCreat
 		"model_id":   strconv.Itoa(input.ModelID),
 		"link":       input.Link,
 	}
-	if input.Filename != "" {
-		fields["filename"] = input.Filename
-	}
 	if input.Comment != nil {
 		fields["comment"] = *input.Comment
 	}
