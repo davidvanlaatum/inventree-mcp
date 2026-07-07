@@ -49,10 +49,17 @@ Common lookup inputs:
 | `omitted_recommended_fields` | workflow outputs | Recommended fields the caller did not provide, such as IPN, units, purchaseability, default location, supplier SKU, or MPN. |
 | `mode` | download tools | Optional download mode. `original` is the default; `thumbnail` is supported for generic attachment downloads when metadata exposes a thumbnail URL and for part-image downloads through `/api/part/thumbs/{id}/`. |
 | `max_bytes` | download tools | Optional maximum response content size. Defaults to `5242880` and is capped at `26214400`. |
+| `inline_base64` | `upload_attachment` | Base64-encoded bytes for an inline upload source. Mutually exclusive with `local_path`. |
+| `local_path` | `upload_attachment` | STDIO-only local file path under a configured upload allowlist. Mutually exclusive with `inline_base64`. |
+| `url` | URL upload and link tools | HTTP(S) URL. `upload_attachment_from_url` fetches bytes; `create_link_attachment` stores the link without fetching. |
+| `filename`, `content_type`, `comment`, `tags` | attachment write tools | Optional or required attachment metadata, preserving explicit empty values on metadata updates. For `create_link_attachment`, `filename` is duplicate-preflight-only because InvenTree assigns stored-link filename metadata. |
+| `allow_duplicate` | attachment create tools | Explicit intent to add a matching filename, size, or link duplicate after duplicate preflight. |
+| `confirm` | destructive tools | Required true before `delete_attachment` removes an attachment. |
+| `source_kind` | attachment write outputs | Source classification such as `inline`, `local_path`, `url`, or `link`. |
 
 ## Upload Source Resolver
 
-`internal/upload` now owns upload source acquisition for planned attachment/image write tools. It resolves three source kinds before any InvenTree multipart upload code receives bytes:
+`internal/upload` owns upload source acquisition for attachment write tools and the planned primary-image workflow. It resolves three source kinds before any InvenTree multipart upload code receives bytes:
 
 | Source | Current behavior |
 | --- | --- |
@@ -60,7 +67,7 @@ Common lookup inputs:
 | STDIO local path | Available only when the caller's mode is STDIO. It uses direct Afero access in `internal/upload/local_file.go`, canonicalizes allowlisted roots and requested paths, rejects paths outside the allowlist, resolves symlink escapes on `OsFs`, opens only after policy checks, and rejects non-regular files. Allowlisted roots must be trusted operator-controlled paths; `OsFs` still has a residual OS-level race if an untrusted user can swap files between policy checks and open. |
 | URL fetch | Accepts only HTTP(S) URLs without userinfo, resolves hostnames before fetch and every redirect, blocks local/private/link-local/multicast/reserved/documentation/cloud-metadata-style address ranges by default, caps redirects, does not forward MCP or InvenTree authorization headers, and enforces the configured maximum size and timeout. Private/internal URL targets require an explicit normalized scheme/host/port allowlist entry. |
 
-The resolver returns in-memory content, filename, content type, size, and source kind. Attachment tools in `M1F-S02` remain responsible for target object validation, duplicate handling, multipart upload, tool annotations, and OAuth scope registration.
+The resolver returns in-memory content, filename, content type, size, and source kind. Registered attachment tools are responsible for target object validation, duplicate handling, multipart upload, tool annotations, and OAuth scope registration.
 
 Structured lookup outputs must include `status`. Successful lookups use `ok`; absent stable records use `not_found`; ambiguous lookups use `clarification_required`.
 
@@ -115,7 +122,7 @@ All tools in this section are implemented and registered. They use class `read_o
 
 The tools in this section are implemented and registered only when write tools are explicitly enabled by the server dependency configuration. The current CLI enables them for STDIO mode. HTTP mode does not register them until `M1C-S04` implements per-tool OAuth scope enforcement.
 
-Tools in this section use milestone status `milestone_1`, MCP annotations `readOnlyHint:false`, `destructiveHint:false`, `idempotentHint:false`, and `openWorldHint:false`. Most use class `write` and require OAuth scope `inventree.write` when HTTP OAuth scope enforcement lands. Operational stock tools use class `operational` and require both `inventree.write` and `inventree.operational`. Upload sources are `None`.
+Tools in this section are milestone status `milestone_1`. Ordinary write tools use MCP annotations `readOnlyHint:false`, `destructiveHint:false`, `idempotentHint:false`, and `openWorldHint:false`. `upload_attachment_from_url` uses `openWorldHint:true`; `delete_attachment` uses class `destructive` with `destructiveHint:true`. Most tools require OAuth scope `inventree.write` when HTTP OAuth scope enforcement lands. Operational stock tools require both `inventree.write` and `inventree.operational`. Attachment tools require `inventree.write` and `inventree.upload`; delete also requires `inventree.destructive`.
 
 | Tool | Group | Inputs | Output | Ask operator when |
 | --- | --- | --- | --- | --- |
@@ -128,6 +135,11 @@ Tools in this section use milestone status `milestone_1`, MCP annotations `readO
 | `upsert_part_with_supplier_and_manufacturer` | Part workflow | `dry_run`, `part_id` or `name`, optional part fields, optional supplier/manufacturer IDs or names, `supplier_sku`, `mpn`, and currencies when creating companies | `status`, `dry_run`, `actions`, selected/reused/created `part`, `supplier`, `manufacturer`, `supplier_part`, `manufacturer_part` when stable, `omitted_recommended_fields`, optional `clarification` | Part, supplier, manufacturer, supplier-part, or manufacturer-part matches are ambiguous; category or currency is missing before creation; supplier SKU is missing before linking. |
 | `create_stock_item` | Initial stock | `part_id`, `location_id`, `quantity`, optional `status`, `batch`, `serial`, `notes` | `status`, `record`, optional `clarification` with retry `stock_item_id`, `part_id`, `location_id`, `quantity`, or `status` | Part, location, quantity, or status is invalid, or existing stock already matches the requested part and location. |
 | `create_initial_stock_entry` | Initial stock workflow | `dry_run`, `part_id` or `part_search`, `location_id` or `location_search`, `quantity`, optional `status`, `batch`, `serial`, `notes` | `status`, `dry_run`, `actions`, selected `part`, selected `location`, optional created `stock_item`, optional `clarification` | Part or location search is ambiguous, quantity/status is invalid, or existing stock already matches the requested part and location. |
+| `upload_attachment` | Attachments | `model_type`, `model_id`, `filename`, `content_type`, exactly one of `inline_base64` or `local_path`, optional `comment`, `tags`, `allow_duplicate` | `status`, `record`, `source_kind`, optional `clarification` with retry `inline_base64`, `filename`, `content_type`, `model_id`, `url`, or `allow_duplicate` | Target object is out of scope, source is missing/ambiguous, filename or content type is missing, local path is not allowlisted, URL intent is ambiguous, or duplicate preflight matches existing attachments. |
+| `upload_attachment_from_url` | Attachments | `model_type`, `model_id`, `url`, optional `filename`, `comment`, `tags`, `allow_duplicate` | `status`, `record`, `source_kind`, optional `clarification` with retry `filename`, `model_id`, or `allow_duplicate` | URL policy rejects the target, filename cannot be determined, or duplicate preflight matches existing attachments. |
+| `create_link_attachment` | Attachments | `model_type`, `model_id`, `url`, optional duplicate-preflight `filename`, `comment`, `tags`, `allow_duplicate` | `status`, `record`, `source_kind`, optional `clarification` with retry `model_id` or `allow_duplicate` | URL is not HTTP(S), includes credentials or a fragment, target object is out of scope, or duplicate preflight matches an existing link. InvenTree assigns stored-link filename metadata. |
+| `update_attachment_metadata` | Attachments | `id`, optional `filename`, `comment`, `tags` | `status`, `record`, optional `clarification` with retry `id` | Stable attachment ID is missing, target object is out of scope, or no PATCH fields are supplied. |
+| `delete_attachment` | Attachments | `id`, `confirm` | `status`, `record`, optional `clarification` with retry `confirm` | Stable attachment ID is missing, target object is out of scope, or `confirm:true` is missing. |
 
 ## Skeleton Tools
 
@@ -143,7 +155,7 @@ Prompts are static operator checklists registered through the MCP prompt surface
 | --- | --- | --- | --- |
 | `new_part_entry_checklist` | `milestone_1` | Add or update a purchasable part with supplier/manufacturer context. | Search existing records first, ask for stable IDs on ambiguity, and prefer `upsert_part_with_supplier_and_manufacturer` with `dry_run:true` before writing. |
 | `parameter_reuse_checklist` | `milestone_1` | Reuse existing parameter templates when setting part parameters. | Prefer category-linked templates and ask for `template_id` when same-name templates differ by unit, choices, checkbox behavior, or category link. |
-| `attachment_image_checklist` | `milestone_1` | Prepare current attachment/image reads and planned upload or replacement workflows. | Current milestone reads can list and download schema-exposed content; upload, link, metadata update, delete, and primary-image replacement steps stay planned until those tools are registered. |
+| `attachment_image_checklist` | `milestone_1` | Prepare attachment/image reads, uploads, links, metadata updates, deletes, and planned primary-image replacement workflows. | Keep upload-copy, stored-link, metadata update, delete, and primary-image replacement intents distinct; replacement remains planned until `set_primary_image` is registered. |
 | `initial_stock_entry_checklist` | `milestone_1` | Create initial stock after duplicate preflight. | Resolve stable part/location IDs, require positive quantity, and prefer `create_initial_stock_entry` with `dry_run:true`. |
 | `purchase_preview_checklist` | `milestone_1` | Produce no-write purchase-order line previews. | Validate supplier-part identity and positive quantities; never create purchase orders or purchase-order lines. |
 
@@ -181,16 +193,18 @@ Future prompts remain in the internal prompt manifest with status `future` and a
 | `upsert_part_with_supplier_and_manufacturer` | Part workflow | Write | `inventree.write` | None | See Registered Write Tools. |
 | `create_stock_item` | Initial stock | Operational | `inventree.write`, `inventree.operational` | None | Existing stock at the requested location may duplicate the new item. |
 | `create_initial_stock_entry` | Initial stock workflow | Operational | `inventree.write`, `inventree.operational` | None | Part or location search is ambiguous, quantity/status is invalid, or existing stock at the requested location may duplicate the new item. |
-## Planned M1F Attachment And Image Tools
+| `upload_attachment` | Attachments | Write | `inventree.write`, `inventree.upload` | Inline bytes; STDIO allowlisted local path | Filename/content duplicates an existing attachment without explicit duplicate intent. |
+| `upload_attachment_from_url` | Attachments | Write, open-world | `inventree.write`, `inventree.upload` | HTTP(S) URL only | URL policy rejects the target or filename/content duplicates an existing attachment without explicit duplicate intent. |
+| `create_link_attachment` | Attachments | Write | `inventree.write`, `inventree.upload` | HTTP(S) link only, no fetch | URL has unsupported scheme, credentials/userinfo, fragment, local path shape, or duplicates an existing link without explicit duplicate intent. |
+| `update_attachment_metadata` | Attachments | Write | `inventree.write`, `inventree.upload` | None | Stable attachment ID is missing or no PATCH fields are supplied. |
+| `delete_attachment` | Attachments | Destructive | `inventree.write`, `inventree.upload`, `inventree.destructive` | None | Stable attachment ID is missing or `confirm:true` is missing. |
 
-These Milestone 1 tools remain planned and are not registered until the M1F attachment/image stories are implemented.
+## Planned M1F Image Tools
+
+These Milestone 1 image tools remain planned and are not registered until the M1F image story is implemented.
 
 | Tool | Group | Class | Scopes | Upload sources | Ask operator when |
 | --- | --- | --- | --- | --- | --- |
-| `upload_attachment` | Attachments | Write | `inventree.write`, `inventree.upload` | Inline bytes; STDIO allowlisted local path | Filename/content duplicates an existing attachment without explicit replacement or metadata-update intent. |
-| `upload_attachment_from_url` | Attachments | Write, open-world | `inventree.write`, `inventree.upload` | HTTP(S) URL only | Intent could be upload-copy versus store-link, or URL policy rejects the target. |
-| `create_link_attachment` | Attachments | Write | `inventree.write`, `inventree.upload` | HTTP(S) link only, no fetch | URL has unsupported scheme, credentials/userinfo, local path shape, or allowlist ambiguity. |
-| `update_attachment_metadata` | Attachments | Write | `inventree.write`, `inventree.upload` | None | Stable attachment ID is missing. |
 | `set_primary_image` | Attachments | Write | `inventree.write`, `inventree.upload` | Existing attachment/image ID | Multiple candidate images exist or replacement lacks `confirm:true`. |
 
 ## Future Tools

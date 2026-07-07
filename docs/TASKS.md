@@ -67,8 +67,8 @@ Before `M1C-S04` is complete, mutating, operational, destructive, and upload too
 | [M1E-S02](#m1e-s02-parameter-writes) | Add existing-template-only parameter writes. | Done |
 | [M1E-S03](#m1e-s03-initial-stock-writes) | Create initial stock items with duplicate detection. | Done |
 | [M1F-S01](#m1f-s01-upload-source-resolver) | Resolve inline, STDIO local-path, and URL upload sources safely. | Done |
-| [M1F-S02](#m1f-s02-attachment-tools) | Add attachment upload, link, update, and delete tools. | Ready |
-| [M1F-S03](#m1f-s03-primary-part-image) | Add part primary image download and assignment/replacement. | Planned |
+| [M1F-S02](#m1f-s02-attachment-tools) | Add attachment upload, link, update, and delete tools. | Done |
+| [M1F-S03](#m1f-s03-primary-part-image) | Add part primary image download and assignment/replacement. | Ready |
 | [M1G-S01](#m1g-s01-part-upsert-workflow) | Add safer part upsert workflow with supplier/manufacturer data. | Done |
 | [M1G-S02](#m1g-s02-initial-stock-and-purchase-preview-workflows) | Add initial-stock workflow helper and no-write purchase preview. | Done |
 | [M1G-S03](#m1g-s03-milestone-prompts) | Add milestone 1 prompts and prompt contract tests. | Done |
@@ -616,15 +616,31 @@ Tasks:
 
 ### M1F-S02: Attachment Tools
 
-- Status: `Ready`
+- Status: `Done`
 - Depends on: M1B-S02, M1F-S01
 - Scope: implement upload, URL-copy, stored-link, metadata update, and delete attachment behavior for milestone object types. Attachment list/get/download reads are already registered and may be extended only where needed to support duplicate detection or write workflows.
+- Validation:
+  - `go test ./internal/inventree ./internal/tools ./cmd/inventree-mcp ./internal/config` passed.
+  - `go test ./internal/tools ./internal/inventree` passed after review-finding fixes.
+  - `go test ./internal/inventree ./internal/tools` passed after adding default-on Testcontainers coverage for the attachment write client methods and fixing live stored-link filename behavior.
+  - `go test ./internal/tools ./internal/inventree` passed after normalizing stored-link duplicate-preflight filenames.
+  - `go test ./internal/tools` passed after URL duplicate preflight normalization.
+  - `go test ./docs` passed after task-status alignment.
+  - `go test ./...` passed.
+  - `go mod tidy -diff` passed.
+  - `golangci-lint run` passed with 0 issues after fixing one staticcheck switch-style finding.
+  - `git diff --check` passed.
+- Review:
+  - Senior Go Developer, Senior QA / Test Architect, Senior Product Manager, and Senior Infosec Reviewer reviews run. Initial findings requested bounded inline base64 size checks before decode, URL duplicate preflight before open-world fetch when filename is known, recipe wording split by source type, required content type clarification for inline/local uploads, explicit URL-shaped `local_path` guidance, local-path tool wiring coverage, and multipart filename/content-type header sanitization. Fixes added pre-decode max-byte checks, duplicate filename preflight before URL fetch, source-specific recipe wording, content-type and URL-intent clarifications, local-path and HTTP-mode tests, and multipart control-character/media-type validation.
+  - Focused follow-up reviews found no remaining infosec findings. Go follow-up found URL duplicate preflight used the raw supplied filename before normalization; fixed by normalizing URL-provided filenames before duplicate checks and adding regression coverage. QA follow-up found the tool reference omitted the new `content_type` and URL-intent clarification retries; fixed in the attachment tool contract row. Product follow-up found missing STDIO upload configuration docs, stale planned-tool wording, and missing `delete_attachment` in the milestone plan inventory; fixed in the operator recipes, tool reference, and plan. Operator follow-up required integration tests for all client methods; fixed by documenting the rule and exercising attachment upload, stored-link create, metadata update, and delete client methods against the default-on Testcontainers InvenTree suite. The live test exposed that InvenTree 1.4.0 rejects custom filename fields on stored-link creation; fixed by treating link filenames as duplicate-preflight-only metadata and documenting that InvenTree assigns stored-link filename metadata. Final follow-up reviews requested mandatory integration-test wording in the plan, stored-link filename clarification in the tool-reference glossary, and normalized stored-link filename duplicate preflight; fixes added those docs and regression coverage. Final Go and QA reruns found no remaining actionable findings.
+- Residual risk: none.
 - Acceptance:
   - Existing `list_attachments`, `get_attachment_metadata`, and `download_attachment` behavior remains registered and may be reused or extended only as needed for duplicate detection and attachment write workflows.
   - `upload_attachment` accepts inline bytes and STDIO allowlisted paths only.
   - `upload_attachment_from_url` is the only URL-fetch upload tool and has `openWorldHint:true`.
   - `create_link_attachment` stores links without fetching.
   - `update_attachment_metadata` requires a stable attachment ID and uses PATCH-compatible partial updates.
+  - Attachment write client methods have default-on Testcontainers integration coverage against the real InvenTree API.
   - Duplicate attachment behavior returns structured clarification unless intent is explicit.
   - Tool registration includes `inventree.upload` scope tests and `inventree.destructive` tests for delete.
   - HTTP registration is disabled or rejected until `M1C-S04` per-tool scope enforcement is complete.
@@ -632,16 +648,17 @@ Tasks:
 
 Tasks:
 
-- [ ] Add attachment client methods.
-- [ ] Add `upload_attachment`.
-- [ ] Add `upload_attachment_from_url`.
-- [ ] Add `create_link_attachment`.
-- [ ] Add `update_attachment_metadata`.
-- [ ] Add `delete_attachment` behind `confirm:true`.
+- [x] Add attachment client methods.
+- [x] Add attachment client method integration coverage.
+- [x] Add `upload_attachment`.
+- [x] Add `upload_attachment_from_url`.
+- [x] Add `create_link_attachment`.
+- [x] Add `update_attachment_metadata`.
+- [x] Add `delete_attachment` behind `confirm:true`.
 
 ### M1F-S03: Primary Part Image
 
-- Status: `Planned`
+- Status: `Ready`
 - Depends on: M1F-S02
 - Scope: implement part primary image download and assignment/replacement.
 - Acceptance:

@@ -18,6 +18,8 @@ import (
 	"github.com/davidvanlaatum/inventree-mcp/internal/platform"
 	"github.com/davidvanlaatum/inventree-mcp/internal/server"
 	"github.com/davidvanlaatum/inventree-mcp/internal/tools"
+	"github.com/davidvanlaatum/inventree-mcp/internal/upload"
+	"github.com/spf13/afero"
 )
 
 func main() {
@@ -98,6 +100,11 @@ func dependenciesForConfig(cfg config.Config) (tools.Dependencies, error) {
 	}
 	return tools.Dependencies{
 		EnableWriteTools: true,
+		UploadMode:       upload.ModeStdio,
+		UploadFS:         afero.NewOsFs(),
+		UploadAllowRoots: cfg.UploadAllowRoots,
+		UploadMaxBytes:   cfg.UploadMaxBytes,
+		UploadTimeout:    cfg.InvenTreeTimeout,
 		ClientFromContext: func(context.Context) (any, error) {
 			return client, nil
 		},

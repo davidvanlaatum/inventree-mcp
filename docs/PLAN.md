@@ -920,6 +920,7 @@ Implementation notes:
 - Keep production credentials and user-provided `INVENTREE_TEST_URL` out of Testcontainers logs.
 - If InvenTree requires multiple services for a realistic setup, wrap them behind one `StartInvenTree` helper rather than leaking container wiring into tests.
 - Integration tests that require the shared InvenTree stack should live in one package or suite for milestone 1 so `GOFLAGS=-trimpath go test -race ./...` starts at most one shared stack. If additional packages need integration coverage, they should call into the same suite entrypoint or remain unit/fake-client tests until cross-package sharing is deliberately designed.
+- Every exported InvenTree client method must have default-on Testcontainers integration coverage against the real InvenTree API before its implementation task is marked done. Unit and `httptest` coverage should still cover edge cases, error mapping, redaction, payload shape, and policy branches, but it is not a substitute for at least one live successful API-path exercise per client method.
 - Invocation contract: `GOFLAGS=-trimpath go test -race ./...` starts the pinned Testcontainers InvenTree stack by default. Local and CI runs may explicitly exclude Docker-backed integration tests with `INVENTREE_TEST_SKIP_DOCKER=1` or `GOFLAGS=-trimpath go test -race -short`; otherwise missing Docker or failed container startup fails the test.
 
 ### Phase 6: Integration Happy Paths
@@ -1110,7 +1111,7 @@ The full first beta milestone should include:
 - Part/category tools: `search_parts`, `get_part`, `search_part_categories`, `create_part`, `update_part`, `search_parameter_templates`, `get_part_parameters`, `set_part_parameters`.
 - Company tools: `search_companies`, `search_suppliers`, `search_manufacturers`, `create_company`, `create_supplier_part`, `create_manufacturer_part`.
 - Stock tools: `search_stock_locations`, `search_stock_items`, `create_stock_item`.
-- Attachment/image tools: `list_attachments`, `get_attachment_metadata`, `download_attachment`, `download_part_image`, `upload_attachment`, `upload_attachment_from_url`, `create_link_attachment`, `update_attachment_metadata`, `set_primary_image`.
+- Attachment/image tools: `list_attachments`, `get_attachment_metadata`, `download_attachment`, `download_part_image`, `upload_attachment`, `upload_attachment_from_url`, `create_link_attachment`, `update_attachment_metadata`, `delete_attachment`, `set_primary_image`.
 - Milestone attachment object scope: `part`, `stockitem`, `company`, `supplierpart`, `manufacturerpart`, and `purchaseorder`. Sales/return/transfer/build attachment support is deferred unless explicitly added later.
 - Purchase-order attachment support in milestone 1 applies only to existing purchase orders found by ID/search. The milestone does not create purchase orders except through later explicitly enabled mutating workflows.
 - Milestone primary image scope: `part` only. Company image endpoint notes are recorded in `docs/api-schema.md` for later implementation, but company primary-image support is deferred.

@@ -472,6 +472,9 @@ type fakeMilestoneLookupClient struct {
 	createdSupplierPart        bool
 	createdManufacturerPart    bool
 	createdStockItem           bool
+	uploadedAttachment         bool
+	createdLinkAttachment      bool
+	deletedAttachment          bool
 
 	lastSearchPartsQuery                      inventree.SearchQuery
 	lastSearchPartCategoriesQuery             inventree.SearchQuery
@@ -495,8 +498,11 @@ type fakeMilestoneLookupClient struct {
 	lastCreateSupplierPart                    inventree.SupplierPartCreate
 	lastCreateManufacturerPart                inventree.ManufacturerPartCreate
 	lastCreateStockItem                       inventree.StockItemCreate
+	lastAttachmentCreate                      inventree.AttachmentCreate
 	lastUpdatePartFields                      inventree.PatchFields
 	lastUpdatePartParameterFields             inventree.PatchFields
+	lastUpdateAttachmentFields                inventree.PatchFields
+	lastDeleteAttachmentID                    int
 	updatePartParameterCount                  int
 	lastAttachmentMaxBytes                    int64
 	lastPartImageMaxBytes                     int64
@@ -610,6 +616,29 @@ func (f *fakeMilestoneLookupClient) DownloadPartImage(_ context.Context, _ int, 
 	return f.downloadedPartImage, nil
 }
 
+func (f *fakeMilestoneLookupClient) UploadAttachment(_ context.Context, input inventree.AttachmentCreate) (inventree.Attachment, error) {
+	f.uploadedAttachment = true
+	f.lastAttachmentCreate = input
+	return inventree.Attachment{PK: 90, ModelType: input.ModelType, ModelID: input.ModelID, Filename: input.Filename, Comment: derefString(input.Comment), FileSize: ptrInt64(int64(len(input.Content)))}, nil
+}
+
+func (f *fakeMilestoneLookupClient) CreateLinkAttachment(_ context.Context, input inventree.AttachmentCreate) (inventree.Attachment, error) {
+	f.createdLinkAttachment = true
+	f.lastAttachmentCreate = input
+	return inventree.Attachment{PK: 91, ModelType: input.ModelType, ModelID: input.ModelID, Filename: input.Filename, Link: &input.Link, Comment: derefString(input.Comment), IsLink: true}, nil
+}
+
+func (f *fakeMilestoneLookupClient) UpdateAttachmentMetadata(_ context.Context, id int, fields inventree.PatchFields) (inventree.Attachment, error) {
+	f.lastUpdateAttachmentFields = fields
+	return inventree.Attachment{PK: id, ModelType: "part", ModelID: 10, Filename: "updated"}, nil
+}
+
+func (f *fakeMilestoneLookupClient) DeleteAttachment(_ context.Context, id int) error {
+	f.deletedAttachment = true
+	f.lastDeleteAttachmentID = id
+	return nil
+}
+
 func (f *fakeMilestoneLookupClient) CreatePart(_ context.Context, input inventree.PartCreate) (inventree.Part, error) {
 	f.createdPart = true
 	f.lastCreatePart = input
@@ -677,4 +706,8 @@ func (f *fakeMilestoneLookupClient) CreateStockItem(_ context.Context, input inv
 	f.createdStockItem = true
 	f.lastCreateStockItem = input
 	return inventree.StockItem{PK: 50, Part: input.Part, Location: &input.Location, Quantity: input.Quantity, Status: 10, Batch: input.Batch, Serial: input.Serial, Notes: input.Notes}, nil
+}
+
+func ptrInt64(value int64) *int64 {
+	return &value
 }

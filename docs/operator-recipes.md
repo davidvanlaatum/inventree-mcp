@@ -13,9 +13,10 @@ Each recipe should preserve omitted fields versus explicit zero/false/empty valu
 
 ## STDIO Setup
 
-- Required inputs: `INVENTREE_URL`, `INVENTREE_TOKEN`, optional `INVENTREE_AUTH_SCHEME`.
+- Required inputs: `INVENTREE_URL`, `INVENTREE_TOKEN`, optional `INVENTREE_AUTH_SCHEME`, `INVENTREE_UPLOAD_ALLOW_ROOTS`, and `INVENTREE_UPLOAD_MAX_BYTES`.
 - Preferred flow: validate configuration, seed logging context, run `inventree-mcp serve --transport stdio`, perform a read-only smoke test.
-- Clarify when: auth scheme is neither `Token` nor `Bearer`, URL is missing, or TLS skip verify is requested outside local/test use.
+- Local upload flow: configure trusted operator-controlled upload roots with `INVENTREE_UPLOAD_ALLOW_ROOTS` or repeated `--upload-allow-root`; tune the byte limit with `INVENTREE_UPLOAD_MAX_BYTES` or `--upload-max-bytes` when the default limit is too small.
+- Clarify when: auth scheme is neither `Token` nor `Bearer`, URL is missing, upload allowlisted roots are not trusted, or TLS skip verify is requested outside local/test use.
 - Expected output: STDIO MCP server ready for local clients.
 
 ## Reverse-Proxy HTTP Deployment
@@ -66,14 +67,21 @@ Each recipe should preserve omitted fields versus explicit zero/false/empty valu
 
 ## Attach Datasheet Or Photo
 
-- Current status: upload, URL-copy, stored-link, metadata update, and delete tools are planned but not registered yet. Use this recipe today only to gather stable target IDs and attachment/image decisions before the M1F attachment tools land.
-- Required inputs: target object type and ID, filename, content type, and exactly one upload source.
+- Required inputs: target object type and ID plus exactly one upload source. Inline uploads require filename and content type; local-file uploads require content type and may derive filename from the path; URL-copy uploads may derive filename and content type from the HTTP response; stored links require only the target URL, with any supplied filename used only for duplicate preflight because InvenTree assigns stored-link filename metadata.
 - Accepted sources: inline bytes in any mode; STDIO allowlisted local path; HTTP(S) URL only through `upload_attachment_from_url`; stored link only through `create_link_attachment`.
 - Source resolver behavior: inline bytes are size-capped before upload, STDIO local paths must sit under trusted operator-controlled allowlisted roots and are rejected in HTTP mode before filesystem access, and URL-copy sources must pass SSRF checks without forwarding MCP or InvenTree auth headers.
-- Clarify when: target object is ambiguous, URL intent could mean upload-copy or store-link, duplicate filename/content exists, or source policy rejects the input.
-- Current tool sequence: `list_attachments`, then stop with the stable target ID, existing attachment context, and the explicit upload/link decision for the later M1F tools.
-- Planned M1F tool sequence: `list_attachments`, then `upload_attachment`, `upload_attachment_from_url`, or `create_link_attachment`.
-- Expected output after M1F registration: attachment ID, target object, filename, size or link classification, content type, and thumbnail/image state when available.
+- Clarify when: target object is ambiguous, URL intent could mean upload-copy or store-link, duplicate filename/content/link exists, or source policy rejects the input.
+- Tool sequence: `list_attachments`, then `upload_attachment`, `upload_attachment_from_url`, or `create_link_attachment`. Use `allow_duplicate:true` only after reviewing duplicate candidates and deciding a new matching attachment is intentional.
+- Expected output: attachment ID, target object, filename, size or link classification, content type, source kind, and thumbnail/image state when available.
+- HTTP note: attachment write tools are STDIO-only until per-tool OAuth scope enforcement is implemented.
+
+## Update Or Delete Attachment Metadata
+
+- Required inputs: stable attachment ID. Deletion also requires `confirm:true`.
+- Preferred lookup order: `get_attachment_metadata`, then `update_attachment_metadata` or `delete_attachment`.
+- Clarify when: attachment ID is missing, the existing attachment belongs to an out-of-scope object type, no metadata fields are supplied for PATCH, or delete confirmation is missing.
+- Expected output: updated or deleted attachment metadata with target object details.
+- HTTP note: attachment write and destructive tools are STDIO-only until per-tool OAuth scope enforcement is implemented.
 
 ## Download Attachment Content
 
@@ -95,12 +103,12 @@ Each recipe should preserve omitted fields versus explicit zero/false/empty valu
 
 ## Set Or Replace Primary Part Image
 
-- Current status: primary-image replacement is planned but not registered yet. Use this recipe today only to inspect existing attachments/images and collect the explicit replacement decision before the M1F image tools land.
+- Current status: primary-image replacement is planned but not registered yet. Use this recipe today only to inspect existing attachments/images and collect the explicit replacement decision before the M1F image tool lands.
 - Required inputs: part ID and attachment/image ID, plus `confirm:true` when replacing an existing primary image.
 - Preferred lookup order: `list_attachments`, inspect image-capable attachments, then set primary image only when the candidate is unambiguous.
 - Clarify when: multiple images are plausible, the image is already attached elsewhere, or replacement lacks confirmation.
 - Current tool sequence: `list_attachments`, inspect current image-capable candidates, then stop with the stable part ID, candidate attachment/image ID, and explicit replacement decision for the later M1F tool.
-- Planned M1F tool sequence: `list_attachments`, optionally upload an image through a registered upload tool, then `set_primary_image`.
+- Planned M1F tool sequence: `list_attachments`, optionally upload an image through `upload_attachment` or `upload_attachment_from_url`, then `set_primary_image`.
 - Expected output after `set_primary_image` is implemented: part record, selected attachment/image ID, and replacement confirmation status.
 
 ## Preview Purchase Order Lines

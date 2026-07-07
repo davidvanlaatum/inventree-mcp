@@ -95,8 +95,8 @@ func TestStdioServerListsOnlyMilestonePrompts(t *testing.T) {
 		},
 		tools.AttachmentImageChecklistPromptName: {
 			"structured clarification",
-			"Current milestone reads",
-			"remain planned until their tools are registered",
+			"Current milestone tools",
+			"confirmed attachments",
 		},
 		tools.InitialStockEntryChecklistPromptName: {
 			"dry_run:true",

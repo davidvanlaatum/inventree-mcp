@@ -1,6 +1,7 @@
 package config
 
 import (
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -30,6 +31,25 @@ func TestParseServeUsesEnvAndFlagPrecedence(t *testing.T) {
 	r.Equal(AuthSchemeBearer, cfg.InvenTreeAuthScheme)
 	r.Equal(5*time.Second, cfg.InvenTreeTimeout)
 	r.Equal(DefaultListen, cfg.Listen)
+}
+
+func TestParseServeConfiguresUploadPolicy(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+
+	cfg, err := ParseServeWithEnv([]string{
+		"--transport", "stdio",
+		"--inventree-url", "https://inventory.example.test",
+		"--upload-allow-root", "/flag/uploads",
+		"--upload-max-bytes", "2048",
+	}, mapEnv(map[string]string{
+		EnvInvenTreeToken:   "token",
+		EnvUploadAllowRoots: "/env/one" + string(os.PathListSeparator) + "/env/two",
+		EnvUploadMaxBytes:   "1024",
+	}), nil)
+	r.NoError(err)
+	r.Equal([]string{"/env/one", "/env/two", "/flag/uploads"}, cfg.UploadAllowRoots)
+	r.Equal(int64(2048), cfg.UploadMaxBytes)
 }
 
 func TestParseServeRejectsMissingStdioRequiredValues(t *testing.T) {
