@@ -5,6 +5,9 @@ package inventree_test
 import (
 	"bytes"
 	"context"
+	"image"
+	"image/color"
+	"image/png"
 	"io"
 	"mime/multipart"
 	"net/http"
@@ -379,6 +382,33 @@ func TestClientMethodsAgainstInvenTree(t *testing.T) {
 		r.Equal(part.ID, download.Part.PK)
 		r.Contains(download.ContentType, "image/png")
 		r.NotContains(download.SourceURL, "?")
+
+		replacementBytes := alternateTinyPNG()
+		attachment, err := fixture.client.UploadAttachment(ctx, inventree.AttachmentCreate{
+			ModelType:   "part",
+			ModelID:     part.ID,
+			Filename:    "replacement.png",
+			ContentType: "image/png",
+			Content:     replacementBytes,
+		})
+		r.NoError(err)
+		r.NotNil(attachment.Attachment)
+		r.NotEmpty(*attachment.Attachment)
+		downloadedAttachment, err := fixture.client.DownloadAttachment(ctx, attachment.PK, inventree.AttachmentContentOriginal, 1024)
+		r.NoError(err)
+		r.Equal(replacementBytes, downloadedAttachment.Content)
+
+		thumb, err := fixture.client.SetPartPrimaryImage(ctx, part.ID, inventree.PartPrimaryImageCreate{
+			Filename:    attachment.Filename,
+			ContentType: downloadedAttachment.ContentType,
+			Content:     downloadedAttachment.Content,
+		})
+		r.NoError(err)
+		r.NotNil(thumb.Image)
+
+		replacement, err := fixture.client.DownloadPartImage(ctx, part.ID, inventree.AttachmentContentOriginal, 1024)
+		r.NoError(err)
+		r.Equal(replacementBytes, replacement.Content)
 	})
 
 	t.Run("po", func(t *testing.T) {
@@ -580,15 +610,19 @@ func purchaseOrderLineIDs(lines []inventree.PurchaseOrderLineItem) []int {
 }
 
 func tinyPNG() []byte {
-	return []byte{
-		0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
-		0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52,
-		0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
-		0x08, 0x06, 0x00, 0x00, 0x00, 0x1f, 0x15, 0xc4,
-		0x89, 0x00, 0x00, 0x00, 0x0a, 0x49, 0x44, 0x41,
-		0x54, 0x78, 0x9c, 0x63, 0x00, 0x01, 0x00, 0x00,
-		0x05, 0x00, 0x01, 0x0d, 0x0a, 0x2d, 0xb4, 0x00,
-		0x00, 0x00, 0x00, 0x49, 0x45, 0x4e, 0x44, 0xae,
-		0x42, 0x60, 0x82,
+	return tinyPNGColor(color.NRGBA{R: 0, G: 0, B: 0, A: 0})
+}
+
+func alternateTinyPNG() []byte {
+	return tinyPNGColor(color.NRGBA{R: 255, G: 0, B: 0, A: 255})
+}
+
+func tinyPNGColor(pixel color.NRGBA) []byte {
+	var buf bytes.Buffer
+	img := image.NewNRGBA(image.Rect(0, 0, 1, 1))
+	img.SetNRGBA(0, 0, pixel)
+	if err := png.Encode(&buf, img); err != nil {
+		panic(err)
 	}
+	return buf.Bytes()
 }

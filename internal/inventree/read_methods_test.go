@@ -417,7 +417,7 @@ func TestDownloadPartImageRejectsUnsafeSourcesAndOversizedContent(t *testing.T) 
 		{
 			name:      "missing image",
 			partBody:  `{"pk":10,"name":"resistor"}`,
-			wantError: "no primary image URL",
+			wantError: "no primary image",
 		},
 		{
 			name:      "external image URL",
@@ -511,6 +511,32 @@ func TestDownloadPartImageDoesNotSurfaceSensitiveURLOnTransportError(t *testing.
 	_, err = client.DownloadPartImage(ctx, 10, AttachmentContentOriginal, 1024)
 	r.Error(err)
 	a.Equal("download InvenTree part image failed", err.Error())
+
+	client, err = NewClient(Config{
+		BaseURL:    "https://inventory.example.test",
+		Credential: Credential{Scheme: AuthSchemeToken, Token: "secret"},
+		HTTPClient: &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			switch req.URL.Path {
+			case "/api/part/10/":
+				return jsonResponse(req, http.StatusOK, `{"pk":10,"name":"resistor","image":"/media/image.png?signature=secret"}`), nil
+			case "/media/image.png":
+				return &http.Response{
+					StatusCode: http.StatusForbidden,
+					Header:     http.Header{"Content-Type": []string{"text/html"}},
+					Body:       io.NopCloser(strings.NewReader(`signed URL /media/image.png?signature=secret was rejected`)),
+					Request:    req,
+				}, nil
+			default:
+				return jsonResponse(req, http.StatusNotFound, `{"detail":"unexpected path"}`), nil
+			}
+		})},
+	})
+	r.NoError(err)
+
+	_, err = client.DownloadPartImage(ctx, 10, AttachmentContentOriginal, 1024)
+	r.Error(err)
+	a.Equal("download InvenTree part image failed with status 403", err.Error())
+	a.NotContains(err.Error(), "signature=secret")
 }
 
 func TestDownloadAttachmentRejectsUnsafeSourcesAndOversizedContent(t *testing.T) {

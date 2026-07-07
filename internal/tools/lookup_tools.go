@@ -53,6 +53,7 @@ const (
 	CreateLinkAttachmentToolName     = "create_link_attachment"
 	UpdateAttachmentMetadataToolName = "update_attachment_metadata"
 	DeleteAttachmentToolName         = "delete_attachment"
+	SetPrimaryImageToolName          = "set_primary_image"
 
 	defaultDownloadMaxBytes int64 = 5 * 1024 * 1024
 	maxDownloadMaxBytes     int64 = 25 * 1024 * 1024
@@ -107,6 +108,7 @@ var writeToolNames = []string{
 	CreateLinkAttachmentToolName,
 	UpdateAttachmentMetadataToolName,
 	DeleteAttachmentToolName,
+	SetPrimaryImageToolName,
 }
 
 var ToolAuthorizations = map[string]ToolAuthorization{
@@ -134,7 +136,7 @@ func init() {
 		case CreateStockItemToolName, InitialStockWorkflowToolName:
 			scopes = []string{ScopeInventreeWrite, ScopeInventreeOperational}
 			mutationClass = "operational"
-		case UploadAttachmentToolName, UploadAttachmentFromURLToolName, CreateLinkAttachmentToolName, UpdateAttachmentMetadataToolName:
+		case UploadAttachmentToolName, UploadAttachmentFromURLToolName, CreateLinkAttachmentToolName, UpdateAttachmentMetadataToolName, SetPrimaryImageToolName:
 			scopes = []string{ScopeInventreeWrite, ScopeInventreeUpload}
 		case DeleteAttachmentToolName:
 			scopes = []string{ScopeInventreeWrite, ScopeInventreeUpload, ScopeInventreeDestructive}
@@ -465,9 +467,12 @@ func downloadPartImage(deps Dependencies) mcp.ToolHandlerFor[DownloadInput, Down
 				if isNotFound(err) {
 					return TextResult(StatusNotFound), DownloadOutput{Status: StatusNotFound, ID: input.ID}, nil
 				}
+				if errors.Is(err, inventree.ErrPartImageMissing) {
+					return TextResult(StatusNoImage), DownloadOutput{Status: StatusNoImage, ID: input.ID, Mode: string(mode)}, nil
+				}
 				return nil, DownloadOutput{}, err
 			}
-			return downloadOutput(input.ID, "", string(mode), download.ContentType, download.SourceURL, download.Content)
+			return downloadOutput(input.ID, download.Filename, string(mode), download.ContentType, download.SourceURL, download.Content)
 		})
 }
 

@@ -290,6 +290,37 @@ func TestAttachmentWriteMethodsUseExpectedEndpoints(t *testing.T) {
 		r.NoError(client.DeleteAttachment(ctx, 91))
 		a.Equal([]string{"POST /api/attachment/", "PATCH /api/attachment/91/", "DELETE /api/attachment/91/"}, calls)
 	})
+
+	t.Run("set part primary image patches part image multipart", func(t *testing.T) {
+		t.Parallel()
+		r := require.New(t)
+		a := assert.New(t)
+		ctx, _, _ := testhandler.SetupTestHandler(t)
+
+		client, err := NewClient(Config{
+			BaseURL:    "https://inventory.example.test",
+			Credential: Credential{Scheme: AuthSchemeToken, Token: "secret"},
+			HTTPClient: &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+				a.Equal(http.MethodPatch, req.Method)
+				a.Equal("/api/part/10/", req.URL.Path)
+				a.Equal("Token secret", req.Header.Get("Authorization"))
+				_, files := readMultipartRequest(t, req)
+				a.Equal("resistor.png", files["image"].filename)
+				a.Equal("image/png", files["image"].contentType)
+				a.Equal([]byte("png bytes"), files["image"].content)
+				return jsonResponse(req, http.StatusOK, `{"image":"/media/part_images/resistor.png"}`), nil
+			})},
+		})
+		r.NoError(err)
+
+		part, err := client.SetPartPrimaryImage(ctx, 10, PartPrimaryImageCreate{
+			Filename:    "resistor.png",
+			ContentType: "image/png",
+			Content:     []byte("png bytes"),
+		})
+		r.NoError(err)
+		a.Equal("/media/part_images/resistor.png", *part.Image)
+	})
 }
 
 func TestUploadAttachmentRejectsUnsafeMultipartHeaders(t *testing.T) {
