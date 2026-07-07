@@ -72,7 +72,7 @@ Before `M1C-S04` is complete, mutating, operational, destructive, and upload too
 | [M1G-S01](#m1g-s01-part-upsert-workflow) | Add safer part upsert workflow with supplier/manufacturer data. | Done |
 | [M1G-S02](#m1g-s02-initial-stock-and-purchase-preview-workflows) | Add initial-stock workflow helper and no-write purchase preview. | Done |
 | [M1G-S03](#m1g-s03-milestone-prompts) | Add milestone 1 prompts and prompt contract tests. | Done |
-| [M1H-S03](#m1h-s03-milestone-integration-happy-paths) | Prove milestone catalog, stock, supplier, attachment, image, and preview happy paths. | Ready |
+| [M1H-S03](#m1h-s03-milestone-integration-happy-paths) | Prove milestone catalog, stock, supplier, attachment, image, and preview happy paths. | Done |
 | [M1I-S01](#m1i-s01-operator-docs-finalization) | Finalize README, operator recipes, and generated tool reference alignment. | Ready |
 | [M1I-S02](#m1i-s02-final-review-panel) | Run final Go, QA, product, and infosec review panel. | Planned |
 | [F-S01](#f-s01-evaluate-docker-compose-testcontainers-stack) | Evaluate Docker Compose-based Testcontainers stack. | Future |
@@ -760,7 +760,7 @@ Tasks:
 
 ### M1H-S03: Milestone Integration Happy Paths
 
-- Status: `Ready`
+- Status: `Done`
 - Depends on: M1H-S02, M1G-S02, M1F-S03
 - Scope: prove catalog, stock, supplier/manufacturer, attachment, URL upload, link, image, and purchase preview flows.
 - Acceptance:
@@ -774,15 +774,29 @@ Tasks:
 
 Tasks:
 
-- [ ] Add catalog and initial stock happy path.
-- [ ] Add supplier/manufacturer purchase preview happy path.
-- [ ] Add inline/local-path attachment readback tests.
-- [ ] Add explicit `download_attachment` original-mode content, thumbnail-mode behavior, hash, size, out-of-scope model type, redirect, and limit tests.
-- [ ] Add explicit `download_part_image` original-mode content, thumbnail-mode behavior, hash, size, no-image, write-only `existing_image` exclusion, and limit tests.
-- [ ] Add URL upload readback tests.
-- [ ] Add link attachment tests.
-- [ ] Add primary image tests.
-- [ ] Add sales/customer and deferred file-surface boundary integration test.
+- [x] Add catalog and initial stock happy path.
+- [x] Add supplier/manufacturer purchase preview happy path.
+- [x] Add inline/local-path attachment readback tests.
+- [x] Add live `download_attachment` original-mode content, hash, size, in-scope matrix, and max-byte limit tests; retain existing unit coverage for attachment thumbnail-mode, out-of-scope model type, redirect, and lower-level limit behavior.
+- [x] Add live `download_part_image` original-mode content, thumbnail-mode behavior, hash, size, no-image, and max-byte limit tests; keep existing unit coverage for write-only `existing_image` exclusion and lower-level limit behavior.
+- [x] Add URL upload readback tests.
+- [x] Add link attachment tests.
+- [x] Add primary image tests.
+- [x] Add sales/customer and deferred file-surface boundary integration test.
+
+Validation:
+
+- `go test ./...` passed.
+- `go test ./internal/testenv ./internal/tools` passed after restoring descriptive long test names and addressing review findings, proving hashed Testcontainers run prefixes avoid InvenTree field-length failures.
+
+Review:
+
+- Initial Senior Go Developer, Senior QA / Test Architect, Senior Product Manager, and Senior Infosec Reviewer findings addressed: status no longer marked `Done` before review completion; raw test names feed Testcontainers run-prefix hashes; purchase-order setup moved into `internal/testenv`; attachment matrix subtests use isolated runs/accounts/fixtures; live tool-level max-bytes, deferred model type, and local-path negative checks were added.
+- Focused rerun review completed. Senior Product Manager and Senior Infosec Reviewer final rereads reported no actionable findings after docs/status wording fixes. Senior Go Developer and Senior QA / Test Architect follow-up findings were addressed before the final docs/security reread.
+
+Residual risk:
+
+- none.
 
 ## Milestone 1I: Documentation And Release Readiness
 
