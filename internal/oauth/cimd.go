@@ -58,7 +58,9 @@ func (f ClientMetadataFetcher) FetchAndValidate(ctx context.Context, clientID st
 	if err != nil {
 		return ClientMetadata{}, fmt.Errorf("%w: fetch failed", ErrInvalidClientMetadata)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		_ = resp.Body.Close()
+	}()
 	if resp.StatusCode != http.StatusOK {
 		return ClientMetadata{}, fmt.Errorf("%w: fetch returned HTTP %d", ErrInvalidClientMetadata, resp.StatusCode)
 	}
