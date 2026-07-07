@@ -5,7 +5,7 @@
 
 Go-based Model Context Protocol server for common InvenTree data-entry workflows.
 
-Current status: buildable MCP server skeleton with STDIO and development-only HTTP transports, plus a read-only health/version tool. HTTP OAuth and InvenTree workflow tools are still planned work.
+Current status: milestone 1 STDIO workflows are implemented for part/company entry, parameters, initial stock, attachments/images, purchase previews, and prompt checklists. HTTP mode remains development-only until the OAuth milestone is complete; mutating tools are not registered on HTTP yet.
 
 ## Quick Start
 
@@ -21,9 +21,13 @@ Useful STDIO options:
 
 - `--inventree-auth-scheme Token` or `--inventree-auth-scheme Bearer`; default is `Token`.
 - `--inventree-timeout 30s`; default is `30s`.
+- `--upload-allow-root /trusted/path` or `INVENTREE_UPLOAD_ALLOW_ROOTS=/trusted/path`; enables STDIO local-file uploads from trusted operator-controlled roots.
+- `--upload-max-bytes 10485760` or `INVENTREE_UPLOAD_MAX_BYTES=10485760`; raises or lowers the upload byte limit.
 - `--inventree-tls-skip-verify`; intended only for local/test deployments and requires `--environment development`.
 
-HTTP mode currently runs only the pre-OAuth skeleton. Production HTTP mode is intentionally disabled until the OAuth milestone is complete. Development-only HTTP startup requires `--environment development --dev-incomplete-oauth` and rejects configured raw InvenTree tokens.
+For first-release workflow details, use [Operator recipes](docs/operator-recipes.md). For exact registered tool metadata, use [Tool reference](docs/tool-reference.md) and the checked [tool manifest](docs/tool-manifest.json).
+
+HTTP mode currently runs only the pre-OAuth server surface. Production HTTP mode is intentionally disabled until the OAuth milestone is complete. Development-only HTTP startup requires `--environment development --dev-incomplete-oauth` and rejects configured raw InvenTree tokens.
 
 ## Install From A Release
 
@@ -80,6 +84,7 @@ Key documents:
 - [API schema notes](docs/api-schema.md)
 - [Reviewer roster](docs/reviewers.md)
 - [Tool reference](docs/tool-reference.md)
+- [Checked tool manifest](docs/tool-manifest.json)
 - [Operator recipes](docs/operator-recipes.md)
 
 The local OpenAPI schema snapshot is stored in `docs/api-schema.yaml`.

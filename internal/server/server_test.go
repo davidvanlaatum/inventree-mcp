@@ -40,8 +40,10 @@ func TestStdioServerCanInitializeAndListTools(t *testing.T) {
 
 	result, err := session.ListTools(ctx, nil)
 	r.NoError(err)
-	r.Len(result.Tools, countNonWriteAuthorizations())
+	expectedNames := expectedToolNames(false)
+	r.Len(result.Tools, len(expectedNames))
 	for _, tool := range result.Tools {
+		a.True(expectedNames[tool.Name], tool.Name)
 		a.True(tool.Annotations.ReadOnlyHint, tool.Name)
 		a.NotNil(tool.Annotations.DestructiveHint, tool.Name)
 		a.False(*tool.Annotations.DestructiveHint, tool.Name)
@@ -130,14 +132,14 @@ func TestStdioServerListsOnlyMilestonePrompts(t *testing.T) {
 	<-serverDone
 }
 
-func countNonWriteAuthorizations() int {
-	count := 0
+func expectedToolNames(includeWrites bool) map[string]bool {
+	names := make(map[string]bool, len(tools.ToolAuthorizations))
 	for _, auth := range tools.ToolAuthorizations {
-		if auth.MutationClass == "read_only" {
-			count++
+		if includeWrites || auth.MutationClass == "read_only" {
+			names[auth.Name] = true
 		}
 	}
-	return count
+	return names
 }
 
 func TestServerListsWriteToolsOnlyWhenEnabled(t *testing.T) {
@@ -164,11 +166,13 @@ func TestServerListsWriteToolsOnlyWhenEnabled(t *testing.T) {
 
 	result, err := session.ListTools(ctx, nil)
 	r.NoError(err)
-	r.Len(result.Tools, len(tools.ToolAuthorizations))
+	expectedNames := expectedToolNames(true)
+	r.Len(result.Tools, len(expectedNames))
 	names := make(map[string]bool, len(result.Tools))
 	for _, tool := range result.Tools {
 		names[tool.Name] = true
 	}
+	a.Equal(expectedNames, names)
 	a.True(names[tools.CreatePartToolName])
 	a.True(names[tools.CreateCompanyToolName])
 	a.True(names[tools.CreateStockItemToolName])

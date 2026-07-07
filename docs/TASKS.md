@@ -73,8 +73,8 @@ Before `M1C-S04` is complete, mutating, operational, destructive, and upload too
 | [M1G-S02](#m1g-s02-initial-stock-and-purchase-preview-workflows) | Add initial-stock workflow helper and no-write purchase preview. | Done |
 | [M1G-S03](#m1g-s03-milestone-prompts) | Add milestone 1 prompts and prompt contract tests. | Done |
 | [M1H-S03](#m1h-s03-milestone-integration-happy-paths) | Prove milestone catalog, stock, supplier, attachment, image, and preview happy paths. | Done |
-| [M1I-S01](#m1i-s01-operator-docs-finalization) | Finalize README, operator recipes, and generated tool reference alignment. | Ready |
-| [M1I-S02](#m1i-s02-final-review-panel) | Run final Go, QA, product, and infosec review panel. | Planned |
+| [M1I-S01](#m1i-s01-operator-docs-finalization) | Finalize README, operator recipes, and generated tool reference alignment. | Done |
+| [M1I-S02](#m1i-s02-final-review-panel) | Run final Go, QA, product, and infosec review panel. | Ready |
 | [F-S01](#f-s01-evaluate-docker-compose-testcontainers-stack) | Evaluate Docker Compose-based Testcontainers stack. | Future |
 | [F-S02](#f-s02-bom-import-workflow) | BOM import workflow. | Future |
 | [F-S03](#f-s03-purchase-order-write-and-receiving) | Purchase order write and receiving. | Future |
@@ -805,7 +805,7 @@ Residual risk:
 
 ### M1I-S01: Operator Docs Finalization
 
-- Status: `Ready`
+- Status: `Done`
 - Depends on: M1G-S03, M1F-S03
 - Scope: finalize README links, operator recipes, and tool reference from implemented behavior.
 - Acceptance:
@@ -815,14 +815,27 @@ Residual risk:
 
 Tasks:
 
-- [ ] Add generated or checked tool manifest.
-- [ ] Update tool reference from manifest.
-- [ ] Update operator recipes from implemented tools.
-- [ ] Add README quick-start links.
+- [x] Add generated or checked tool manifest.
+- [x] Update tool reference from manifest.
+- [x] Update operator recipes from implemented tools.
+- [x] Add README quick-start links.
+
+Validation:
+
+- `go test ./internal/server ./internal/tools ./docs` passed.
+- `git diff --check` passed.
+
+Review:
+
+- Senior Go Developer, Senior QA / Test Architect, and Senior Product Manager subagent reviews run. Go found no actionable issues. Product found the completion metadata was premature and the OAuth/reverse-proxy recipes read like implemented HTTP OAuth workflows; fixed by recording final notes only after review and labeling those recipes as future/post-`M1C` work with milestone 1 limitations. QA found manifest drift checks were not tied to actual registered tools and were too loose for row-local docs fields; fixed by checking `tools/list` output against manifest-derived expectations and comparing tool-reference table cells exactly for class, scopes, upload sources, MCP annotations, and HTTP registration. Focused reruns found no remaining actionable findings.
+
+Residual risk:
+
+- none.
 
 ### M1I-S02: Final Review Panel
 
-- Status: `Planned`
+- Status: `Ready`
 - Depends on: all milestone 1 implementation stories
 - Scope: run senior Go, QA, product, and infosec reviews before beta declaration.
 - Acceptance:
