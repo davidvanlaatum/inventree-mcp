@@ -723,7 +723,16 @@ func candidateFor(record any) ClarificationCandidate {
 	case inventree.StockItem:
 		return ClarificationCandidate{ID: strconv.Itoa(v.PK), Label: fmt.Sprintf("stock item %d", v.PK), URL: fmt.Sprintf("/api/stock/%d/", v.PK), Fields: map[string]any{"part": v.Part, "location": v.Location, "quantity": v.Quantity, "status": v.Status, "serial": v.Serial, "batch": v.Batch}}
 	case inventree.Attachment:
-		return ClarificationCandidate{ID: strconv.Itoa(v.PK), Label: v.Filename, Summary: v.Comment, URL: fmt.Sprintf("/api/attachment/%d/", v.PK), Fields: map[string]any{"model_type": v.ModelType, "model_id": v.ModelID, "is_file": v.Attachment != nil && *v.Attachment != "", "is_link": v.IsLink, "file_size": v.FileSize}}
+		fields := map[string]any{
+			"model_type": v.ModelType,
+			"model_id":   v.ModelID,
+			"is_file":    v.Attachment != nil && *v.Attachment != "",
+			"is_link":    v.IsLink,
+		}
+		if v.FileSize != nil {
+			fields["file_size"] = *v.FileSize
+		}
+		return ClarificationCandidate{ID: strconv.Itoa(v.PK), Label: v.Filename, Summary: v.Comment, URL: fmt.Sprintf("/api/attachment/%d/", v.PK), Fields: fields}
 	default:
 		return ClarificationCandidate{ID: fmt.Sprint(record), Label: fmt.Sprint(record)}
 	}

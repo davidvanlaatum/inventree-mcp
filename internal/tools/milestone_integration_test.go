@@ -143,6 +143,61 @@ func TestMilestoneHappyPathToolsAgainstInvenTree(t *testing.T) {
 		}
 	})
 
+	t.Run("delete_attachment_missing_confirm_returns_structured_clarification_through_mcp", func(t *testing.T) {
+		r := require.New(t)
+		a := assert.New(t)
+		ctx, _, _ := testhandler.SetupTestHandler(t)
+		ctx, cancel := context.WithCancel(ctx)
+		defer cancel()
+		fixture := newMilestoneToolFixture(t, shared)
+		part := fixture.ensure(t, testenv.FixturePart)
+
+		_, uploaded, err := uploadAttachment(fixture.deps())(ctx, &mcp.CallToolRequest{}, UploadAttachmentInput{
+			ModelType:    "part",
+			ModelID:      part.ID,
+			Filename:     "delete-confirm-readback.txt",
+			ContentType:  "text/plain",
+			InlineBase64: base64.StdEncoding.EncodeToString([]byte("delete confirmation boundary")),
+		})
+		r.NoError(err)
+		r.NotZero(uploaded.Record.PK)
+
+		clientTransport, serverTransport := mcp.NewInMemoryTransports()
+		serverDone := make(chan error, 1)
+		go func() {
+			mcpServer := mcp.NewServer(&mcp.Implementation{Name: "test-server", Version: "v0.0.0"}, nil)
+			deps := fixture.deps()
+			deps.EnableWriteTools = true
+			Register(mcpServer, deps)
+			serverDone <- mcpServer.Run(ctx, serverTransport)
+		}()
+
+		client := mcp.NewClient(&mcp.Implementation{Name: "test-client", Version: "v0.0.0"}, nil)
+		session, err := client.Connect(ctx, clientTransport, nil)
+		r.NoError(err)
+		defer func() {
+			r.NoError(session.Close())
+			cancel()
+			<-serverDone
+		}()
+
+		result, err := session.CallTool(ctx, &mcp.CallToolParams{
+			Name:      DeleteAttachmentToolName,
+			Arguments: map[string]any{"id": uploaded.Record.PK},
+		})
+		r.NoError(err)
+		a.False(result.IsError)
+		structured := result.StructuredContent.(map[string]any)
+		a.Equal(StatusClarificationRequired, structured["status"])
+		clarification := structured["clarification"].(map[string]any)
+		a.Equal(StatusClarificationRequired, clarification["status"])
+		a.Equal("confirm", clarification["retry"])
+
+		metadata, err := fixture.client.GetAttachmentMetadata(ctx, uploaded.Record.PK)
+		r.NoError(err)
+		a.Equal(uploaded.Record.PK, metadata.PK, "missing confirm must not delete the attachment")
+	})
+
 	t.Run("local_path_url_link_and_primary_image_happy_paths", func(t *testing.T) {
 		r := require.New(t)
 		a := assert.New(t)

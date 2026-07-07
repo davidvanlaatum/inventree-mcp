@@ -343,6 +343,73 @@ func TestSetPrimaryImageRequiresPartImageAttachmentAndConfirmForReplacement(t *t
 	a.Equal(int64(123), limited.lastAttachmentMaxBytes)
 }
 
+func TestDeleteAttachmentMissingConfirmReturnsStructuredClarificationThroughMCP(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	size := int64(34)
+	clientTransport, serverTransport := mcp.NewInMemoryTransports()
+	serverDone := make(chan error, 1)
+	go func() {
+		server := mcp.NewServer(&mcp.Implementation{Name: "test-server", Version: "v0.0.0"}, nil)
+		Register(server, Dependencies{
+			EnableWriteTools: true,
+			ClientFromContext: func(context.Context) (any, error) {
+				return &fakeMilestoneLookupClient{
+					attachment: inventree.Attachment{
+						PK:        90,
+						ModelType: "part",
+						ModelID:   10,
+						Filename:  "datasheet.txt",
+						FileSize:  &size,
+					},
+				}, nil
+			},
+		})
+		serverDone <- server.Run(ctx, serverTransport)
+	}()
+
+	client := mcp.NewClient(&mcp.Implementation{Name: "test-client", Version: "v0.0.0"}, nil)
+	session, err := client.Connect(ctx, clientTransport, nil)
+	r.NoError(err)
+	defer func() {
+		r.NoError(session.Close())
+		cancel()
+		<-serverDone
+	}()
+
+	result, err := session.CallTool(ctx, &mcp.CallToolParams{
+		Name:      DeleteAttachmentToolName,
+		Arguments: map[string]any{"id": 90},
+	})
+	r.NoError(err)
+	if result.IsError {
+		errorText := ""
+		if len(result.Content) > 0 {
+			if text, ok := result.Content[0].(*mcp.TextContent); ok {
+				errorText = text.Text
+			}
+		}
+		t.Fatalf("delete_attachment returned tool error: %s", errorText)
+	}
+	a.False(result.IsError)
+	structured := result.StructuredContent.(map[string]any)
+	a.Equal(StatusClarificationRequired, structured["status"])
+	record := structured["record"].(map[string]any)
+	a.Equal(float64(90), record["pk"])
+	clarification := structured["clarification"].(map[string]any)
+	a.Equal(StatusClarificationRequired, clarification["status"])
+	a.Equal("confirm", clarification["retry"])
+	candidates := clarification["candidates"].([]any)
+	r.Len(candidates, 1)
+	fields := candidates[0].(map[string]any)["fields"].(map[string]any)
+	a.Equal(float64(34), fields["file_size"])
+}
+
 func TestWriteToolAuthorizationsUseWriteScope(t *testing.T) {
 	t.Parallel()
 	r := require.New(t)
