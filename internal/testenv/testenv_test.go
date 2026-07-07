@@ -29,6 +29,7 @@ func TestDefaultOptionsPinInvenTreeVersion(t *testing.T) {
 	a.Equal("inventree/inventree:1.4.0", opts.Image)
 	a.Equal("1.4.0", opts.ExpectedVersion)
 	a.Equal("511", opts.ExpectedAPIVersion)
+	a.Equal(defaultStartupTimeout, opts.StartupTimeout)
 	a.NoError(ValidateOptions(opts))
 }
 
@@ -110,7 +111,7 @@ func TestRunPrefixAndMutableRecordOwnership(t *testing.T) {
 	r.Equal("ABC123", run.ID)
 	r.Equal("TESTENV", run.Package)
 	r.Equal("TESTRUNPREFIXANDMUTABLERECORDOWNERSHIP", run.Test)
-	r.Equal("IT_ABC123_TESTENV_TESTRUNPREFIXANDMUTABLERECORDOWNERSHIP_", run.Prefix)
+	r.Equal("IT_ABC123_TESTENV_"+runHashSegment(run.Package, t.Name())+"_", run.Prefix)
 
 	name, err := run.Name("part 1")
 	r.NoError(err)
@@ -118,7 +119,7 @@ func TestRunPrefixAndMutableRecordOwnership(t *testing.T) {
 
 	a.NoError(ValidateMutableRecords(run, []MutableRecord{{Name: name}}))
 	a.Error(ValidateMutableRecords(run, []MutableRecord{{Name: "PART1"}}))
-	a.Error(ValidateMutableRecords(run, []MutableRecord{{Name: "IT_OTHER_TESTENV_TESTRUNPREFIXANDMUTABLERECORDOWNERSHIP_PART1"}}))
+	a.Error(ValidateMutableRecords(run, []MutableRecord{{Name: "IT_OTHER_TESTENV_" + runHashSegment(run.Package, run.Test) + "_PART1"}}))
 	a.Error(ValidateMutableRecords(nil, []MutableRecord{{Name: name}}))
 }
 
@@ -132,6 +133,22 @@ func TestNewRunRejectsUnsafeSegments(t *testing.T) {
 	r.Error(err)
 	_, err = newRun("ABC123", "TESTENV", "TEST_NAME")
 	r.Error(err)
+}
+
+func TestNewRunHashesRawTestNameForPrefix(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+
+	first, err := newRun("ABC123", "TESTENV", "CASEA", "case/a")
+	r.NoError(err)
+	second, err := newRun("ABC123", "TESTENV", "CASEA", "case-a")
+	r.NoError(err)
+
+	a.Equal(first.Test, second.Test)
+	a.NotEqual(first.Prefix, second.Prefix)
+	a.Equal("IT_ABC123_TESTENV_"+runHashSegment("TESTENV", "case/a")+"_", first.Prefix)
+	a.Equal("IT_ABC123_TESTENV_"+runHashSegment("TESTENV", "case-a")+"_", second.Prefix)
 }
 
 func TestIntegrationDockerSkipEnvironmentName(t *testing.T) {

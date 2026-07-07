@@ -3,6 +3,7 @@ package testenv
 import (
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -11,6 +12,7 @@ import (
 	"path"
 	"regexp"
 	"runtime"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -40,14 +42,15 @@ type Account struct {
 type FixtureKind string
 
 const (
-	FixtureCategory     FixtureKind = "category"
-	FixtureLocation     FixtureKind = "location"
-	FixtureSupplier     FixtureKind = "supplier"
-	FixtureManufacturer FixtureKind = "manufacturer"
-	FixturePart         FixtureKind = "part"
-	FixtureAssemblyPart FixtureKind = "assembly_part"
-	FixtureSupplierPart FixtureKind = "supplier_part"
-	FixtureBOM          FixtureKind = "bom"
+	FixtureCategory      FixtureKind = "category"
+	FixtureLocation      FixtureKind = "location"
+	FixtureSupplier      FixtureKind = "supplier"
+	FixtureManufacturer  FixtureKind = "manufacturer"
+	FixturePart          FixtureKind = "part"
+	FixtureAssemblyPart  FixtureKind = "assembly_part"
+	FixtureSupplierPart  FixtureKind = "supplier_part"
+	FixturePurchaseOrder FixtureKind = "purchase_order"
+	FixtureBOM           FixtureKind = "bom"
 )
 
 type FixtureRecord struct {
@@ -201,14 +204,15 @@ func (s *SharedInvenTree) NewRun(tb testing.TB) (*Run, error) {
 	tb.Helper()
 
 	pkg := callerPackage()
-	test := sanitizeRunSegment(tb.Name())
+	rawTest := tb.Name()
+	test := sanitizeRunSegment(rawTest)
 	if test == "" {
 		return nil, errors.New("test name produced empty run segment")
 	}
 	if s.runID == "" {
 		s.runID = newRunID()
 	}
-	return newRun(s.runID, pkg, test)
+	return newRun(s.runID, pkg, test, rawTest)
 }
 
 func (r *Run) RequireOwnedName(name string) error {
@@ -571,6 +575,20 @@ func ensureFixture(
 			"SKU":      name,
 			"active":   true,
 		}))
+	case FixturePurchaseOrder:
+		supplier, err := ensureFixture(ctx, env, invClient, account, run, FixtureSupplier)
+		if err != nil {
+			return FixtureRecord{}, fmt.Errorf("ensure supplier fixture for purchase order: %w", err)
+		}
+		name := "PO-" + strconv.Itoa(supplier.ID)
+		return getOrCreateRecord(ctx, invClient, "/api/order/po/", name, map[string]any{
+			"reference":   name,
+			"supplier":    supplier.ID,
+			"description": "Run-scoped integration fixture purchase order",
+		}, validateFields("purchase order fixture", map[string]any{
+			"reference": name,
+			"supplier":  supplier.ID,
+		}))
 	case FixtureBOM:
 		name, err := fixtureName("bom")
 		if err != nil {
@@ -614,7 +632,7 @@ func getOrCreateRecord(
 	switch apiPath {
 	case "/api/company/part/":
 		query.Set("SKU", name)
-	case "/api/bom/":
+	case "/api/bom/", "/api/order/po/":
 		query.Set("reference", name)
 	default:
 		query.Set("name", name)
@@ -765,7 +783,7 @@ func validateAccountRun(account *Account, run *Run) error {
 	return nil
 }
 
-func newRun(runID string, pkg string, test string) (*Run, error) {
+func newRun(runID string, pkg string, test string, rawTest ...string) (*Run, error) {
 	if !runNamePattern.MatchString(runID) {
 		return nil, fmt.Errorf("run id %q must contain only letters and digits", runID)
 	}
@@ -775,11 +793,15 @@ func newRun(runID string, pkg string, test string) (*Run, error) {
 	if !runNamePattern.MatchString(test) {
 		return nil, fmt.Errorf("test segment %q must contain only letters and digits", test)
 	}
+	hashSource := test
+	if len(rawTest) > 0 {
+		hashSource = rawTest[0]
+	}
 	return &Run{
 		ID:      runID,
 		Package: pkg,
 		Test:    test,
-		Prefix:  "IT_" + runID + "_" + pkg + "_" + test + "_",
+		Prefix:  "IT_" + runID + "_" + pkg + "_" + runHashSegment(pkg, hashSource) + "_",
 	}, nil
 }
 
@@ -820,4 +842,9 @@ func sanitizeRunSegment(value string) string {
 		}
 	}
 	return builder.String()
+}
+
+func runHashSegment(pkg string, test string) string {
+	sum := sha256.Sum256([]byte(pkg + "/" + test))
+	return strings.ToUpper(hex.EncodeToString(sum[:6]))
 }
