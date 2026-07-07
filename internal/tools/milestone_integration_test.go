@@ -48,7 +48,7 @@ func TestMilestoneHappyPathToolsAgainstInvenTree(t *testing.T) {
 		return shared.Close(context.WithoutCancel(ctx))
 	}))
 
-	t.Run("catalog_stock_supplier_preview", func(t *testing.T) {
+	t.Run("catalog_stock_supplier_and_purchase_preview_happy_path", func(t *testing.T) {
 		r := require.New(t)
 		a := assert.New(t)
 		ctx, _, _ := testhandler.SetupTestHandler(t)
@@ -97,7 +97,7 @@ func TestMilestoneHappyPathToolsAgainstInvenTree(t *testing.T) {
 		a.Empty(orders, "purchase preview must not create purchase orders")
 	})
 
-	t.Run("attachment_target_matrix_and_readback", func(t *testing.T) {
+	t.Run("attachment_target_matrix_upload_download_and_max_bytes", func(t *testing.T) {
 		for _, modelType := range attachmentTargetModelTypes() {
 			t.Run(modelType, func(t *testing.T) {
 				r := require.New(t)
@@ -143,7 +143,7 @@ func TestMilestoneHappyPathToolsAgainstInvenTree(t *testing.T) {
 		}
 	})
 
-	t.Run("local_url_link_and_primary_image_paths", func(t *testing.T) {
+	t.Run("local_path_url_link_and_primary_image_happy_paths", func(t *testing.T) {
 		r := require.New(t)
 		a := assert.New(t)
 		ctx, _, _ := testhandler.SetupTestHandler(t)
@@ -272,7 +272,7 @@ func TestMilestoneHappyPathToolsAgainstInvenTree(t *testing.T) {
 		a.Equal(StatusNoImage, noImage.Status)
 	})
 
-	t.Run("deferred_file_surface_boundaries", func(t *testing.T) {
+	t.Run("deferred_file_surface_boundaries_return_clarifications", func(t *testing.T) {
 		r := require.New(t)
 		a := assert.New(t)
 		ctx, _, _ := testhandler.SetupTestHandler(t)
