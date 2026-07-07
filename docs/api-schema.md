@@ -130,14 +130,14 @@ Initial implementation should expose only non-sales model types relevant to the 
 
 Primary-image behavior must be implemented per object type from schema-verified fields rather than assumed generically.
 Part primary image download is part-specific for the first release. It should use the part record's readable `image` value or the part thumbnail endpoint, scope the fetch to the configured InvenTree base URL, authenticate as the current InvenTree user, and apply the same maximum-size and redaction controls as attachment downloads. `existing_image` is write-only and is only valid as assignment/update input.
-Part primary image assignment must verify whether the current InvenTree version expects `/api/part/{id}/` PATCH, `/api/part/thumbs/{id}/` PATCH, or both. Keep the tool contract as `set_primary_image`, but choose the client endpoint from schema-backed behavior and integration tests.
+Part primary image assignment uses multipart `PATCH /api/part/{id}/` with the `image` file field after the tool resolves and downloads an existing same-part image attachment. The live InvenTree 1.4.0/API 511 integration check rejected using a generic attachment URL with `PATCH /api/part/thumbs/{id}/`; that endpoint remains verified for thumbnail retrieval/update schema behavior, while the tool contract keeps assignment behind `set_primary_image`. `existing_image` is write-only and is not used as a download source or caller-facing shortcut.
 Notes image upload, generated report attachments, stock test-result attachments, and other app-specific file surfaces are out of first-release scope unless a later task explicitly adds them.
 
 ## Attachment and Image Capability Table
 
 | Object type | Generic attachment support | Upload field / storage | Metadata PATCH | Primary image support | Initial scope |
 | --- | --- | --- | --- | --- | --- |
-| `part` | `/api/attachment/` with `model_type=part`, `model_id=<id>` | `attachment` file field or `link` URL field | `/api/attachment/{id}/` with `PatchedAttachment` | `PATCH /api/part/{id}/` with `PatchedPart.image` or `PatchedPart.existing_image` | yes |
+| `part` | `/api/attachment/` with `model_type=part`, `model_id=<id>` | `attachment` file field or `link` URL field | `/api/attachment/{id}/` with `PatchedAttachment` | multipart `PATCH /api/part/{id}/` with `image` file field after resolving an existing same-part image attachment | yes |
 | `stockitem` | `/api/attachment/` with `model_type=stockitem`, `model_id=<id>` | `attachment` file field or `link` URL field | `/api/attachment/{id}/` with `PatchedAttachment` | no schema-confirmed primary-image field | yes |
 | `company` | `/api/attachment/` with `model_type=company`, `model_id=<id>` | `attachment` file field or `link` URL field | `/api/attachment/{id}/` with `PatchedAttachment` | `PATCH /api/company/{id}/` with `PatchedCompany.image` | yes, attachments only; primary image later |
 | `manufacturerpart` | `/api/attachment/` with `model_type=manufacturerpart`, `model_id=<id>` | `attachment` file field or `link` URL field | `/api/attachment/{id}/` with `PatchedAttachment` | no schema-confirmed primary-image field | yes |

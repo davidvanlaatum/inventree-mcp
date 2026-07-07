@@ -103,13 +103,11 @@ Each recipe should preserve omitted fields versus explicit zero/false/empty valu
 
 ## Set Or Replace Primary Part Image
 
-- Current status: primary-image replacement is planned but not registered yet. Use this recipe today only to inspect existing attachments/images and collect the explicit replacement decision before the M1F image tool lands.
 - Required inputs: part ID and attachment/image ID, plus `confirm:true` when replacing an existing primary image.
 - Preferred lookup order: `list_attachments`, inspect image-capable attachments, then set primary image only when the candidate is unambiguous.
 - Clarify when: multiple images are plausible, the image is already attached elsewhere, or replacement lacks confirmation.
-- Current tool sequence: `list_attachments`, inspect current image-capable candidates, then stop with the stable part ID, candidate attachment/image ID, and explicit replacement decision for the later M1F tool.
-- Planned M1F tool sequence: `list_attachments`, optionally upload an image through `upload_attachment` or `upload_attachment_from_url`, then `set_primary_image`.
-- Expected output after `set_primary_image` is implemented: part record, selected attachment/image ID, and replacement confirmation status.
+- Tool sequence: `list_attachments`, optionally upload an image through `upload_attachment` or `upload_attachment_from_url`, then `set_primary_image`.
+- Expected output: selected attachment/image ID, redacted resulting image URL, and replacement confirmation status.
 
 ## Preview Purchase Order Lines
 

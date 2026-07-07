@@ -55,11 +55,14 @@ Common lookup inputs:
 | `filename`, `content_type`, `comment`, `tags` | attachment write tools | Optional or required attachment metadata, preserving explicit empty values on metadata updates. For `create_link_attachment`, `filename` is duplicate-preflight-only because InvenTree assigns stored-link filename metadata. |
 | `allow_duplicate` | attachment create tools | Explicit intent to add a matching filename, size, or link duplicate after duplicate preflight. |
 | `confirm` | destructive tools | Required true before `delete_attachment` removes an attachment. |
+| `part_id` | `set_primary_image` | Stable part primary key that will receive the primary image. |
+| `attachment_id` | `set_primary_image` | Stable image attachment primary key already attached to the same part. |
 | `source_kind` | attachment write outputs | Source classification such as `inline`, `local_path`, `url`, or `link`. |
+| `image_url`, `replaced` | `set_primary_image` output | Redacted resulting image URL and whether an existing primary image was replaced. |
 
 ## Upload Source Resolver
 
-`internal/upload` owns upload source acquisition for attachment write tools and the planned primary-image workflow. It resolves three source kinds before any InvenTree multipart upload code receives bytes:
+`internal/upload` owns upload source acquisition for attachment write tools and any upload step that prepares a primary-image candidate. It resolves three source kinds before any InvenTree multipart upload code receives bytes:
 
 | Source | Current behavior |
 | --- | --- |
@@ -69,7 +72,7 @@ Common lookup inputs:
 
 The resolver returns in-memory content, filename, content type, size, and source kind. Registered attachment tools are responsible for target object validation, duplicate handling, multipart upload, tool annotations, and OAuth scope registration.
 
-Structured lookup outputs must include `status`. Successful lookups use `ok`; absent stable records use `not_found`; ambiguous lookups use `clarification_required`.
+Structured lookup outputs must include `status`. Successful lookups use `ok`; absent stable records use `not_found`; missing part primary images use `no_image`; ambiguous lookups use `clarification_required`.
 
 Clarification outputs must include:
 
@@ -115,7 +118,7 @@ All tools in this section are implemented and registered. They use class `read_o
 | `list_attachments` | Attachments | `model_type`, `model_id`, `search`, `limit`, `offset` | `status`, `count`, `results` | Target object is ambiguous. |
 | `get_attachment_metadata` | Attachments | `id` | `status`, `record` | Attachment ID is missing or ambiguous. |
 | `download_attachment` | Attachments | `id`, `mode`, `max_bytes` | `status`, `id`, `filename`, `content_type`, `size`, `sha256`, `mode`, `source_url`, plus `text` or `base64` content | Operator may mean stored-link metadata versus an external link target, or original file versus explicit thumbnail mode. |
-| `download_part_image` | Attachments | `id`, `mode`, `max_bytes` | `status`, `id`, `content_type`, `size`, `sha256`, `mode`, `source_url`, plus `text` or `base64` content | Operator may mean a generic attachment rather than the current primary image, or original image versus explicit thumbnail mode. |
+| `download_part_image` | Attachments | `id`, `mode`, `max_bytes` | `status`, `id`, `filename`, `content_type`, `size`, `sha256`, `mode`, `source_url`, plus `text` or `base64` content | Operator may mean a generic attachment rather than the current primary image, or original image versus explicit thumbnail mode. |
 | `preview_purchase_order_with_lines` | Purchasing preview | `supplier_id`, `lines` with `supplier_part_id` or `part_id` plus supplier context, `quantity`, optional `unit_price`, `currency`, `notes` | `status`, `supplier_id`, `lines`, optional `warnings`, optional `clarification` | Supplier part, supplier, part, quantity, or price currency is ambiguous. |
 
 ## Registered Write Tools
@@ -140,6 +143,7 @@ Tools in this section are milestone status `milestone_1`. Ordinary write tools u
 | `create_link_attachment` | Attachments | `model_type`, `model_id`, `url`, optional duplicate-preflight `filename`, `comment`, `tags`, `allow_duplicate` | `status`, `record`, `source_kind`, optional `clarification` with retry `model_id` or `allow_duplicate` | URL is not HTTP(S), includes credentials or a fragment, target object is out of scope, or duplicate preflight matches an existing link. InvenTree assigns stored-link filename metadata. |
 | `update_attachment_metadata` | Attachments | `id`, optional `filename`, `comment`, `tags` | `status`, `record`, optional `clarification` with retry `id` | Stable attachment ID is missing, target object is out of scope, or no PATCH fields are supplied. |
 | `delete_attachment` | Attachments | `id`, `confirm` | `status`, `record`, optional `clarification` with retry `confirm` | Stable attachment ID is missing, target object is out of scope, or `confirm:true` is missing. |
+| `set_primary_image` | Attachments | `part_id`, `attachment_id`, `confirm` | `status`, `record`, `part_id`, `image_url`, `replaced`, optional `clarification` with retry `attachment_id` or `confirm` | Attachment is not an image file on the requested part, multiple candidate images exist before a stable `attachment_id` is supplied, or replacement lacks `confirm:true`. |
 
 ## Skeleton Tools
 
@@ -155,7 +159,7 @@ Prompts are static operator checklists registered through the MCP prompt surface
 | --- | --- | --- | --- |
 | `new_part_entry_checklist` | `milestone_1` | Add or update a purchasable part with supplier/manufacturer context. | Search existing records first, ask for stable IDs on ambiguity, and prefer `upsert_part_with_supplier_and_manufacturer` with `dry_run:true` before writing. |
 | `parameter_reuse_checklist` | `milestone_1` | Reuse existing parameter templates when setting part parameters. | Prefer category-linked templates and ask for `template_id` when same-name templates differ by unit, choices, checkbox behavior, or category link. |
-| `attachment_image_checklist` | `milestone_1` | Prepare attachment/image reads, uploads, links, metadata updates, deletes, and planned primary-image replacement workflows. | Keep upload-copy, stored-link, metadata update, delete, and primary-image replacement intents distinct; replacement remains planned until `set_primary_image` is registered. |
+| `attachment_image_checklist` | `milestone_1` | Prepare attachment/image reads, uploads, links, metadata updates, deletes, and primary-image replacement workflows. | Keep upload-copy, stored-link, metadata update, delete, and primary-image replacement intents distinct; require a stable image attachment ID and `confirm:true` before replacement. |
 | `initial_stock_entry_checklist` | `milestone_1` | Create initial stock after duplicate preflight. | Resolve stable part/location IDs, require positive quantity, and prefer `create_initial_stock_entry` with `dry_run:true`. |
 | `purchase_preview_checklist` | `milestone_1` | Produce no-write purchase-order line previews. | Validate supplier-part identity and positive quantities; never create purchase orders or purchase-order lines. |
 
@@ -198,13 +202,6 @@ Future prompts remain in the internal prompt manifest with status `future` and a
 | `create_link_attachment` | Attachments | Write | `inventree.write`, `inventree.upload` | HTTP(S) link only, no fetch | URL has unsupported scheme, credentials/userinfo, fragment, local path shape, or duplicates an existing link without explicit duplicate intent. |
 | `update_attachment_metadata` | Attachments | Write | `inventree.write`, `inventree.upload` | None | Stable attachment ID is missing or no PATCH fields are supplied. |
 | `delete_attachment` | Attachments | Destructive | `inventree.write`, `inventree.upload`, `inventree.destructive` | None | Stable attachment ID is missing or `confirm:true` is missing. |
-
-## Planned M1F Image Tools
-
-These Milestone 1 image tools remain planned and are not registered until the M1F image story is implemented.
-
-| Tool | Group | Class | Scopes | Upload sources | Ask operator when |
-| --- | --- | --- | --- | --- | --- |
 | `set_primary_image` | Attachments | Write | `inventree.write`, `inventree.upload` | Existing attachment/image ID | Multiple candidate images exist or replacement lacks `confirm:true`. |
 
 ## Future Tools

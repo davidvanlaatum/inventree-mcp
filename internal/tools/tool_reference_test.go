@@ -38,6 +38,7 @@ func TestToolReferenceDocumentsLookupFrameworkSchema(t *testing.T) {
 		"`" + StatusOK + "`",
 		"`" + StatusNotFound + "`",
 		"`" + StatusClarificationRequired + "`",
+		"`" + StatusNoImage + "`",
 		"`" + strconv.Itoa(DefaultLookupLimit) + "`",
 		"`" + strconv.Itoa(MaxLookupLimit) + "`",
 	} {
@@ -69,6 +70,7 @@ func TestToolReferenceDocumentsLookupFrameworkSchema(t *testing.T) {
 		reflect.TypeOf(CreateLinkAttachmentInput{}),
 		reflect.TypeOf(UpdateAttachmentMetadataInput{}),
 		reflect.TypeOf(DeleteAttachmentInput{}),
+		reflect.TypeOf(SetPrimaryImageInput{}),
 		reflect.TypeOf(AttachmentWriteOutput{}),
 		reflect.TypeOf(ClarificationResponse{}),
 		reflect.TypeOf(ClarificationCandidate{}),
@@ -136,7 +138,7 @@ func TestToolReferenceDocumentsRegisteredWriteTools(t *testing.T) {
 			a.Equal("operational", auth.MutationClass)
 			a.Equal([]string{ScopeInventreeWrite, ScopeInventreeOperational}, auth.Scopes)
 			a.Contains(docs, "`"+ScopeInventreeOperational+"`")
-		case UploadAttachmentToolName, UploadAttachmentFromURLToolName, CreateLinkAttachmentToolName, UpdateAttachmentMetadataToolName:
+		case UploadAttachmentToolName, UploadAttachmentFromURLToolName, CreateLinkAttachmentToolName, UpdateAttachmentMetadataToolName, SetPrimaryImageToolName:
 			a.Equal("write", auth.MutationClass)
 			a.Equal([]string{ScopeInventreeWrite, ScopeInventreeUpload}, auth.Scopes)
 		case DeleteAttachmentToolName:

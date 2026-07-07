@@ -15,12 +15,15 @@ import (
 )
 
 type AttachmentWriteClient interface {
+	GetPart(context.Context, int) (inventree.Part, error)
 	ListAttachments(context.Context, inventree.AttachmentQuery) ([]inventree.Attachment, error)
 	GetAttachmentMetadata(context.Context, int) (inventree.Attachment, error)
+	DownloadAttachment(context.Context, int, inventree.AttachmentContentMode, int64) (inventree.DownloadedAttachment, error)
 	UploadAttachment(context.Context, inventree.AttachmentCreate) (inventree.Attachment, error)
 	CreateLinkAttachment(context.Context, inventree.AttachmentCreate) (inventree.Attachment, error)
 	UpdateAttachmentMetadata(context.Context, int, inventree.PatchFields) (inventree.Attachment, error)
 	DeleteAttachment(context.Context, int) error
+	SetPartPrimaryImage(context.Context, int, inventree.PartPrimaryImageCreate) (inventree.Part, error)
 }
 
 type UploadAttachmentInput struct {
@@ -67,11 +70,20 @@ type DeleteAttachmentInput struct {
 	Confirm bool `json:"confirm" jsonschema:"Required true before deleting an attachment."`
 }
 
+type SetPrimaryImageInput struct {
+	PartID       int  `json:"part_id" jsonschema:"Stable part primary key."`
+	AttachmentID int  `json:"attachment_id" jsonschema:"Stable image attachment primary key already attached to this part."`
+	Confirm      bool `json:"confirm,omitempty" jsonschema:"Required true when replacing an existing primary image."`
+}
+
 type AttachmentWriteOutput struct {
 	Status        string                 `json:"status"`
 	Record        AttachmentMetadata     `json:"record,omitempty"`
 	Clarification *ClarificationResponse `json:"clarification,omitempty"`
 	SourceKind    string                 `json:"source_kind,omitempty"`
+	PartID        int                    `json:"part_id,omitempty"`
+	ImageURL      string                 `json:"image_url,omitempty"`
+	Replaced      bool                   `json:"replaced,omitempty"`
 }
 
 func registerAttachmentWriteTools(server *mcp.Server, deps Dependencies) {
@@ -80,6 +92,7 @@ func registerAttachmentWriteTools(server *mcp.Server, deps Dependencies) {
 	addWriteTool(server, CreateLinkAttachmentToolName, "Create link attachment", "Stores an HTTP(S) link attachment without fetching remote bytes.", createLinkAttachment(deps))
 	addWriteTool(server, UpdateAttachmentMetadataToolName, "Update attachment metadata", "Partially updates attachment metadata fields.", updateAttachmentMetadata(deps))
 	addWriteTool(server, DeleteAttachmentToolName, "Delete attachment", "Deletes one attachment after confirm:true.", deleteAttachment(deps))
+	addWriteTool(server, SetPrimaryImageToolName, "Set primary image", "Sets a part primary image from an existing image attachment.", setPrimaryImage(deps))
 }
 
 func uploadAttachment(deps Dependencies) mcp.ToolHandlerFor[UploadAttachmentInput, AttachmentWriteOutput] {
@@ -226,6 +239,52 @@ func deleteAttachment(deps Dependencies) mcp.ToolHandlerFor[DeleteAttachmentInpu
 				return nil, AttachmentWriteOutput{}, err
 			}
 			return TextResult(StatusOK), AttachmentWriteOutput{Status: StatusOK, Record: sanitizeAttachment(existing)}, nil
+		})
+}
+
+func setPrimaryImage(deps Dependencies) mcp.ToolHandlerFor[SetPrimaryImageInput, AttachmentWriteOutput] {
+	return LookupHandler[AttachmentWriteClient, SetPrimaryImageInput, AttachmentWriteOutput](deps, SetPrimaryImageToolName,
+		func(ctx context.Context, _ *mcp.CallToolRequest, client AttachmentWriteClient, input SetPrimaryImageInput) (*mcp.CallToolResult, AttachmentWriteOutput, error) {
+			if input.PartID <= 0 {
+				return hardAttachmentClarification("Which part should receive this primary image?", "part_id", "set_primary_image requires a positive part_id", "part_id", map[string]any{"part_id": input.PartID, "attachment_id": input.AttachmentID})
+			}
+			if input.AttachmentID <= 0 {
+				return hardAttachmentClarification("Which image attachment should become primary?", "attachment_id", "set_primary_image requires a positive attachment_id", "attachment_id", map[string]any{"part_id": input.PartID, "attachment_id": input.AttachmentID})
+			}
+			part, err := client.GetPart(ctx, input.PartID)
+			if err != nil {
+				return attachmentWriteRecordOutput(inventree.Attachment{}, "", err)
+			}
+			attachment, err := client.GetAttachmentMetadata(ctx, input.AttachmentID)
+			if err != nil {
+				return attachmentWriteRecordOutput(inventree.Attachment{}, "", err)
+			}
+			if attachment.ModelType != "part" || attachment.ModelID != input.PartID {
+				clarification := NewClarification("Which image attachment belongs to this part?", "attachment_id", "set_primary_image requires an image attachment attached to the requested part", "attachment_id", true, []ClarificationCandidate{candidateFor(attachment)}, map[string]any{"part_id": input.PartID, "attachment_id": input.AttachmentID})
+				return TextResult(StatusClarificationRequired), AttachmentWriteOutput{Status: StatusClarificationRequired, Record: sanitizeAttachment(attachment), Clarification: &clarification, PartID: input.PartID}, nil
+			}
+			if !attachment.IsImage || attachment.Attachment == nil || strings.TrimSpace(*attachment.Attachment) == "" {
+				clarification := NewClarification("Which image attachment should become primary?", "attachment_id", "set_primary_image requires an existing file attachment marked as an image", "attachment_id", true, []ClarificationCandidate{candidateFor(attachment)}, map[string]any{"part_id": input.PartID, "attachment_id": input.AttachmentID})
+				return TextResult(StatusClarificationRequired), AttachmentWriteOutput{Status: StatusClarificationRequired, Record: sanitizeAttachment(attachment), Clarification: &clarification, PartID: input.PartID}, nil
+			}
+			replacing := part.Image != nil && strings.TrimSpace(*part.Image) != ""
+			if replacing && !input.Confirm {
+				clarification := NewClarification("Replace the existing primary image for this part?", "confirm", "set_primary_image requires confirm:true before replacing an existing primary image", "confirm", true, []ClarificationCandidate{candidateFor(attachment)}, map[string]any{"part_id": input.PartID, "attachment_id": input.AttachmentID})
+				return TextResult(StatusClarificationRequired), AttachmentWriteOutput{Status: StatusClarificationRequired, Record: sanitizeAttachment(attachment), Clarification: &clarification, PartID: input.PartID, Replaced: true}, nil
+			}
+			download, err := client.DownloadAttachment(ctx, input.AttachmentID, inventree.AttachmentContentOriginal, uploadMaxBytes(deps))
+			if err != nil {
+				return nil, AttachmentWriteOutput{}, err
+			}
+			updatedPart, err := client.SetPartPrimaryImage(ctx, input.PartID, inventree.PartPrimaryImageCreate{
+				Filename:    attachment.Filename,
+				ContentType: download.ContentType,
+				Content:     download.Content,
+			})
+			if err != nil {
+				return nil, AttachmentWriteOutput{}, err
+			}
+			return TextResult(StatusOK), AttachmentWriteOutput{Status: StatusOK, Record: sanitizeAttachment(attachment), PartID: input.PartID, ImageURL: redactedMetadataURL(updatedPart.Image), Replaced: replacing}, nil
 		})
 }
 

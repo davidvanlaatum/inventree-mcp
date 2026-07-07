@@ -88,6 +88,12 @@ type AttachmentCreate struct {
 	Tags        []string
 }
 
+type PartPrimaryImageCreate struct {
+	Filename    string
+	ContentType string
+	Content     []byte
+}
+
 func (c *Client) CreatePart(ctx context.Context, input PartCreate) (Part, error) {
 	var out Part
 	err := c.Post(ctx, "/api/part/", input, &out)
@@ -203,6 +209,17 @@ func (c *Client) DeleteAttachment(ctx context.Context, id int) error {
 	return c.DoJSON(req, nil)
 }
 
+func (c *Client) SetPartPrimaryImage(ctx context.Context, partID int, input PartPrimaryImageCreate) (Part, error) {
+	var out Part
+	err := c.patchMultipart(ctx, fmt.Sprintf("/api/part/%d/", partID), nil, multipartFile{
+		fieldName:   "image",
+		filename:    input.Filename,
+		contentType: input.ContentType,
+		content:     input.Content,
+	}, &out)
+	return out, err
+}
+
 func NewPartParameter(partID int, templateID int, data string) ParameterCreate {
 	return ParameterCreate{
 		Template:  templateID,
@@ -220,6 +237,14 @@ type multipartFile struct {
 }
 
 func (c *Client) postMultipart(ctx context.Context, path string, fields map[string]string, file multipartFile, out any) error {
+	return c.doMultipart(ctx, http.MethodPost, path, fields, file, out)
+}
+
+func (c *Client) patchMultipart(ctx context.Context, path string, fields map[string]string, file multipartFile, out any) error {
+	return c.doMultipart(ctx, http.MethodPatch, path, fields, file, out)
+}
+
+func (c *Client) doMultipart(ctx context.Context, method string, path string, fields map[string]string, file multipartFile, out any) error {
 	var body bytes.Buffer
 	writer := multipart.NewWriter(&body)
 	for key, value := range fields {
@@ -240,7 +265,7 @@ func (c *Client) postMultipart(ctx context.Context, path string, fields map[stri
 		return fmt.Errorf("close multipart writer: %w", err)
 	}
 
-	req, err := c.NewRequest(ctx, http.MethodPost, path, nil, nil)
+	req, err := c.NewRequest(ctx, method, path, nil, nil)
 	if err != nil {
 		return err
 	}

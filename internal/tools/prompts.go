@@ -53,15 +53,15 @@ var PromptManifest = []PromptManifestEntry{
 	{
 		Name:        AttachmentImageChecklistPromptName,
 		Title:       "Attachment and image checklist",
-		Description: "Checklist for attachment/image reads, uploads, links, metadata updates, deletes, and planned primary-image replacement.",
+		Description: "Checklist for attachment/image reads, uploads, links, metadata updates, deletes, and primary-image replacement.",
 		Status:      PromptMilestone1,
-		Checklist: `Use this checklist before attachment/image reads, writes, or planned replacement work:
+		Checklist: `Use this checklist before attachment/image reads, writes, or primary-image replacement work:
 - Resolve the target object type and stable object ID before listing or downloading attachments and part images.
-- Current milestone tools can list metadata, download schema-exposed attachment or part-image content, upload inline or allowlisted local files, upload URL copies, create stored links, update metadata, and delete confirmed attachments.
+- Current milestone tools can list metadata, download schema-exposed attachment or part-image content, upload inline or allowlisted local files, upload URL copies, create stored links, update metadata, delete confirmed attachments, and set a primary part image from a stable same-part image attachment.
 - Keep upload sources distinct: inline bytes, STDIO allowlisted local paths, URL-upload copy, and stored links are separate intents.
-- Ask for structured clarification when target object identity, URL intent, original versus thumbnail mode, filename/content/link duplicates, or future image selection is ambiguous.
+- Ask for structured clarification when target object identity, URL intent, original versus thumbnail mode, filename/content/link duplicates, primary-image attachment selection, or replacement confirmation is ambiguous.
 - Do not fetch stored link targets; download only schema-exposed InvenTree file, thumbnail, or part-image URLs.
-- Require confirm:true before deleting attachments and before replacing an existing primary part image once the replacement tool exists.`,
+- Require confirm:true before deleting attachments and before replacing an existing primary part image.`,
 	},
 	{
 		Name:        InitialStockEntryChecklistPromptName,

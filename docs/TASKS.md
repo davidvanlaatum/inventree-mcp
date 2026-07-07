@@ -68,12 +68,12 @@ Before `M1C-S04` is complete, mutating, operational, destructive, and upload too
 | [M1E-S03](#m1e-s03-initial-stock-writes) | Create initial stock items with duplicate detection. | Done |
 | [M1F-S01](#m1f-s01-upload-source-resolver) | Resolve inline, STDIO local-path, and URL upload sources safely. | Done |
 | [M1F-S02](#m1f-s02-attachment-tools) | Add attachment upload, link, update, and delete tools. | Done |
-| [M1F-S03](#m1f-s03-primary-part-image) | Add part primary image download and assignment/replacement. | Ready |
+| [M1F-S03](#m1f-s03-primary-part-image) | Add part primary image download and assignment/replacement. | Done |
 | [M1G-S01](#m1g-s01-part-upsert-workflow) | Add safer part upsert workflow with supplier/manufacturer data. | Done |
 | [M1G-S02](#m1g-s02-initial-stock-and-purchase-preview-workflows) | Add initial-stock workflow helper and no-write purchase preview. | Done |
 | [M1G-S03](#m1g-s03-milestone-prompts) | Add milestone 1 prompts and prompt contract tests. | Done |
-| [M1H-S03](#m1h-s03-milestone-integration-happy-paths) | Prove milestone catalog, stock, supplier, attachment, image, and preview happy paths. | Planned |
-| [M1I-S01](#m1i-s01-operator-docs-finalization) | Finalize README, operator recipes, and generated tool reference alignment. | Planned |
+| [M1H-S03](#m1h-s03-milestone-integration-happy-paths) | Prove milestone catalog, stock, supplier, attachment, image, and preview happy paths. | Ready |
+| [M1I-S01](#m1i-s01-operator-docs-finalization) | Finalize README, operator recipes, and generated tool reference alignment. | Ready |
 | [M1I-S02](#m1i-s02-final-review-panel) | Run final Go, QA, product, and infosec review panel. | Planned |
 | [F-S01](#f-s01-evaluate-docker-compose-testcontainers-stack) | Evaluate Docker Compose-based Testcontainers stack. | Future |
 | [F-S02](#f-s02-bom-import-workflow) | BOM import workflow. | Future |
@@ -658,9 +658,12 @@ Tasks:
 
 ### M1F-S03: Primary Part Image
 
-- Status: `Ready`
+- Status: `Done`
 - Depends on: M1F-S02
 - Scope: implement part primary image download and assignment/replacement.
+- Validation: `go test ./internal/inventree ./internal/tools ./internal/server ./docs` passed with Docker-backed InvenTree client integration coverage; `go test ./...` passed; `git diff --check` passed.
+- Review: Senior Go Developer, Senior QA / Test Architect, Senior Product Manager, and Senior Infosec Reviewer reviews run because this adds primary-image write behavior, upload/download safety behavior, tool-surface registration, and operator-facing docs. Initial Go review found `set_primary_image` used the generic download limit instead of the configured upload limit before re-uploading bytes; fixed by using the configured upload cap and adding regression coverage. QA and product found missing filename output for `download_part_image`, stale task status, missing first-assignment coverage, and live replacement coverage that did not prove the public same-part attachment workflow with distinct bytes; fixed with filename derivation, task/doc updates, a first-assignment assertion, and live replacement coverage that downloads distinct uploaded attachment bytes before patching the part image. Product also found stale prompt wording that still described replacement as planned; fixed in the registered prompt text. Infosec found non-2xx media fetch responses could surface raw response body text; fixed with generic redacted media-fetch errors and regression coverage. Focused Go, QA, product, and infosec reruns found no remaining actionable findings; a final narrow product rerun after the tool-reference filename row fix also found no actionable findings.
+- Residual risk: `set_primary_image` validates the image attachment metadata before downloading and re-uploading it, so a normal attachment-change race remains possible between preflight and download; the final content fetch is still scoped through the InvenTree attachment download path and replacement still requires `confirm:true`.
 - Acceptance:
   - Milestone primary image scope is part only.
   - `download_part_image` is read-only, requires `inventree.read`, and downloads only the schema-exposed readable primary image URL or explicit thumbnail endpoint for the requested part.
@@ -673,12 +676,12 @@ Tasks:
 
 Tasks:
 
-- [ ] Verify part image endpoint behavior against `docs/api-schema.yaml`.
-- [ ] Verify `/api/part/{id}/` image fields and `/api/part/thumbs/{id}/` behavior, and document which endpoint `set_primary_image` uses.
-- [ ] Add part image download and update client methods.
-- [ ] Add `download_part_image`.
-- [ ] Add `set_primary_image`.
-- [ ] Add no-image, present-image, too-large, URL-scope, first-assignment, and replacement tests.
+- [x] Verify part image endpoint behavior against `docs/api-schema.yaml`.
+- [x] Verify `/api/part/{id}/` image fields and `/api/part/thumbs/{id}/` behavior, and document which endpoint `set_primary_image` uses.
+- [x] Add part image download and update client methods.
+- [x] Add `download_part_image`.
+- [x] Add `set_primary_image`.
+- [x] Add no-image, present-image, too-large, URL-scope, first-assignment, and replacement tests.
 
 ## Milestone 1G: Workflow Tools And Prompts
 
@@ -757,7 +760,7 @@ Tasks:
 
 ### M1H-S03: Milestone Integration Happy Paths
 
-- Status: `Planned`
+- Status: `Ready`
 - Depends on: M1H-S02, M1G-S02, M1F-S03
 - Scope: prove catalog, stock, supplier/manufacturer, attachment, URL upload, link, image, and purchase preview flows.
 - Acceptance:
@@ -785,7 +788,7 @@ Tasks:
 
 ### M1I-S01: Operator Docs Finalization
 
-- Status: `Planned`
+- Status: `Ready`
 - Depends on: M1G-S03, M1F-S03
 - Scope: finalize README links, operator recipes, and tool reference from implemented behavior.
 - Acceptance:

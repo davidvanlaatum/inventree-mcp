@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"path"
 	"time"
 )
 
@@ -20,6 +21,8 @@ const (
 const defaultAttachmentDownloadTimeout = 30 * time.Second
 
 const parameterModelTypePart = "part.part"
+
+var ErrPartImageMissing = errors.New("part has no primary image")
 
 var downloadAttachmentModelTypes = map[string]bool{
 	"part":             true,
@@ -40,6 +43,7 @@ type DownloadedAttachment struct {
 type DownloadedPartImage struct {
 	Part        Part
 	Content     []byte
+	Filename    string
 	ContentType string
 	SourceURL   string
 }
@@ -175,7 +179,7 @@ func (c *Client) DownloadAttachment(ctx context.Context, id int, mode Attachment
 		if resp.StatusCode >= http.StatusMultipleChoices && resp.StatusCode < http.StatusBadRequest {
 			return DownloadedAttachment{}, fmt.Errorf("InvenTree attachment content redirected with status %d", resp.StatusCode)
 		}
-		return DownloadedAttachment{}, parseAPIError(resp)
+		return DownloadedAttachment{}, fmt.Errorf("download InvenTree attachment content failed with status %d", resp.StatusCode)
 	}
 	content, err := readBounded(resp.Body, maxBytes)
 	if err != nil {
@@ -227,7 +231,7 @@ func (c *Client) DownloadPartImage(ctx context.Context, id int, mode AttachmentC
 		if resp.StatusCode >= http.StatusMultipleChoices && resp.StatusCode < http.StatusBadRequest {
 			return DownloadedPartImage{}, fmt.Errorf("InvenTree part image redirected with status %d", resp.StatusCode)
 		}
-		return DownloadedPartImage{}, parseAPIError(resp)
+		return DownloadedPartImage{}, fmt.Errorf("download InvenTree part image failed with status %d", resp.StatusCode)
 	}
 	content, err := readBounded(resp.Body, maxBytes)
 	if err != nil {
@@ -236,6 +240,7 @@ func (c *Client) DownloadPartImage(ctx context.Context, id int, mode AttachmentC
 	return DownloadedPartImage{
 		Part:        part,
 		Content:     content,
+		Filename:    filenameFromContentURL(sourceURL),
 		ContentType: resp.Header.Get("Content-Type"),
 		SourceURL:   redactedURLString(sourceURL),
 	}, nil
@@ -245,7 +250,7 @@ func (c *Client) partImageURL(ctx context.Context, part Part, mode AttachmentCon
 	switch mode {
 	case "", AttachmentContentOriginal:
 		if part.Image == nil || *part.Image == "" {
-			return "", errors.New("part has no primary image URL")
+			return "", ErrPartImageMissing
 		}
 		return *part.Image, nil
 	case AttachmentContentThumbnail:
@@ -254,12 +259,27 @@ func (c *Client) partImageURL(ctx context.Context, part Part, mode AttachmentCon
 			return "", err
 		}
 		if thumb.Image == "" {
-			return "", errors.New("part thumbnail response has no image URL")
+			return "", ErrPartImageMissing
 		}
 		return thumb.Image, nil
 	default:
 		return "", fmt.Errorf("unsupported part image content mode %q", mode)
 	}
+}
+
+func filenameFromContentURL(sourceURL *url.URL) string {
+	if sourceURL == nil {
+		return ""
+	}
+	filename := path.Base(sourceURL.EscapedPath())
+	if filename == "." || filename == "/" {
+		return ""
+	}
+	unescaped, err := url.PathUnescape(filename)
+	if err != nil {
+		return filename
+	}
+	return unescaped
 }
 
 func (c *Client) SearchSupplierParts(ctx context.Context, query SupplierPartQuery) ([]SupplierPart, error) {

@@ -268,6 +268,81 @@ func TestAttachmentLinkUpdateAndDeleteToolsValidateIntent(t *testing.T) {
 	a.Equal(90, fake.lastDeleteAttachmentID)
 }
 
+func TestSetPrimaryImageRequiresPartImageAttachmentAndConfirmForReplacement(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	imageURL := "/media/part_images/resistor.png"
+	existingURL := "/media/part_images/old.png"
+	fake := &fakeMilestoneLookupClient{
+		part: inventree.Part{PK: 10, Name: "resistor", Image: &existingURL},
+		attachment: inventree.Attachment{
+			PK:         90,
+			ModelType:  "part",
+			ModelID:    10,
+			Filename:   "resistor.png",
+			Attachment: &imageURL,
+			IsImage:    true,
+		},
+		downloadedAttachment: inventree.DownloadedAttachment{
+			Attachment:  inventree.Attachment{PK: 90, Filename: "resistor.png"},
+			Content:     []byte("png bytes"),
+			ContentType: "image/png",
+		},
+	}
+
+	_, output, err := setPrimaryImage(depsForFake(fake))(ctx, &mcp.CallToolRequest{}, SetPrimaryImageInput{PartID: 10, AttachmentID: 90})
+	r.NoError(err)
+	a.Equal(StatusClarificationRequired, output.Status)
+	a.Equal("confirm", output.Clarification.Retry)
+	a.False(fake.setPartPrimaryImage)
+
+	_, output, err = setPrimaryImage(depsForFake(fake))(ctx, &mcp.CallToolRequest{}, SetPrimaryImageInput{PartID: 10, AttachmentID: 90, Confirm: true})
+	r.NoError(err)
+	a.Equal(StatusOK, output.Status)
+	a.Equal(10, output.PartID)
+	a.True(output.Replaced)
+	a.True(fake.setPartPrimaryImage)
+	a.Equal(upload.DefaultMaxBytes, fake.lastAttachmentMaxBytes)
+	a.Equal(10, fake.lastSetPartPrimaryImagePartID)
+	a.Equal(inventree.PartPrimaryImageCreate{Filename: "resistor.png", ContentType: "image/png", Content: []byte("png bytes")}, fake.lastSetPartPrimaryImageInput)
+	a.Equal("/media/part_images/resistor.png", output.ImageURL)
+
+	wrongPart := &fakeMilestoneLookupClient{
+		part:       inventree.Part{PK: 10, Name: "resistor"},
+		attachment: inventree.Attachment{PK: 91, ModelType: "part", ModelID: 11, Filename: "other.png", Attachment: &imageURL, IsImage: true},
+	}
+	_, output, err = setPrimaryImage(depsForFake(wrongPart))(ctx, &mcp.CallToolRequest{}, SetPrimaryImageInput{PartID: 10, AttachmentID: 91})
+	r.NoError(err)
+	a.Equal(StatusClarificationRequired, output.Status)
+	a.Equal("attachment_id", output.Clarification.Retry)
+	a.False(wrongPart.setPartPrimaryImage)
+
+	notImage := &fakeMilestoneLookupClient{
+		part:       inventree.Part{PK: 10, Name: "resistor"},
+		attachment: inventree.Attachment{PK: 92, ModelType: "part", ModelID: 10, Filename: "datasheet.pdf", Attachment: &imageURL},
+	}
+	_, output, err = setPrimaryImage(depsForFake(notImage))(ctx, &mcp.CallToolRequest{}, SetPrimaryImageInput{PartID: 10, AttachmentID: 92})
+	r.NoError(err)
+	a.Equal(StatusClarificationRequired, output.Status)
+	a.Equal("attachment_id", output.Clarification.Retry)
+	a.False(notImage.setPartPrimaryImage)
+
+	limited := &fakeMilestoneLookupClient{
+		part:                 inventree.Part{PK: 10, Name: "resistor"},
+		attachment:           inventree.Attachment{PK: 93, ModelType: "part", ModelID: 10, Filename: "small.png", Attachment: &imageURL, IsImage: true},
+		downloadedAttachment: inventree.DownloadedAttachment{Content: []byte("png bytes"), ContentType: "image/png"},
+	}
+	deps := depsForFake(limited)
+	deps.UploadMaxBytes = 123
+	_, output, err = setPrimaryImage(deps)(ctx, &mcp.CallToolRequest{}, SetPrimaryImageInput{PartID: 10, AttachmentID: 93})
+	r.NoError(err)
+	a.Equal(StatusOK, output.Status)
+	a.False(output.Replaced)
+	a.Equal(int64(123), limited.lastAttachmentMaxBytes)
+}
+
 func TestWriteToolAuthorizationsUseWriteScope(t *testing.T) {
 	t.Parallel()
 	r := require.New(t)
@@ -280,7 +355,7 @@ func TestWriteToolAuthorizationsUseWriteScope(t *testing.T) {
 		case CreateStockItemToolName, InitialStockWorkflowToolName:
 			a.Equal("operational", auth.MutationClass)
 			a.Equal([]string{ScopeInventreeWrite, ScopeInventreeOperational}, auth.Scopes)
-		case UploadAttachmentToolName, CreateLinkAttachmentToolName, UpdateAttachmentMetadataToolName:
+		case UploadAttachmentToolName, CreateLinkAttachmentToolName, UpdateAttachmentMetadataToolName, SetPrimaryImageToolName:
 			a.Equal("write", auth.MutationClass)
 			a.Equal([]string{ScopeInventreeWrite, ScopeInventreeUpload}, auth.Scopes)
 		case UploadAttachmentFromURLToolName:
@@ -319,6 +394,7 @@ func TestWriteToolInputsExcludeSalesAndCustomerWorkflowFields(t *testing.T) {
 		reflect.TypeOf(CreateLinkAttachmentInput{}),
 		reflect.TypeOf(UpdateAttachmentMetadataInput{}),
 		reflect.TypeOf(DeleteAttachmentInput{}),
+		reflect.TypeOf(SetPrimaryImageInput{}),
 		reflect.TypeOf(inventree.PartCreate{}),
 		reflect.TypeOf(inventree.CompanyCreate{}),
 		reflect.TypeOf(inventree.SupplierPartCreate{}),

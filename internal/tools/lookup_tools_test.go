@@ -422,6 +422,7 @@ func TestDownloadPartImageReturnsBase64ForBinaryContent(t *testing.T) {
 		downloadedPartImage: inventree.DownloadedPartImage{
 			Part:        inventree.Part{PK: 10, Name: "resistor"},
 			Content:     []byte{0x89, 0x50, 0x4e, 0x47},
+			Filename:    "resistor.png",
 			ContentType: "image/png",
 			SourceURL:   "https://inventory.example.test/media/resistor.png",
 		},
@@ -433,8 +434,29 @@ func TestDownloadPartImageReturnsBase64ForBinaryContent(t *testing.T) {
 	r.NotNil(result)
 	a.Equal(StatusOK, output.Status)
 	a.Empty(output.Text)
+	a.Equal("resistor.png", output.Filename)
 	a.Equal("iVBORw==", output.Base64)
 	a.Equal(defaultDownloadMaxBytes, fake.lastPartImageMaxBytes)
+}
+
+func TestDownloadPartImageReturnsNoImageStatus(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	fake := &fakeMilestoneLookupClient{
+		downloadPartImageErr: inventree.ErrPartImageMissing,
+	}
+	handler := downloadPartImage(depsForFake(fake))
+
+	result, output, err := handler(ctx, &mcp.CallToolRequest{}, DownloadInput{ID: 10})
+	r.NoError(err)
+	r.NotNil(result)
+	a.Equal(StatusNoImage, result.Content[0].(*mcp.TextContent).Text)
+	a.Equal(StatusNoImage, output.Status)
+	a.Equal(10, output.ID)
+	a.Equal(string(inventree.AttachmentContentOriginal), output.Mode)
 }
 
 func depsForFake(fake *fakeMilestoneLookupClient) Dependencies {
@@ -463,6 +485,7 @@ type fakeMilestoneLookupClient struct {
 	attachment                 inventree.Attachment
 	downloadedAttachment       inventree.DownloadedAttachment
 	downloadedPartImage        inventree.DownloadedPartImage
+	downloadPartImageErr       error
 	getPartErr                 error
 	part                       inventree.Part
 	createdPart                bool
@@ -475,6 +498,7 @@ type fakeMilestoneLookupClient struct {
 	uploadedAttachment         bool
 	createdLinkAttachment      bool
 	deletedAttachment          bool
+	setPartPrimaryImage        bool
 
 	lastSearchPartsQuery                      inventree.SearchQuery
 	lastSearchPartCategoriesQuery             inventree.SearchQuery
@@ -503,6 +527,8 @@ type fakeMilestoneLookupClient struct {
 	lastUpdatePartParameterFields             inventree.PatchFields
 	lastUpdateAttachmentFields                inventree.PatchFields
 	lastDeleteAttachmentID                    int
+	lastSetPartPrimaryImagePartID             int
+	lastSetPartPrimaryImageInput              inventree.PartPrimaryImageCreate
 	updatePartParameterCount                  int
 	lastAttachmentMaxBytes                    int64
 	lastPartImageMaxBytes                     int64
@@ -613,6 +639,9 @@ func (f *fakeMilestoneLookupClient) DownloadAttachment(_ context.Context, _ int,
 
 func (f *fakeMilestoneLookupClient) DownloadPartImage(_ context.Context, _ int, _ inventree.AttachmentContentMode, maxBytes int64) (inventree.DownloadedPartImage, error) {
 	f.lastPartImageMaxBytes = maxBytes
+	if f.downloadPartImageErr != nil {
+		return inventree.DownloadedPartImage{}, f.downloadPartImageErr
+	}
 	return f.downloadedPartImage, nil
 }
 
@@ -637,6 +666,14 @@ func (f *fakeMilestoneLookupClient) DeleteAttachment(_ context.Context, id int) 
 	f.deletedAttachment = true
 	f.lastDeleteAttachmentID = id
 	return nil
+}
+
+func (f *fakeMilestoneLookupClient) SetPartPrimaryImage(_ context.Context, partID int, input inventree.PartPrimaryImageCreate) (inventree.Part, error) {
+	f.setPartPrimaryImage = true
+	f.lastSetPartPrimaryImagePartID = partID
+	f.lastSetPartPrimaryImageInput = input
+	imageURL := "/media/part_images/" + input.Filename
+	return inventree.Part{PK: partID, Image: &imageURL}, nil
 }
 
 func (f *fakeMilestoneLookupClient) CreatePart(_ context.Context, input inventree.PartCreate) (inventree.Part, error) {
