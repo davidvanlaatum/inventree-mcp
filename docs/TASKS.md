@@ -59,8 +59,8 @@ Before `M1C-S04` is complete, mutating, operational, destructive, and upload too
 | [M1B-S03](#m1b-s03-read-only-client-methods) | Implement read-only client methods needed by milestone 1. | Done |
 | [M1C-S01](#m1c-s01-mcp-sdk-auth-spike) | Spike official MCP SDK auth behavior for HTTP. | Done |
 | [M1C-S02](#m1c-s02-chatgpt-connector-compatibility-spike) | Verify ChatGPT connector OAuth compatibility. | Done |
-| [M1C-S03](#m1c-s03-oauth-envelope-and-code-storage) | Implement OAuth token envelopes and auth-code storage. | Ready |
-| [M1C-S04](#m1c-s04-scope-guard-and-credential-propagation) | Enforce per-tool OAuth scopes and credential propagation. | Planned |
+| [M1C-S03](#m1c-s03-oauth-envelope-and-code-storage) | Implement OAuth token envelopes and auth-code storage. | Done |
+| [M1C-S04](#m1c-s04-scope-guard-and-credential-propagation) | Enforce per-tool OAuth scopes and credential propagation. | Ready |
 | [M1D-S01](#m1d-s01-lookup-tool-framework) | Add common lookup tool framework and clarification contracts. | Done |
 | [M1D-S02](#m1d-s02-part-company-stock-parameter-and-attachment-lookup-tools) | Add read-only part, company, stock, parameter, and attachment lookup tools. | Done |
 | [M1E-S01](#m1e-s01-part-and-company-writes) | Add part and company write tools. | Done |
@@ -75,7 +75,7 @@ Before `M1C-S04` is complete, mutating, operational, destructive, and upload too
 | [M1H-S03](#m1h-s03-milestone-integration-happy-paths) | Prove milestone catalog, stock, supplier, attachment, image, and preview happy paths. | Done |
 | [M1H-S04](#m1h-s04-delete-attachment-confirmation-clarification) | Preserve structured delete confirmation clarification through MCP. | Done |
 | [M1I-S01](#m1i-s01-operator-docs-finalization) | Finalize README, operator recipes, and generated tool reference alignment. | Done |
-| [M1I-S02](#m1i-s02-final-review-panel) | Run final Go, QA, product, and infosec review panel. | Ready |
+| [M1I-S02](#m1i-s02-final-review-panel) | Run final Go, QA, product, and infosec review panel. | Planned |
 | [F-S01](#f-s01-evaluate-docker-compose-testcontainers-stack) | Evaluate Docker Compose-based Testcontainers stack. | Future |
 | [F-S02](#f-s02-bom-import-workflow) | BOM import workflow. | Future |
 | [F-S03](#f-s03-purchase-order-write-and-receiving) | Purchase order write and receiving. | Future |
@@ -434,9 +434,12 @@ Tasks:
 
 ### M1C-S03: OAuth Envelope And Code Storage
 
-- Status: `Ready`
+- Status: `Done`
 - Depends on: M1C-S01, M1C-S02
 - Scope: implement encrypted access/refresh envelopes and one-time authorization code storage.
+- Validation: `go test ./internal/oauth` passed; `go test ./...` passed; `git diff --check` passed.
+- Review: Senior Go Developer, Senior QA / Test Architect, Senior Product Manager, and Senior Infosec Reviewer reviews run. Initial Go and infosec findings found CIMD origin validation could be left empty and strict metadata decoding risked rejecting future compatible CIMD fields; fixed by requiring configured allowed origins and allowing unknown metadata fields. Initial QA findings requested service-boundary negative tests, bounded-read/timeout/unsafe-redirect tests, credential-forwarding evidence, refresh/envelope negative tests, and code-store expiry coverage; fixed with focused tests. Product review found no actionable issues and confirmed the change stays within M1C-S03 without implying M1C-S04 or production HTTP readiness. Focused Go, QA, and infosec reruns found no remaining actionable findings.
+- Residual risk: refresh tokens remain stateless and replayable until expiry or absolute session expiry. This is the planned sealed-envelope tradeoff documented in `docs/PLAN.md`; one-time refresh-token rotation would require additional storage and is not part of M1C-S03.
 - Acceptance:
   - CIMD `client_id` metadata documents are fetched with bounded reads, context timeouts, safe redirect policy, expected ChatGPT metadata origin/shape validation, and no credential forwarding.
   - Authorization code issuance rejects bad `client_id`, non-HTTPS metadata URLs, wrong redirect URI, metadata fetch failure, and metadata mismatch before storing or returning a code.
@@ -448,18 +451,18 @@ Tasks:
 
 Tasks:
 
-- [ ] Add CIMD client metadata fetch and validation.
-- [ ] Add redirect URI validation against the fetched CIMD metadata document.
-- [ ] Add `internal/oauth` envelope codec.
-- [ ] Add keyring config and validation.
-- [ ] Add one-time auth-code ID store.
-- [ ] Add refresh flow.
-- [ ] Add negative tests for bad `client_id`, non-HTTPS metadata URL, wrong redirect URI, metadata fetch failure, and metadata mismatch.
-- [ ] Add redaction tests.
+- [x] Add CIMD client metadata fetch and validation.
+- [x] Add redirect URI validation against the fetched CIMD metadata document.
+- [x] Add `internal/oauth` envelope codec.
+- [x] Add keyring config and validation.
+- [x] Add one-time auth-code ID store.
+- [x] Add refresh flow.
+- [x] Add negative tests for bad `client_id`, non-HTTPS metadata URL, wrong redirect URI, metadata fetch failure, and metadata mismatch.
+- [x] Add redaction tests.
 
 ### M1C-S04: Scope Guard And Credential Propagation
 
-- Status: `Planned`
+- Status: `Ready`
 - Depends on: M1C-S03
 - Scope: enforce per-tool OAuth scopes and request-scoped InvenTree credentials.
 - Acceptance:
@@ -873,7 +876,7 @@ Residual risk:
 
 ### M1I-S02: Final Review Panel
 
-- Status: `Ready`
+- Status: `Planned`
 - Depends on: all milestone 1 implementation stories
 - Scope: run senior Go, QA, product, and infosec reviews before beta declaration.
 - Acceptance:
