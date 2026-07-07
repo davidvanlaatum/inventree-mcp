@@ -95,7 +95,7 @@ func httpRegistrationForTool(name string, mutationClass string) string {
 	if name == HealthVersionToolName || mutationClass == "read_only" {
 		return "registered"
 	}
-	return "stdio_only_until_m1c_s04"
+	return "registered_with_oauth_scope_guard"
 }
 
 func cmpString(a string, b string) int {

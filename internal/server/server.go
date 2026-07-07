@@ -24,8 +24,8 @@ func New(deps tools.Dependencies) *mcp.Server {
 }
 
 func Run(ctx context.Context, cfg config.Config, deps tools.Dependencies) error {
-	if cfg.Transport == config.TransportHTTP && deps.EnableWriteTools {
-		return errors.New("HTTP transport cannot register write tools until per-tool OAuth scope enforcement is implemented")
+	if cfg.Transport == config.TransportHTTP && deps.EnableWriteTools && deps.AuthorizationMode != tools.AuthorizationModeOAuth {
+		return errors.New("HTTP transport cannot register write tools without per-tool OAuth scope enforcement")
 	}
 	srv := New(deps)
 	switch cfg.Transport {

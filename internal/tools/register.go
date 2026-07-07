@@ -28,12 +28,7 @@ func Register(server *mcp.Server, deps Dependencies) {
 }
 
 func registerHealthVersion(server *mcp.Server, _ Dependencies) {
-	mcp.AddTool(server, &mcp.Tool{
-		Name:        HealthVersionToolName,
-		Title:       "Health and version",
-		Description: "Returns server health and build version metadata.",
-		Annotations: ToolAnnotations(ReadOnlyAnnotations),
-	}, healthVersion)
+	mcp.AddTool(server, ToolDescriptor(HealthVersionToolName, "Health and version", "Returns server health and build version metadata."), healthVersion)
 }
 
 func healthVersion(ctx context.Context, _ *mcp.CallToolRequest, _ map[string]any) (*mcp.CallToolResult, HealthVersionOutput, error) {

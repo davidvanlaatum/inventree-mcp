@@ -5,7 +5,7 @@
 
 Go-based Model Context Protocol server for common InvenTree data-entry workflows.
 
-Current status: milestone 1 STDIO workflows are implemented for part/company entry, parameters, initial stock, attachments/images, purchase previews, and prompt checklists. HTTP mode remains development-only until the OAuth milestone is complete; mutating tools are not registered on HTTP yet.
+Current status: milestone 1 STDIO workflows are implemented for part/company entry, parameters, initial stock, attachments/images, purchase previews, and prompt checklists. HTTP mode remains development-only from the CLI until production OAuth startup is wired; internal server construction supports mutating HTTP tools only when OAuth authorization mode and per-tool scope checks are enabled.
 
 ## Quick Start
 
@@ -27,7 +27,7 @@ Useful STDIO options:
 
 For first-release workflow details, use [Operator recipes](docs/operator-recipes.md). For exact registered tool metadata, use [Tool reference](docs/tool-reference.md) and the checked [tool manifest](docs/tool-manifest.json).
 
-HTTP mode currently runs only the pre-OAuth server surface. Production HTTP mode is intentionally disabled until the OAuth milestone is complete. Development-only HTTP startup requires `--environment development --dev-incomplete-oauth` and rejects configured raw InvenTree tokens.
+HTTP mode currently runs only the development server surface from the CLI. Production HTTP mode is intentionally disabled until OAuth startup and setup wiring are complete. Development-only HTTP startup requires `--environment development --dev-incomplete-oauth` and rejects configured raw InvenTree tokens.
 
 ## Install From A Release
 
@@ -39,7 +39,7 @@ Linux packages install:
 - `/etc/systemd/system/inventree-mcp.service`
 - `/etc/inventree-mcp/inventree-mcp.env`
 
-The packaged service is intended for HTTP mode behind a reverse proxy. Production HTTP mode will not start until OAuth support is implemented. Install packages now for file layout testing, but do not enable the systemd service until the OAuth milestone lands.
+The packaged service is intended for HTTP mode behind a reverse proxy. Production HTTP mode will not start until OAuth startup and setup wiring are complete. Install packages now for file layout testing, but do not enable the systemd service until the deployment path lands.
 
 For a development-only pre-OAuth HTTP runtime smoke test, run the binary directly. This starts the skeleton streamable HTTP server with only static MCP metadata and the read-only health/version tool.
 

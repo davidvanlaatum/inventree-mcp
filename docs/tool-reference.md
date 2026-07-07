@@ -10,7 +10,7 @@ This file is the operator-facing and agent-facing reference for registered MCP t
 go generate ./internal/tools
 ```
 
-The manifest is checked in and tested. It records each registered tool's `milestone_1` status, mutation class (`read_only`, `write`, `operational`, or `destructive`), required scopes, MCP annotation booleans, upload source class, and HTTP registration state. Read-only tools and `health_version` are `registered` for HTTP development mode. Write, operational, upload, image, and destructive tools are `stdio_only_until_m1c_s04`.
+The manifest is checked in and tested. It records each registered tool's `milestone_1` status, mutation class (`read_only`, `write`, `operational`, or `destructive`), required scopes, MCP annotation booleans, upload source class, and HTTP registration state. Read-only tools and `health_version` are `registered` for HTTP development mode. Write, operational, upload, image, and destructive tools are `registered_with_oauth_scope_guard` when HTTP OAuth scope enforcement is enabled.
 
 ## Manifest Fields
 
@@ -27,6 +27,8 @@ Each registered tool must have:
 - "Ask operator when..." guidance.
 
 Endpoint-backed tools must also map to a `docs/endpoint-manifest.yaml` entry whose path, method, operation ID, selected query filters, request schema, and response schema are validated against `docs/api-schema.yaml`.
+
+In OAuth authorization mode, scoped tools publish per-tool OAuth metadata in descriptor `_meta["securitySchemes"]` and `_meta["openai/securitySchemes"]`, matching the checked tool authorization manifest. The current Go MCP SDK `mcp.Tool` type does not expose a first-class top-level `securitySchemes` field; replace the mirror-only descriptor wiring with the canonical field when the SDK adds support or when the server owns custom tool descriptor serialization.
 
 ## Lookup Tool Framework
 
@@ -111,7 +113,7 @@ The Milestone 1 table below summarizes the registered first-release surface. `do
 
 ## Registered Lookup Tools
 
-All tools in this section are implemented and registered. They use class `read_only`, milestone status `milestone_1`, MCP annotations `readOnlyHint:true`, `destructiveHint:false`, `idempotentHint:true`, and `openWorldHint:false`. They require OAuth scope `inventree.read` when HTTP OAuth scope enforcement lands. Upload sources are `None`.
+All tools in this section are implemented and registered. They use class `read_only`, milestone status `milestone_1`, MCP annotations `readOnlyHint:true`, `destructiveHint:false`, `idempotentHint:true`, and `openWorldHint:false`. They require OAuth scope `inventree.read` when OAuth authorization mode is enabled. Upload sources are `None`.
 
 | Tool | Group | Inputs | Output | Ask operator when |
 | --- | --- | --- | --- | --- |
@@ -133,9 +135,9 @@ All tools in this section are implemented and registered. They use class `read_o
 
 ## Registered Write Tools
 
-The tools in this section are implemented and registered only when write tools are explicitly enabled by the server dependency configuration. The current CLI enables them for STDIO mode. HTTP mode does not register them until `M1C-S04` implements per-tool OAuth scope enforcement.
+The tools in this section are implemented and registered only when write tools are explicitly enabled by the server dependency configuration. The current CLI enables them for STDIO mode. HTTP registration requires OAuth authorization mode so every call passes through the per-tool scope guard before the handler runs.
 
-Tools in this section are milestone status `milestone_1`. Ordinary write tools use mutation class `write` with MCP annotations `readOnlyHint:false`, `destructiveHint:false`, `idempotentHint:false`, and `openWorldHint:false`. Stock creation tools use mutation class `operational`. `upload_attachment_from_url` uses `openWorldHint:true`; `delete_attachment` uses mutation class `destructive` with `destructiveHint:true`. Most tools require OAuth scope `inventree.write` when HTTP OAuth scope enforcement lands. Operational stock tools require both `inventree.write` and `inventree.operational`. Attachment tools require `inventree.write` and `inventree.upload`; delete also requires `inventree.destructive`.
+Tools in this section are milestone status `milestone_1`. Ordinary write tools use mutation class `write` with MCP annotations `readOnlyHint:false`, `destructiveHint:false`, `idempotentHint:false`, and `openWorldHint:false`. Stock creation tools use mutation class `operational`. `upload_attachment_from_url` uses `openWorldHint:true`; `delete_attachment` uses mutation class `destructive` with `destructiveHint:true`. Most tools require OAuth scope `inventree.write` when OAuth authorization mode is enabled. Operational stock tools require both `inventree.write` and `inventree.operational`. Attachment tools require `inventree.write` and `inventree.upload`; delete also requires `inventree.destructive`.
 
 | Tool | Group | Inputs | Output | Ask operator when |
 | --- | --- | --- | --- | --- |
@@ -159,7 +161,7 @@ Tools in this section are milestone status `milestone_1`. Ordinary write tools u
 
 | Tool | Group | Milestone status | Class | MCP annotations | Scopes | Upload sources | HTTP registration | Ask operator when |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| `health_version` | Server health | `milestone_1` | `read_only` | `readOnlyHint:true`, `destructiveHint:false`, `idempotentHint:true`, `openWorldHint:false` | None until HTTP OAuth scope enforcement lands | None | `registered` | Never; returns static server health and build metadata. |
+| `health_version` | Server health | `milestone_1` | `read_only` | `readOnlyHint:true`, `destructiveHint:false`, `idempotentHint:true`, `openWorldHint:false` | None | None | `registered` | Never; returns static server health and build metadata. |
 
 ## Registered Prompts
 
@@ -198,21 +200,21 @@ Future prompts remain in the internal prompt manifest with status `future` and a
 | `download_attachment` | Attachments | Read-only | `inventree.read` | None | `readOnlyHint:true`, `destructiveHint:false`, `idempotentHint:true`, `openWorldHint:false` | `registered` | Operator may mean stored-link metadata versus an external link target, or original file versus explicit thumbnail mode. |
 | `download_part_image` | Attachments | Read-only | `inventree.read` | None | `readOnlyHint:true`, `destructiveHint:false`, `idempotentHint:true`, `openWorldHint:false` | `registered` | Operator may mean a generic attachment rather than the current primary image, or original image versus explicit thumbnail mode. |
 | `preview_purchase_order_with_lines` | Purchasing preview | Read-only | `inventree.read` | None | `readOnlyHint:true`, `destructiveHint:false`, `idempotentHint:true`, `openWorldHint:false` | `registered` | Supplier part, price, quantity, or currency is ambiguous. |
-| `create_part` | Part entry | Write | `inventree.write` | None | `readOnlyHint:false`, `destructiveHint:false`, `idempotentHint:false`, `openWorldHint:false` | `stdio_only_until_m1c_s04` | See Registered Write Tools. |
-| `update_part` | Part entry | Write | `inventree.write` | None | `readOnlyHint:false`, `destructiveHint:false`, `idempotentHint:false`, `openWorldHint:false` | `stdio_only_until_m1c_s04` | See Registered Write Tools. |
-| `set_part_parameters` | Parameters | Write | `inventree.write` | None | `readOnlyHint:false`, `destructiveHint:false`, `idempotentHint:false`, `openWorldHint:false` | `stdio_only_until_m1c_s04` | See Registered Write Tools. |
-| `create_company` | Company entry | Write | `inventree.write` | None | `readOnlyHint:false`, `destructiveHint:false`, `idempotentHint:false`, `openWorldHint:false` | `stdio_only_until_m1c_s04` | See Registered Write Tools. |
-| `create_supplier_part` | Supplier link | Write | `inventree.write` | None | `readOnlyHint:false`, `destructiveHint:false`, `idempotentHint:false`, `openWorldHint:false` | `stdio_only_until_m1c_s04` | See Registered Write Tools. |
-| `create_manufacturer_part` | Manufacturer link | Write | `inventree.write` | None | `readOnlyHint:false`, `destructiveHint:false`, `idempotentHint:false`, `openWorldHint:false` | `stdio_only_until_m1c_s04` | See Registered Write Tools. |
-| `upsert_part_with_supplier_and_manufacturer` | Part workflow | Write | `inventree.write` | None | `readOnlyHint:false`, `destructiveHint:false`, `idempotentHint:false`, `openWorldHint:false` | `stdio_only_until_m1c_s04` | See Registered Write Tools. |
-| `create_stock_item` | Initial stock | Operational | `inventree.write`, `inventree.operational` | None | `readOnlyHint:false`, `destructiveHint:false`, `idempotentHint:false`, `openWorldHint:false` | `stdio_only_until_m1c_s04` | Existing stock at the requested location may duplicate the new item. |
-| `create_initial_stock_entry` | Initial stock workflow | Operational | `inventree.write`, `inventree.operational` | None | `readOnlyHint:false`, `destructiveHint:false`, `idempotentHint:false`, `openWorldHint:false` | `stdio_only_until_m1c_s04` | Part or location search is ambiguous, quantity/status is invalid, or existing stock at the requested location may duplicate the new item. |
-| `upload_attachment` | Attachments | Write | `inventree.write`, `inventree.upload` | Inline bytes; STDIO allowlisted local path | `readOnlyHint:false`, `destructiveHint:false`, `idempotentHint:false`, `openWorldHint:false` | `stdio_only_until_m1c_s04` | Filename/content duplicates an existing attachment without explicit duplicate intent. |
-| `upload_attachment_from_url` | Attachments | Write, open-world | `inventree.write`, `inventree.upload` | HTTP(S) URL only | `readOnlyHint:false`, `destructiveHint:false`, `idempotentHint:false`, `openWorldHint:true` | `stdio_only_until_m1c_s04` | URL policy rejects the target or filename/content duplicates an existing attachment without explicit duplicate intent. |
-| `create_link_attachment` | Attachments | Write | `inventree.write`, `inventree.upload` | HTTP(S) link only, no fetch | `readOnlyHint:false`, `destructiveHint:false`, `idempotentHint:false`, `openWorldHint:false` | `stdio_only_until_m1c_s04` | URL has unsupported scheme, credentials/userinfo, fragment, local path shape, or duplicates an existing link without explicit duplicate intent. |
-| `update_attachment_metadata` | Attachments | Write | `inventree.write`, `inventree.upload` | None | `readOnlyHint:false`, `destructiveHint:false`, `idempotentHint:false`, `openWorldHint:false` | `stdio_only_until_m1c_s04` | Stable attachment ID is missing or no PATCH fields are supplied. |
-| `delete_attachment` | Attachments | Destructive | `inventree.write`, `inventree.upload`, `inventree.destructive` | None | `readOnlyHint:false`, `destructiveHint:true`, `idempotentHint:false`, `openWorldHint:false` | `stdio_only_until_m1c_s04` | Stable attachment ID is missing or `confirm:true` is missing. |
-| `set_primary_image` | Attachments | Write | `inventree.write`, `inventree.upload` | Existing attachment/image ID | `readOnlyHint:false`, `destructiveHint:false`, `idempotentHint:false`, `openWorldHint:false` | `stdio_only_until_m1c_s04` | Multiple candidate images exist or replacement lacks `confirm:true`. |
+| `create_part` | Part entry | Write | `inventree.write` | None | `readOnlyHint:false`, `destructiveHint:false`, `idempotentHint:false`, `openWorldHint:false` | `registered_with_oauth_scope_guard` | See Registered Write Tools. |
+| `update_part` | Part entry | Write | `inventree.write` | None | `readOnlyHint:false`, `destructiveHint:false`, `idempotentHint:false`, `openWorldHint:false` | `registered_with_oauth_scope_guard` | See Registered Write Tools. |
+| `set_part_parameters` | Parameters | Write | `inventree.write` | None | `readOnlyHint:false`, `destructiveHint:false`, `idempotentHint:false`, `openWorldHint:false` | `registered_with_oauth_scope_guard` | See Registered Write Tools. |
+| `create_company` | Company entry | Write | `inventree.write` | None | `readOnlyHint:false`, `destructiveHint:false`, `idempotentHint:false`, `openWorldHint:false` | `registered_with_oauth_scope_guard` | See Registered Write Tools. |
+| `create_supplier_part` | Supplier link | Write | `inventree.write` | None | `readOnlyHint:false`, `destructiveHint:false`, `idempotentHint:false`, `openWorldHint:false` | `registered_with_oauth_scope_guard` | See Registered Write Tools. |
+| `create_manufacturer_part` | Manufacturer link | Write | `inventree.write` | None | `readOnlyHint:false`, `destructiveHint:false`, `idempotentHint:false`, `openWorldHint:false` | `registered_with_oauth_scope_guard` | See Registered Write Tools. |
+| `upsert_part_with_supplier_and_manufacturer` | Part workflow | Write | `inventree.write` | None | `readOnlyHint:false`, `destructiveHint:false`, `idempotentHint:false`, `openWorldHint:false` | `registered_with_oauth_scope_guard` | See Registered Write Tools. |
+| `create_stock_item` | Initial stock | Operational | `inventree.write`, `inventree.operational` | None | `readOnlyHint:false`, `destructiveHint:false`, `idempotentHint:false`, `openWorldHint:false` | `registered_with_oauth_scope_guard` | Existing stock at the requested location may duplicate the new item. |
+| `create_initial_stock_entry` | Initial stock workflow | Operational | `inventree.write`, `inventree.operational` | None | `readOnlyHint:false`, `destructiveHint:false`, `idempotentHint:false`, `openWorldHint:false` | `registered_with_oauth_scope_guard` | Part or location search is ambiguous, quantity/status is invalid, or existing stock at the requested location may duplicate the new item. |
+| `upload_attachment` | Attachments | Write | `inventree.write`, `inventree.upload` | Inline bytes; STDIO allowlisted local path | `readOnlyHint:false`, `destructiveHint:false`, `idempotentHint:false`, `openWorldHint:false` | `registered_with_oauth_scope_guard` | Filename/content duplicates an existing attachment without explicit duplicate intent. |
+| `upload_attachment_from_url` | Attachments | Write, open-world | `inventree.write`, `inventree.upload` | HTTP(S) URL only | `readOnlyHint:false`, `destructiveHint:false`, `idempotentHint:false`, `openWorldHint:true` | `registered_with_oauth_scope_guard` | URL policy rejects the target or filename/content duplicates an existing attachment without explicit duplicate intent. |
+| `create_link_attachment` | Attachments | Write | `inventree.write`, `inventree.upload` | HTTP(S) link only, no fetch | `readOnlyHint:false`, `destructiveHint:false`, `idempotentHint:false`, `openWorldHint:false` | `registered_with_oauth_scope_guard` | URL has unsupported scheme, credentials/userinfo, fragment, local path shape, or duplicates an existing link without explicit duplicate intent. |
+| `update_attachment_metadata` | Attachments | Write | `inventree.write`, `inventree.upload` | None | `readOnlyHint:false`, `destructiveHint:false`, `idempotentHint:false`, `openWorldHint:false` | `registered_with_oauth_scope_guard` | Stable attachment ID is missing or no PATCH fields are supplied. |
+| `delete_attachment` | Attachments | Destructive | `inventree.write`, `inventree.upload`, `inventree.destructive` | None | `readOnlyHint:false`, `destructiveHint:true`, `idempotentHint:false`, `openWorldHint:false` | `registered_with_oauth_scope_guard` | Stable attachment ID is missing or `confirm:true` is missing. |
+| `set_primary_image` | Attachments | Write | `inventree.write`, `inventree.upload` | Existing attachment/image ID | `readOnlyHint:false`, `destructiveHint:false`, `idempotentHint:false`, `openWorldHint:false` | `registered_with_oauth_scope_guard` | Multiple candidate images exist or replacement lacks `confirm:true`. |
 
 ## Future Tools
 

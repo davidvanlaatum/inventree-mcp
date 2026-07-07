@@ -144,7 +144,7 @@ func TestParseServeRejectsProductionHTTPBeforeOAuth(t *testing.T) {
 	r.Error(err)
 
 	a.Contains(err.Error(), "production mode rejects InvenTree TLS skip verify")
-	a.Contains(err.Error(), "production HTTP mode is disabled until OAuth is implemented")
+	a.Contains(err.Error(), "production HTTP mode is disabled until OAuth startup and setup wiring is available")
 }
 
 func TestParseServeAllowsDevelopmentHTTPOnlyWithExplicitIncompleteOAuthFlag(t *testing.T) {
