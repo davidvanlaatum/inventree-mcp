@@ -20,7 +20,9 @@ import (
 const (
 	ScopeInventreeRead        = "inventree.read"
 	ScopeInventreeWrite       = "inventree.write"
+	ScopeInventreeUpload      = "inventree.upload"
 	ScopeInventreeOperational = "inventree.operational"
+	ScopeInventreeDestructive = "inventree.destructive"
 
 	SearchPartsToolName              = "search_parts"
 	GetPartToolName                  = "get_part"
@@ -46,6 +48,11 @@ const (
 	UpsertPartWorkflowToolName       = "upsert_part_with_supplier_and_manufacturer"
 	CreateStockItemToolName          = "create_stock_item"
 	InitialStockWorkflowToolName     = "create_initial_stock_entry"
+	UploadAttachmentToolName         = "upload_attachment"
+	UploadAttachmentFromURLToolName  = "upload_attachment_from_url"
+	CreateLinkAttachmentToolName     = "create_link_attachment"
+	UpdateAttachmentMetadataToolName = "update_attachment_metadata"
+	DeleteAttachmentToolName         = "delete_attachment"
 
 	defaultDownloadMaxBytes int64 = 5 * 1024 * 1024
 	maxDownloadMaxBytes     int64 = 25 * 1024 * 1024
@@ -95,6 +102,11 @@ var writeToolNames = []string{
 	UpsertPartWorkflowToolName,
 	CreateStockItemToolName,
 	InitialStockWorkflowToolName,
+	UploadAttachmentToolName,
+	UploadAttachmentFromURLToolName,
+	CreateLinkAttachmentToolName,
+	UpdateAttachmentMetadataToolName,
+	DeleteAttachmentToolName,
 }
 
 var ToolAuthorizations = map[string]ToolAuthorization{
@@ -118,15 +130,28 @@ func init() {
 	for _, name := range writeToolNames {
 		scopes := []string{ScopeInventreeWrite}
 		mutationClass := "write"
-		if name == CreateStockItemToolName || name == InitialStockWorkflowToolName {
+		switch name {
+		case CreateStockItemToolName, InitialStockWorkflowToolName:
 			scopes = []string{ScopeInventreeWrite, ScopeInventreeOperational}
 			mutationClass = "operational"
+		case UploadAttachmentToolName, UploadAttachmentFromURLToolName, CreateLinkAttachmentToolName, UpdateAttachmentMetadataToolName:
+			scopes = []string{ScopeInventreeWrite, ScopeInventreeUpload}
+		case DeleteAttachmentToolName:
+			scopes = []string{ScopeInventreeWrite, ScopeInventreeUpload, ScopeInventreeDestructive}
+			mutationClass = "destructive"
+		}
+		annotations := WriteAnnotations
+		if name == UploadAttachmentFromURLToolName {
+			annotations.OpenWorld = true
+		}
+		if name == DeleteAttachmentToolName {
+			annotations.Destructive = true
 		}
 		ToolAuthorizations[name] = ToolAuthorization{
 			Name:          name,
 			MutationClass: mutationClass,
 			Scopes:        scopes,
-			Annotations:   WriteAnnotations,
+			Annotations:   annotations,
 		}
 	}
 }
@@ -692,6 +717,8 @@ func candidateFor(record any) ClarificationCandidate {
 		return ClarificationCandidate{ID: strconv.Itoa(v.PK), Label: v.Name, Summary: v.Description, URL: fmt.Sprintf("/api/stock/location/%d/", v.PK), Fields: map[string]any{"structural": v.Structural, "external": v.External}}
 	case inventree.StockItem:
 		return ClarificationCandidate{ID: strconv.Itoa(v.PK), Label: fmt.Sprintf("stock item %d", v.PK), URL: fmt.Sprintf("/api/stock/%d/", v.PK), Fields: map[string]any{"part": v.Part, "location": v.Location, "quantity": v.Quantity, "status": v.Status, "serial": v.Serial, "batch": v.Batch}}
+	case inventree.Attachment:
+		return ClarificationCandidate{ID: strconv.Itoa(v.PK), Label: v.Filename, Summary: v.Comment, URL: fmt.Sprintf("/api/attachment/%d/", v.PK), Fields: map[string]any{"model_type": v.ModelType, "model_id": v.ModelID, "is_file": v.Attachment != nil && *v.Attachment != "", "is_link": v.IsLink, "file_size": v.FileSize}}
 	default:
 		return ClarificationCandidate{ID: fmt.Sprint(record), Label: fmt.Sprint(record)}
 	}

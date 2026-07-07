@@ -21,6 +21,8 @@ const (
 	EnvInvenTreeAuthScheme    = "INVENTREE_AUTH_SCHEME"
 	EnvInvenTreeTimeout       = "INVENTREE_TIMEOUT"
 	EnvInvenTreeTLSSkipVerify = "INVENTREE_TLS_SKIP_VERIFY"
+	EnvUploadAllowRoots       = "INVENTREE_UPLOAD_ALLOW_ROOTS"
+	EnvUploadMaxBytes         = "INVENTREE_UPLOAD_MAX_BYTES"
 	EnvLogLevel               = "INVENTREE_MCP_LOG_LEVEL"
 	EnvDevIncompleteOAuth     = "INVENTREE_MCP_DEV_INCOMPLETE_OAUTH"
 
@@ -59,6 +61,8 @@ type Config struct {
 	InvenTreeAuthScheme    AuthScheme
 	InvenTreeTimeout       time.Duration
 	InvenTreeTLSSkipVerify bool
+	UploadAllowRoots       []string
+	UploadMaxBytes         int64
 	LogLevel               string
 	DevIncompleteOAuth     bool
 }
@@ -83,6 +87,8 @@ func ParseServeWithEnv(args []string, getenv Env, output io.Writer) (Config, err
 		InvenTreeToken:      getenv(EnvInvenTreeToken),
 		InvenTreeAuthScheme: AuthScheme(envDefault(getenv, EnvInvenTreeAuthScheme, string(AuthSchemeToken))),
 		InvenTreeTimeout:    durationDefault(getenv, EnvInvenTreeTimeout, 30*time.Second),
+		UploadAllowRoots:    listEnv(getenv, EnvUploadAllowRoots),
+		UploadMaxBytes:      int64Default(getenv, EnvUploadMaxBytes, 5*1024*1024),
 		LogLevel:            envDefault(getenv, EnvLogLevel, "info"),
 	}
 
@@ -96,6 +102,14 @@ func ParseServeWithEnv(args []string, getenv Env, output io.Writer) (Config, err
 	fs.StringVar((*string)(&cfg.InvenTreeAuthScheme), "inventree-auth-scheme", string(cfg.InvenTreeAuthScheme), flagHelp("InvenTree auth scheme: Token or Bearer", EnvInvenTreeAuthScheme))
 	fs.DurationVar(&cfg.InvenTreeTimeout, "inventree-timeout", cfg.InvenTreeTimeout, flagHelp("InvenTree request timeout", EnvInvenTreeTimeout))
 	fs.BoolVar(&cfg.InvenTreeTLSSkipVerify, "inventree-tls-skip-verify", boolEnv(getenv, EnvInvenTreeTLSSkipVerify), flagHelp("skip upstream InvenTree TLS verification", EnvInvenTreeTLSSkipVerify))
+	fs.Func("upload-allow-root", flagHelp("trusted STDIO local upload root; repeatable", EnvUploadAllowRoots), func(value string) error {
+		value = strings.TrimSpace(value)
+		if value != "" {
+			cfg.UploadAllowRoots = append(cfg.UploadAllowRoots, value)
+		}
+		return nil
+	})
+	fs.Int64Var(&cfg.UploadMaxBytes, "upload-max-bytes", cfg.UploadMaxBytes, flagHelp("maximum bytes accepted from one upload source", EnvUploadMaxBytes))
 	fs.StringVar(&cfg.LogLevel, "log-level", cfg.LogLevel, flagHelp("log level", EnvLogLevel))
 	fs.BoolVar(&cfg.DevIncompleteOAuth, "dev-incomplete-oauth", boolEnv(getenv, EnvDevIncompleteOAuth), flagHelp("allow development-only HTTP parsing before OAuth is implemented", EnvDevIncompleteOAuth))
 
@@ -146,6 +160,10 @@ func (c Config) Validate() error {
 
 	if c.InvenTreeTLSSkipVerify && c.Environment == EnvironmentProduction {
 		validationErrors = append(validationErrors, errors.New("production mode rejects InvenTree TLS skip verify"))
+	}
+
+	if c.UploadMaxBytes <= 0 {
+		validationErrors = append(validationErrors, errors.New("upload max bytes must be greater than zero"))
 	}
 
 	if c.Transport == TransportStdio {
@@ -204,6 +222,33 @@ func boolEnv(getenv Env, key string) bool {
 	default:
 		return false
 	}
+}
+
+func listEnv(getenv Env, key string) []string {
+	raw := getenv(key)
+	if raw == "" {
+		return nil
+	}
+	parts := strings.Split(raw, string(os.PathListSeparator))
+	out := make([]string, 0, len(parts))
+	for _, part := range parts {
+		if value := strings.TrimSpace(part); value != "" {
+			out = append(out, value)
+		}
+	}
+	return out
+}
+
+func int64Default(getenv Env, key string, fallback int64) int64 {
+	raw := strings.TrimSpace(getenv(key))
+	if raw == "" {
+		return fallback
+	}
+	var value int64
+	if _, err := fmt.Sscan(raw, &value); err != nil {
+		return -1
+	}
+	return value
 }
 
 func flagHelp(description string, envVar string) string {

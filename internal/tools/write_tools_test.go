@@ -1,6 +1,12 @@
 package tools
 
 import (
+	"context"
+	"encoding/base64"
+	"net/http"
+	"net/http/httptest"
+	"net/netip"
+	"net/url"
 	"reflect"
 	"strings"
 	"testing"
@@ -8,10 +14,245 @@ import (
 	"github.com/davidvanlaatum/dvgoutils"
 	"github.com/davidvanlaatum/dvgoutils/logging/testhandler"
 	"github.com/davidvanlaatum/inventree-mcp/internal/inventree"
+	"github.com/davidvanlaatum/inventree-mcp/internal/upload"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/spf13/afero"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestUploadAttachmentUsesInlineBytesAndDuplicatePreflight(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	fake := &fakeMilestoneLookupClient{}
+
+	_, output, err := uploadAttachment(depsForFake(fake))(ctx, &mcp.CallToolRequest{}, UploadAttachmentInput{
+		ModelType:    "part",
+		ModelID:      10,
+		Filename:     "datasheet.txt",
+		ContentType:  "text/plain",
+		InlineBase64: base64.StdEncoding.EncodeToString([]byte("hello")),
+	})
+
+	r.NoError(err)
+	a.Equal(StatusOK, output.Status)
+	a.Equal("inline", output.SourceKind)
+	a.True(fake.uploadedAttachment)
+	a.Equal("part", fake.lastAttachmentCreate.ModelType)
+	a.Equal(10, fake.lastAttachmentCreate.ModelID)
+	a.Equal("datasheet.txt", fake.lastAttachmentCreate.Filename)
+	a.Equal("text/plain", fake.lastAttachmentCreate.ContentType)
+	a.Equal([]byte("hello"), fake.lastAttachmentCreate.Content)
+	a.Equal(inventree.AttachmentQuery{ModelType: "part", ModelID: 10, Limit: MaxLookupLimit}, fake.lastListAttachmentsQuery)
+
+	size := int64(5)
+	fake = &fakeMilestoneLookupClient{attachments: []inventree.Attachment{{PK: 90, ModelType: "part", ModelID: 10, Filename: "datasheet.txt", FileSize: &size}}}
+	_, output, err = uploadAttachment(depsForFake(fake))(ctx, &mcp.CallToolRequest{}, UploadAttachmentInput{
+		ModelType:    "part",
+		ModelID:      10,
+		Filename:     "datasheet.txt",
+		ContentType:  "text/plain",
+		InlineBase64: base64.StdEncoding.EncodeToString([]byte("hello")),
+	})
+
+	r.NoError(err)
+	a.Equal(StatusClarificationRequired, output.Status)
+	r.NotNil(output.Clarification)
+	a.Equal("allow_duplicate", output.Clarification.Retry)
+	a.False(fake.uploadedAttachment)
+}
+
+func TestUploadAttachmentValidatesInlineAndLocalSources(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+
+	fake := &fakeMilestoneLookupClient{}
+	_, output, err := uploadAttachment(depsForFake(fake))(ctx, &mcp.CallToolRequest{}, UploadAttachmentInput{
+		ModelType:    "part",
+		ModelID:      10,
+		Filename:     "datasheet.txt",
+		InlineBase64: base64.StdEncoding.EncodeToString([]byte("hello")),
+	})
+	r.NoError(err)
+	a.Equal(StatusClarificationRequired, output.Status)
+	a.Equal("content_type", output.Clarification.Retry)
+	a.False(fake.uploadedAttachment)
+
+	deps := depsForFake(fake)
+	deps.UploadMaxBytes = 4
+	_, _, err = uploadAttachment(deps)(ctx, &mcp.CallToolRequest{}, UploadAttachmentInput{
+		ModelType:    "part",
+		ModelID:      10,
+		Filename:     "datasheet.txt",
+		ContentType:  "text/plain",
+		InlineBase64: base64.StdEncoding.EncodeToString([]byte("hello")),
+	})
+	r.ErrorContains(err, "exceeds upload max bytes")
+	a.False(fake.uploadedAttachment)
+
+	_, output, err = uploadAttachment(depsForFake(fake))(ctx, &mcp.CallToolRequest{}, UploadAttachmentInput{
+		ModelType:   "part",
+		ModelID:     10,
+		Filename:    "datasheet.txt",
+		ContentType: "text/plain",
+		LocalPath:   "https://example.test/datasheet.pdf",
+	})
+	r.NoError(err)
+	a.Equal(StatusClarificationRequired, output.Status)
+	a.Equal("url", output.Clarification.Retry)
+
+	fs := afero.NewMemMapFs()
+	r.NoError(afero.WriteFile(fs, "/uploads/datasheet.txt", []byte("local bytes"), 0o644))
+	fake = &fakeMilestoneLookupClient{}
+	deps = depsForFake(fake)
+	deps.UploadMode = upload.ModeStdio
+	deps.UploadFS = fs
+	deps.UploadAllowRoots = []string{"/uploads"}
+	_, output, err = uploadAttachment(deps)(ctx, &mcp.CallToolRequest{}, UploadAttachmentInput{
+		ModelType:   "part",
+		ModelID:     10,
+		ContentType: "text/plain",
+		LocalPath:   "/uploads/datasheet.txt",
+	})
+	r.NoError(err)
+	a.Equal(StatusOK, output.Status)
+	a.Equal("local_path", output.SourceKind)
+	a.Equal("datasheet.txt", fake.lastAttachmentCreate.Filename)
+	a.Equal([]byte("local bytes"), fake.lastAttachmentCreate.Content)
+
+	fake = &fakeMilestoneLookupClient{}
+	deps.UploadMode = upload.ModeHTTP
+	deps.ClientFromContext = func(context.Context) (any, error) { return fake, nil }
+	_, _, err = uploadAttachment(deps)(ctx, &mcp.CallToolRequest{}, UploadAttachmentInput{
+		ModelType:   "part",
+		ModelID:     10,
+		ContentType: "text/plain",
+		LocalPath:   "/uploads/datasheet.txt",
+	})
+	r.ErrorContains(err, "HTTP mode rejects local upload paths")
+	a.False(fake.uploadedAttachment)
+}
+
+func TestUploadAttachmentFromURLFetchesThroughPolicy(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		a.Empty(req.Header.Get("Authorization"))
+		w.Header().Set("Content-Type", "application/pdf")
+		w.Header().Set("Content-Disposition", `attachment; filename="datasheet.pdf"`)
+		_, _ = w.Write([]byte("pdf bytes"))
+	}))
+	t.Cleanup(server.Close)
+	parsed, err := url.Parse(server.URL)
+	r.NoError(err)
+	fake := &fakeMilestoneLookupClient{}
+	deps := depsForFake(fake)
+	deps.URLFetcher = upload.URLFetcher{
+		Resolver: func(context.Context, string) ([]netip.Addr, error) {
+			return []netip.Addr{netip.MustParseAddr("127.0.0.1")}, nil
+		},
+		Allowlist: []upload.URLAllowlistEntry{{
+			Scheme: parsed.Scheme,
+			Host:   parsed.Hostname(),
+			Port:   parsed.Port(),
+		}},
+	}
+
+	_, output, err := uploadAttachmentFromURL(deps)(ctx, &mcp.CallToolRequest{}, UploadAttachmentFromURLInput{
+		ModelType: "part",
+		ModelID:   10,
+		URL:       server.URL + "/datasheet.pdf",
+	})
+
+	r.NoError(err)
+	a.Equal(StatusOK, output.Status)
+	a.Equal("url", output.SourceKind)
+	a.True(fake.uploadedAttachment)
+	a.Equal("datasheet.pdf", fake.lastAttachmentCreate.Filename)
+	a.Equal("application/pdf", fake.lastAttachmentCreate.ContentType)
+	a.Equal([]byte("pdf bytes"), fake.lastAttachmentCreate.Content)
+}
+
+func TestUploadAttachmentFromURLChecksKnownFilenameDuplicatesBeforeFetch(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	fetched := false
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		fetched = true
+		_, _ = w.Write([]byte("pdf bytes"))
+	}))
+	t.Cleanup(server.Close)
+	fake := &fakeMilestoneLookupClient{
+		attachments: []inventree.Attachment{{PK: 90, ModelType: "part", ModelID: 10, Filename: "datasheet.pdf"}},
+	}
+	deps := depsForFake(fake)
+
+	_, output, err := uploadAttachmentFromURL(deps)(ctx, &mcp.CallToolRequest{}, UploadAttachmentFromURLInput{
+		ModelType: "part",
+		ModelID:   10,
+		URL:       server.URL,
+		Filename:  " /tmp/datasheet.pdf ",
+	})
+
+	r.NoError(err)
+	a.Equal(StatusClarificationRequired, output.Status)
+	a.Equal("allow_duplicate", output.Clarification.Retry)
+	a.False(fetched)
+	a.False(fake.uploadedAttachment)
+}
+
+func TestAttachmentLinkUpdateAndDeleteToolsValidateIntent(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	fake := &fakeMilestoneLookupClient{
+		attachment: inventree.Attachment{PK: 90, ModelType: "part", ModelID: 10, Filename: "datasheet"},
+	}
+
+	_, output, err := createLinkAttachment(depsForFake(fake))(ctx, &mcp.CallToolRequest{}, CreateLinkAttachmentInput{
+		ModelType: "part",
+		ModelID:   10,
+		URL:       "https://example.test/datasheet.pdf",
+		Filename:  "datasheet",
+	})
+	r.NoError(err)
+	a.Equal(StatusOK, output.Status)
+	a.True(fake.createdLinkAttachment)
+	a.Equal("https://example.test/datasheet.pdf", fake.lastAttachmentCreate.Link)
+
+	_, _, err = createLinkAttachment(depsForFake(fake))(ctx, &mcp.CallToolRequest{}, CreateLinkAttachmentInput{
+		ModelType: "part",
+		ModelID:   10,
+		URL:       "https://user:pass@example.test/datasheet.pdf",
+	})
+	r.ErrorContains(err, "must not include userinfo")
+
+	comment := ""
+	_, output, err = updateAttachmentMetadata(depsForFake(fake))(ctx, &mcp.CallToolRequest{}, UpdateAttachmentMetadataInput{ID: 90, Comment: &comment})
+	r.NoError(err)
+	a.Equal(StatusOK, output.Status)
+	a.Equal(inventree.PatchFields{"comment": inventree.Set("")}, fake.lastUpdateAttachmentFields)
+
+	_, output, err = deleteAttachment(depsForFake(fake))(ctx, &mcp.CallToolRequest{}, DeleteAttachmentInput{ID: 90})
+	r.NoError(err)
+	a.Equal(StatusClarificationRequired, output.Status)
+	a.False(fake.deletedAttachment)
+
+	_, output, err = deleteAttachment(depsForFake(fake))(ctx, &mcp.CallToolRequest{}, DeleteAttachmentInput{ID: 90, Confirm: true})
+	r.NoError(err)
+	a.Equal(StatusOK, output.Status)
+	a.True(fake.deletedAttachment)
+	a.Equal(90, fake.lastDeleteAttachmentID)
+}
 
 func TestWriteToolAuthorizationsUseWriteScope(t *testing.T) {
 	t.Parallel()
@@ -21,14 +262,26 @@ func TestWriteToolAuthorizationsUseWriteScope(t *testing.T) {
 	for _, name := range writeToolNames {
 		auth, ok := ToolAuthorizations[name]
 		r.True(ok, "missing authorization for %s", name)
-		if name == CreateStockItemToolName || name == InitialStockWorkflowToolName {
+		switch name {
+		case CreateStockItemToolName, InitialStockWorkflowToolName:
 			a.Equal("operational", auth.MutationClass)
 			a.Equal([]string{ScopeInventreeWrite, ScopeInventreeOperational}, auth.Scopes)
-		} else {
+		case UploadAttachmentToolName, CreateLinkAttachmentToolName, UpdateAttachmentMetadataToolName:
+			a.Equal("write", auth.MutationClass)
+			a.Equal([]string{ScopeInventreeWrite, ScopeInventreeUpload}, auth.Scopes)
+		case UploadAttachmentFromURLToolName:
+			a.Equal("write", auth.MutationClass)
+			a.Equal([]string{ScopeInventreeWrite, ScopeInventreeUpload}, auth.Scopes)
+			a.True(auth.Annotations.OpenWorld)
+		case DeleteAttachmentToolName:
+			a.Equal("destructive", auth.MutationClass)
+			a.Equal([]string{ScopeInventreeWrite, ScopeInventreeUpload, ScopeInventreeDestructive}, auth.Scopes)
+			a.True(auth.Annotations.Destructive)
+		default:
 			a.Equal("write", auth.MutationClass)
 			a.Equal([]string{ScopeInventreeWrite}, auth.Scopes)
+			a.Equal(WriteAnnotations, auth.Annotations)
 		}
-		a.Equal(WriteAnnotations, auth.Annotations)
 	}
 }
 
@@ -47,12 +300,18 @@ func TestWriteToolInputsExcludeSalesAndCustomerWorkflowFields(t *testing.T) {
 		reflect.TypeOf(CreateStockItemInput{}),
 		reflect.TypeOf(SetPartParametersInput{}),
 		reflect.TypeOf(ParameterSetInput{}),
+		reflect.TypeOf(UploadAttachmentInput{}),
+		reflect.TypeOf(UploadAttachmentFromURLInput{}),
+		reflect.TypeOf(CreateLinkAttachmentInput{}),
+		reflect.TypeOf(UpdateAttachmentMetadataInput{}),
+		reflect.TypeOf(DeleteAttachmentInput{}),
 		reflect.TypeOf(inventree.PartCreate{}),
 		reflect.TypeOf(inventree.CompanyCreate{}),
 		reflect.TypeOf(inventree.SupplierPartCreate{}),
 		reflect.TypeOf(inventree.ManufacturerPartCreate{}),
 		reflect.TypeOf(inventree.StockItemCreate{}),
 		reflect.TypeOf(inventree.ParameterCreate{}),
+		reflect.TypeOf(inventree.AttachmentCreate{}),
 	} {
 		for _, field := range reflect.VisibleFields(schemaType) {
 			jsonName := jsonFieldName(field.Tag.Get("json"))

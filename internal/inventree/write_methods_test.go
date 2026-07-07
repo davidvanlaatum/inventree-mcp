@@ -3,6 +3,10 @@ package inventree
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"io"
+	"mime"
+	"mime/multipart"
 	"net/http"
 	"testing"
 
@@ -204,4 +208,159 @@ func TestWriteMethodsUseExpectedEndpoints(t *testing.T) {
 			r.NoError(tt.call(ctx, client))
 		})
 	}
+}
+
+func TestAttachmentWriteMethodsUseExpectedEndpoints(t *testing.T) {
+	t.Parallel()
+
+	t.Run("upload attachment multipart", func(t *testing.T) {
+		t.Parallel()
+		r := require.New(t)
+		a := assert.New(t)
+		ctx, _, _ := testhandler.SetupTestHandler(t)
+		comment := ""
+
+		client, err := NewClient(Config{
+			BaseURL:    "https://inventory.example.test",
+			Credential: Credential{Scheme: AuthSchemeToken, Token: "secret"},
+			HTTPClient: &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+				a.Equal(http.MethodPost, req.Method)
+				a.Equal("/api/attachment/", req.URL.Path)
+				a.Equal("Token secret", req.Header.Get("Authorization"))
+				fields, files := readMultipartRequest(t, req)
+				a.Equal("part", fields["model_type"])
+				a.Equal("10", fields["model_id"])
+				a.Equal("", fields["comment"])
+				a.Equal("datasheet.pdf", files["attachment"].filename)
+				a.Equal("application/pdf", files["attachment"].contentType)
+				a.Equal("pdf bytes", string(files["attachment"].content))
+				return jsonResponse(req, http.StatusOK, `{"pk":90,"model_type":"part","model_id":10,"filename":"datasheet.pdf"}`), nil
+			})},
+		})
+		r.NoError(err)
+
+		record, err := client.UploadAttachment(ctx, AttachmentCreate{
+			ModelType:   "part",
+			ModelID:     10,
+			Filename:    "datasheet.pdf",
+			ContentType: "application/pdf",
+			Content:     []byte("pdf bytes"),
+			Comment:     &comment,
+		})
+		r.NoError(err)
+		a.Equal(90, record.PK)
+	})
+
+	t.Run("link update and delete", func(t *testing.T) {
+		t.Parallel()
+		r := require.New(t)
+		a := assert.New(t)
+		ctx, _, _ := testhandler.SetupTestHandler(t)
+		var calls []string
+
+		client, err := NewClient(Config{
+			BaseURL:    "https://inventory.example.test",
+			Credential: Credential{Scheme: AuthSchemeToken, Token: "secret"},
+			HTTPClient: &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+				calls = append(calls, req.Method+" "+req.URL.Path)
+				switch req.Method + " " + req.URL.Path {
+				case "POST /api/attachment/":
+					fields, _ := readMultipartRequest(t, req)
+					a.Equal("https://example.test/datasheet.pdf", fields["link"])
+					return jsonResponse(req, http.StatusOK, `{"pk":91,"model_type":"part","model_id":10,"filename":"datasheet","link":"https://example.test/datasheet.pdf"}`), nil
+				case "PATCH /api/attachment/91/":
+					var body map[string]any
+					r.NoError(json.NewDecoder(req.Body).Decode(&body))
+					a.Equal("", body["comment"])
+					return jsonResponse(req, http.StatusOK, `{"pk":91,"model_type":"part","model_id":10,"filename":"datasheet","comment":""}`), nil
+				case "DELETE /api/attachment/91/":
+					return jsonResponse(req, http.StatusNoContent, ``), nil
+				default:
+					return jsonResponse(req, http.StatusNotFound, `{}`), nil
+				}
+			})},
+		})
+		r.NoError(err)
+
+		_, err = client.CreateLinkAttachment(ctx, AttachmentCreate{ModelType: "part", ModelID: 10, Filename: "datasheet", Link: "https://example.test/datasheet.pdf"})
+		r.NoError(err)
+		_, err = client.UpdateAttachmentMetadata(ctx, 91, PatchFields{"comment": Set("")})
+		r.NoError(err)
+		r.NoError(client.DeleteAttachment(ctx, 91))
+		a.Equal([]string{"POST /api/attachment/", "PATCH /api/attachment/91/", "DELETE /api/attachment/91/"}, calls)
+	})
+}
+
+func TestUploadAttachmentRejectsUnsafeMultipartHeaders(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+
+	client, err := NewClient(Config{
+		BaseURL:    "https://inventory.example.test",
+		Credential: Credential{Scheme: AuthSchemeToken, Token: "secret"},
+		HTTPClient: &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			return jsonResponse(req, http.StatusOK, `{}`), nil
+		})},
+	})
+	r.NoError(err)
+
+	_, err = client.UploadAttachment(ctx, AttachmentCreate{
+		ModelType:   "part",
+		ModelID:     10,
+		Filename:    "data\nsheet.pdf",
+		ContentType: "application/pdf",
+		Content:     []byte("pdf bytes"),
+	})
+	r.ErrorContains(err, "filename contains control characters")
+
+	_, err = client.UploadAttachment(ctx, AttachmentCreate{
+		ModelType:   "part",
+		ModelID:     10,
+		Filename:    "datasheet.pdf",
+		ContentType: "application/pdf\r\nx-bad: yes",
+		Content:     []byte("pdf bytes"),
+	})
+	r.ErrorContains(err, "content type contains control characters")
+
+	_, err = client.UploadAttachment(ctx, AttachmentCreate{
+		ModelType:   "part",
+		ModelID:     10,
+		Filename:    "datasheet.pdf",
+		ContentType: "not a media type",
+		Content:     []byte("pdf bytes"),
+	})
+	r.ErrorContains(err, "content type is invalid")
+}
+
+type multipartFileData struct {
+	filename    string
+	contentType string
+	content     []byte
+}
+
+func readMultipartRequest(t *testing.T, req *http.Request) (map[string]string, map[string]multipartFileData) {
+	t.Helper()
+	r := require.New(t)
+	mediaType, params, err := mime.ParseMediaType(req.Header.Get("Content-Type"))
+	r.NoError(err)
+	r.Equal("multipart/form-data", mediaType)
+	reader := multipart.NewReader(req.Body, params["boundary"])
+	fields := map[string]string{}
+	files := map[string]multipartFileData{}
+	for {
+		part, err := reader.NextPart()
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		r.NoError(err)
+		content, err := io.ReadAll(part)
+		r.NoError(err)
+		if part.FileName() == "" {
+			fields[part.FormName()] = string(content)
+			continue
+		}
+		files[part.FormName()] = multipartFileData{filename: part.FileName(), contentType: part.Header.Get("Content-Type"), content: content}
+	}
+	return fields, files
 }

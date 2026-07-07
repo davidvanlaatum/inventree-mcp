@@ -64,6 +64,12 @@ func TestToolReferenceDocumentsLookupFrameworkSchema(t *testing.T) {
 		reflect.TypeOf(InitialStockWorkflowInput{}),
 		reflect.TypeOf(InitialStockWorkflowOutput{}),
 		reflect.TypeOf(InitialStockWorkflowAction{}),
+		reflect.TypeOf(UploadAttachmentInput{}),
+		reflect.TypeOf(UploadAttachmentFromURLInput{}),
+		reflect.TypeOf(CreateLinkAttachmentInput{}),
+		reflect.TypeOf(UpdateAttachmentMetadataInput{}),
+		reflect.TypeOf(DeleteAttachmentInput{}),
+		reflect.TypeOf(AttachmentWriteOutput{}),
 		reflect.TypeOf(ClarificationResponse{}),
 		reflect.TypeOf(ClarificationCandidate{}),
 	} {
@@ -112,20 +118,31 @@ func TestToolReferenceDocumentsRegisteredWriteTools(t *testing.T) {
 
 	a.Contains(docs, "## Registered Write Tools")
 	a.Contains(docs, "`"+ScopeInventreeWrite+"`")
+	a.Contains(docs, "`"+ScopeInventreeUpload+"`")
+	a.Contains(docs, "`"+ScopeInventreeDestructive+"`")
 	a.Contains(docs, "`readOnlyHint:false`")
 	a.Contains(docs, "`destructiveHint:false`")
 	a.Contains(docs, "`idempotentHint:false`")
 	a.Contains(docs, "`openWorldHint:false`")
+	a.Contains(docs, "`openWorldHint:true`")
+	a.Contains(docs, "`destructiveHint:true`")
 	a.Contains(docs, "HTTP mode does not register them until `M1C-S04`")
 	for _, name := range writeToolNames {
 		a.Contains(docs, "`"+name+"`")
 		auth, ok := ToolAuthorizations[name]
 		r.True(ok, "missing authorization for %s", name)
-		if name == CreateStockItemToolName || name == InitialStockWorkflowToolName {
+		switch name {
+		case CreateStockItemToolName, InitialStockWorkflowToolName:
 			a.Equal("operational", auth.MutationClass)
 			a.Equal([]string{ScopeInventreeWrite, ScopeInventreeOperational}, auth.Scopes)
 			a.Contains(docs, "`"+ScopeInventreeOperational+"`")
-		} else {
+		case UploadAttachmentToolName, UploadAttachmentFromURLToolName, CreateLinkAttachmentToolName, UpdateAttachmentMetadataToolName:
+			a.Equal("write", auth.MutationClass)
+			a.Equal([]string{ScopeInventreeWrite, ScopeInventreeUpload}, auth.Scopes)
+		case DeleteAttachmentToolName:
+			a.Equal("destructive", auth.MutationClass)
+			a.Equal([]string{ScopeInventreeWrite, ScopeInventreeUpload, ScopeInventreeDestructive}, auth.Scopes)
+		default:
 			a.Equal("write", auth.MutationClass)
 			a.Equal([]string{ScopeInventreeWrite}, auth.Scopes)
 		}

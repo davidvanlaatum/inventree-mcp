@@ -136,10 +136,15 @@ func TestDependenciesForConfigBuildsStdioClient(t *testing.T) {
 		InvenTreeAuthScheme:    config.AuthSchemeBearer,
 		InvenTreeTimeout:       5 * time.Second,
 		InvenTreeTLSSkipVerify: true,
+		UploadAllowRoots:       []string{"/tmp/uploads"},
+		UploadMaxBytes:         1234,
 	})
 
 	r.NoError(err)
 	r.True(deps.EnableWriteTools)
+	r.Equal([]string{"/tmp/uploads"}, deps.UploadAllowRoots)
+	r.Equal(int64(1234), deps.UploadMaxBytes)
+	r.Equal(5*time.Second, deps.UploadTimeout)
 	r.NotNil(deps.ClientFromContext)
 	client, err := deps.ClientFromContext(context.Background())
 	r.NoError(err)

@@ -248,14 +248,19 @@ func registerWriteTools(server *mcp.Server, deps Dependencies) {
 	addWriteTool(server, UpsertPartWorkflowToolName, "Upsert part with supplier and manufacturer", "Plans or performs a safe part upsert with supplier and manufacturer links.", upsertPartWorkflow(deps))
 	addWriteTool(server, CreateStockItemToolName, "Create stock item", "Creates initial stock after checking for duplicate stock at the same part and location.", createStockItem(deps))
 	addWriteTool(server, InitialStockWorkflowToolName, "Create initial stock entry", "Plans or creates initial stock after resolving the part, location, and duplicate guard.", initialStockWorkflow(deps))
+	registerAttachmentWriteTools(server, deps)
 }
 
 func addWriteTool[In, Out any](server *mcp.Server, name string, title string, description string, handler mcp.ToolHandlerFor[In, Out]) {
+	annotations := WriteAnnotations
+	if auth, ok := ToolAuthorizations[name]; ok {
+		annotations = auth.Annotations
+	}
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        name,
 		Title:       title,
 		Description: description,
-		Annotations: ToolAnnotations(WriteAnnotations),
+		Annotations: ToolAnnotations(annotations),
 	}, handler)
 }
 
