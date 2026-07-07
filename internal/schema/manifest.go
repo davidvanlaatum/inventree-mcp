@@ -48,6 +48,10 @@ func LoadManifest(path string) (*Manifest, error) {
 	if err != nil {
 		return nil, fmt.Errorf("read endpoint manifest: %w", err)
 	}
+	return ParseManifest(data)
+}
+
+func ParseManifest(data []byte) (*Manifest, error) {
 	var manifest Manifest
 	decoder := yaml.NewDecoder(bytes.NewReader(data))
 	decoder.KnownFields(true)
