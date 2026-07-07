@@ -29,6 +29,7 @@ func TestDefaultOptionsPinInvenTreeVersion(t *testing.T) {
 	a.Equal("inventree/inventree:1.4.0", opts.Image)
 	a.Equal("1.4.0", opts.ExpectedVersion)
 	a.Equal("511", opts.ExpectedAPIVersion)
+	a.Equal(defaultStartupTimeout, opts.StartupTimeout)
 	a.NoError(ValidateOptions(opts))
 }
 

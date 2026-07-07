@@ -29,7 +29,10 @@ const (
 	EnvSkipDocker = "INVENTREE_TEST_SKIP_DOCKER"
 )
 
-const cleanupTimeout = 30 * time.Second
+const (
+	defaultStartupTimeout = 5 * time.Minute
+	cleanupTimeout        = 30 * time.Second
+)
 
 const (
 	defaultPostgresImage = "postgres:17"
@@ -87,7 +90,7 @@ func DefaultOptions() Options {
 		Image:              DefaultInvenTreeImage,
 		ExpectedVersion:    DefaultVersion,
 		ExpectedAPIVersion: DefaultAPIVersion,
-		StartupTimeout:     3 * time.Minute,
+		StartupTimeout:     defaultStartupTimeout,
 	}
 }
 
@@ -191,7 +194,7 @@ func Start(ctx context.Context, opts Options) (*Environment, CleanupFunc, error)
 		opts.ExpectedAPIVersion = DefaultAPIVersion
 	}
 	if opts.StartupTimeout == 0 {
-		opts.StartupTimeout = 3 * time.Minute
+		opts.StartupTimeout = defaultStartupTimeout
 	}
 	if opts.HTTPClient == nil {
 		opts.HTTPClient = http.DefaultClient

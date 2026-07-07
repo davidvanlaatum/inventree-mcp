@@ -788,15 +788,18 @@ Validation:
 
 - `go test ./...` passed.
 - `go test ./internal/testenv ./internal/tools` passed after restoring descriptive long test names and addressing review findings, proving hashed Testcontainers run prefixes avoid InvenTree field-length failures.
+- `INVENTREE_TEST_SKIP_DOCKER=1 go test ./internal/testenv ./internal/tools`, `GOFLAGS=-trimpath go test -race ./internal/testenv -run TestStartInvenTreeStack -count=1`, and `go test ./docs` passed after the CI timeout follow-up; `GOFLAGS=-trimpath go test -v -race -covermode atomic -coverprofile /tmp/inventree-full.cov -coverpkg ./... ./...` passed locally before the timeout increase, while the first GitHub `test` run on the pushed branch timed out multiple concurrent InvenTree stacks at the prior 3-minute startup deadline. GitHub CI rerun remains the final PR gate for this timeout follow-up.
 
 Review:
 
 - Initial Senior Go Developer, Senior QA / Test Architect, Senior Product Manager, and Senior Infosec Reviewer findings addressed: status no longer marked `Done` before review completion; raw test names feed Testcontainers run-prefix hashes; purchase-order setup moved into `internal/testenv`; attachment matrix subtests use isolated runs/accounts/fixtures; live tool-level max-bytes, deferred model type, and local-path negative checks were added.
 - Focused rerun review completed. Senior Product Manager and Senior Infosec Reviewer final rereads reported no actionable findings after docs/status wording fixes. Senior Go Developer and Senior QA / Test Architect follow-up findings were addressed before the final docs/security reread.
+- Manual follow-up renamed shortened subtest labels after run-prefix hashing made descriptive test names safe. A CI timeout follow-up raised the default Testcontainers startup deadline from 3 minutes to 5 minutes after the new default-on milestone suite made GitHub start multiple InvenTree stacks concurrently.
+- Focused Senior Go Developer review found no actionable findings in the timeout default change. Focused Senior QA / Test Architect review requested Docker-backed validation evidence for the timeout follow-up; addressed with the focused `TestStartInvenTreeStack` race run and by recording GitHub CI rerun as the remaining PR gate.
 
 Residual risk:
 
-- none.
+- GitHub CI must pass on the latest pushed timeout follow-up before the draft PR is ready for review.
 
 ## Milestone 1I: Documentation And Release Readiness
 
