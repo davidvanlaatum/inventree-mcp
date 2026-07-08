@@ -595,7 +595,8 @@ Important behaviors:
 - Require explicit confirmation before closing an order.
 - `update_purchase_order_line` should use PATCH and serialize only supplied fields.
 - `preview_purchase_order_with_lines` is the milestone dry-run tool. It must be read-only, reject write intent, and perform supplier-part validation without creating a purchase order.
-- `create_purchase_order_with_lines` is a later mutating workflow and should not be registered in milestone 1.
+- `create_purchase_order_with_lines` is a later mutating workflow and should not be registered in milestone 1. It should take a supplier, supplier reference, description/date fields, idempotency key, and line inputs; run preview-equivalent validation first; then create or update the purchase order and lines while returning stable purchase-order and line IDs for retry/recovery.
+- Purchase-order write tools must include read/search support for purchase orders and lines so duplicate checks and recovery after interrupted writes do not require raw REST calls.
 
 ### Sales Tools
 
@@ -859,9 +860,10 @@ Validation:
 ### Future Workflow Tools
 
 - BOM import workflow.
-- Purchase order create/receive workflow.
+- Purchase order create/receive workflow, including `create_purchase_order_with_lines` as the preferred first write path after preview validation.
 - Build order create/allocate/complete workflow.
 - Stocktake adjustment workflow.
+- Live order-entry hardening from browser/order-page workflows: fill missing duplicate-check and recovery reads, ensure write tools have consistent dry-run/preflight behavior, validate blank/null manufacturer part numbers before mutation or document a fallback convention, and return redacted InvenTree response-body details in tool errors.
 
 Future workflows require a new product review pass before implementation.
 

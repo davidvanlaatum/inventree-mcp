@@ -181,6 +181,8 @@ Future prompts remain in the internal prompt manifest with status `future` and a
 - `bom_import_review`
 - `stocktake_review`
 
+Future purchasing and live order-entry work is tracked in `docs/TASKS.md` rather than registered in milestone 1. The next purchasing write workflow should expose `create_purchase_order_with_lines` with preview-equivalent validation, an idempotency key, purchase-order and line read/search support for duplicate checks and recovery, and structured failure output that includes any created IDs. Live order-entry hardening should also make lower-level write tools consistently support dry-run/preflight where practical, reject blank/null MPN before manufacturer-part writes or document an operator-approved fallback convention, and include redacted InvenTree response-body details in tool errors.
+
 ## Milestone 1 Tools
 
 | Tool | Group | Class | Scopes | Upload sources | MCP annotations | HTTP registration | Ask operator when |
