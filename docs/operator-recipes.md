@@ -7,18 +7,18 @@ Each recipe should preserve omitted fields versus explicit zero/false/empty valu
 ## First-Release Tool Surface
 
 - STDIO mode registers read-only lookup/download tools, prompt checklists, write workflow tools, attachment/image tools, and the read-only `health_version` tool.
-- HTTP development mode registers read-only tools and `health_version`; mutating, operational, upload, image-write, and destructive tools stay STDIO-only until `M1C-S04` implements per-tool OAuth scope enforcement.
+- HTTP development mode from the CLI registers read-only tools and `health_version`. Internal server construction that explicitly enables OAuth authorization mode may register mutating, operational, upload, image-write, and destructive tools; each call is checked against the tool's required scopes before the handler runs.
 - The checked machine-readable source is `docs/tool-manifest.json`, generated with `go generate ./internal/tools`.
 - Use `docs/tool-reference.md` for field-level contracts, mutation classes, upload sources, required scopes, MCP annotations, and clarification retry fields.
 
-## Future ChatGPT Connector OAuth Setup
+## ChatGPT Connector OAuth Setup
 
-HTTP OAuth is not implemented in milestone 1. Production HTTP mode remains disabled, and mutating tools are not registered on HTTP until `M1C-S04` adds per-tool OAuth scope enforcement.
+HTTP OAuth building blocks are implemented for milestone 1, including token envelopes, request-scoped credential recovery, descriptor security metadata, and per-tool scope guards. Production HTTP startup still depends on the remaining deployment wiring and connector setup path before operators should enable the packaged service.
 
 - Required future inputs: public connector URL, configured canonical HTTPS issuer/resource URLs, InvenTree credential supplied during setup.
 - Future preferred flow: verify connector metadata, start OAuth authorization, collect InvenTree credential on the setup page, validate with `/api/user/me/` or `/api/user/me/roles/`, create or seal a dedicated connector token, exchange authorization code for MCP OAuth tokens.
 - Clarify when: an operator tries to use ChatGPT Connector OAuth before the `M1C` OAuth tasks are complete, redirect URI/client registration behavior has not been verified against current OpenAI docs, token creation is permission-denied, or the operator must choose between canceling setup and sealing a supplied token.
-- Expected milestone 1 output: no production connector authorization path; use STDIO for implemented workflows. Expected future output: connector authorization success with non-sensitive credential-source metadata.
+- Expected milestone 1 output: connector authorization primitives and per-tool scope enforcement are available for server wiring, while packaged production deployment remains gated until the full setup path is wired and validated. Expected future output: connector authorization success with non-sensitive credential-source metadata.
 
 ## STDIO Setup
 
@@ -28,20 +28,20 @@ HTTP OAuth is not implemented in milestone 1. Production HTTP mode remains disab
 - Clarify when: auth scheme is neither `Token` nor `Bearer`, URL is missing, upload allowlisted roots are not trusted, or TLS skip verify is requested outside local/test use.
 - Expected output: STDIO MCP server ready for local clients.
 
-## Future Reverse-Proxy HTTP Deployment
+## Reverse-Proxy HTTP Deployment
 
-Production reverse-proxy HTTP deployment depends on the future HTTP OAuth milestone. In milestone 1, HTTP remains development-only and should be used only for pre-OAuth smoke tests of the skeleton server surface.
+Production reverse-proxy HTTP deployment depends on the completed HTTP OAuth startup and setup wiring. In milestone 1, the core OAuth and per-tool scope pieces are present, but the packaged production service should remain disabled until the deployment path is wired and validated end to end.
 
 - Required future inputs: internal listen address, public canonical HTTPS issuer/resource URLs, trusted proxy settings, envelope keys, rate-limit settings.
 - Future preferred flow: configure reverse proxy TLS, expose only the proxy-facing listener, set canonical URLs explicitly, configure trusted forwarded headers, validate metadata/challenge URLs.
-- Clarify when: an operator tries to deploy production HTTP before OAuth is implemented, public URL differs from proxy routing, path prefix handling is unclear, or production config enables TLS skip verify.
-- Expected milestone 1 output: no production reverse-proxy HTTP deployment path. Expected future output: HTTP MCP endpoint with OAuth metadata that never leaks internal hostnames or ports.
+- Clarify when: an operator tries to deploy production HTTP before OAuth startup/setup wiring is available, public URL differs from proxy routing, path prefix handling is unclear, or production config enables TLS skip verify.
+- Expected milestone 1 output: no packaged production reverse-proxy HTTP deployment path. Expected future output: HTTP MCP endpoint with OAuth metadata that never leaks internal hostnames or ports.
 
 ## Packaged Systemd Deployment
 
 - Required inputs: release package for the target Linux distribution, private HTTP listen address, public reverse-proxy route, and OAuth/key settings once the HTTP OAuth milestone is complete.
 - Preferred flow: install the `deb`, `rpm`, or `apk` artifact from the GitHub release, edit `/etc/inventree-mcp/inventree-mcp.env`, keep `INVENTREE_MCP_LISTEN` bound to loopback or a private service network, and enable `inventree-mcp.service` only after production OAuth support exists.
-- Clarify when: the operator expects STDIO mode from the packaged service, wants to expose the Go listener directly to the internet, asks to enable production HTTP mode before OAuth is implemented, or expects Alpine/OpenRC service management from the `apk` package.
+- Clarify when: the operator expects STDIO mode from the packaged service, wants to expose the Go listener directly to the internet, asks to enable production HTTP mode before OAuth startup/setup wiring is available, or expects Alpine/OpenRC service management from the `apk` package.
 - Expected output: installed package files now, and a systemd-managed `inventree-mcp serve --transport http` process behind the deployment's reverse proxy once production OAuth is available. Pre-OAuth smoke tests should run the binary directly in development mode and expect only the skeleton MCP server plus read-only health/version tool.
 
 ## Maintainer Release
@@ -58,7 +58,7 @@ Production reverse-proxy HTTP deployment depends on the future HTTP OAuth milest
 - Clarify when: part/category/company matches are ambiguous, an existing part may already represent the requested item, or supplier/manufacturer identifiers conflict.
 - Tool sequence: use `upsert_part_with_supplier_and_manufacturer` with `dry_run:true` first when the operator wants one safer workflow-level plan, then retry without `dry_run` after reviewing the plan. Use lower-level `search_parts`, `search_part_categories`, role-specific company searches, `create_part`/`update_part`, `create_supplier_part`, and `create_manufacturer_part` when the operator needs step-by-step control.
 - Expected output: `status`, `actions`, stable selected or created part, supplier, manufacturer, supplier-part, and manufacturer-part records when available, plus `omitted_recommended_fields` for missing recommended values. In `dry_run` responses, planned creates are represented by `actions` because stable IDs do not exist until the write runs. If a required stable ID, currency, supported company role, SKU, or duplicate decision is missing, the tool returns structured clarification.
-- HTTP note: write tools are STDIO-only until per-tool OAuth scope enforcement is implemented.
+- HTTP note: write tools require OAuth authorization mode and the `inventree.write` scope before handler dispatch.
 
 ## Add Or Update Part Parameters
 
@@ -84,7 +84,7 @@ Production reverse-proxy HTTP deployment depends on the future HTTP OAuth milest
 - Clarify when: target object is ambiguous, URL intent could mean upload-copy or store-link, duplicate filename/content/link exists, or source policy rejects the input.
 - Tool sequence: `list_attachments`, then `upload_attachment`, `upload_attachment_from_url`, or `create_link_attachment`. Use `allow_duplicate:true` only after reviewing duplicate candidates and deciding a new matching attachment is intentional.
 - Expected output: attachment ID, target object, filename, size or link classification, content type, source kind, and thumbnail/image state when available.
-- HTTP note: attachment write tools are STDIO-only until per-tool OAuth scope enforcement is implemented.
+- HTTP note: attachment write tools require OAuth authorization mode plus `inventree.write` and `inventree.upload` before handler dispatch.
 
 ## Update Or Delete Attachment Metadata
 
@@ -92,7 +92,7 @@ Production reverse-proxy HTTP deployment depends on the future HTTP OAuth milest
 - Preferred lookup order: `get_attachment_metadata`, then `update_attachment_metadata` or `delete_attachment`.
 - Clarify when: attachment ID is missing, the existing attachment belongs to an out-of-scope object type, no metadata fields are supplied for PATCH, or delete confirmation is missing.
 - Expected output: updated or deleted attachment metadata with target object details.
-- HTTP note: attachment write and destructive tools are STDIO-only until per-tool OAuth scope enforcement is implemented.
+- HTTP note: attachment write and destructive tools require OAuth authorization mode plus their declared write/upload/destructive scopes before handler dispatch.
 
 ## Download Attachment Content
 

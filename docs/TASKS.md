@@ -60,7 +60,7 @@ Before `M1C-S04` is complete, mutating, operational, destructive, and upload too
 | [M1C-S01](#m1c-s01-mcp-sdk-auth-spike) | Spike official MCP SDK auth behavior for HTTP. | Done |
 | [M1C-S02](#m1c-s02-chatgpt-connector-compatibility-spike) | Verify ChatGPT connector OAuth compatibility. | Done |
 | [M1C-S03](#m1c-s03-oauth-envelope-and-code-storage) | Implement OAuth token envelopes and auth-code storage. | Done |
-| [M1C-S04](#m1c-s04-scope-guard-and-credential-propagation) | Enforce per-tool OAuth scopes and credential propagation. | Ready |
+| [M1C-S04](#m1c-s04-scope-guard-and-credential-propagation) | Enforce per-tool OAuth scopes and credential propagation. | Done |
 | [M1D-S01](#m1d-s01-lookup-tool-framework) | Add common lookup tool framework and clarification contracts. | Done |
 | [M1D-S02](#m1d-s02-part-company-stock-parameter-and-attachment-lookup-tools) | Add read-only part, company, stock, parameter, and attachment lookup tools. | Done |
 | [M1E-S01](#m1e-s01-part-and-company-writes) | Add part and company write tools. | Done |
@@ -75,7 +75,7 @@ Before `M1C-S04` is complete, mutating, operational, destructive, and upload too
 | [M1H-S03](#m1h-s03-milestone-integration-happy-paths) | Prove milestone catalog, stock, supplier, attachment, image, and preview happy paths. | Done |
 | [M1H-S04](#m1h-s04-delete-attachment-confirmation-clarification) | Preserve structured delete confirmation clarification through MCP. | Done |
 | [M1I-S01](#m1i-s01-operator-docs-finalization) | Finalize README, operator recipes, and generated tool reference alignment. | Done |
-| [M1I-S02](#m1i-s02-final-review-panel) | Run final Go, QA, product, and infosec review panel. | Planned |
+| [M1I-S02](#m1i-s02-final-review-panel) | Run final Go, QA, product, and infosec review panel. | Ready |
 | [F-S01](#f-s01-evaluate-docker-compose-testcontainers-stack) | Evaluate Docker Compose-based Testcontainers stack. | Future |
 | [F-S02](#f-s02-bom-import-workflow) | BOM import workflow. | Future |
 | [F-S03](#f-s03-purchase-order-write-and-receiving) | Purchase order write and receiving. | Future |
@@ -462,9 +462,12 @@ Tasks:
 
 ### M1C-S04: Scope Guard And Credential Propagation
 
-- Status: `Ready`
+- Status: `Done`
 - Depends on: M1C-S03
 - Scope: enforce per-tool OAuth scopes and request-scoped InvenTree credentials.
+- Validation: `go test ./internal/oauth ./internal/config ./internal/tools ./internal/server` passed; `INVENTREE_TEST_SKIP_DOCKER=1 go test ./...` passed; `git diff --check` passed.
+- Review: Senior Go Developer, Senior QA / Test Architect, Senior Product Manager, and Senior Infosec Reviewer reviews run. Initial Go review found request-scoped credentials were not wired into a concrete tool dependency path and that the Go SDK lacks a top-level `securitySchemes` field; fixed with `OAuthClientFromContext`, request-scoped credential propagation tests, decoded descriptor metadata tests, and explicit SDK residual-risk docs. Initial QA review requested concurrent credential isolation, multi-scope denial, and per-tool descriptor metadata coverage; fixed and rerun, with a final isolation-test refinement tying each bearer token to its own upstream authorization-derived response. Initial product review requested clearer operator-facing wording that full HTTP tool registration is internal server-construction capability until CLI/setup/deployment wiring exists and stale config messages are refreshed; fixed and rerun. Initial infosec review found the credential carrier redacted JSON but not formatting/logging paths; fixed with `String`, `GoString`, `slog.LogValuer`, and JSON/fmt/slog tests. Focused Go, QA, product, and infosec reruns found no remaining actionable findings.
+- Residual risk: the current Go MCP SDK `mcp.Tool` type has no first-class top-level `securitySchemes` field, so scoped tools publish `securitySchemes` and `openai/securitySchemes` through descriptor `_meta` mirrors until SDK support or custom descriptor serialization is added. Production HTTP CLI startup, connector setup wiring, reverse-proxy canonical URL enforcement, and full deployment validation remain gated for follow-up work; the current CLI HTTP path stays development-only/read-only.
 - Acceptance:
   - Global bearer auth only authenticates and populates context.
   - Tool-specific guard checks manifest before handler dispatch.
@@ -474,13 +477,13 @@ Tasks:
 
 Tasks:
 
-- [ ] Add tool authorization manifest.
-- [ ] Add per-tool scope wrapper in `internal/tools` or `internal/server`.
-- [ ] Add `internal/oauth.CredentialFromTokenInfo` or selected private carrier.
-- [ ] Add OAuth `securitySchemes` and compatibility metadata to registered tools.
-- [ ] Add tool auth error results carrying safe `_meta["mcp/www_authenticate"]` challenges where ChatGPT linking or reauthorization is required.
-- [ ] Add scope rejection tests.
-- [ ] Add concurrent credential isolation tests.
+- [x] Add tool authorization manifest.
+- [x] Add per-tool scope wrapper in `internal/tools` or `internal/server`.
+- [x] Add `internal/oauth.CredentialFromTokenInfo` or selected private carrier.
+- [x] Add OAuth `securitySchemes` and compatibility metadata to registered tools.
+- [x] Add tool auth error results carrying safe `_meta["mcp/www_authenticate"]` challenges where ChatGPT linking or reauthorization is required.
+- [x] Add scope rejection tests.
+- [x] Add concurrent credential isolation tests.
 
 ## Milestone 1D: Discovery Tools
 
@@ -876,7 +879,7 @@ Residual risk:
 
 ### M1I-S02: Final Review Panel
 
-- Status: `Planned`
+- Status: `Ready`
 - Depends on: all milestone 1 implementation stories
 - Scope: run senior Go, QA, product, and infosec reviews before beta declaration.
 - Acceptance:

@@ -111,7 +111,7 @@ func ParseServeWithEnv(args []string, getenv Env, output io.Writer) (Config, err
 	})
 	fs.Int64Var(&cfg.UploadMaxBytes, "upload-max-bytes", cfg.UploadMaxBytes, flagHelp("maximum bytes accepted from one upload source", EnvUploadMaxBytes))
 	fs.StringVar(&cfg.LogLevel, "log-level", cfg.LogLevel, flagHelp("log level", EnvLogLevel))
-	fs.BoolVar(&cfg.DevIncompleteOAuth, "dev-incomplete-oauth", boolEnv(getenv, EnvDevIncompleteOAuth), flagHelp("allow development-only HTTP parsing before OAuth is implemented", EnvDevIncompleteOAuth))
+	fs.BoolVar(&cfg.DevIncompleteOAuth, "dev-incomplete-oauth", boolEnv(getenv, EnvDevIncompleteOAuth), flagHelp("allow development-only HTTP parsing before OAuth startup wiring is available", EnvDevIncompleteOAuth))
 
 	if err := fs.Parse(args); err != nil {
 		return Config{}, err
@@ -180,16 +180,16 @@ func (c Config) Validate() error {
 			validationErrors = append(validationErrors, errors.New("HTTP listen address is required"))
 		}
 		if c.InvenTreeToken != "" {
-			validationErrors = append(validationErrors, errors.New("configured InvenTree tokens are STDIO-only until HTTP OAuth is implemented"))
+			validationErrors = append(validationErrors, errors.New("configured InvenTree tokens are STDIO-only until HTTP OAuth startup wiring is available"))
 		}
 		if c.InvenTreeAuthScheme != AuthSchemeToken {
-			validationErrors = append(validationErrors, errors.New("configured InvenTree auth schemes are STDIO-only until HTTP OAuth is implemented"))
+			validationErrors = append(validationErrors, errors.New("configured InvenTree auth schemes are STDIO-only until HTTP OAuth startup wiring is available"))
 		}
 		if c.Environment == EnvironmentProduction {
-			validationErrors = append(validationErrors, errors.New("production HTTP mode is disabled until OAuth is implemented"))
+			validationErrors = append(validationErrors, errors.New("production HTTP mode is disabled until OAuth startup and setup wiring is available"))
 		}
 		if c.Environment == EnvironmentDevelopment && !c.DevIncompleteOAuth {
-			validationErrors = append(validationErrors, errors.New("development HTTP mode requires --dev-incomplete-oauth until OAuth is implemented"))
+			validationErrors = append(validationErrors, errors.New("development HTTP mode requires --dev-incomplete-oauth until OAuth startup and setup wiring is available"))
 		}
 	}
 

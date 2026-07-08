@@ -87,12 +87,12 @@ type AttachmentWriteOutput struct {
 }
 
 func registerAttachmentWriteTools(server *mcp.Server, deps Dependencies) {
-	addWriteTool(server, UploadAttachmentToolName, "Upload attachment", "Uploads inline bytes or an allowlisted STDIO local file as an attachment.", uploadAttachment(deps))
-	addWriteTool(server, UploadAttachmentFromURLToolName, "Upload attachment from URL", "Fetches an HTTP(S) URL under upload policy and uploads a copy as an attachment.", uploadAttachmentFromURL(deps))
-	addWriteTool(server, CreateLinkAttachmentToolName, "Create link attachment", "Stores an HTTP(S) link attachment without fetching remote bytes.", createLinkAttachment(deps))
-	addWriteTool(server, UpdateAttachmentMetadataToolName, "Update attachment metadata", "Partially updates attachment metadata fields.", updateAttachmentMetadata(deps))
-	addWriteTool(server, DeleteAttachmentToolName, "Delete attachment", "Deletes one attachment after confirm:true.", deleteAttachment(deps))
-	addWriteTool(server, SetPrimaryImageToolName, "Set primary image", "Sets a part primary image from an existing image attachment.", setPrimaryImage(deps))
+	addWriteTool(server, deps, UploadAttachmentToolName, "Upload attachment", "Uploads inline bytes or an allowlisted STDIO local file as an attachment.", uploadAttachment(deps))
+	addWriteTool(server, deps, UploadAttachmentFromURLToolName, "Upload attachment from URL", "Fetches an HTTP(S) URL under upload policy and uploads a copy as an attachment.", uploadAttachmentFromURL(deps))
+	addWriteTool(server, deps, CreateLinkAttachmentToolName, "Create link attachment", "Stores an HTTP(S) link attachment without fetching remote bytes.", createLinkAttachment(deps))
+	addWriteTool(server, deps, UpdateAttachmentMetadataToolName, "Update attachment metadata", "Partially updates attachment metadata fields.", updateAttachmentMetadata(deps))
+	addWriteTool(server, deps, DeleteAttachmentToolName, "Delete attachment", "Deletes one attachment after confirm:true.", deleteAttachment(deps))
+	addWriteTool(server, deps, SetPrimaryImageToolName, "Set primary image", "Sets a part primary image from an existing image attachment.", setPrimaryImage(deps))
 }
 
 func uploadAttachment(deps Dependencies) mcp.ToolHandlerFor[UploadAttachmentInput, AttachmentWriteOutput] {

@@ -123,7 +123,7 @@ func TestToolReferenceDocumentsRegisteredWriteTools(t *testing.T) {
 	a.Contains(toolReference, "`openWorldHint:false`")
 	a.Contains(toolReference, "`openWorldHint:true`")
 	a.Contains(toolReference, "`destructiveHint:true`")
-	a.Contains(toolReference, "HTTP mode does not register them until `M1C-S04`")
+	a.Contains(toolReference, "HTTP registration requires OAuth authorization mode")
 	for _, name := range writeToolNames {
 		a.Contains(toolReference, "`"+name+"`")
 		auth, ok := ToolAuthorizations[name]

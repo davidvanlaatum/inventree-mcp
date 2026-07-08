@@ -239,29 +239,20 @@ type parameterWritePlan struct {
 }
 
 func registerWriteTools(server *mcp.Server, deps Dependencies) {
-	addWriteTool(server, CreatePartToolName, "Create part", "Creates an InvenTree part in an existing category.", createPart(deps))
-	addWriteTool(server, UpdatePartToolName, "Update part", "Partially updates an InvenTree part.", updatePart(deps))
-	addWriteTool(server, SetPartParametersToolName, "Set part parameters", "Creates or updates part parameter values using existing linked templates.", setPartParameters(deps))
-	addWriteTool(server, CreateCompanyToolName, "Create company", "Creates a supplier and/or manufacturer company.", createCompany(deps))
-	addWriteTool(server, CreateSupplierPartToolName, "Create supplier part", "Creates a supplier-part link for existing records.", createSupplierPart(deps))
-	addWriteTool(server, CreateManufacturerPartToolName, "Create manufacturer part", "Creates a manufacturer-part link for existing records.", createManufacturerPart(deps))
-	addWriteTool(server, UpsertPartWorkflowToolName, "Upsert part with supplier and manufacturer", "Plans or performs a safe part upsert with supplier and manufacturer links.", upsertPartWorkflow(deps))
-	addWriteTool(server, CreateStockItemToolName, "Create stock item", "Creates initial stock after checking for duplicate stock at the same part and location.", createStockItem(deps))
-	addWriteTool(server, InitialStockWorkflowToolName, "Create initial stock entry", "Plans or creates initial stock after resolving the part, location, and duplicate guard.", initialStockWorkflow(deps))
+	addWriteTool(server, deps, CreatePartToolName, "Create part", "Creates an InvenTree part in an existing category.", createPart(deps))
+	addWriteTool(server, deps, UpdatePartToolName, "Update part", "Partially updates an InvenTree part.", updatePart(deps))
+	addWriteTool(server, deps, SetPartParametersToolName, "Set part parameters", "Creates or updates part parameter values using existing linked templates.", setPartParameters(deps))
+	addWriteTool(server, deps, CreateCompanyToolName, "Create company", "Creates a supplier and/or manufacturer company.", createCompany(deps))
+	addWriteTool(server, deps, CreateSupplierPartToolName, "Create supplier part", "Creates a supplier-part link for existing records.", createSupplierPart(deps))
+	addWriteTool(server, deps, CreateManufacturerPartToolName, "Create manufacturer part", "Creates a manufacturer-part link for existing records.", createManufacturerPart(deps))
+	addWriteTool(server, deps, UpsertPartWorkflowToolName, "Upsert part with supplier and manufacturer", "Plans or performs a safe part upsert with supplier and manufacturer links.", upsertPartWorkflow(deps))
+	addWriteTool(server, deps, CreateStockItemToolName, "Create stock item", "Creates initial stock after checking for duplicate stock at the same part and location.", createStockItem(deps))
+	addWriteTool(server, deps, InitialStockWorkflowToolName, "Create initial stock entry", "Plans or creates initial stock after resolving the part, location, and duplicate guard.", initialStockWorkflow(deps))
 	registerAttachmentWriteTools(server, deps)
 }
 
-func addWriteTool[In, Out any](server *mcp.Server, name string, title string, description string, handler mcp.ToolHandlerFor[In, Out]) {
-	annotations := WriteAnnotations
-	if auth, ok := ToolAuthorizations[name]; ok {
-		annotations = auth.Annotations
-	}
-	mcp.AddTool(server, &mcp.Tool{
-		Name:        name,
-		Title:       title,
-		Description: description,
-		Annotations: ToolAnnotations(annotations),
-	}, handler)
+func addWriteTool[In, Out any](server *mcp.Server, deps Dependencies, name string, title string, description string, handler mcp.ToolHandlerFor[In, Out]) {
+	mcp.AddTool(server, ToolDescriptor(name, title, description), GuardTool(deps, name, handler))
 }
 
 func createPart(deps Dependencies) mcp.ToolHandlerFor[CreatePartInput, WriteRecordOutput[inventree.Part]] {

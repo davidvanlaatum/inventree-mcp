@@ -296,30 +296,25 @@ type AttachmentMetadata struct {
 }
 
 func registerLookupTools(server *mcp.Server, deps Dependencies) {
-	addReadOnlyTool(server, SearchPartsToolName, "Search parts", "Searches InvenTree parts.", searchParts(deps))
-	addReadOnlyTool(server, GetPartToolName, "Get part", "Retrieves one InvenTree part by ID.", getPart(deps))
-	addReadOnlyTool(server, SearchPartCategoriesToolName, "Search part categories", "Searches InvenTree part categories.", searchPartCategories(deps))
-	addReadOnlyTool(server, SearchParameterTemplatesToolName, "Search parameter templates", "Searches InvenTree parameter templates.", searchParameterTemplates(deps))
-	addReadOnlyTool(server, GetPartParametersToolName, "Get part parameters", "Lists parameter values for one part.", getPartParameters(deps))
-	addReadOnlyTool(server, SearchCompaniesToolName, "Search companies", "Searches InvenTree companies.", searchCompanies(deps))
-	addReadOnlyTool(server, SearchSuppliersToolName, "Search suppliers", "Searches companies with the supplier role.", searchSuppliers(deps))
-	addReadOnlyTool(server, SearchManufacturersToolName, "Search manufacturers", "Searches companies with the manufacturer role.", searchManufacturers(deps))
-	addReadOnlyTool(server, SearchStockLocationsToolName, "Search stock locations", "Searches InvenTree stock locations.", searchStockLocations(deps))
-	addReadOnlyTool(server, SearchStockItemsToolName, "Search stock items", "Searches InvenTree stock items.", searchStockItems(deps))
-	addReadOnlyTool(server, ListAttachmentsToolName, "List attachments", "Lists attachment metadata for an in-scope InvenTree object.", listAttachments(deps))
-	addReadOnlyTool(server, GetAttachmentMetadataToolName, "Get attachment metadata", "Retrieves one attachment metadata record by ID.", getAttachmentMetadata(deps))
-	addReadOnlyTool(server, DownloadAttachmentToolName, "Download attachment", "Downloads bounded content for one file attachment.", downloadAttachment(deps))
-	addReadOnlyTool(server, DownloadPartImageToolName, "Download part image", "Downloads bounded content for a part primary image.", downloadPartImage(deps))
-	addReadOnlyTool(server, PreviewPurchaseOrderToolName, "Preview purchase order with lines", "Validates supplier-part lines and returns a no-write purchase-order preview.", previewPurchaseOrder(deps))
+	addReadOnlyTool(server, deps, SearchPartsToolName, "Search parts", "Searches InvenTree parts.", searchParts(deps))
+	addReadOnlyTool(server, deps, GetPartToolName, "Get part", "Retrieves one InvenTree part by ID.", getPart(deps))
+	addReadOnlyTool(server, deps, SearchPartCategoriesToolName, "Search part categories", "Searches InvenTree part categories.", searchPartCategories(deps))
+	addReadOnlyTool(server, deps, SearchParameterTemplatesToolName, "Search parameter templates", "Searches InvenTree parameter templates.", searchParameterTemplates(deps))
+	addReadOnlyTool(server, deps, GetPartParametersToolName, "Get part parameters", "Lists parameter values for one part.", getPartParameters(deps))
+	addReadOnlyTool(server, deps, SearchCompaniesToolName, "Search companies", "Searches InvenTree companies.", searchCompanies(deps))
+	addReadOnlyTool(server, deps, SearchSuppliersToolName, "Search suppliers", "Searches companies with the supplier role.", searchSuppliers(deps))
+	addReadOnlyTool(server, deps, SearchManufacturersToolName, "Search manufacturers", "Searches companies with the manufacturer role.", searchManufacturers(deps))
+	addReadOnlyTool(server, deps, SearchStockLocationsToolName, "Search stock locations", "Searches InvenTree stock locations.", searchStockLocations(deps))
+	addReadOnlyTool(server, deps, SearchStockItemsToolName, "Search stock items", "Searches InvenTree stock items.", searchStockItems(deps))
+	addReadOnlyTool(server, deps, ListAttachmentsToolName, "List attachments", "Lists attachment metadata for an in-scope InvenTree object.", listAttachments(deps))
+	addReadOnlyTool(server, deps, GetAttachmentMetadataToolName, "Get attachment metadata", "Retrieves one attachment metadata record by ID.", getAttachmentMetadata(deps))
+	addReadOnlyTool(server, deps, DownloadAttachmentToolName, "Download attachment", "Downloads bounded content for one file attachment.", downloadAttachment(deps))
+	addReadOnlyTool(server, deps, DownloadPartImageToolName, "Download part image", "Downloads bounded content for a part primary image.", downloadPartImage(deps))
+	addReadOnlyTool(server, deps, PreviewPurchaseOrderToolName, "Preview purchase order with lines", "Validates supplier-part lines and returns a no-write purchase-order preview.", previewPurchaseOrder(deps))
 }
 
-func addReadOnlyTool[In, Out any](server *mcp.Server, name string, title string, description string, handler mcp.ToolHandlerFor[In, Out]) {
-	mcp.AddTool(server, &mcp.Tool{
-		Name:        name,
-		Title:       title,
-		Description: description,
-		Annotations: ToolAnnotations(ReadOnlyAnnotations),
-	}, handler)
+func addReadOnlyTool[In, Out any](server *mcp.Server, deps Dependencies, name string, title string, description string, handler mcp.ToolHandlerFor[In, Out]) {
+	mcp.AddTool(server, ToolDescriptor(name, title, description), GuardTool(deps, name, handler))
 }
 
 func searchParts(deps Dependencies) mcp.ToolHandlerFor[SearchInput, LookupOutput[inventree.Part]] {
