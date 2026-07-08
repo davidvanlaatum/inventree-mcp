@@ -75,7 +75,7 @@ Before `M1C-S04` is complete, mutating, operational, destructive, and upload too
 | [M1H-S03](#m1h-s03-milestone-integration-happy-paths) | Prove milestone catalog, stock, supplier, attachment, image, and preview happy paths. | Done |
 | [M1H-S04](#m1h-s04-delete-attachment-confirmation-clarification) | Preserve structured delete confirmation clarification through MCP. | Done |
 | [M1I-S01](#m1i-s01-operator-docs-finalization) | Finalize README, operator recipes, and generated tool reference alignment. | Done |
-| [M1I-S02](#m1i-s02-final-review-panel) | Run final Go, QA, product, and infosec review panel. | Ready |
+| [M1I-S02](#m1i-s02-final-review-panel) | Run final Go, QA, product, and infosec review panel. | Done |
 | [F-S01](#f-s01-evaluate-docker-compose-testcontainers-stack) | Evaluate Docker Compose-based Testcontainers stack. | Future |
 | [F-S02](#f-s02-bom-import-workflow) | BOM import workflow. | Future |
 | [F-S03](#f-s03-purchase-order-write-and-receiving) | Purchase order write and receiving. | Future |
@@ -879,7 +879,7 @@ Residual risk:
 
 ### M1I-S02: Final Review Panel
 
-- Status: `Ready`
+- Status: `Done`
 - Depends on: all milestone 1 implementation stories
 - Scope: run senior Go, QA, product, and infosec reviews before beta declaration.
 - Acceptance:
@@ -889,11 +889,24 @@ Residual risk:
 
 Tasks:
 
-- [ ] Run senior Go review.
-- [ ] Run senior QA review.
-- [ ] Run senior product review.
-- [ ] Run senior infosec review.
-- [ ] Fix or document findings.
+- [x] Run senior Go review.
+- [x] Run senior QA review.
+- [x] Run senior product review.
+- [x] Run senior infosec review.
+- [x] Fix or document findings.
+
+Validation:
+
+- `GOFLAGS=-trimpath go test -race -count=1 ./...` passed.
+- `git diff --check` passed.
+
+Review:
+
+- Senior Go Developer, Senior QA / Test Architect, Senior Product Manager, and Senior Infosec Reviewer final review panel run. Go found no actionable findings and independently passed `INVENTREE_TEST_SKIP_DOCKER=1 go test ./cmd/inventree-mcp ./internal/server ./internal/tools ./internal/upload ./internal/oauth ./internal/inventree ./docs`. Infosec found no actionable beta-blocking security findings. Product found the beta boundary was inconsistent between the plan's HTTP/ChatGPT readiness wording and operator docs that keep production HTTP disabled until startup/setup wiring lands; fixed by clarifying that milestone 1 proves STDIO workflows plus HTTP OAuth/scope primitives, while production ChatGPT/HTTP setup and deployment wiring remains gated follow-up work. Focused product, QA, and infosec reruns found the reverse-proxy blocking-test wording still conflicted with the accepted residual risk; fixed by narrowing the blocking test to configured OAuth issuer/resource URL behavior. Final focused product, QA, and infosec reruns found no remaining actionable findings.
+
+Residual risk:
+
+- Production HTTP CLI startup, connector setup wiring, reverse-proxy canonical URL enforcement, packaged-service validation, and live ChatGPT connector deployment remain accepted follow-up risk. Milestone 1 beta readiness covers the STDIO operator workflows, registered development HTTP surface, and implemented/tested OAuth and scope primitives, not an end-to-end production ChatGPT connector deployment.
 
 ## Future Backlog
 
