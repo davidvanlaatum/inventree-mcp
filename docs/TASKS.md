@@ -82,6 +82,10 @@ Before `M1C-S04` is complete, mutating, operational, destructive, and upload too
 | [F-S04](#f-s04-build-order-workflows) | Build order workflows. | Future |
 | [F-S05](#f-s05-stocktake-adjustments) | Stocktake adjustments. | Future |
 | [F-S06](#f-s06-systemd-notify-and-watchdog-support) | Native systemd notification support for packaged HTTP deployments. | Future |
+| [F-S07](#f-s07-production-http-oauth-startup) | Wire production HTTP startup to OAuth configuration and server dependencies. | Future |
+| [F-S08](#f-s08-chatgpt-connector-oauth-setup-flow) | Implement ChatGPT connector authorization, token, and setup-page flow. | Future |
+| [F-S09](#f-s09-reverse-proxy-canonical-url-enforcement) | Enforce public issuer/resource URLs behind a trusted reverse proxy. | Future |
+| [F-S10](#f-s10-packaged-http-deployment-and-live-connector-validation) | Validate packaged HTTP deployment and live ChatGPT connector setup. | Future |
 
 ## Milestone 0: Repository And Planning
 
@@ -974,7 +978,7 @@ Tasks:
 ### F-S06: Systemd Notify And Watchdog Support
 
 - Status: `Future`
-- Depends on: long-running HTTP server runtime, production HTTP OAuth startup behavior, and product review
+- Depends on: F-S07 and product review
 - Scope: add native systemd notification support for packaged HTTP deployments.
 - Acceptance:
   - HTTP service startup sends systemd readiness only after the listener is bound, runtime dependencies are initialized, and production startup checks have passed.
@@ -994,3 +998,102 @@ Tasks:
 - [ ] Update packaged systemd unit to `Type=notify` after code support lands.
 - [ ] Add unit and integration tests for notify/watchdog behavior.
 - [ ] Update release and operator documentation.
+
+### F-S07: Production HTTP OAuth Startup
+
+- Status: `Future`
+- Depends on: M1C-S04, M1I-S02, product review, and infosec review
+- Scope: replace the current development-only HTTP gate with production HTTP startup that constructs OAuth services, keyrings, protected-resource middleware, scoped tool dependencies, and HTTP routes from explicit configuration.
+- Acceptance:
+  - Production HTTP `serve --transport http` starts only when all required OAuth issuer, resource, key, lifetime, client metadata, and InvenTree base URL settings are valid.
+  - Raw InvenTree credentials remain rejected as HTTP runtime credentials outside the setup flow.
+  - The HTTP MCP endpoint uses MCP-owned bearer tokens, decrypts access envelopes, recovers request-scoped InvenTree credentials, and rejects missing, malformed, expired, wrong-audience, wrong-client, wrong-type, or undecryptable tokens before tool dispatch.
+  - Write, upload, operational, and destructive tools are registered in production HTTP mode only behind per-tool scope guards.
+  - Development-only `--dev-incomplete-oauth` behavior remains clearly separated from production startup.
+  - Tests cover config validation, route wiring, keyring loading and rotation states, token verifier behavior, scope-guarded tool registration, and raw upstream token rejection.
+  - README, operator recipes, tool reference, release/package notes, and `AGENTS.md` are updated where production HTTP startup behavior changes.
+
+Tasks:
+
+- [ ] Define the production HTTP OAuth config shape and environment variables.
+- [ ] Load and validate OAuth envelope keys with explicit key IDs and active/decrypt-only states.
+- [ ] Construct the OAuth token verifier and request-scoped `OAuthClientFromContext` dependencies from production config.
+- [ ] Wire protected MCP HTTP routes to SDK bearer middleware and protected-resource metadata.
+- [ ] Enable full HTTP tool registration only when OAuth authorization mode is active.
+- [ ] Preserve development-only incomplete-OAuth startup as non-production behavior.
+- [ ] Add unit and integration tests for config, route wiring, verifier failures, and scoped tool exposure.
+- [ ] Update operator and release documentation.
+
+### F-S08: ChatGPT Connector OAuth Setup Flow
+
+- Status: `Future`
+- Depends on: F-S07, current official OpenAI connector documentation verification, product review, and infosec review
+- Scope: implement the operator-facing OAuth authorization flow for ChatGPT connector setup, including authorization, setup credential collection, authorization-code issuance, token exchange, refresh, and credential-source metadata.
+- Acceptance:
+  - Authorization requests validate client metadata, redirect URI, PKCE `S256`, `resource`, requested scopes, state, and supported public-client token endpoint auth method.
+  - Setup pages collect supported InvenTree credentials without persisting raw credentials in browser state or logs.
+  - Submitted credentials are validated against the configured InvenTree instance before any authorization code is issued.
+  - The setup flow attempts to create or seal a dedicated connector token where the InvenTree API and operator permissions allow it.
+  - If dedicated token creation is unavailable after an existing token is supplied, the operator must explicitly choose whether to seal the supplied token or cancel setup.
+  - Authorization codes are one-time-use with bounded expiry and storage.
+  - Token endpoint supports authorization-code and refresh-token grants with encrypted access and refresh envelopes, configured lifetimes, and absolute authorization/session expiry.
+  - Setup, authorization, and token endpoints enforce CSRF protections where applicable, no-store/no-referrer/frame-denial/CSP headers, body-size limits, timeouts, rate limits, generic credential-validation errors, and sensitive query/body redaction.
+  - Tests cover happy path, cancellation, permission-denied token creation, invalid credentials, PKCE failures, replayed codes, refresh behavior, expiry, rate limiting, security headers, and redaction.
+  - Operator recipes document the supported setup choices and the limits of MCP scopes versus upstream InvenTree credential permissions.
+
+Tasks:
+
+- [ ] Refresh and cite current official OpenAI connector OAuth requirements before implementation.
+- [ ] Add authorization endpoint request validation and state handling.
+- [ ] Add secure setup-page rendering and form handling.
+- [ ] Add InvenTree credential validation and connector-token creation or fallback decision handling.
+- [ ] Add one-time authorization-code issuance bound to setup state.
+- [ ] Add token endpoint support for authorization-code and refresh-token grants.
+- [ ] Add setup, authorization, token, security-header, timeout, rate-limit, and redaction tests.
+- [ ] Update ChatGPT connector setup documentation and operator recipes.
+
+### F-S09: Reverse-Proxy Canonical URL Enforcement
+
+- Status: `Future`
+- Depends on: F-S07, F-S08, deployment design review, product review, and infosec review
+- Scope: make production HTTP metadata, challenges, redirects, and token audience checks use explicitly configured public HTTPS issuer/resource URLs behind a trusted reverse proxy without trusting arbitrary inbound host or forwarded headers.
+- Acceptance:
+  - Production metadata, challenges, authorization URLs, token URLs, redirect targets, and token audiences use configured canonical public HTTPS issuer/resource URLs.
+  - Internal listener scheme, host, port, container names, and untrusted forwarded headers never appear in public OAuth metadata, challenges, redirects, errors, or tokens.
+  - Trusted proxy configuration is explicit, validated, and documented.
+  - Path-prefix behavior is defined and tested for supported proxy routing modes.
+  - Misconfigured public URLs, non-HTTPS production URLs, untrusted forwarded headers, and redirect URI mismatches fail with actionable non-secret errors.
+  - Tests cover direct internal requests, trusted and untrusted `X-Forwarded-*` headers, path prefixes, metadata, challenges, redirects, token audience validation, and internal-host leakage checks.
+  - Reverse-proxy operator recipes cover canonical URLs, trusted proxy CIDRs or header policy, and common failure symptoms.
+
+Tasks:
+
+- [ ] Define canonical issuer/resource URL and trusted-proxy configuration.
+- [ ] Route OAuth metadata, challenge, authorization, token, and MCP audience behavior through configured public URLs.
+- [ ] Implement trusted-proxy and path-prefix handling only for explicitly supported deployments.
+- [ ] Add internal-host leakage and forwarded-header trust tests.
+- [ ] Add reverse-proxy deployment recipes and troubleshooting notes.
+
+### F-S10: Packaged HTTP Deployment And Live Connector Validation
+
+- Status: `Future`
+- Depends on: F-S07, F-S08, F-S09, release package availability, and product review
+- Scope: validate the installed package and a real ChatGPT connector setup path end to end before documenting production HTTP deployment as supported.
+- Acceptance:
+  - Packaged `deb` and `rpm` installs can be configured for production HTTP behind a reverse proxy without exposing raw InvenTree credentials in environment, process lists, logs, package files, or metadata responses.
+  - The packaged service starts, survives restart, and serves OAuth metadata, authorization, token, and MCP endpoints through the documented reverse-proxy route.
+  - A live ChatGPT connector can complete OAuth setup, list tools, call read-only tools, and call at least one scoped write/upload workflow against a disposable or dedicated non-production InvenTree instance.
+  - CI or documented release validation covers package file layout, config examples, service startup smoke tests, and reverse-proxy metadata checks.
+  - `systemctl enable --now inventree-mcp.service` is documented only after production startup and service lifecycle behavior are validated.
+  - Alpine/OpenRC support remains explicitly unsupported unless implemented and tested.
+  - README, operator recipes, release instructions, package notes, and `AGENTS.md` accurately describe the supported deployment and remaining limitations.
+
+Tasks:
+
+- [ ] Add package-level production HTTP config examples without secrets.
+- [ ] Validate installed `deb` and `rpm` file layout and service startup behavior.
+- [ ] Validate reverse-proxy routing to packaged OAuth and MCP endpoints.
+- [ ] Run a live ChatGPT connector setup against a non-production InvenTree instance.
+- [ ] Record successful read, write, upload, and scope-denial connector evidence.
+- [ ] Update release, README, operator recipe, and package documentation.
+- [ ] Decide whether Alpine/OpenRC remains unsupported or gets a separate implementation task.
