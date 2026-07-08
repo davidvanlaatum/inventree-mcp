@@ -220,6 +220,10 @@ Future prompts remain in the internal prompt manifest with status `future` and a
 
 These tools are planned but outside milestone 1 unless the plan is explicitly changed:
 
+- Parameter-template administration: `create_parameter_template`, `update_parameter_template`, `delete_parameter_template`, `merge_parameter_templates`.
+- Cross-inventory parameter values: `search_part_parameters`, `delete_part_parameter`.
+- Category parameter defaults: `list_category_parameter_defaults`, `create_category_parameter_default`, `update_category_parameter_default`, `delete_category_parameter_default`.
+- Bulk parameter workflows: `audit_parameter_consistency`, `bulk_propagate_part_parameters`.
 - BOM tools: `get_bom`, `validate_bom`, `add_bom_item`, `update_bom_item`, `remove_bom_item`, `import_bom_rows`.
 - Purchase-order write tools: `create_purchase_order`, `add_purchase_order_line`, `update_purchase_order_line`, `create_purchase_order_with_lines`, `receive_purchase_order_items`, `close_purchase_order`.
 - Build tools: `search_build_orders`, `create_build_order`, `allocate_build_stock`, `issue_build_outputs_to_stock`, `complete_build_order`.
