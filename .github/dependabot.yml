@@ -4,12 +4,61 @@ updates:
     directory: /
     schedule:
       interval: weekly
+      day: monday
+      time: "09:00"
+      timezone: Australia/Adelaide
+    open-pull-requests-limit: 5
+    cooldown:
+      semver-major-days: 14
+      semver-minor-days: 3
+      semver-patch-days: 1
     groups:
       testcontainers-go:
         patterns:
           - github.com/testcontainers/testcontainers-go
           - github.com/testcontainers/testcontainers-go/modules/*
+      gomod-minor-and-patch:
+        patterns:
+          - "*"
+        update-types:
+          - minor
+          - patch
+    commit-message:
+      prefix: deps
+      include: scope
+
   - package-ecosystem: github-actions
     directory: /
     schedule:
       interval: weekly
+      day: monday
+      time: "09:30"
+      timezone: Australia/Adelaide
+    open-pull-requests-limit: 5
+    cooldown:
+      default-days: 3
+    groups:
+      github-actions:
+        patterns:
+          - "*"
+    commit-message:
+      prefix: deps
+      include: scope
+
+  - package-ecosystem: pre-commit
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "10:00"
+      timezone: Australia/Adelaide
+    open-pull-requests-limit: 5
+    cooldown:
+      default-days: 3
+    groups:
+      pre-commit-hooks:
+        patterns:
+          - "*"
+    commit-message:
+      prefix: deps
+      include: scope
