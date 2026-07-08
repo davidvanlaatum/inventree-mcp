@@ -86,6 +86,10 @@ Before `M1C-S04` is complete, mutating, operational, destructive, and upload too
 | [F-S08](#f-s08-chatgpt-connector-oauth-setup-flow) | Implement ChatGPT connector authorization, token, and setup-page flow. | Future |
 | [F-S09](#f-s09-reverse-proxy-canonical-url-enforcement) | Enforce public issuer/resource URLs behind a trusted reverse proxy. | Future |
 | [F-S10](#f-s10-packaged-http-deployment-and-live-connector-validation) | Validate packaged HTTP deployment and live ChatGPT connector setup. | Future |
+| [F-S11](#f-s11-parameter-template-administration) | Administer parameter templates and safe template merges. | Future |
+| [F-S12](#f-s12-global-parameter-value-search-and-delete) | Search parameter values across inventory and delete individual rows safely. | Future |
+| [F-S13](#f-s13-category-parameter-defaults) | Manage category parameter defaults using existing templates. | Future |
+| [F-S14](#f-s14-bulk-parameter-propagation-and-audit-workflows) | Add dry-run bulk parameter propagation and consistency audits. | Future |
 
 ## Milestone 0: Repository And Planning
 
@@ -946,11 +950,21 @@ Tasks:
 
 - Status: `Future`
 - Depends on: milestone 1 complete and product review
+- Scope: create purchase orders and purchase-order lines from stable supplier-part inputs, then receive purchase-order lines into stock when the operational workflow is explicitly in scope.
+- Acceptance:
+  - Purchase-order creation uses stable supplier IDs and schema-verified write endpoints, with dry-run planning when lines are supplied.
+  - Purchase-order line create/update tools validate supplier-part identity, quantity, price, currency, and supplier consistency before writing.
+  - Receiving workflow defines whether stock is created, merged, or updated, and requires explicit operator confirmation before operational stock changes.
+  - Tool annotations and OAuth scopes distinguish ordinary purchasing writes from operational stock receiving.
+  - Integration coverage exercises successful create, line update, and in-scope receiving paths against Testcontainers before the story is marked `Done`.
 
 Tasks:
 
 - [ ] Define purchase order creation workflow.
+- [ ] Add `create_purchase_order`.
+- [ ] Add purchase-order line create/update tools.
 - [ ] Define receiving workflow.
+- [ ] Add purchase-order receiving workflow only after product scope is confirmed.
 - [ ] Add operational/destructive scope review.
 
 ### F-S04: Build Order Workflows
@@ -1097,3 +1111,85 @@ Tasks:
 - [ ] Record successful read, write, upload, and scope-denial connector evidence.
 - [ ] Update release, README, operator recipe, and package documentation.
 - [ ] Decide whether Alpine/OpenRC remains unsupported or gets a separate implementation task.
+
+### F-S11: Parameter Template Administration
+
+- Status: `Future`
+- Depends on: milestone 1 complete, product review, and infosec review
+- Scope: administer `/api/parameter/template/` records and provide a guarded template-merge workflow for consolidating duplicate or overlapping templates.
+- Acceptance:
+  - Create/update tools require explicit template fields, preserve omitted versus explicit values, and refuse ambiguous same-name/unit/choices collisions without operator clarification.
+  - Delete requires `confirm:true`, preflight checks for existing parameter rows and category-default links, and refusal unless the operator has chosen an allowed cleanup path.
+  - Template merge workflow can move rows from an old template to a target template, normalize values where explicitly configured, verify zero rows remain on the old template, and delete the old template only after confirmation.
+  - Workflow outputs include dry-run actions, affected part/parameter IDs, skipped rows with reasons, read-back verification results, and residual manual decisions.
+  - Tool annotations and OAuth scopes classify template delete and merge cleanup as destructive where rows or templates can be removed.
+  - Unit and Testcontainers integration coverage exercise create, update, delete guardrails, and a successful merge path before the story is marked `Done`.
+
+Tasks:
+
+- [ ] Define parameter-template create/update/delete input contracts and clarification behavior.
+- [ ] Add schema-manifest entries and typed client methods for template create/update/delete where missing.
+- [ ] Implement template create/update tools.
+- [ ] Implement guarded template delete with preflight and confirmation.
+- [ ] Implement dry-run template merge planning, row migration, normalization, read-back verification, and confirmed cleanup.
+- [ ] Update tool reference, operator recipes, and prompts for template administration workflows.
+
+### F-S12: Global Parameter Value Search And Delete
+
+- Status: `Future`
+- Depends on: milestone 1 complete, product review, and infosec review
+- Scope: expose cross-inventory `/api/parameter/` reads and guarded deletion of individual part parameter rows beyond the current part-scoped `get_part_parameters` tool.
+- Acceptance:
+  - Search supports sensible schema-backed filters, including template ID or unambiguous template name, value, category, part, and pagination where the InvenTree API supports them.
+  - Results include stable part, category, template, value, and parameter-row IDs needed for review and retry.
+  - Delete requires a stable parameter-row ID, `confirm:true`, and read-back verification that the row no longer exists.
+  - Deletion refuses ambiguous natural-language requests, whole-template deletes, and bulk deletes; those remain separate workflows.
+  - Unit and Testcontainers integration coverage exercise filtered search and confirmed single-row delete before the story is marked `Done`.
+
+Tasks:
+
+- [ ] Define global parameter search filters from `docs/api-schema.yaml` and live API behavior.
+- [ ] Add typed client query support for cross-inventory parameter values.
+- [ ] Implement `search_part_parameters` or equivalent global parameter-value lookup.
+- [ ] Implement confirmed single-row parameter delete with read-back verification.
+- [ ] Update tool reference and operator recipes for cross-inventory parameter review.
+
+### F-S13: Category Parameter Defaults
+
+- Status: `Future`
+- Depends on: milestone 1 complete, product review, and infosec review
+- Scope: manage `/api/part/category/parameters/` category parameter defaults using existing parameter templates by default.
+- Acceptance:
+  - List/search tools show category parameter defaults with stable category IDs, template IDs, requirement/default metadata, and pagination.
+  - Create/update/delete tools require existing templates; they do not create templates implicitly from category-default requests.
+  - Duplicate category/template links are detected before writes, and destructive deletes require `confirm:true` plus read-back verification.
+  - Tool outputs clarify when the operator must choose an existing template, category, or duplicate-resolution path.
+  - Unit and Testcontainers integration coverage exercise list, create, update, and confirmed delete before the story is marked `Done`.
+
+Tasks:
+
+- [ ] Define category-default list/search filters from schema and live API behavior.
+- [ ] Add typed client methods for category parameter default list/create/update/delete.
+- [ ] Implement list/search category parameter defaults.
+- [ ] Implement existing-template-only create/update/delete with duplicate and confirmation guardrails.
+- [ ] Update tool reference, operator recipes, and parameter reuse prompt guidance.
+
+### F-S14: Bulk Parameter Propagation And Audit Workflows
+
+- Status: `Future`
+- Depends on: F-S11, F-S12, F-S13, product review, QA review, and infosec review
+- Scope: add safe bulk operator workflows for parameter propagation across matched parts and consistency audits that identify duplicate or overlapping templates and overloaded fields.
+- Acceptance:
+  - Bulk propagation supports `dry_run:true`, explicit part/category/template filters, duplicate detection, row-level planned actions, and operator confirmation before writes.
+  - Execution performs read-back verification for every affected row and reports applied, skipped, failed, and manually required decisions.
+  - Audit workflow finds duplicate/overlapping templates, same-name conflicting units/choices, overloaded fields, unlinked parameter usage, and category-default mismatches without writing.
+  - Bulk workflows refuse broad unconstrained writes, hidden destructive cleanup, and ambiguous template/category selection.
+  - Tests cover dry-run planning, duplicate detection, bounded execution, read-back verification, and no-write audit behavior with representative Testcontainers fixtures.
+
+Tasks:
+
+- [ ] Define bounded filter and confirmation policy for bulk propagation.
+- [ ] Implement parameter consistency audit read-only workflow.
+- [ ] Implement dry-run bulk propagation planner.
+- [ ] Implement confirmed bulk propagation executor with read-back verification.
+- [ ] Update operator recipes and prompts for parameter audit and bulk propagation review.
