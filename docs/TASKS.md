@@ -90,6 +90,7 @@ Before `M1C-S04` is complete, mutating, operational, destructive, and upload too
 | [F-S12](#f-s12-global-parameter-value-search-and-delete) | Search parameter values across inventory and delete individual rows safely. | Future |
 | [F-S13](#f-s13-category-parameter-defaults) | Manage category parameter defaults using existing templates. | Future |
 | [F-S14](#f-s14-bulk-parameter-propagation-and-audit-workflows) | Add dry-run bulk parameter propagation and consistency audits. | Future |
+| [F-S15](#f-s15-live-order-entry-tool-hardening) | Close gaps found during live order-entry use of the MCP tools. | Future |
 
 ## Milestone 0: Repository And Planning
 
@@ -950,10 +951,12 @@ Tasks:
 
 - Status: `Future`
 - Depends on: milestone 1 complete and product review
-- Scope: create purchase orders and purchase-order lines from stable supplier-part inputs, then receive purchase-order lines into stock when the operational workflow is explicitly in scope.
+- Scope: create purchase orders and purchase-order lines from stable supplier-part inputs, then receive purchase-order lines into stock when the operational workflow is explicitly in scope. The highest-value first write workflow is `create_purchase_order_with_lines`: accept a supplier, supplier reference, description/date fields, an idempotency key, and validated line inputs, then create or update the purchase order and lines after the same preview math and supplier-part checks used by `preview_purchase_order_with_lines`.
 - Acceptance:
   - Purchase-order creation uses stable supplier IDs and schema-verified write endpoints, with dry-run planning when lines are supplied.
+  - `create_purchase_order_with_lines` supports preview-equivalent validation before mutation, returns the purchase order ID and line IDs, and uses an idempotency key to make retries safe after client or tool interruption.
   - Purchase-order line create/update tools validate supplier-part identity, quantity, price, currency, and supplier consistency before writing.
+  - Duplicate and recovery reads cover purchase orders and purchase-order lines by supplier, supplier reference, status/date where schema-supported, and stable ID so operators can recover from partial or interrupted writes.
   - Receiving workflow defines whether stock is created, merged, or updated, and requires explicit operator confirmation before operational stock changes.
   - Tool annotations and OAuth scopes distinguish ordinary purchasing writes from operational stock receiving.
   - Integration coverage exercises successful create, line update, and in-scope receiving paths against Testcontainers before the story is marked `Done`.
@@ -962,7 +965,9 @@ Tasks:
 
 - [ ] Define purchase order creation workflow.
 - [ ] Add `create_purchase_order`.
+- [ ] Add `create_purchase_order_with_lines` with idempotent create/update behavior after preview validation.
 - [ ] Add purchase-order line create/update tools.
+- [ ] Add purchase-order and purchase-order-line search/read tools for duplicate checks, retry, and recovery.
 - [ ] Define receiving workflow.
 - [ ] Add purchase-order receiving workflow only after product scope is confirmed.
 - [ ] Add operational/destructive scope review.
@@ -1193,3 +1198,28 @@ Tasks:
 - [ ] Implement dry-run bulk propagation planner.
 - [ ] Implement confirmed bulk propagation executor with read-back verification.
 - [ ] Update operator recipes and prompts for parameter audit and bulk propagation review.
+
+### F-S15: Live Order Entry Tool Hardening
+
+- Status: `Future`
+- Depends on: milestone 1 complete, product review, QA review, and infosec review
+- Scope: turn the first live order-entry run from an eBay order page into regression coverage and tool-surface hardening. The live run proved `search_manufacturers`, `create_company`, `create_supplier_part`, and `preview_purchase_order_with_lines` were useful, but still required REST fallbacks for category administration, duplicate checks, parameter template/default administration, parameter value recovery, image/attachment recovery, and purchase-order write/recovery steps.
+- Acceptance:
+  - Combined write workflows preflight every required clarification before mutation where practical; when a later step can still fail, the error response includes created IDs, completed actions, remaining actions, and a concrete recovery plan.
+  - `create_manufacturer_part` and `upsert_part_with_supplier_and_manufacturer` reject blank or null MPN before calling InvenTree when the instance requires nonblank values, or implement a documented operator-approved fallback convention.
+  - InvenTree API errors returned through tools include the relevant response body fields, such as `MPN: This field cannot be blank`, while preserving token and sensitive-data redaction.
+  - Dry-run or preflight behavior is available consistently for write tools that operators use during order entry, including company creation, supplier-part creation, manufacturer-part creation, part/category creation, parameter writes, image upload, and purchase-order writes.
+  - The MCP tool surface exposes enough read/search operations to avoid REST fallbacks during duplicate checks and recovery: categories, parts, supplier parts, manufacturer parts, purchase orders, purchase-order lines, parameter templates, parameter values, category parameter defaults, and image/attachment state.
+  - Live or Testcontainers coverage reproduces the order-entry path with a blank-MPN manufacturer-part input, confirms no hidden partial state is left without recoverable IDs, and verifies the recovery/read tools can locate any intentionally created records.
+  - Tool reference, operator recipes, and prompt/operator guidance are updated for any new recovery, dry-run/preflight, read/search, or write behavior added by this hardening story.
+
+Tasks:
+
+- [ ] Capture the live eBay order-entry workflow as an operator recipe and test scenario with sanitized fixture values.
+- [ ] Audit registered versus documented tool availability for category, part, supplier-part, manufacturer-part, purchase-order, purchase-order-line, parameter, and image workflows.
+- [ ] Add blank/null MPN validation or a documented fallback convention for manufacturer-part creation and part-upsert workflows.
+- [ ] Include structured InvenTree response-body details in tool errors with redaction tests.
+- [ ] Add recovery metadata to multi-step workflow failures, including any created part/company/link IDs.
+- [ ] Add dry-run/preflight support for lower-level write tools used during order entry where it is currently missing.
+- [ ] Add missing read/search and duplicate-check tools or fold them into the dependent future stories that own the endpoint family.
+- [ ] Update tool reference, operator recipes, and prompt/operator guidance for the hardened order-entry workflow.

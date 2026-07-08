@@ -128,6 +128,14 @@ Production reverse-proxy HTTP deployment depends on the completed HTTP OAuth sta
 - Tool sequence: `search_suppliers`, `search_parts`, then `preview_purchase_order_with_lines`. Provide `supplier_part_id` when known; otherwise provide `supplier_id`, `part_id`, and optional `supplier_sku` so the preview can validate that exactly one supplier-part link matches.
 - Expected output: proposed lines, supplier part IDs, optional line totals when price and currency are supplied, warnings for omitted preview-only pricing, and confirmation by tool class that no purchase order was created. The tool does not create purchase orders or purchase-order lines.
 
+## Future: Create Purchase Order From Order Page
+
+- Required inputs: stable supplier ID, supplier reference or external order identifier, description/date fields, idempotency key, and validated lines with supplier-part IDs, quantities, and optional unit prices/currencies.
+- Preferred lookup order: search supplier, search categories and parts for missing catalog entries, search supplier/manufacturer links for duplicates, run purchase-line preview validation, search existing purchase orders and lines by supplier/reference/status where supported, then call the future `create_purchase_order_with_lines` workflow.
+- Clarify when: category, part, supplier part, manufacturer part, parameter template, image, purchase-order identity, or blank manufacturer part number handling is ambiguous.
+- Expected output: dry-run actions before writes; on execution, stable purchase-order and line IDs, created or reused supplier/part/link IDs, line totals, idempotency result, and a recovery plan if any later step fails after an earlier write.
+- Current gap: milestone 1 has purchase preview but not purchase-order write tools. Live order-entry use should not fall back to raw REST once the future workflow exposes duplicate/recovery reads, parameter template/default administration, parameter value recovery, image/attachment recovery, and purchase-order write support.
+
 ## Resolve Structured Clarification Prompts
 
 - Required inputs: the stable retry field requested by the prior tool response.
