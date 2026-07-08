@@ -1114,14 +1114,14 @@ Delivery order inside milestone 1:
 2. Add HTTP OAuth connector compatibility after the blocking connector/OAuth spike is complete.
 3. Add URL upload, link attachment, metadata update, and primary-image support.
 
-Do not expand beyond the full beta list until the MVP loop and OAuth setup are verified.
+Do not expand beyond the full beta list until the MVP loop and OAuth setup primitives are verified.
 
 The full first beta milestone should include:
 
 - Go module and buildable command.
 - STDIO and HTTP transports.
 - Stateless HTTP mode.
-- HTTP OAuth protected resource, authorization-code with PKCE, token, refresh, and encrypted envelope support.
+- HTTP OAuth protected resource, authorization-code with PKCE, token, refresh, encrypted envelope support, and per-tool scope enforcement as implementation primitives.
 - Tool mutation metadata for every registered tool.
 - PATCH-based partial update support in the client and first update tools.
 - Part/category tools: `search_parts`, `get_part`, `search_part_categories`, `create_part`, `update_part`, `search_parameter_templates`, `get_part_parameters`, `set_part_parameters`.
@@ -1138,7 +1138,7 @@ The full first beta milestone should include:
 - GitHub Actions CI, Dependabot, golangci-lint config, and pre-commit config.
 - README with quick-start links and minimal setup examples.
 
-This milestone proves the transport, auth, client, schema, and data-entry patterns while completing a useful operator loop: add or update a purchasable part, associate supplier/manufacturer data, create initial stock, and preview a purchase order.
+This milestone proves the transport, auth, client, schema, and data-entry patterns while completing a useful operator loop: add or update a purchasable part, associate supplier/manufacturer data, create initial stock, and preview a purchase order. The milestone does not declare production ChatGPT/HTTP connector deployment ready; production HTTP startup, setup wiring, reverse-proxy canonical URL enforcement, and packaged-service validation remain gated follow-up work.
 
 Blocking milestone tests:
 
@@ -1147,7 +1147,7 @@ Blocking milestone tests:
 - HTTP OAuth authorization-code with PKCE, token exchange, refresh, and encrypted envelope validation.
 - Auth-code replay behavior tested according to the selected state strategy.
 - Refresh absolute authorization/session expiry behavior.
-- Reverse-proxy canonical URL positive and negative behavior.
+- Configured OAuth issuer/resource URL positive and negative behavior for metadata, token audience, and protected-resource challenges.
 - OAuth scope enforcement for read, write, upload, and destructive tool classes.
 - Protected `/mcp` unauthenticated behavior verified: no MCP method dispatch without a valid access token unless the connector spike explicitly requires pre-auth static discovery; if allowed, only the documented static methods succeed and InvenTree-contacting tools fail before handler dispatch.
 - Concurrent HTTP OAuth request isolation with different sealed InvenTree credentials.
@@ -1182,9 +1182,9 @@ Blocking milestone tests:
 
 Milestone test classification:
 
-- Blocking tests must have deterministic local execution paths. Docker-backed integration tests run by default and can be explicitly excluded for unit-only, fast, or Docker-unavailable runs with `INVENTREE_TEST_SKIP_DOCKER=1` or `GOFLAGS=-trimpath go test -race -short`.
+- Blocking tests must have deterministic local execution paths for milestone-scope behavior. Docker-backed integration tests run by default and can be explicitly excluded for unit-only, fast, or Docker-unavailable runs with `INVENTREE_TEST_SKIP_DOCKER=1` or `GOFLAGS=-trimpath go test -race -short`.
 - Non-blocking tests may cover optional live external InvenTree instances, canary compatibility checks, and extended stress runs.
-- Future tests must be tied to deferred scope such as sales workflows, return orders, transfer orders, company primary images, and build attachment support.
+- Future tests must be tied to deferred scope such as production HTTP setup/deployment wiring, sales workflows, return orders, transfer orders, company primary images, and build attachment support.
 - Future image/file tests must cover deferred surfaces only when they enter scope, including notes image upload, generated report attachments, and stock test-result attachments.
 
 Milestone README recipes:
