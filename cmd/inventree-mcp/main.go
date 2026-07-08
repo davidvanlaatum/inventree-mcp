@@ -84,6 +84,17 @@ func serve(ctx context.Context, cfg config.Config) error {
 }
 
 func dependenciesForConfig(cfg config.Config) (tools.Dependencies, error) {
+	if cfg.Transport == config.TransportHTTP && cfg.Environment == config.EnvironmentProduction {
+		return tools.Dependencies{
+			EnableWriteTools:    true,
+			AuthorizationMode:   tools.AuthorizationModeOAuth,
+			ResourceMetadataURL: cfg.OAuthProtectedResourceMetadataURL(),
+			UploadMode:          upload.ModeHTTP,
+			UploadMaxBytes:      cfg.UploadMaxBytes,
+			UploadTimeout:       cfg.InvenTreeTimeout,
+			ClientFromContext:   server.OAuthClientFromContext(cfg.InvenTreeURL, inventreeHTTPClient(cfg)),
+		}, nil
+	}
 	if cfg.Transport != config.TransportStdio {
 		return tools.Dependencies{}, nil
 	}

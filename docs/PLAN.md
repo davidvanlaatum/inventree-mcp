@@ -119,17 +119,31 @@ Authentication model:
 
 HTTP session mode: run streamable HTTP in stateless mode using `mcp.StreamableHTTPOptions{Stateless: true}`. Do not bind a long-lived MCP session to process-global credentials. All InvenTree authorization must be resolved from the current OAuth token envelope.
 
-OAuth discovery and challenge endpoints:
+Production startup configuration:
+
+- `INVENTREE_MCP_OAUTH_ISSUER_URL` / `--oauth-issuer-url`: configured public HTTPS issuer URL. Production startup rejects missing, non-HTTPS, query-bearing, or fragment-bearing values.
+- `INVENTREE_MCP_OAUTH_RESOURCE_URL` / `--oauth-resource-url`: configured public HTTPS resource URL used as token audience and protected-resource metadata `resource`.
+- `INVENTREE_MCP_OAUTH_KEYS` / repeated `--oauth-key`: comma-separated or repeated `key-id:active|decrypt_only:base64-32-byte-key` entries. Startup requires exactly one active key and accepts decrypt-only keys for rotation.
+- `INVENTREE_MCP_OAUTH_CLIENT_IDS` / repeated `--oauth-client-id`: comma-separated or repeated allowed HTTPS client metadata URLs. Access-token validation tries the configured client IDs as associated data and rejects tokens for unconfigured clients.
+- Optional lifetimes: `INVENTREE_MCP_OAUTH_ACCESS_LIFETIME`, `INVENTREE_MCP_OAUTH_REFRESH_LIFETIME`, and `INVENTREE_MCP_OAUTH_SESSION_LIFETIME`, defaulting to 15 minutes, 30 days, and 90 days. Startup requires positive lifetimes, access shorter than refresh, and refresh not longer than session.
+- Production HTTP rejects `INVENTREE_TOKEN`, non-default `INVENTREE_AUTH_SCHEME`, `INVENTREE_TLS_SKIP_VERIFY`, and `--dev-incomplete-oauth`. Raw InvenTree credentials are accepted only by the future setup flow and are sealed into OAuth envelopes before `/mcp` use.
+
+OAuth protected-resource discovery and challenge endpoints implemented by production startup:
 
 - `/.well-known/oauth-protected-resource` describes the `/mcp` resource.
-- `/.well-known/oauth-authorization-server` describes authorization, token, supported grant, PKCE, issuer, and metadata behavior.
 - Unauthenticated protected requests return `401` with `WWW-Authenticate: Bearer resource_metadata="<metadata-url>"`.
+- The protected-resource metadata advertises the configured authorization server issuer, supported scopes, bearer method, resource URL, and resource name.
+- The protected-resource metadata URL is derived from the configured resource URL's scheme and host, not from request `Host` headers.
+
+Future authorization-server and setup endpoints:
+
+- `/.well-known/oauth-authorization-server` describes authorization, token, supported grant, PKCE, issuer, and metadata behavior.
 - The authorization endpoint supports authorization-code flow with PKCE for ChatGPT.
 - The token endpoint supports `authorization_code` and `refresh_token` grants.
 - ChatGPT redirects authorization responses to `https://chatgpt.com/connector/oauth/{callback_id}`. Add that production redirect URI from the app management page to the authorization server allowlist. Previously published apps may still use the legacy `https://chatgpt.com/connector_platform_oauth_redirect` redirect.
 - Support Client ID Metadata Documents first with public-client token endpoint authentication method `none`. Do not advertise dynamic client registration or predefined clients until those paths are implemented and tested.
 - Echo the `resource` parameter through authorization and token requests, bind issued tokens to the configured resource audience, and reject tokens missing the expected resource/audience.
-- Production deployments are expected to run behind a reverse proxy that terminates HTTPS. The public issuer, authorization, token, redirect, and `/mcp` resource URLs must be configured as HTTPS canonical URLs, even if the Go process receives HTTP from the proxy. Issuer and resource URLs must come from explicit configuration, not untrusted `Host` headers. `X-Forwarded-*` headers may only be used from configured trusted proxies. Metadata, token envelopes, redirects, and audience validation must use the configured canonical URLs exactly. Production deployments must expose the Go HTTP listener only to the trusted reverse proxy or private service network; do not publish the internal HTTP port directly.
+- Production deployments are expected to run behind a reverse proxy that terminates HTTPS. The public issuer, authorization, token, redirect, and `/mcp` resource URLs must be configured as HTTPS canonical URLs, even if the Go process receives HTTP from the proxy. Issuer and resource URLs must come from explicit configuration, not untrusted `Host` headers. `X-Forwarded-*` headers may only be used from configured trusted proxies. Metadata, bearer challenges, token envelopes, and audience validation must use the configured canonical URLs exactly. Production deployments must expose the Go HTTP listener only to the trusted reverse proxy or private service network; do not publish the internal HTTP port directly.
 
 OAuth setup flow:
 
@@ -214,7 +228,7 @@ Releases are tag-driven through GitHub Actions and GoReleaser. Pushing a `vX.X.X
 
 The Linux packages install the `inventree-mcp` binary to `/usr/bin`, install `packaging/systemd/inventree-mcp.service` as `inventree-mcp.service`, and install `/etc/inventree-mcp/inventree-mcp.env` as a noreplace configuration file. Package maintainer scripts reload systemd and restart the service only when it is already enabled or active. The `apk` package carries the same files for artifact parity; Alpine/OpenRC service management is not implemented in the first release package.
 
-The packaged service is for HTTP mode behind a reverse proxy. Production HTTP mode remains disabled until OAuth startup and setup wiring are complete. The current server runtime can run the streamable HTTP server in development mode with static MCP metadata, read-only tools, and the read-only health/version tool; internal OAuth-enabled server construction can register the full tool surface behind per-tool scope guards. Packages can be installed for file layout testing, but the systemd service should not be enabled yet. The unit uses `Type=simple` because the current command does not implement systemd notify or watchdog support. Do not switch the unit to `Type=notify` or add `WatchdogSec` until the Go process sends systemd readiness/watchdog notifications and tests cover the behavior.
+The packaged service is for HTTP mode behind a reverse proxy. Production HTTP startup can now serve protected streamable HTTP with OAuth envelope validation, request-scoped InvenTree credential recovery, protected-resource metadata, and the full tool surface behind per-tool scope guards. Connector authorization/setup endpoints, reverse-proxy canonical URL enforcement, and live packaged deployment validation still gate operator-ready ChatGPT deployment. Packages can be installed for file layout testing, but the systemd service should not be enabled for live connector use until that deployment path lands. The unit uses `Type=simple` because the current command does not implement systemd notify or watchdog support. Do not switch the unit to `Type=notify` or add `WatchdogSec` until the Go process sends systemd readiness/watchdog notifications and tests cover the behavior.
 
 ## Project Structure
 

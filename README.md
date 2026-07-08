@@ -5,7 +5,7 @@
 
 Go-based Model Context Protocol server for common InvenTree data-entry workflows.
 
-Current status: milestone 1 STDIO workflows are implemented for part/company entry, parameters, initial stock, attachments/images, purchase previews, and prompt checklists. HTTP mode remains development-only from the CLI until production OAuth startup is wired; internal server construction supports mutating HTTP tools only when OAuth authorization mode and per-tool scope checks are enabled.
+Current status: milestone 1 STDIO workflows are implemented for part/company entry, parameters, initial stock, attachments/images, purchase previews, and prompt checklists. Production HTTP startup can run a protected streamable HTTP `/mcp` endpoint with OAuth access-token envelope validation and per-tool scope checks. The ChatGPT connector authorization/setup pages and live packaged deployment validation remain follow-up work.
 
 ## Quick Start
 
@@ -27,7 +27,16 @@ Useful STDIO options:
 
 For first-release workflow details, use [Operator recipes](docs/operator-recipes.md). For exact registered tool metadata, use [Tool reference](docs/tool-reference.md) and the checked [tool manifest](docs/tool-manifest.json).
 
-HTTP mode currently runs only the development server surface from the CLI. Production HTTP mode is intentionally disabled until OAuth startup and setup wiring are complete. Development-only HTTP startup requires `--environment development --dev-incomplete-oauth` and rejects configured raw InvenTree tokens.
+HTTP production mode requires MCP-owned OAuth settings and rejects raw `INVENTREE_TOKEN` runtime credentials. Required settings are:
+
+- `INVENTREE_MCP_OAUTH_ISSUER_URL`: public HTTPS issuer URL.
+- `INVENTREE_MCP_OAUTH_RESOURCE_URL`: public HTTPS MCP resource URL, normally the public `/mcp` URL.
+- `INVENTREE_MCP_OAUTH_KEYS`: comma-separated `key-id:active|decrypt_only:base64-32-byte-key` entries.
+- `INVENTREE_MCP_OAUTH_CLIENT_IDS`: comma-separated allowed OAuth `client_id` metadata URLs.
+- `INVENTREE_URL`: InvenTree base URL used for upstream API calls after the MCP OAuth envelope is validated.
+- Optional `INVENTREE_MCP_OAUTH_ACCESS_LIFETIME`, `INVENTREE_MCP_OAUTH_REFRESH_LIFETIME`, and `INVENTREE_MCP_OAUTH_SESSION_LIFETIME`.
+
+Development-only HTTP startup remains available with `--environment development --dev-incomplete-oauth`; it registers only the development server surface and still rejects configured raw InvenTree tokens.
 
 ## Install From A Release
 
@@ -39,7 +48,7 @@ Linux packages install:
 - `/etc/systemd/system/inventree-mcp.service`
 - `/etc/inventree-mcp/inventree-mcp.env`
 
-The packaged service is intended for HTTP mode behind a reverse proxy. Production HTTP mode will not start until OAuth startup and setup wiring are complete. Install packages now for file layout testing, but do not enable the systemd service until the deployment path lands.
+The packaged service is intended for HTTP mode behind a reverse proxy. Production HTTP startup now validates OAuth envelope keys, issuer/resource URLs, allowed client IDs, and token lifetimes before serving protected `/mcp` traffic. Install packages now for file layout testing, but do not enable the systemd service for a live ChatGPT connector until authorization/setup endpoints, reverse-proxy canonical URL enforcement, and live deployment validation land.
 
 For a development-only pre-OAuth HTTP runtime smoke test, run the binary directly. This starts the skeleton streamable HTTP server with only static MCP metadata and the read-only health/version tool.
 
