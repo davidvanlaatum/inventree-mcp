@@ -113,16 +113,46 @@ func TestRunServeStdioDoesNotWriteStdout(t *testing.T) {
 	a.True(ok)
 }
 
-func TestDependenciesForConfigLeavesHTTPClientUnavailableUntilOAuth(t *testing.T) {
+func TestDependenciesForConfigLeavesDevelopmentHTTPClientUnavailable(t *testing.T) {
 	t.Parallel()
 	r := require.New(t)
 	a := assert.New(t)
 
-	deps, err := dependenciesForConfig(config.Config{Transport: config.TransportHTTP})
+	deps, err := dependenciesForConfig(config.Config{
+		Transport:   config.TransportHTTP,
+		Environment: config.EnvironmentDevelopment,
+	})
 
 	r.NoError(err)
 	a.Nil(deps.ClientFromContext)
 	a.False(deps.EnableWriteTools)
+}
+
+func TestDependenciesForConfigBuildsProductionHTTPOAuthDependencies(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+
+	deps, err := dependenciesForConfig(config.Config{
+		Transport:           config.TransportHTTP,
+		Environment:         config.EnvironmentProduction,
+		InvenTreeURL:        "https://inventory.example.test",
+		InvenTreeTimeout:    5 * time.Second,
+		OAuthIssuerURL:      "https://mcp.example.test",
+		OAuthResourceURL:    "https://mcp.example.test/mcp",
+		UploadMaxBytes:      1234,
+		OAuthAccessLifetime: 10 * time.Minute,
+	})
+
+	r.NoError(err)
+	a.True(deps.EnableWriteTools)
+	a.Equal(tools.AuthorizationModeOAuth, deps.AuthorizationMode)
+	a.Equal("https://mcp.example.test/.well-known/oauth-protected-resource", deps.ResourceMetadataURL)
+	a.Equal(int64(1234), deps.UploadMaxBytes)
+	a.Equal(5*time.Second, deps.UploadTimeout)
+	r.NotNil(deps.ClientFromContext)
+	_, err = deps.ClientFromContext(context.Background())
+	a.ErrorContains(err, "OAuth credential unavailable")
 }
 
 func TestDependenciesForConfigBuildsStdioClient(t *testing.T) {

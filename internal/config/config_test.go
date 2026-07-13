@@ -144,7 +144,92 @@ func TestParseServeRejectsProductionHTTPBeforeOAuth(t *testing.T) {
 	r.Error(err)
 
 	a.Contains(err.Error(), "production mode rejects InvenTree TLS skip verify")
-	a.Contains(err.Error(), "production HTTP mode is disabled until OAuth startup and setup wiring is available")
+	a.Contains(err.Error(), "OAuth issuer URL is required")
+	a.Contains(err.Error(), "OAuth resource URL is required")
+	a.Contains(err.Error(), "at least one OAuth client ID is required")
+	a.Contains(err.Error(), "OAuth keyring requires at least one key")
+}
+
+func TestParseServeAllowsProductionHTTPWithOAuthConfig(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+
+	cfg, err := ParseServeWithEnv([]string{
+		"--transport", "http",
+		"--inventree-url", "https://inventory.example.test",
+		"--oauth-client-id", "https://chatgpt.com/client-metadata/b",
+		"--oauth-key", "next:decrypt_only:MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY",
+	}, mapEnv(map[string]string{
+		EnvOAuthIssuerURL:       "https://auth.example.test",
+		EnvOAuthResourceURL:     "https://mcp.example.test/mcp",
+		EnvOAuthClientIDs:       "https://chatgpt.com/client-metadata/a",
+		EnvOAuthKeys:            "current:active:MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY",
+		EnvOAuthAccessLifetime:  "10m",
+		EnvOAuthRefreshLifetime: "24h",
+		EnvOAuthSessionLifetime: "720h",
+	}), nil)
+	r.NoError(err)
+
+	a.Equal(TransportHTTP, cfg.Transport)
+	a.Equal(EnvironmentProduction, cfg.Environment)
+	a.Equal("https://mcp.example.test/.well-known/oauth-protected-resource", cfg.OAuthProtectedResourceMetadataURL())
+	a.Equal([]string{"https://chatgpt.com/client-metadata/a", "https://chatgpt.com/client-metadata/b"}, cfg.OAuthClientIDs)
+	a.Len(cfg.OAuthKeyring.Keys, 2)
+	a.Equal(10*time.Minute, cfg.OAuthAccessLifetime)
+	a.Equal(24*time.Hour, cfg.OAuthRefreshLifetime)
+	a.Equal(720*time.Hour, cfg.OAuthSessionLifetime)
+}
+
+func TestParseServeRejectsInvalidProductionOAuthConfig(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+
+	_, err := ParseServeWithEnv([]string{
+		"--transport", "http",
+		"--dev-incomplete-oauth",
+		"--inventree-url", "https://inventory.example.test",
+		"--oauth-issuer-url", "http://mcp.example.test",
+		"--oauth-resource-url", "https://mcp.example.test/mcp?debug=true",
+		"--oauth-client-id", "http://chatgpt.example.test/client",
+		"--oauth-client-id", "https://user:pass@chatgpt.example.test/client",
+		"--oauth-key", "bad:active:not-base64",
+		"--oauth-access-lifetime", "48h",
+		"--oauth-refresh-lifetime", "24h",
+		"--oauth-session-lifetime", "12h",
+	}, mapEnv(nil), nil)
+	r.Error(err)
+
+	a.Contains(err.Error(), "production HTTP mode rejects --dev-incomplete-oauth")
+	a.Contains(err.Error(), "OAuth issuer URL must use https")
+	a.Contains(err.Error(), "OAuth resource URL must not include query or fragment")
+	a.Contains(err.Error(), "OAuth client ID must use https")
+	a.Contains(err.Error(), "OAuth client ID must not include userinfo")
+	a.Contains(err.Error(), `OAuth key "bad" must be 32 bytes`)
+	a.Contains(err.Error(), "OAuth access token lifetime must be shorter than refresh token lifetime")
+	a.Contains(err.Error(), "OAuth refresh token lifetime must not exceed session lifetime")
+}
+
+func TestParseServeRedactsMalformedOAuthKeyEnv(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+
+	_, err := ParseServeWithEnv([]string{
+		"--transport", "http",
+		"--inventree-url", "https://inventory.example.test",
+		"--oauth-issuer-url", "https://auth.example.test",
+		"--oauth-resource-url", "https://mcp.example.test/mcp",
+		"--oauth-client-id", "https://chatgpt.com/client-metadata",
+	}, mapEnv(map[string]string{
+		EnvOAuthKeys: "broken:active:super-secret-key-material:extra",
+	}), nil)
+	r.Error(err)
+
+	a.Contains(err.Error(), `OAuth key "invalid_oauth_key_entry_1"`)
+	a.NotContains(err.Error(), "super-secret-key-material")
+	a.NotContains(err.Error(), "broken:active")
 }
 
 func TestParseServeAllowsDevelopmentHTTPOnlyWithExplicitIncompleteOAuthFlag(t *testing.T) {
@@ -253,6 +338,13 @@ func TestParseServeHelpMentionsEnvVars(t *testing.T) {
 		EnvInvenTreeTLSSkipVerify,
 		EnvLogLevel,
 		EnvDevIncompleteOAuth,
+		EnvOAuthIssuerURL,
+		EnvOAuthResourceURL,
+		EnvOAuthKeys,
+		EnvOAuthClientIDs,
+		EnvOAuthAccessLifetime,
+		EnvOAuthRefreshLifetime,
+		EnvOAuthSessionLifetime,
 	} {
 		a.Contains(help, envVar)
 	}

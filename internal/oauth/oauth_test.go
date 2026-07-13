@@ -17,6 +17,7 @@ import (
 	"github.com/davidvanlaatum/dvgoutils/logging/testhandler"
 	"github.com/davidvanlaatum/inventree-mcp/internal/inventree"
 	"github.com/davidvanlaatum/inventree-mcp/internal/platform"
+	"github.com/modelcontextprotocol/go-sdk/auth"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -248,6 +249,102 @@ func TestEnvelopeCodecOpensDecryptOnlyKeyAndSealsWithActiveKey(t *testing.T) {
 	newToken, err := rotatedCodec.Seal(ctx, aad, opened)
 	r.NoError(err)
 	a.True(strings.HasPrefix(newToken, "mcp1.new."))
+}
+
+func TestAccessTokenVerifierValidatesEnvelopeClaimsAndCredential(t *testing.T) {
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	r := require.New(t)
+	a := assert.New(t)
+
+	now := time.Date(2026, 7, 8, 10, 0, 0, 0, time.UTC)
+	codec := testCodec(t)
+	issuer := "https://mcp.example.test"
+	audience := "https://mcp.example.test/mcp"
+	clientID := "https://chatgpt.com/client-metadata"
+	claims := TokenClaims{
+		Type:             TokenTypeAccess,
+		Issuer:           issuer,
+		Audience:         audience,
+		Subject:          "operator-1",
+		ClientID:         clientID,
+		Scopes:           []string{"inventree.read"},
+		IssuedAt:         now.Add(-time.Minute),
+		ExpiresAt:        now.Add(time.Hour),
+		SessionExpiresAt: now.Add(2 * time.Hour),
+		Credential:       Credential{Scheme: inventree.AuthSchemeToken, Token: "upstream-token"},
+	}
+	accessToken, err := codec.Seal(ctx, AssociatedData{Issuer: issuer, Audience: audience, ClientID: clientID, Type: TokenTypeAccess}, claims)
+	r.NoError(err)
+
+	verifier := AccessTokenVerifier(codec, issuer, audience, []string{"https://other.example.test/client", clientID}, fakeClock{now: now})
+	tokenInfo, err := verifier(ctx, accessToken, httptest.NewRequest(http.MethodPost, "/mcp", nil))
+	r.NoError(err)
+	a.Equal("operator-1", tokenInfo.UserID)
+	a.Equal([]string{"inventree.read"}, tokenInfo.Scopes)
+	credential, err := CredentialFromTokenInfo(tokenInfo)
+	r.NoError(err)
+	a.Equal("upstream-token", credential.Token)
+
+	for _, tt := range []struct {
+		name   string
+		aad    AssociatedData
+		claims TokenClaims
+	}{
+		{
+			name:   "wrong audience",
+			aad:    AssociatedData{Issuer: issuer, Audience: "https://other.example.test/mcp", ClientID: clientID, Type: TokenTypeAccess},
+			claims: claims,
+		},
+		{
+			name: "refresh token",
+			aad:  AssociatedData{Issuer: issuer, Audience: audience, ClientID: clientID, Type: TokenTypeRefresh},
+			claims: func() TokenClaims {
+				claims := claims
+				claims.Type = TokenTypeRefresh
+				return claims
+			}(),
+		},
+		{
+			name: "expired access",
+			aad:  AssociatedData{Issuer: issuer, Audience: audience, ClientID: clientID, Type: TokenTypeAccess},
+			claims: func() TokenClaims {
+				claims := claims
+				claims.ExpiresAt = now.Add(-time.Second)
+				return claims
+			}(),
+		},
+		{
+			name: "expired session",
+			aad:  AssociatedData{Issuer: issuer, Audience: audience, ClientID: clientID, Type: TokenTypeAccess},
+			claims: func() TokenClaims {
+				claims := claims
+				claims.SessionExpiresAt = now.Add(-time.Second)
+				return claims
+			}(),
+		},
+		{
+			name: "missing upstream credential",
+			aad:  AssociatedData{Issuer: issuer, Audience: audience, ClientID: clientID, Type: TokenTypeAccess},
+			claims: func() TokenClaims {
+				claims := claims
+				claims.Credential.Token = ""
+				return claims
+			}(),
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			token, err := codec.Seal(ctx, tt.aad, tt.claims)
+			r.NoError(err)
+			_, err = verifier(ctx, token, httptest.NewRequest(http.MethodPost, "/mcp", nil))
+			r.ErrorIs(err, auth.ErrInvalidToken)
+		})
+	}
+	_, err = verifier(ctx, "not-an-envelope", httptest.NewRequest(http.MethodPost, "/mcp", nil))
+	r.ErrorIs(err, auth.ErrInvalidToken)
+	_, err = verifier(ctx, accessToken[:len(accessToken)-1]+"x", httptest.NewRequest(http.MethodPost, "/mcp", nil))
+	r.ErrorIs(err, auth.ErrInvalidToken)
+	_, err = AccessTokenVerifier(codec, issuer, audience, []string{"https://other.example.test/client"}, fakeClock{now: now})(ctx, accessToken, nil)
+	r.ErrorIs(err, auth.ErrInvalidToken)
 }
 
 func TestKeyringConfigDecodesBase64Material(t *testing.T) {

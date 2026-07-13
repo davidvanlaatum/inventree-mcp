@@ -9,8 +9,11 @@ import (
 	"github.com/davidvanlaatum/dvgoutils/logging"
 	"github.com/davidvanlaatum/inventree-mcp/internal/buildinfo"
 	"github.com/davidvanlaatum/inventree-mcp/internal/config"
+	"github.com/davidvanlaatum/inventree-mcp/internal/oauth"
 	"github.com/davidvanlaatum/inventree-mcp/internal/tools"
+	"github.com/modelcontextprotocol/go-sdk/auth"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/modelcontextprotocol/go-sdk/oauthex"
 )
 
 func New(deps tools.Dependencies) *mcp.Server {
@@ -44,14 +47,43 @@ func RunStdio(ctx context.Context, srv *mcp.Server) error {
 }
 
 func RunHTTP(ctx context.Context, cfg config.Config, srv *mcp.Server) error {
-	handler := HTTPHandler(ctx, srv)
-	mux := http.NewServeMux()
-	mux.Handle(cfg.Path, handler)
+	handler, err := HTTPMux(ctx, cfg, srv)
+	if err != nil {
+		return err
+	}
 	httpServer := &http.Server{
 		Addr:    cfg.Listen,
-		Handler: mux,
+		Handler: handler,
 	}
 	return httpServer.ListenAndServe()
+}
+
+func HTTPMux(ctx context.Context, cfg config.Config, srv *mcp.Server) (http.Handler, error) {
+	handler := HTTPHandler(ctx, srv)
+	mux := http.NewServeMux()
+	if cfg.Transport == config.TransportHTTP && cfg.Environment == config.EnvironmentProduction {
+		keyring, err := cfg.OAuthKeyring.Keyring()
+		if err != nil {
+			return nil, err
+		}
+		verifier := oauth.AccessTokenVerifier(oauth.EnvelopeCodec{Keyring: keyring}, cfg.OAuthIssuerURL, cfg.OAuthResourceURL, cfg.OAuthClientIDs, nil)
+		handler = auth.RequireBearerToken(verifier, &auth.RequireBearerTokenOptions{
+			ResourceMetadataURL: cfg.OAuthProtectedResourceMetadataURL(),
+		})(handler)
+		mux.Handle("/.well-known/oauth-protected-resource", auth.ProtectedResourceMetadataHandler(&oauthex.ProtectedResourceMetadata{
+			Resource:                      cfg.OAuthResourceURL,
+			AuthorizationServers:          []string{cfg.OAuthIssuerURL},
+			ScopesSupported:               supportedOAuthScopes(),
+			BearerMethodsSupported:        []string{"header"},
+			ResourceName:                  "InvenTree MCP",
+			ResourceDocumentation:         "https://github.com/davidvanlaatum/inventree-mcp",
+			ResourcePolicyURI:             "",
+			ResourceTOSURI:                "",
+			DPOPSigningAlgValuesSupported: nil,
+		}))
+	}
+	mux.Handle(cfg.Path, handler)
+	return mux, nil
 }
 
 func HTTPHandler(ctx context.Context, srv *mcp.Server) http.Handler {
@@ -75,4 +107,14 @@ func HTTPHandler(ctx context.Context, srv *mcp.Server) http.Handler {
 
 func WithTransportLogger(ctx context.Context, transport string) context.Context {
 	return logging.WithLogger(ctx, logging.FromContext(ctx).With(slog.String("transport", transport)))
+}
+
+func supportedOAuthScopes() []string {
+	return []string{
+		tools.ScopeInventreeRead,
+		tools.ScopeInventreeWrite,
+		tools.ScopeInventreeUpload,
+		tools.ScopeInventreeOperational,
+		tools.ScopeInventreeDestructive,
+	}
 }

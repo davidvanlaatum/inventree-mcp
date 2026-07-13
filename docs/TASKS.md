@@ -82,7 +82,7 @@ Before `M1C-S04` is complete, mutating, operational, destructive, and upload too
 | [F-S04](#f-s04-build-order-workflows) | Build order workflows. | Future |
 | [F-S05](#f-s05-stocktake-adjustments) | Stocktake adjustments. | Future |
 | [F-S06](#f-s06-systemd-notify-and-watchdog-support) | Native systemd notification support for packaged HTTP deployments. | Future |
-| [F-S07](#f-s07-production-http-oauth-startup) | Wire production HTTP startup to OAuth configuration and server dependencies. | Future |
+| [F-S07](#f-s07-production-http-oauth-startup) | Wire production HTTP startup to OAuth configuration and server dependencies. | Done |
 | [F-S08](#f-s08-chatgpt-connector-oauth-setup-flow) | Implement ChatGPT connector authorization, token, and setup-page flow. | Future |
 | [F-S09](#f-s09-reverse-proxy-canonical-url-enforcement) | Enforce public issuer/resource URLs behind a trusted reverse proxy. | Future |
 | [F-S10](#f-s10-packaged-http-deployment-and-live-connector-validation) | Validate packaged HTTP deployment and live ChatGPT connector setup. | Future |
@@ -1020,9 +1020,12 @@ Tasks:
 
 ### F-S07: Production HTTP OAuth Startup
 
-- Status: `Future`
+- Status: `Done`
 - Depends on: M1C-S04, M1I-S02, product review, and infosec review
 - Scope: replace the current development-only HTTP gate with production HTTP startup that constructs OAuth services, keyrings, protected-resource middleware, scoped tool dependencies, and HTTP routes from explicit configuration.
+- Validation: `go test ./...` passed after review follow-up fixes; `go test ./internal/config ./internal/oauth ./internal/server ./cmd/inventree-mcp ./docs` passed after review follow-up fixes; `git diff --check` passed.
+- Review: Senior Go Developer, Senior QA / Test Architect, Senior Product Manager, and Senior Infosec Reviewer reviews run. Initial findings requested deriving protected-resource metadata from the resource URL rather than issuer URL, redacting malformed OAuth key env values from startup errors, rejecting URL userinfo in OAuth issuer/resource/client ID config, splitting F-S07 protected-resource metadata from future F-S08 authorization/token endpoints in `docs/PLAN.md`, adding `INVENTREE_URL` to README production requirements, proving production `HTTPMux` per-tool scope denial before handler dispatch, expanding verifier negative tests for malformed/tampered/expired-session/invalid-credential tokens, and updating this task status. Follow-up changes addressed those findings. Focused Go, QA, and infosec reruns found no remaining actionable findings; focused product rerun requested this validation-note update, which changed only task evidence metadata and did not require another rerun.
+- Residual risk: production HTTP can validate existing sealed access-token envelopes and protect `/mcp`, but live ChatGPT connector setup still waits for F-S08 authorization/setup endpoints, F-S09 reverse-proxy canonical URL enforcement, and F-S10 packaged deployment validation.
 - Acceptance:
   - Production HTTP `serve --transport http` starts only when all required OAuth issuer, resource, key, lifetime, client metadata, and InvenTree base URL settings are valid.
   - Raw InvenTree credentials remain rejected as HTTP runtime credentials outside the setup flow.
@@ -1034,14 +1037,14 @@ Tasks:
 
 Tasks:
 
-- [ ] Define the production HTTP OAuth config shape and environment variables.
-- [ ] Load and validate OAuth envelope keys with explicit key IDs and active/decrypt-only states.
-- [ ] Construct the OAuth token verifier and request-scoped `OAuthClientFromContext` dependencies from production config.
-- [ ] Wire protected MCP HTTP routes to SDK bearer middleware and protected-resource metadata.
-- [ ] Enable full HTTP tool registration only when OAuth authorization mode is active.
-- [ ] Preserve development-only incomplete-OAuth startup as non-production behavior.
-- [ ] Add unit and integration tests for config, route wiring, verifier failures, and scoped tool exposure.
-- [ ] Update operator and release documentation.
+- [x] Define the production HTTP OAuth config shape and environment variables.
+- [x] Load and validate OAuth envelope keys with explicit key IDs and active/decrypt-only states.
+- [x] Construct the OAuth token verifier and request-scoped `OAuthClientFromContext` dependencies from production config.
+- [x] Wire protected MCP HTTP routes to SDK bearer middleware and protected-resource metadata.
+- [x] Enable full HTTP tool registration only when OAuth authorization mode is active.
+- [x] Preserve development-only incomplete-OAuth startup as non-production behavior.
+- [x] Add unit and integration tests for config, route wiring, verifier failures, and scoped tool exposure.
+- [x] Update operator and release documentation.
 
 ### F-S08: ChatGPT Connector OAuth Setup Flow
 
