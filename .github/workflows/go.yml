@@ -60,7 +60,7 @@ jobs:
           notes-ref: gocoverage-stable
 
       - name: Update coverage badge
-        uses: schneegans/dynamic-badges-action@v1.8.0
+        uses: schneegans/dynamic-badges-action@v1.9.0
         if: github.ref_name == 'main'
         with:
           auth: ${{ secrets.COVERAGE_GIST_SECRET }}
