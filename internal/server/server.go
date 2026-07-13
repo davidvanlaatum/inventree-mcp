@@ -3,6 +3,8 @@ package server
 import (
 	"context"
 	"errors"
+	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 
@@ -27,24 +29,43 @@ func Run(ctx context.Context, cfg config.Config, deps tools.Dependencies) error 
 	if cfg.Transport == config.TransportHTTP && deps.EnableWriteTools && deps.AuthorizationMode != tools.AuthorizationModeOAuth {
 		return errors.New("HTTP transport cannot register write tools without per-tool OAuth scope enforcement")
 	}
+	var traffic *trafficLog
+	var closer io.Closer
+	if cfg.DebugTrafficLog != "" {
+		var err error
+		traffic, closer, err = openTrafficLog(cfg.DebugTrafficLog)
+		if err != nil {
+			return fmt.Errorf("open debug traffic log: %w", err)
+		}
+		defer func() {
+			_ = closer.Close()
+		}()
+	}
 	srv := New(deps)
 	switch cfg.Transport {
 	case config.TransportStdio:
-		return RunStdio(ctx, srv)
+		return RunStdio(ctx, srv, traffic)
 	case config.TransportHTTP:
-		return RunHTTP(ctx, cfg, srv)
+		return RunHTTP(ctx, cfg, srv, traffic)
 	default:
 		return cfg.Validate()
 	}
 }
 
-func RunStdio(ctx context.Context, srv *mcp.Server) error {
+func RunStdio(ctx context.Context, srv *mcp.Server, traffic *trafficLog) error {
 	ctx = WithTransportLogger(ctx, string(config.TransportStdio))
-	return srv.Run(ctx, &mcp.StdioTransport{})
+	transport := mcp.Transport(&mcp.StdioTransport{})
+	if traffic != nil {
+		transport = loggingTransport{transport: transport, log: traffic, name: string(config.TransportStdio)}
+	}
+	return srv.Run(ctx, transport)
 }
 
-func RunHTTP(ctx context.Context, cfg config.Config, srv *mcp.Server) error {
+func RunHTTP(ctx context.Context, cfg config.Config, srv *mcp.Server, traffic *trafficLog) error {
 	handler := HTTPHandler(ctx, srv)
+	if traffic != nil {
+		handler = traffic.middleware(string(config.TransportHTTP), handler)
+	}
 	mux := http.NewServeMux()
 	mux.Handle(cfg.Path, handler)
 	httpServer := &http.Server{

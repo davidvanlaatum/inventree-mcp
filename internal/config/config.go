@@ -24,6 +24,7 @@ const (
 	EnvUploadAllowRoots       = "INVENTREE_UPLOAD_ALLOW_ROOTS"
 	EnvUploadMaxBytes         = "INVENTREE_UPLOAD_MAX_BYTES"
 	EnvLogLevel               = "INVENTREE_MCP_LOG_LEVEL"
+	EnvDebugTrafficLog        = "INVENTREE_MCP_DEBUG_TRAFFIC_LOG"
 	EnvDevIncompleteOAuth     = "INVENTREE_MCP_DEV_INCOMPLETE_OAUTH"
 
 	invalidDuration = time.Duration(-1)
@@ -64,6 +65,7 @@ type Config struct {
 	UploadAllowRoots       []string
 	UploadMaxBytes         int64
 	LogLevel               string
+	DebugTrafficLog        string
 	DevIncompleteOAuth     bool
 }
 
@@ -90,6 +92,7 @@ func ParseServeWithEnv(args []string, getenv Env, output io.Writer) (Config, err
 		UploadAllowRoots:    listEnv(getenv, EnvUploadAllowRoots),
 		UploadMaxBytes:      int64Default(getenv, EnvUploadMaxBytes, 5*1024*1024),
 		LogLevel:            envDefault(getenv, EnvLogLevel, "info"),
+		DebugTrafficLog:     strings.TrimSpace(getenv(EnvDebugTrafficLog)),
 	}
 
 	fs := flag.NewFlagSet("serve", flag.ContinueOnError)
@@ -111,6 +114,7 @@ func ParseServeWithEnv(args []string, getenv Env, output io.Writer) (Config, err
 	})
 	fs.Int64Var(&cfg.UploadMaxBytes, "upload-max-bytes", cfg.UploadMaxBytes, flagHelp("maximum bytes accepted from one upload source", EnvUploadMaxBytes))
 	fs.StringVar(&cfg.LogLevel, "log-level", cfg.LogLevel, flagHelp("log level", EnvLogLevel))
+	fs.StringVar(&cfg.DebugTrafficLog, "debug-traffic-log", cfg.DebugTrafficLog, flagHelp("append full MCP request/response JSON to this debug log file", EnvDebugTrafficLog))
 	fs.BoolVar(&cfg.DevIncompleteOAuth, "dev-incomplete-oauth", boolEnv(getenv, EnvDevIncompleteOAuth), flagHelp("allow development-only HTTP parsing before OAuth startup wiring is available", EnvDevIncompleteOAuth))
 
 	if err := fs.Parse(args); err != nil {
