@@ -52,6 +52,22 @@ func TestParseServeConfiguresUploadPolicy(t *testing.T) {
 	r.Equal(int64(2048), cfg.UploadMaxBytes)
 }
 
+func TestParseServeConfiguresDebugTrafficLog(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+
+	cfg, err := ParseServeWithEnv([]string{
+		"--transport", "stdio",
+		"--inventree-url", "https://inventory.example.test",
+		"--debug-traffic-log", "/tmp/flag-traffic.jsonl",
+	}, mapEnv(map[string]string{
+		EnvInvenTreeToken:  "token",
+		EnvDebugTrafficLog: "/tmp/env-traffic.jsonl",
+	}), nil)
+	r.NoError(err)
+	r.Equal("/tmp/flag-traffic.jsonl", cfg.DebugTrafficLog)
+}
+
 func TestParseServeRejectsMissingStdioRequiredValues(t *testing.T) {
 	t.Parallel()
 	r := require.New(t)
@@ -252,6 +268,7 @@ func TestParseServeHelpMentionsEnvVars(t *testing.T) {
 		EnvInvenTreeTimeout,
 		EnvInvenTreeTLSSkipVerify,
 		EnvLogLevel,
+		EnvDebugTrafficLog,
 		EnvDevIncompleteOAuth,
 	} {
 		a.Contains(help, envVar)

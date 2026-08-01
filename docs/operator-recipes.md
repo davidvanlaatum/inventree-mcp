@@ -22,15 +22,18 @@ HTTP OAuth building blocks are implemented for milestone 1, including token enve
 
 ## STDIO Setup
 
-- Required inputs: `INVENTREE_URL`, `INVENTREE_TOKEN`, optional `INVENTREE_AUTH_SCHEME`, `INVENTREE_UPLOAD_ALLOW_ROOTS`, and `INVENTREE_UPLOAD_MAX_BYTES`.
+- Required inputs: `INVENTREE_URL`, `INVENTREE_TOKEN`, optional `INVENTREE_AUTH_SCHEME`, `INVENTREE_UPLOAD_ALLOW_ROOTS`, `INVENTREE_UPLOAD_MAX_BYTES`, and optional `INVENTREE_MCP_DEBUG_TRAFFIC_LOG`.
 - Preferred flow: validate configuration, seed logging context, run `inventree-mcp serve --transport stdio`, perform a read-only smoke test.
 - Local upload flow: configure trusted operator-controlled upload roots with `INVENTREE_UPLOAD_ALLOW_ROOTS` or repeated `--upload-allow-root`; tune the byte limit with `INVENTREE_UPLOAD_MAX_BYTES` or `--upload-max-bytes` when the default limit is too small.
+- Debug traffic flow: set `--debug-traffic-log /secure/path/mcp-traffic.jsonl` or `INVENTREE_MCP_DEBUG_TRAFFIC_LOG` only while diagnosing MCP client behavior. The JSON Lines file records full MCP request and response payloads, including structured clarification results, tool arguments, and any sensitive data the MCP client sends.
 - Clarify when: auth scheme is neither `Token` nor `Bearer`, URL is missing, upload allowlisted roots are not trusted, or TLS skip verify is requested outside local/test use.
 - Expected output: STDIO MCP server ready for local clients.
 
 ## Reverse-Proxy HTTP Deployment
 
 Production reverse-proxy HTTP deployment depends on the completed HTTP OAuth startup and setup wiring. In milestone 1, the core OAuth and per-tool scope pieces are present, but the packaged production service should remain disabled until the deployment path is wired and validated end to end.
+
+Development HTTP mode accepts the same debug traffic log option as STDIO. HTTP debug entries include request URIs including query strings, request bodies, response bodies, and streaming response chunks; oversized HTTP request bodies fail closed and response capture is capped in the log. Treat this file as sensitive and operator-local.
 
 - Required future inputs: internal listen address, public canonical HTTPS issuer/resource URLs, trusted proxy settings, envelope keys, rate-limit settings.
 - Future preferred flow: configure reverse proxy TLS, expose only the proxy-facing listener, set canonical URLs explicitly, configure trusted forwarded headers, validate metadata/challenge URLs.

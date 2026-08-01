@@ -3,9 +3,12 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -63,6 +66,62 @@ func TestStdioServerCanInitializeAndListTools(t *testing.T) {
 
 	cancel()
 	<-serverDone
+}
+
+func TestTrafficLogCapturesStdioJSONRPCMessages(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	var output strings.Builder
+	traffic := &trafficLog{w: &output}
+	clientTransport, serverTransport := mcp.NewInMemoryTransports()
+	serverDone := make(chan error, 1)
+	go func() {
+		serverDone <- New(tools.Dependencies{}).Run(ctx, loggingTransport{
+			transport: serverTransport,
+			log:       traffic,
+			name:      string(config.TransportStdio),
+		})
+	}()
+
+	client := mcp.NewClient(&mcp.Implementation{Name: "test-client", Version: "v0.0.0"}, nil)
+	session, err := client.Connect(ctx, clientTransport, nil)
+	r.NoError(err)
+	_, err = session.ListTools(ctx, nil)
+	r.NoError(err)
+	r.NoError(session.Close())
+	cancel()
+	<-serverDone
+
+	var methods []string
+	var outboundCount int
+	for _, line := range strings.Split(strings.TrimSpace(output.String()), "\n") {
+		var entry trafficLogEntry
+		r.NoError(json.Unmarshal([]byte(line), &entry))
+		a.Equal(string(config.TransportStdio), entry.Transport)
+		a.NotEmpty(entry.Time)
+		if entry.Direction == "outbound" {
+			outboundCount++
+		}
+		if len(entry.Message) == 0 {
+			continue
+		}
+		var message map[string]any
+		r.NoError(json.Unmarshal(entry.Message, &message))
+		if method, ok := message["method"].(string); ok {
+			methods = append(methods, entry.Direction+":"+method)
+		}
+	}
+
+	a.Contains(methods, "inbound:initialize")
+	a.Contains(methods, "inbound:tools/list")
+	a.Contains(methods, "inbound:notifications/initialized")
+	a.Positive(outboundCount)
 }
 
 func TestStdioServerListsOnlyMilestonePrompts(t *testing.T) {
@@ -680,4 +739,170 @@ func TestRequestAndToolScopedLoggersAreReattached(t *testing.T) {
 	})
 	r.NotNil(record)
 	a.Equal("stdio", record["transport"])
+}
+
+func TestTrafficLogMiddlewareCapturesHTTPBodies(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+
+	var output strings.Builder
+	traffic := &trafficLog{w: &output}
+	handler := traffic.middleware(string(config.TransportHTTP), http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		body, err := io.ReadAll(req.Body)
+		r.NoError(err)
+		a.Equal(`{"method":"tools/list"}`, string(body))
+		w.WriteHeader(http.StatusAccepted)
+		_, err = w.Write([]byte(`{"ok":true}`))
+		r.NoError(err)
+	}))
+
+	req := httptest.NewRequest(http.MethodPost, "/mcp?debug=true", strings.NewReader(`{"method":"tools/list"}`))
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, req)
+
+	r.Equal(http.StatusAccepted, recorder.Code)
+	r.Equal(`{"ok":true}`, recorder.Body.String())
+
+	lines := strings.Split(strings.TrimSpace(output.String()), "\n")
+	r.Len(lines, 2)
+	var inbound trafficLogEntry
+	var outbound trafficLogEntry
+	r.NoError(json.Unmarshal([]byte(lines[0]), &inbound))
+	r.NoError(json.Unmarshal([]byte(lines[1]), &outbound))
+	a.Equal("inbound", inbound.Direction)
+	a.Equal(http.MethodPost, inbound.Method)
+	a.Equal("/mcp?debug=true", inbound.Path)
+	a.Equal(`{"method":"tools/list"}`, inbound.Body)
+	a.Equal("outbound", outbound.Direction)
+	a.Equal(http.StatusAccepted, outbound.Status)
+	a.Equal(`{"ok":true}`, outbound.Body)
+}
+
+func TestTrafficLogMiddlewareRejectsUnreadableHTTPRequestBody(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+
+	var output strings.Builder
+	traffic := &trafficLog{w: &output}
+	called := false
+	handler := traffic.middleware(string(config.TransportHTTP), http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		called = true
+	}))
+
+	req := httptest.NewRequest(http.MethodPost, "/mcp", nil)
+	req.Body = errReadCloser{err: errors.New("read failed")}
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, req)
+
+	a.False(called)
+	a.Equal(http.StatusBadRequest, recorder.Code)
+	lines := strings.Split(strings.TrimSpace(output.String()), "\n")
+	r.Len(lines, 2)
+	var inbound trafficLogEntry
+	r.NoError(json.Unmarshal([]byte(lines[0]), &inbound))
+	a.Equal("inbound", inbound.Direction)
+	a.Equal("read failed", inbound.Error)
+}
+
+func TestTrafficLogMiddlewareRejectsOversizedHTTPRequestBody(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+
+	var output strings.Builder
+	traffic := &trafficLog{w: &output}
+	handler := traffic.middleware(string(config.TransportHTTP), http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		t.Fatal("handler should not be called for oversized debug traffic bodies")
+	}))
+
+	req := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(strings.Repeat("x", maxHTTPDebugBodyBytes+1)))
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, req)
+
+	a.Equal(http.StatusRequestEntityTooLarge, recorder.Code)
+	lines := strings.Split(strings.TrimSpace(output.String()), "\n")
+	r.Len(lines, 2)
+	var inbound trafficLogEntry
+	r.NoError(json.Unmarshal([]byte(lines[0]), &inbound))
+	a.True(inbound.BodyTruncated)
+	a.Len(inbound.Body, maxHTTPDebugBodyBytes)
+}
+
+func TestTrafficLogMiddlewareCapsHTTPResponseBodyAndStreamsSSEChunks(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+
+	var largeOutput strings.Builder
+	largeTraffic := &trafficLog{w: &largeOutput}
+	largeHandler := largeTraffic.middleware(string(config.TransportHTTP), http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, err := w.Write([]byte(strings.Repeat("y", maxHTTPDebugBodyBytes+1)))
+		r.NoError(err)
+	}))
+	largeRecorder := httptest.NewRecorder()
+	largeHandler.ServeHTTP(largeRecorder, httptest.NewRequest(http.MethodPost, "/mcp", nil))
+
+	largeLines := strings.Split(strings.TrimSpace(largeOutput.String()), "\n")
+	r.Len(largeLines, 2)
+	var largeOutbound trafficLogEntry
+	r.NoError(json.Unmarshal([]byte(largeLines[1]), &largeOutbound))
+	a.True(largeOutbound.BodyTruncated)
+	a.Len(largeOutbound.Body, maxHTTPDebugBodyBytes)
+
+	var streamOutput strings.Builder
+	streamTraffic := &trafficLog{w: &streamOutput}
+	streamHandler := streamTraffic.middleware(string(config.TransportHTTP), http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, err := w.Write([]byte("event: message\n\n"))
+		r.NoError(err)
+	}))
+	streamRecorder := httptest.NewRecorder()
+	streamHandler.ServeHTTP(streamRecorder, httptest.NewRequest(http.MethodPost, "/mcp", nil))
+
+	streamLines := strings.Split(strings.TrimSpace(streamOutput.String()), "\n")
+	r.Len(streamLines, 3)
+	var chunk trafficLogEntry
+	r.NoError(json.Unmarshal([]byte(streamLines[1]), &chunk))
+	a.Equal("outbound_chunk", chunk.Direction)
+	a.Equal("event: message\n\n", chunk.Body)
+	var final trafficLogEntry
+	r.NoError(json.Unmarshal([]byte(streamLines[2]), &final))
+	a.Equal("outbound", final.Direction)
+	a.Empty(final.Body)
+}
+
+func TestOpenTrafficLogRejectsUnsafeExistingFiles(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+
+	dir := t.TempDir()
+	worldReadable := filepath.Join(dir, "traffic.jsonl")
+	r.NoError(os.WriteFile(worldReadable, nil, 0o644))
+	_, _, err := openTrafficLog(worldReadable)
+	r.Error(err)
+	r.Contains(err.Error(), "permissions")
+
+	target := filepath.Join(dir, "target.jsonl")
+	r.NoError(os.WriteFile(target, nil, 0o600))
+	link := filepath.Join(dir, "link.jsonl")
+	if err := os.Symlink(target, link); err != nil {
+		t.Skipf("symlink not available: %v", err)
+	}
+	_, _, err = openTrafficLog(link)
+	r.Error(err)
+	r.Contains(err.Error(), "symlink")
+}
+
+type errReadCloser struct {
+	err error
+}
+
+func (r errReadCloser) Read([]byte) (int, error) {
+	return 0, r.err
+}
+
+func (r errReadCloser) Close() error {
+	return nil
 }
