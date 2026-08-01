@@ -34,6 +34,8 @@ Before marking a story `Done`, add or update story-local completion notes:
 
 When any story status changes, update both the Task Index row and the story-local `Status:` line in the same change. Before handoff, re-read both locations for every edited story and fix any mismatch.
 
+When a story has an `Issue:` link, keep the GitHub issue aligned with changes to the story's title, status, dependencies, scope, acceptance criteria, and task checklist, and add progress, validation, review, or residual-risk context when it is relevant to the handoff. Ask the operator before creating any GitHub issue for a story, then add the resulting `Issue:` link to the story. Do not close a linked issue merely because the story is marked `Done` locally or a PR is opened; close it through an accurate closing reference in the implementing PR when that PR is merged, or close it only after the merge is verified. If the merged PR does not complete the issue scope, keep the issue open and update it with the remaining work.
+
 When updating an already-pushed branch or existing PR, prefer fresh follow-up commits over amending or force-pushing. Rewrite published history only for an explicit operator request or a concrete repository hygiene issue, and use `--force-with-lease` when a rewrite is unavoidable. Keep existing PR titles, descriptions, checklists, validation notes, review summaries, residual risks, and follow-up lists current whenever follow-up commits change the branch scope or status. Prefer squash merge when merging PRs unless the operator or repository policy requires another strategy.
 
 Remove draft status once the PR is ready for human review: all automated or subagent review feedback has been addressed or explicitly documented, required rerun reviews are complete, the PR title/body/checklist are current, and the pipeline has passed on the latest pushed commit. Do not mark the PR ready while CI is pending, failing, or stale for an older head SHA.
@@ -924,6 +926,7 @@ Residual risk:
 ### F-S01: Evaluate Docker Compose Testcontainers Stack
 
 - Status: `Future`
+- Issue: [#46](https://github.com/davidvanlaatum/inventree-mcp/issues/46)
 - Depends on: M1H-S01
 - Scope: evaluate whether `github.com/testcontainers/testcontainers-go/modules/compose` can replace or complement the hand-wired InvenTree Testcontainers stack by using official InvenTree Docker Compose files plus test-specific overrides.
 - Acceptance:
@@ -941,6 +944,7 @@ Tasks:
 ### F-S02: BOM Import Workflow
 
 - Status: `Future`
+- Issue: [#47](https://github.com/davidvanlaatum/inventree-mcp/issues/47)
 - Depends on: milestone 1 complete and product review
 
 Tasks:
@@ -952,6 +956,7 @@ Tasks:
 ### F-S03: Purchase Order Write And Receiving
 
 - Status: `Future`
+- Issue: [#48](https://github.com/davidvanlaatum/inventree-mcp/issues/48)
 - Depends on: milestone 1 complete and product review
 - Scope: create purchase orders and purchase-order lines from stable supplier-part inputs, then receive purchase-order lines into stock when the operational workflow is explicitly in scope. The highest-value first write workflow is `create_purchase_order_with_lines`: accept a supplier, supplier reference, description/date fields, an idempotency key, and validated line inputs, then create or update the purchase order and lines after the same preview math and supplier-part checks used by `preview_purchase_order_with_lines`.
 - Acceptance:
@@ -977,6 +982,7 @@ Tasks:
 ### F-S04: Build Order Workflows
 
 - Status: `Future`
+- Issue: [#49](https://github.com/davidvanlaatum/inventree-mcp/issues/49)
 - Depends on: milestone 1 complete and product review
 
 Tasks:
@@ -988,6 +994,7 @@ Tasks:
 ### F-S05: Stocktake Adjustments
 
 - Status: `Future`
+- Issue: [#50](https://github.com/davidvanlaatum/inventree-mcp/issues/50)
 - Depends on: milestone 1 complete and product review
 
 Tasks:
@@ -999,6 +1006,7 @@ Tasks:
 ### F-S06: Systemd Notify And Watchdog Support
 
 - Status: `Future`
+- Issue: [#51](https://github.com/davidvanlaatum/inventree-mcp/issues/51)
 - Depends on: F-S07 and product review
 - Scope: add native systemd notification support for packaged HTTP deployments.
 - Acceptance:
@@ -1023,6 +1031,7 @@ Tasks:
 ### F-S07: Production HTTP OAuth Startup
 
 - Status: `Future`
+- Issue: [#52](https://github.com/davidvanlaatum/inventree-mcp/issues/52)
 - Depends on: M1C-S04, M1I-S02, product review, and infosec review
 - Scope: replace the current development-only HTTP gate with production HTTP startup that constructs OAuth services, keyrings, protected-resource middleware, scoped tool dependencies, and HTTP routes from explicit configuration.
 - Acceptance:
@@ -1048,6 +1057,7 @@ Tasks:
 ### F-S08: ChatGPT Connector OAuth Setup Flow
 
 - Status: `Future`
+- Issue: [#53](https://github.com/davidvanlaatum/inventree-mcp/issues/53)
 - Depends on: F-S07, current official OpenAI connector documentation verification, product review, and infosec review
 - Scope: implement the operator-facing OAuth authorization flow for ChatGPT connector setup, including authorization, setup credential collection, authorization-code issuance, token exchange, refresh, and credential-source metadata.
 - Acceptance:
@@ -1076,6 +1086,7 @@ Tasks:
 ### F-S09: Reverse-Proxy Canonical URL Enforcement
 
 - Status: `Future`
+- Issue: [#54](https://github.com/davidvanlaatum/inventree-mcp/issues/54)
 - Depends on: F-S07, F-S08, deployment design review, product review, and infosec review
 - Scope: make production HTTP metadata, challenges, redirects, and token audience checks use explicitly configured public HTTPS issuer/resource URLs behind a trusted reverse proxy without trusting arbitrary inbound host or forwarded headers.
 - Acceptance:
@@ -1098,6 +1109,7 @@ Tasks:
 ### F-S10: Packaged HTTP Deployment And Live Connector Validation
 
 - Status: `Future`
+- Issue: [#55](https://github.com/davidvanlaatum/inventree-mcp/issues/55)
 - Depends on: F-S07, F-S08, F-S09, release package availability, and product review
 - Scope: validate the installed package and a real ChatGPT connector setup path end to end before documenting production HTTP deployment as supported.
 - Acceptance:
@@ -1122,6 +1134,7 @@ Tasks:
 ### F-S11: Parameter Template Administration
 
 - Status: `Future`
+- Issue: [#56](https://github.com/davidvanlaatum/inventree-mcp/issues/56)
 - Depends on: milestone 1 complete, product review, and infosec review
 - Scope: administer `/api/parameter/template/` records and provide a guarded template-merge workflow for consolidating duplicate or overlapping templates.
 - Acceptance:
@@ -1144,6 +1157,7 @@ Tasks:
 ### F-S12: Global Parameter Value Search And Delete
 
 - Status: `Future`
+- Issue: [#57](https://github.com/davidvanlaatum/inventree-mcp/issues/57)
 - Depends on: milestone 1 complete, product review, and infosec review
 - Scope: expose cross-inventory `/api/parameter/` reads and guarded deletion of individual part parameter rows beyond the current part-scoped `get_part_parameters` tool.
 - Acceptance:
@@ -1164,6 +1178,7 @@ Tasks:
 ### F-S13: Category Parameter Defaults
 
 - Status: `Future`
+- Issue: [#58](https://github.com/davidvanlaatum/inventree-mcp/issues/58)
 - Depends on: milestone 1 complete, product review, and infosec review
 - Scope: manage `/api/part/category/parameters/` category parameter defaults using existing parameter templates by default.
 - Acceptance:
@@ -1184,6 +1199,7 @@ Tasks:
 ### F-S14: Bulk Parameter Propagation And Audit Workflows
 
 - Status: `Future`
+- Issue: [#59](https://github.com/davidvanlaatum/inventree-mcp/issues/59)
 - Depends on: F-S11, F-S12, F-S13, product review, QA review, and infosec review
 - Scope: add safe bulk operator workflows for parameter propagation across matched parts and consistency audits that identify duplicate or overlapping templates and overloaded fields.
 - Acceptance:
@@ -1204,6 +1220,7 @@ Tasks:
 ### F-S15: Live Order Entry Tool Hardening
 
 - Status: `Future`
+- Issue: [#60](https://github.com/davidvanlaatum/inventree-mcp/issues/60)
 - Depends on: milestone 1 complete, product review, QA review, and infosec review
 - Scope: turn the first live order-entry run from an eBay order page into regression coverage and tool-surface hardening. The live run proved `search_manufacturers`, `create_company`, `create_supplier_part`, and `preview_purchase_order_with_lines` were useful, but still required REST fallbacks for category administration, duplicate checks, parameter template/default administration, parameter value recovery, image/attachment recovery, and purchase-order write/recovery steps.
 - Acceptance:

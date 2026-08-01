@@ -9,6 +9,8 @@
 When picking up an implementation task from `docs/TASKS.md`:
 
 - Read the task, its dependencies, acceptance criteria, and current status before editing code.
+- When a task has an `Issue:` link, read the linked GitHub issue with the task and verify that they describe the same current work. Keep the issue title, status context, dependencies, scope, acceptance criteria, and checklist aligned whenever the task changes; add progress, validation, review, or residual-risk context to the issue when it is relevant to the handoff.
+- Ask the operator before creating any GitHub issue for a task. After the operator approves issue creation, add the resulting `Issue:` link to the story in `docs/TASKS.md` and keep both surfaces aligned.
 - Review all applicable docs before planning: at minimum `docs/PLAN.md`, `docs/TASKS.md`, `docs/api-schema.md` when API behavior is involved, `docs/tool-reference.md` when tool behavior changes, `docs/operator-recipes.md` when operator workflow changes, and `docs/reviewers.md` when a review pass is needed.
 - After reviewing the task and applicable docs, identify any unclear requirements, conflicting docs, missing product/workflow decisions, or unsafe assumptions. Ask the operator the specific questions before building the implementation plan or editing files. If there are no blocking questions, state the assumptions the plan will use.
 - If the task status is `Blocked`, do not implement around the blocker. Resolve the blocker, ask the operator the specific question, or update the task with why it remains blocked.
@@ -26,6 +28,7 @@ When picking up an implementation task from `docs/TASKS.md`:
 - After addressing GitHub PR comments, reply to each addressed comment or review thread with the change made, validation run, and any residual decision or risk. Do not resolve review threads unless the operator explicitly asks for resolution.
 - Repeat validation and review until there are no unresolved actionable findings for the task scope.
 - Update `docs/TASKS.md` task status, checkboxes, `Validation`, `Review`, and `Residual risk` notes as part of completion. Mark a task `Done` only when its acceptance criteria are met, tests/docs are updated, and review feedback is resolved or explicitly documented.
+- Do not close a linked GitHub issue when a task is only marked `Done` locally or when its PR is opened. If merging the PR completes the full issue scope, use an accurate closing reference in the PR so GitHub closes the issue on merge, or close it only after verifying the merge. If scope remains after merge, keep the issue open and update it with the remaining work.
 - When any `docs/TASKS.md` story status changes, update both the Task Index row and the story-local `Status:` line in the same change. Before handoff, re-read the Task Index and the edited story section to verify they match.
 - When marking a task `Done`, check every `Planned` or `Blocked` task that depended on it. If all dependencies are now `Done` and no blocker remains, update that task to `Ready`; if it is still blocked, update the blocker text with the current reason.
 - Commit completed task work on the feature branch with a focused message. Do not commit directly to `main` unless the operator explicitly asks for that workflow.
