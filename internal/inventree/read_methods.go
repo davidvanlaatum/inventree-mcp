@@ -100,6 +100,12 @@ func (c *Client) SearchStockItems(ctx context.Context, query StockItemQuery) ([]
 	return listAll[StockItem](ctx, c, "/api/stock/", query.values())
 }
 
+func (c *Client) GetStockItem(ctx context.Context, id int) (StockItem, error) {
+	var out StockItem
+	err := c.get(ctx, fmt.Sprintf("/api/stock/%d/", id), &out)
+	return out, err
+}
+
 func (c *Client) SearchPartParameters(ctx context.Context, query PartParameterQuery) ([]Parameter, error) {
 	return listAll[Parameter](ctx, c, "/api/parameter/", query.values())
 }

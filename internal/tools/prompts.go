@@ -16,6 +16,7 @@ const (
 	InitialStockEntryChecklistPromptName    = "initial_stock_entry_checklist"
 	PurchasePreviewChecklistPromptName      = "purchase_preview_checklist"
 	ReceivePurchaseOrderChecklistPromptName = "receive_purchase_order_checklist"
+	StocktakeReviewPromptName               = "stocktake_review"
 )
 
 type PromptManifestEntry struct {
@@ -108,10 +109,20 @@ var PromptManifest = []PromptManifestEntry{
 		Status:      PromptFuture,
 	},
 	{
-		Name:        "stocktake_review",
+		Name:        StocktakeReviewPromptName,
 		Title:       "Stocktake review",
-		Description: "Future checklist for stocktake workflows.",
-		Status:      PromptFuture,
+		Description: "Checklist for current-state-bound single-item stock adjustments with audit reasons and explicit confirmation.",
+		Status:      PromptMilestone1,
+		Checklist: `Use this checklist before changing an existing stock item:
+- Resolve exactly one stable stock_item_id and read its current quantity, location, status, batch, serial, packaging, and delete_on_deplete state.
+- Return structured clarification instead of guessing when stock identity, observed quantity, target status, or audit reason is missing or ambiguous.
+- Use adjust_stock_quantity for a relative non-zero delta, stocktake_adjustment for an absolute physical count, and set_stock_status only for a status change; do not combine hidden location or metadata changes.
+- Supply a nonblank operator audit reason and run dry_run:true before every execution.
+- Review the before/after plan and high-risk warning. Quantity decreases and Destroyed, Rejected, or Lost statuses require especially careful review.
+- Refuse no-op changes, refuse relative or absolute quantity changes for serialized stock, and refuse a target quantity of zero when delete_on_deplete is true because this workflow must not implicitly delete stock. Status-only changes remain supported for serialized stock.
+- Execute only with confirm:true and the opaque plan_hash token from the same principal within five minutes. The token is single-use; a newer dry run for the same action and item supersedes it, and a restart invalidates it.
+- Do not adjust the same stock item concurrently through MCP, the InvenTree UI, another server replica, or a direct API client. If state changed, prepare a new dry run.
+- If execution returns partial_failure, do not retry blindly; run a new dry run for the same stable stock_item_id to inspect current state and adjust only if still needed.`,
 	},
 }
 

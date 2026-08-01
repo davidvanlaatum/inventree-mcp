@@ -82,7 +82,7 @@ Before `M1C-S04` is complete, mutating, operational, destructive, and upload too
 | [F-S02](#f-s02-bom-import-workflow) | BOM import workflow. | Future |
 | [F-S03](#f-s03-purchase-order-write-and-receiving) | Purchase order write and receiving. | Done |
 | [F-S04](#f-s04-build-order-workflows) | Build order workflows. | Future |
-| [F-S05](#f-s05-stocktake-adjustments) | Stocktake adjustments. | Future |
+| [F-S05](#f-s05-stocktake-adjustments) | Stocktake adjustments. | Done |
 | [F-S06](#f-s06-systemd-notify-and-watchdog-support) | Native systemd notification support for packaged HTTP deployments. | Future |
 | [F-S07](#f-s07-production-http-oauth-startup) | Wire production HTTP startup to OAuth configuration and server dependencies. | Done |
 | [F-S08](#f-s08-chatgpt-connector-oauth-setup-flow) | Implement ChatGPT connector authorization, token, and setup-page flow. | Future |
@@ -1006,15 +1006,32 @@ Tasks:
 
 ### F-S05: Stocktake Adjustments
 
-- Status: `Future`
+- Status: `Done`
 - Issue: [#50](https://github.com/davidvanlaatum/inventree-mcp/issues/50)
 - Depends on: milestone 1 complete and product review
+- Progress: completed the approved single-item quantity/status/count tools, mandatory audit reasons and state-bound confirmation, quantity-only stocktake behavior, high-risk decrease/write-off warnings, read/write/operational scopes, registered review prompt, checked manifests, and default-on live coverage. The operator accepted the narrow concurrent same-item race because InvenTree exposes no compare-and-swap primitive; concurrent adjustment of one item is unsupported.
+- Scope: add explicit single-stock-item operational tools for relative quantity adjustment, status-only changes, and absolute stocktake counts, plus a registered stocktake review prompt. Stocktake counts change quantity only; location, status, batch, and packaging changes remain separate operations.
+- Acceptance:
+  - `adjust_stock_quantity` applies a non-zero relative delta to one stable stock-item ID through the native add/remove endpoints and returns before/after state.
+  - `set_stock_status` changes only the status of one stable stock-item ID and returns before/after state.
+  - `stocktake_adjustment` records one absolute observed quantity through the native count endpoint without implicitly changing location, status, batch, or packaging.
+  - Every execution requires a dry-run plan bound to current stock state, an opaque principal-bound five-minute single-use confirmation token returned as `plan_hash`, explicit confirmation, and a nonblank operator audit reason; state changes observed during execution preflight are rejected without writing.
+  - Quantity decreases and transitions to `Destroyed`, `Rejected`, or `Lost` are identified as high-risk in plans and confirmations.
+  - Tools require read, write, and operational OAuth scopes, remain closed-world and non-destructive in MCP annotations, and do not automatically retry ambiguous mutation results.
+  - Unit and default-on Testcontainers integration coverage exercise successful add, remove, count, and status changes plus stale-plan, confirmation, audit-reason, high-risk, and no-hidden-metadata-change behavior.
+  - Tool reference, operator recipes, prompt manifest, and generated tool manifest match the implemented workflow.
+  - No-op changes, serialized-stock quantity changes, and quantity changes that would implicitly delete a `delete_on_deplete` item are refused without writing; serialized status-only changes remain supported.
 
 Tasks:
 
-- [ ] Define stocktake review workflow.
-- [ ] Add confirmation and audit requirements.
-- [ ] Add operational scope tests.
+- [x] Define the single-item stocktake review workflow and product boundaries.
+- [x] Add typed client methods for stock add, remove, count, and status endpoints.
+- [x] Add `adjust_stock_quantity`, `set_stock_status`, and `stocktake_adjustment` with dry-run-bound confirmation and audit requirements.
+- [x] Register the `stocktake_review` prompt and update operator documentation.
+- [x] Add unit, authorization, manifest, and default-on Testcontainers integration coverage.
+- Validation: `INVENTREE_TEST_SKIP_DOCKER=1 GOFLAGS=-trimpath go test -race -count=1 ./...` passed; `GOFLAGS=-trimpath go test -race ./internal/inventree -run '^TestClientMethodsAgainstInvenTree$/stock_adjustments$' -count=1` passed against `inventree/inventree:1.4.3` / API `511`; `GOFLAGS=-trimpath go test -race ./internal/tools -run '^TestMilestoneHappyPathToolsAgainstInvenTree$/stock_adjustment_happy_path$' -count=1` passed against the same pinned instance; and the final `GOFLAGS=-trimpath go test -race -p=1 ./...` passed with all default-on Docker suites after serialized-stock and token-capacity follow-ups. `go generate ./internal/tools` produced the checked manifest; `golangci-lint run` reported 0 issues; `GOFLAGS=-trimpath go mod tidy -diff` and `git diff --check` passed.
+- Review: Senior Go Developer, Senior QA / Test Architect, Senior Product Manager, and Senior Infosec Reviewer completed the required full panel and focused reruns. Findings covered the accepted upstream TOCTOU race, decimal normalization, implicit delete-on-deplete deletion, post-write recovery coverage, live metadata preservation, deterministic/replayable confirmation hashes, ambiguous timeout-like 4xx handling, no-op writes, serialized quantity no-ops, unbounded confirmation storage, latest-token wording, and completion bookkeeping. Fixes added opaque principal-bound expiring single-use tokens with supersession and bounded storage, schema-decimal checks, fail-closed quantity guards, recovery/readback handling, expanded unit/live coverage, and aligned public/operator docs. Final focused Go, QA, product, and infosec reruns found no unresolved actionable findings.
+- Residual risk: InvenTree does not expose an atomic compare-and-swap operation spanning the execution preflight and stock mutation. Concurrent adjustment of the same item through MCP, another replica, the InvenTree UI, or a direct API client is unsupported. The tool detects an observed preflight change before mutation and returns `partial_failure` on readback mismatch, but a write can still race in the narrow upstream read/write window. The operator accepted this limitation; an MCP-local lock was not added because it would not protect other writers.
 
 ### F-S06: Systemd Notify And Watchdog Support
 

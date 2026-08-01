@@ -189,6 +189,11 @@ func TestStdioServerListsOnlyMilestonePrompts(t *testing.T) {
 			"dry_run:true",
 			"confirm_receive:true",
 		},
+		tools.StocktakeReviewPromptName: {
+			"stable stock_item_id",
+			"dry_run:true",
+			"plan_hash",
+		},
 	}
 	for name, snippets := range expectedPrompts {
 		a.True(names[name], name)
@@ -201,7 +206,7 @@ func TestStdioServerListsOnlyMilestonePrompts(t *testing.T) {
 		}
 	}
 
-	for _, name := range []string{"bom_import_review", "stocktake_review"} {
+	for _, name := range []string{"bom_import_review"} {
 		a.False(names[name], name)
 		_, err := session.GetPrompt(ctx, &mcp.GetPromptParams{Name: name})
 		a.Error(err, name)

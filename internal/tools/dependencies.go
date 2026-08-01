@@ -22,6 +22,7 @@ type Dependencies struct {
 	UploadMaxBytes      int64
 	UploadTimeout       time.Duration
 	URLFetcher          upload.URLFetcher
+	stockPlanStore      *stockPlanStore
 }
 
 func (d Dependencies) Client(ctx context.Context) (any, error) {

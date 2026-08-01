@@ -68,13 +68,30 @@ type ParameterCreate struct {
 }
 
 type StockItemCreate struct {
-	Part     int     `json:"part"`
-	Location int     `json:"location"`
-	Quantity float64 `json:"quantity"`
-	Status   *int    `json:"status,omitempty"`
-	Batch    *string `json:"batch,omitempty"`
-	Serial   *string `json:"serial,omitempty"`
-	Notes    *string `json:"notes,omitempty"`
+	Part      int     `json:"part"`
+	Location  int     `json:"location"`
+	Quantity  float64 `json:"quantity"`
+	Status    *int    `json:"status,omitempty"`
+	Batch     *string `json:"batch,omitempty"`
+	Serial    *string `json:"serial,omitempty"`
+	Packaging *string `json:"packaging,omitempty"`
+	Notes     *string `json:"notes,omitempty"`
+}
+
+type StockAdjustmentItem struct {
+	PK       int    `json:"pk"`
+	Quantity string `json:"quantity"`
+}
+
+type StockAdjustment struct {
+	Items []StockAdjustmentItem `json:"items"`
+	Notes string                `json:"notes"`
+}
+
+type StockStatusChange struct {
+	Items  []int  `json:"items"`
+	Status int    `json:"status"`
+	Note   string `json:"note"`
 }
 
 type PurchaseOrderCreate struct {
@@ -200,6 +217,22 @@ func (c *Client) CreateStockItem(ctx context.Context, input StockItemCreate) (St
 		return StockItem{}, fmt.Errorf("InvenTree stock create returned no stock items")
 	}
 	return batch[0], nil
+}
+
+func (c *Client) AddStock(ctx context.Context, input StockAdjustment) error {
+	return c.Post(ctx, "/api/stock/add/", input, nil)
+}
+
+func (c *Client) RemoveStock(ctx context.Context, input StockAdjustment) error {
+	return c.Post(ctx, "/api/stock/remove/", input, nil)
+}
+
+func (c *Client) CountStock(ctx context.Context, input StockAdjustment) error {
+	return c.Post(ctx, "/api/stock/count/", input, nil)
+}
+
+func (c *Client) ChangeStockStatus(ctx context.Context, input StockStatusChange) error {
+	return c.Post(ctx, "/api/stock/change_status/", input, nil)
 }
 
 func (c *Client) CreatePurchaseOrder(ctx context.Context, input PurchaseOrderCreate) (PurchaseOrder, error) {

@@ -152,13 +152,14 @@ func TestWriteMethodsUseExpectedEndpoints(t *testing.T) {
 			name: "create stock item decodes array response",
 			call: func(ctx context.Context, client *Client) error {
 				_, err := client.CreateStockItem(ctx, StockItemCreate{
-					Part:     10,
-					Location: 40,
-					Quantity: 7,
-					Status:   dvgoutils.Ptr(10),
-					Batch:    dvgoutils.Ptr("B-1"),
-					Serial:   dvgoutils.Ptr("S-1"),
-					Notes:    dvgoutils.Ptr("initial stock"),
+					Part:      10,
+					Location:  40,
+					Quantity:  7,
+					Status:    dvgoutils.Ptr(10),
+					Batch:     dvgoutils.Ptr("B-1"),
+					Serial:    dvgoutils.Ptr("S-1"),
+					Packaging: dvgoutils.Ptr("reel"),
+					Notes:     dvgoutils.Ptr("initial stock"),
 				})
 				return err
 			},
@@ -172,11 +173,77 @@ func TestWriteMethodsUseExpectedEndpoints(t *testing.T) {
 				a.Equal(float64(10), body["status"])
 				a.Equal("B-1", body["batch"])
 				a.Equal("S-1", body["serial"])
+				a.Equal("reel", body["packaging"])
 				a.Equal("initial stock", body["notes"])
 				_, hasCustomer := body["customer"]
 				a.False(hasCustomer)
 				_, hasSalesOrder := body["sales_order"]
 				a.False(hasSalesOrder)
+			},
+		},
+		{
+			name: "add stock uses native adjustment endpoint",
+			call: func(ctx context.Context, client *Client) error {
+				return client.AddStock(ctx, StockAdjustment{Items: []StockAdjustmentItem{{PK: 50, Quantity: "2.5"}}, Notes: "cycle count correction"})
+			},
+			method:   http.MethodPost,
+			path:     "/api/stock/add/",
+			response: `{}`,
+			assert: func(a *assert.Assertions, body map[string]any) {
+				items := body["items"].([]any)
+				item := items[0].(map[string]any)
+				a.Equal(float64(50), item["pk"])
+				a.Equal("2.5", item["quantity"])
+				a.Equal("cycle count correction", body["notes"])
+			},
+		},
+		{
+			name: "remove stock uses native adjustment endpoint",
+			call: func(ctx context.Context, client *Client) error {
+				return client.RemoveStock(ctx, StockAdjustment{Items: []StockAdjustmentItem{{PK: 50, Quantity: "1"}}, Notes: "damaged unit"})
+			},
+			method:   http.MethodPost,
+			path:     "/api/stock/remove/",
+			response: `{}`,
+			assert: func(a *assert.Assertions, body map[string]any) {
+				items := body["items"].([]any)
+				item := items[0].(map[string]any)
+				a.Equal(float64(50), item["pk"])
+				a.Equal("1", item["quantity"])
+				a.Equal("damaged unit", body["notes"])
+			},
+		},
+		{
+			name: "count stock uses absolute quantity without hidden metadata",
+			call: func(ctx context.Context, client *Client) error {
+				return client.CountStock(ctx, StockAdjustment{Items: []StockAdjustmentItem{{PK: 50, Quantity: "7"}}, Notes: "shelf count"})
+			},
+			method:   http.MethodPost,
+			path:     "/api/stock/count/",
+			response: `{}`,
+			assert: func(a *assert.Assertions, body map[string]any) {
+				items := body["items"].([]any)
+				item := items[0].(map[string]any)
+				a.Equal(float64(50), item["pk"])
+				a.Equal("7", item["quantity"])
+				a.Len(item, 2)
+				a.NotContains(body, "location")
+				a.Equal("shelf count", body["notes"])
+			},
+		},
+		{
+			name: "change stock status uses status-only endpoint",
+			call: func(ctx context.Context, client *Client) error {
+				return client.ChangeStockStatus(ctx, StockStatusChange{Items: []int{50}, Status: 60, Note: "destroyed after inspection"})
+			},
+			method:   http.MethodPost,
+			path:     "/api/stock/change_status/",
+			response: `{}`,
+			assert: func(a *assert.Assertions, body map[string]any) {
+				a.Equal([]any{float64(50)}, body["items"])
+				a.Equal(float64(60), body["status"])
+				a.Equal("destroyed after inspection", body["note"])
+				a.Len(body, 3)
 			},
 		},
 		{

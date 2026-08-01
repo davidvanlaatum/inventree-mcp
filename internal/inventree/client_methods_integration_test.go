@@ -483,6 +483,42 @@ func TestClientMethodsAgainstInvenTree(t *testing.T) {
 		r.NoError(err)
 		r.Equal(1.5, lineAfterReceipt.Received)
 	})
+
+	t.Run("stock_adjustments", func(t *testing.T) {
+		r := require.New(t)
+		ctx, _, _ := testhandler.SetupTestHandler(t)
+		fixture := newClientMethodFixture(t, shared)
+		part := fixture.ensure(t, testenv.FixturePart)
+		location := fixture.ensure(t, testenv.FixtureLocation)
+		batch, err := fixture.run.Name("stock-adjustment")
+		r.NoError(err)
+		stock, err := fixture.client.CreateStockItem(ctx, inventree.StockItemCreate{Part: part.ID, Location: location.ID, Quantity: 5, Batch: &batch})
+		r.NoError(err)
+
+		r.NoError(fixture.client.AddStock(ctx, inventree.StockAdjustment{Items: []inventree.StockAdjustmentItem{{PK: stock.PK, Quantity: "2"}}, Notes: "integration add"}))
+		stock, err = fixture.client.GetStockItem(ctx, stock.PK)
+		r.NoError(err)
+		r.Equal(7.0, stock.Quantity)
+
+		r.NoError(fixture.client.RemoveStock(ctx, inventree.StockAdjustment{Items: []inventree.StockAdjustmentItem{{PK: stock.PK, Quantity: "1"}}, Notes: "integration remove"}))
+		stock, err = fixture.client.GetStockItem(ctx, stock.PK)
+		r.NoError(err)
+		r.Equal(6.0, stock.Quantity)
+
+		r.NoError(fixture.client.CountStock(ctx, inventree.StockAdjustment{Items: []inventree.StockAdjustmentItem{{PK: stock.PK, Quantity: "4"}}, Notes: "integration count"}))
+		stock, err = fixture.client.GetStockItem(ctx, stock.PK)
+		r.NoError(err)
+		r.Equal(4.0, stock.Quantity)
+		r.NotNil(stock.Location)
+		r.Equal(location.ID, *stock.Location)
+		r.NotNil(stock.Batch)
+		r.Equal(batch, *stock.Batch)
+
+		r.NoError(fixture.client.ChangeStockStatus(ctx, inventree.StockStatusChange{Items: []int{stock.PK}, Status: 55, Note: "integration damaged status"}))
+		stock, err = fixture.client.GetStockItem(ctx, stock.PK)
+		r.NoError(err)
+		r.Equal(55, stock.Status)
+	})
 }
 
 type clientMethodFixture struct {

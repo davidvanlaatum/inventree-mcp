@@ -198,6 +198,44 @@ endpoints:
     request_schema: '#/components/schemas/PatchedStockItem'
     request_content_type: multipart/form-data
     response_schema: '#/components/schemas/StockItem'
+  - id: get_stock_item
+    area: stock
+    path: /api/stock/{id}/
+    method: GET
+    operation_id: stock_retrieve
+    response_schema: '#/components/schemas/StockItem'
+  - id: add_stock
+    area: stock
+    path: /api/stock/add/
+    method: POST
+    operation_id: stock_add_create
+    request_schema: '#/components/schemas/StockAdd'
+    request_content_type: application/json
+    response_schema: '#/components/schemas/StockAdd'
+  - id: remove_stock
+    area: stock
+    path: /api/stock/remove/
+    method: POST
+    operation_id: stock_remove_create
+    request_schema: '#/components/schemas/StockRemove'
+    request_content_type: application/json
+    response_schema: '#/components/schemas/StockRemove'
+  - id: count_stock
+    area: stock
+    path: /api/stock/count/
+    method: POST
+    operation_id: stock_count_create
+    request_schema: '#/components/schemas/StockCount'
+    request_content_type: application/json
+    response_schema: '#/components/schemas/StockCount'
+  - id: change_stock_status
+    area: stock
+    path: /api/stock/change_status/
+    method: POST
+    operation_id: stock_change_status_create
+    request_schema: '#/components/schemas/StockChangeStatus'
+    request_content_type: application/json
+    response_schema: '#/components/schemas/StockChangeStatus'
   - id: search_stock_locations
     area: stock
     path: /api/stock/location/

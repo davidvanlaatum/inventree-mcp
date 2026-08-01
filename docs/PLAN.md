@@ -500,6 +500,11 @@ Important behaviors:
 - Require explicit confirmation for quantity decreases or scrap/write-off states.
 - Support serial/batch metadata where available.
 - Stock item metadata/status updates should use PATCH when the API supports it.
+- `adjust_stock_quantity` applies one non-zero relative delta through the native add/remove endpoints, while `stocktake_adjustment` records one absolute observed quantity through the native count endpoint and `set_stock_status` changes only status through the native status endpoint.
+- Initial stocktake scope is one stable stock-item ID per operation. Stocktake counts are quantity-only and do not implicitly change location, status, batch, or packaging.
+- Every stock adjustment execution requires a dry-run plan bound to current stock state, explicit confirmation, and a nonblank operator audit reason. The returned `plan_hash` field is an opaque, principal-bound, single-use confirmation token that expires after five minutes; a newer dry run for the same principal, action, and stock item supersedes its earlier token, and a restart invalidates all outstanding tokens. Outstanding confirmation storage is bounded globally and per principal. Plans call out quantity decreases and `Destroyed`, `Rejected`, or `Lost` status transitions as high-risk.
+- No-op changes are refused. Relative and absolute quantity changes are refused for serialized stock because InvenTree does not apply those operations to serialized items; status-only changes remain supported. A quantity change that would reduce an item with `delete_on_deplete:true` to zero is also refused because implicit deletion is outside this non-destructive workflow.
+- Do not adjust the same stock item concurrently through MCP, the InvenTree UI, another server replica, or a direct API client. Execution performs a fresh preflight and rejects state changes it observes, but InvenTree exposes no compare-and-swap primitive across the subsequent mutation. A concurrent change in that narrow read/write window can still race; readback mismatch is returned as `partial_failure` with read-before-retry guidance.
 
 ### Attachment and Image Tools
 
@@ -673,7 +678,7 @@ Prompts can encode common operator workflows. Mark each prompt as `milestone_1`,
 - `purchase_preview_checklist` (`milestone_1`)
 - `receive_purchase_order_checklist` (`milestone_1`)
 - `bom_import_review` (`future`)
-- `stocktake_review` (`future`)
+- `stocktake_review` (`milestone_1`)
 
 Prompt guardrails:
 

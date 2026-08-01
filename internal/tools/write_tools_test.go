@@ -422,7 +422,7 @@ func TestWriteToolAuthorizationsUseWriteScope(t *testing.T) {
 		case CreateStockItemToolName, InitialStockWorkflowToolName:
 			a.Equal("operational", auth.MutationClass)
 			a.Equal([]string{ScopeInventreeWrite, ScopeInventreeOperational}, auth.Scopes)
-		case ReceivePurchaseOrderToolName:
+		case AdjustStockQuantityToolName, SetStockStatusToolName, StocktakeAdjustmentToolName, ReceivePurchaseOrderToolName:
 			a.Equal("operational", auth.MutationClass)
 			a.Equal([]string{ScopeInventreeRead, ScopeInventreeWrite, ScopeInventreeOperational}, auth.Scopes)
 		case UploadAttachmentToolName, CreateLinkAttachmentToolName, UpdateAttachmentMetadataToolName, SetPrimaryImageToolName:
@@ -457,6 +457,9 @@ func TestWriteToolInputsExcludeSalesAndCustomerWorkflowFields(t *testing.T) {
 		reflect.TypeOf(UpsertPartWorkflowInput{}),
 		reflect.TypeOf(InitialStockWorkflowInput{}),
 		reflect.TypeOf(CreateStockItemInput{}),
+		reflect.TypeOf(AdjustStockQuantityInput{}),
+		reflect.TypeOf(SetStockStatusInput{}),
+		reflect.TypeOf(StocktakeAdjustmentInput{}),
 		reflect.TypeOf(IssuePurchaseOrderInput{}),
 		reflect.TypeOf(ReceivePurchaseOrderInput{}),
 		reflect.TypeOf(ReceivePurchaseOrderItem{}),

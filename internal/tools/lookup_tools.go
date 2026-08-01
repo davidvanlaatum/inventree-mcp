@@ -52,6 +52,9 @@ const (
 	UpsertPartWorkflowToolName          = "upsert_part_with_supplier_and_manufacturer"
 	CreateStockItemToolName             = "create_stock_item"
 	InitialStockWorkflowToolName        = "create_initial_stock_entry"
+	AdjustStockQuantityToolName         = "adjust_stock_quantity"
+	SetStockStatusToolName              = "set_stock_status"
+	StocktakeAdjustmentToolName         = "stocktake_adjustment"
 	CreatePurchaseOrderToolName         = "create_purchase_order"
 	AddPurchaseOrderLineToolName        = "add_purchase_order_line"
 	UpdatePurchaseOrderLineToolName     = "update_purchase_order_line"
@@ -118,6 +121,9 @@ var writeToolNames = []string{
 	UpsertPartWorkflowToolName,
 	CreateStockItemToolName,
 	InitialStockWorkflowToolName,
+	AdjustStockQuantityToolName,
+	SetStockStatusToolName,
+	StocktakeAdjustmentToolName,
 	CreatePurchaseOrderToolName,
 	AddPurchaseOrderLineToolName,
 	UpdatePurchaseOrderLineToolName,
@@ -158,6 +164,9 @@ func init() {
 		switch name {
 		case CreateStockItemToolName, InitialStockWorkflowToolName:
 			scopes = []string{ScopeInventreeWrite, ScopeInventreeOperational}
+			mutationClass = "operational"
+		case AdjustStockQuantityToolName, SetStockStatusToolName, StocktakeAdjustmentToolName:
+			scopes = []string{ScopeInventreeRead, ScopeInventreeWrite, ScopeInventreeOperational}
 			mutationClass = "operational"
 		case ReceivePurchaseOrderToolName:
 			scopes = []string{ScopeInventreeRead, ScopeInventreeWrite, ScopeInventreeOperational}

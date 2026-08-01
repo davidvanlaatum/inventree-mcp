@@ -132,6 +132,15 @@ func TestReadMethodsUseExpectedEndpoints(t *testing.T) {
 			response:  `{"count":1,"next":null,"previous":null,"results":[{"pk":50,"part":10,"quantity":2,"purchase_order":120,"purchase_order_reference":"PO-1"}]}`,
 		},
 		{
+			name: "get stock item",
+			call: func(ctx context.Context, client *Client) error {
+				_, err := client.GetStockItem(ctx, 50)
+				return err
+			},
+			wantPath: "/api/stock/50/",
+			response: `{"pk":50,"part":10,"location":40,"quantity":2,"status":10,"packaging":"reel"}`,
+		},
+		{
 			name: "search part parameters",
 			call: func(ctx context.Context, client *Client) error {
 				_, err := client.SearchPartParameters(ctx, PartParameterQuery{PartID: 10, Limit: 9, Offset: 5})
