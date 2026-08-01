@@ -79,8 +79,10 @@ type StockItem struct {
 	Quantity               float64 `json:"quantity"`
 	Serial                 *string `json:"serial"`
 	Batch                  *string `json:"batch"`
+	Packaging              *string `json:"packaging"`
 	Notes                  *string `json:"notes"`
 	Status                 int     `json:"status"`
+	DeleteOnDeplete        bool    `json:"delete_on_deplete"`
 	PurchaseOrder          *int    `json:"purchase_order"`
 	PurchaseOrderReference *string `json:"purchase_order_reference"`
 }

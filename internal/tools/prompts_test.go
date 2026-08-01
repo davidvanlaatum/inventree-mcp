@@ -22,6 +22,7 @@ func TestPromptManifestClassifiesMilestoneAndFuturePrompts(t *testing.T) {
 		InitialStockEntryChecklistPromptName,
 		PurchasePreviewChecklistPromptName,
 		ReceivePurchaseOrderChecklistPromptName,
+		StocktakeReviewPromptName,
 	} {
 		entry, ok := entries[name]
 		r.True(ok, "missing prompt %s", name)
@@ -29,7 +30,7 @@ func TestPromptManifestClassifiesMilestoneAndFuturePrompts(t *testing.T) {
 		a.NotEmpty(entry.Checklist, name)
 	}
 
-	for _, name := range []string{"bom_import_review", "stocktake_review"} {
+	for _, name := range []string{"bom_import_review"} {
 		entry, ok := entries[name]
 		r.True(ok, "missing future prompt %s", name)
 		a.Equal(PromptFuture, entry.Status, name)
@@ -55,6 +56,7 @@ func TestMilestonePromptsPreferClarificationDryRunAndStableIDs(t *testing.T) {
 	a.Contains(strings.ToLower(promptManifestByName()[NewPartEntryChecklistPromptName].Checklist), "dry_run:true")
 	a.Contains(strings.ToLower(promptManifestByName()[InitialStockEntryChecklistPromptName].Checklist), "dry_run:true")
 	a.Contains(strings.ToLower(promptManifestByName()[PurchasePreviewChecklistPromptName].Checklist), "no-write")
+	a.Contains(strings.ToLower(promptManifestByName()[StocktakeReviewPromptName].Checklist), "plan_hash")
 }
 
 func promptManifestByName() map[string]PromptManifestEntry {

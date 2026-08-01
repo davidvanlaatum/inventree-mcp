@@ -22,6 +22,24 @@
       "http_registration": "registered_with_oauth_scope_guard"
     },
     {
+      "name": "adjust_stock_quantity",
+      "milestone_status": "milestone_1",
+      "mutation_class": "operational",
+      "scopes": [
+        "inventree.read",
+        "inventree.write",
+        "inventree.operational"
+      ],
+      "annotations": {
+        "read_only": false,
+        "destructive": false,
+        "idempotent": false,
+        "open_world": false
+      },
+      "upload_sources": null,
+      "http_registration": "registered_with_oauth_scope_guard"
+    },
+    {
       "name": "create_company",
       "milestone_status": "milestone_1",
       "mutation_class": "write",
@@ -576,6 +594,42 @@
       "http_registration": "registered_with_oauth_scope_guard"
     },
     {
+      "name": "set_stock_status",
+      "milestone_status": "milestone_1",
+      "mutation_class": "operational",
+      "scopes": [
+        "inventree.read",
+        "inventree.write",
+        "inventree.operational"
+      ],
+      "annotations": {
+        "read_only": false,
+        "destructive": false,
+        "idempotent": false,
+        "open_world": false
+      },
+      "upload_sources": null,
+      "http_registration": "registered_with_oauth_scope_guard"
+    },
+    {
+      "name": "stocktake_adjustment",
+      "milestone_status": "milestone_1",
+      "mutation_class": "operational",
+      "scopes": [
+        "inventree.read",
+        "inventree.write",
+        "inventree.operational"
+      ],
+      "annotations": {
+        "read_only": false,
+        "destructive": false,
+        "idempotent": false,
+        "open_world": false
+      },
+      "upload_sources": null,
+      "http_registration": "registered_with_oauth_scope_guard"
+    },
+    {
       "name": "update_attachment_metadata",
       "milestone_status": "milestone_1",
       "mutation_class": "write",
@@ -718,8 +772,8 @@
     },
     {
       "name": "stocktake_review",
-      "milestone_status": "future",
-      "registered": false
+      "milestone_status": "milestone_1",
+      "registered": true
     }
   ]
 }

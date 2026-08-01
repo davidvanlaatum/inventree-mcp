@@ -160,13 +160,23 @@ The initial endpoint manifest covers schema-confirmed paths, methods, operation 
 - Part and category search/create/update.
 - Company search/get/create/update and role filters.
 - Manufacturer part and supplier part link creation.
-- Stock location search, stock item search, and stock item creation.
+- Stock location search, stock item search/create, and native add, remove, count, and status-change operations.
 - Parameter values, parameter templates, and category parameter template links.
 - Purchase order preview plus F-S03 order/line search, get, create, PATCH, issue, and receive dependencies, including direct supplier and supplier-part retrieval for stable-ID validation.
 - Attachment, link attachment, URL upload, and primary-image update behavior.
 
 Future endpoint-specific client methods must use manifest entries rather than ad hoc path strings. Adding a method without a manifest entry or changing `docs/api-schema.yaml` without updating the manifest/provenance should fail the schema checks.
 The manifest is endpoint-level schema coverage, not a complete upload authorization boundary. Attachment `model_type`, accepted file fields, URL sources, and primary-image object rules remain enforced by the attachment/image client and tool tests when those tools are implemented. The manifest records in-scope and deferred attachment model types so those later tests have a machine-readable scope source.
+
+## Verified Stock Adjustment Endpoints
+
+- `POST /api/stock/add/` adds a positive relative quantity to one or more stock items through `StockAdd`.
+- `POST /api/stock/remove/` removes a positive relative quantity through `StockRemove`.
+- `POST /api/stock/count/` records an absolute stocktake quantity through `StockCount`. The schema permits optional location and per-item metadata changes, but F-S05 intentionally sends only one item ID, absolute quantity, and audit notes so stocktake remains quantity-only.
+- `POST /api/stock/change_status/` changes stock status through `StockChangeStatus` and records the operator reason as the transaction note.
+- F-S05 exposes only single-item operations. Every tool reads current state, produces a state-bound dry-run plan, returns an opaque principal-bound five-minute single-use confirmation token in `plan_hash`, requires that token with `confirm:true` and a nonblank audit reason, then reads back the stock item. Quantity decreases and `Destroyed` (`60`), `Rejected` (`65`), or `Lost` (`70`) statuses are flagged as high-risk.
+- The stock adjustment tools are operational, closed-world, non-destructive, and require `inventree.read`, `inventree.write`, and `inventree.operational`. They refuse no-op changes, quantity changes to serialized stock, and zeroing a `delete_on_deplete` item; serialized status-only changes remain supported. Ambiguous mutation results, including HTTP `408`, `425`, and `429`, are not retried automatically.
+- InvenTree exposes no conditional stock mutation or revision value across these endpoints. Concurrent adjustment of the same stock item by any writer is unsupported: execution rejects state changes observed during its preflight, while a change in the subsequent read/write window can still race and is reported as `partial_failure` when readback diverges.
 
 ## Verified Purchase Order Endpoints
 

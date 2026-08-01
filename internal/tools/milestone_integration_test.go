@@ -18,6 +18,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/davidvanlaatum/dvgoutils"
 	"github.com/davidvanlaatum/dvgoutils/logging/testhandler"
@@ -218,6 +219,106 @@ func TestMilestoneHappyPathToolsAgainstInvenTree(t *testing.T) {
 		r.NotNil(completed.Order)
 		a.Equal(inventree.PurchaseOrderStatusComplete, completed.Order.Status)
 		r.Len(completed.StockItems, 2)
+	})
+
+	t.Run("stock_adjustment_happy_path", func(t *testing.T) {
+		r := require.New(t)
+		a := assert.New(t)
+		ctx, _, _ := testhandler.SetupTestHandler(t)
+		fixture := newMilestoneToolFixture(t, shared)
+		part := fixture.ensure(t, testenv.FixturePart)
+		location := fixture.ensure(t, testenv.FixtureLocation)
+		batch, err := fixture.run.Name("stocktake")
+		r.NoError(err)
+		packaging := "reel"
+		stock, err := fixture.client.CreateStockItem(ctx, inventree.StockItemCreate{Part: part.ID, Location: location.ID, Quantity: 10, Status: dvgoutils.Ptr(stockStatusAttention), Batch: &batch, Packaging: &packaging})
+		r.NoError(err)
+
+		addInput := AdjustStockQuantityInput{DryRun: true, StockItemID: stock.PK, Delta: 2, Reason: "integration count found two units"}
+		_, addPlan, err := adjustStockQuantity(fixture.deps())(ctx, &mcp.CallToolRequest{}, addInput)
+		r.NoError(err)
+		r.NotEmpty(addPlan.PlanHash)
+		addInput.DryRun = false
+		addInput.Confirm = true
+		addInput.PlanHash = addPlan.PlanHash
+		_, added, err := adjustStockQuantity(fixture.deps())(ctx, &mcp.CallToolRequest{}, addInput)
+		r.NoError(err)
+		r.NotNil(added.Record)
+		a.Equal(12.0, added.Record.Quantity)
+
+		removeInput := AdjustStockQuantityInput{DryRun: true, StockItemID: stock.PK, Delta: -1, Reason: "integration damaged unit removal"}
+		_, removePlan, err := adjustStockQuantity(fixture.deps())(ctx, &mcp.CallToolRequest{}, removeInput)
+		r.NoError(err)
+		a.True(removePlan.Plan.HighRisk)
+		removeInput.DryRun = false
+		removeInput.Confirm = true
+		removeInput.PlanHash = removePlan.PlanHash
+		_, removed, err := adjustStockQuantity(fixture.deps())(ctx, &mcp.CallToolRequest{}, removeInput)
+		r.NoError(err)
+		r.NotNil(removed.Record)
+		a.Equal(11.0, removed.Record.Quantity)
+
+		countInput := StocktakeAdjustmentInput{DryRun: true, StockItemID: stock.PK, ObservedQuantity: 7, Reason: "integration physical shelf count"}
+		_, countPlan, err := stocktakeAdjustment(fixture.deps())(ctx, &mcp.CallToolRequest{}, countInput)
+		r.NoError(err)
+		a.True(countPlan.Plan.HighRisk)
+		countInput.DryRun = false
+		countInput.Confirm = true
+		countInput.PlanHash = countPlan.PlanHash
+		_, counted, err := stocktakeAdjustment(fixture.deps())(ctx, &mcp.CallToolRequest{}, countInput)
+		r.NoError(err)
+		r.NotNil(counted.Record)
+		a.Equal(7.0, counted.Record.Quantity)
+		r.NotNil(counted.Record.Location)
+		a.Equal(location.ID, *counted.Record.Location)
+		r.NotNil(counted.Record.Batch)
+		a.Equal(batch, *counted.Record.Batch)
+		a.Equal(stockStatusAttention, counted.Record.Status)
+		r.NotNil(counted.Record.Packaging)
+		a.Equal(packaging, *counted.Record.Packaging)
+
+		statusInput := SetStockStatusInput{DryRun: true, StockItemID: stock.PK, Status: stockStatusDamaged, Reason: "integration inspection found damage"}
+		_, statusPlan, err := setStockStatus(fixture.deps())(ctx, &mcp.CallToolRequest{}, statusInput)
+		r.NoError(err)
+		statusInput.DryRun = false
+		statusInput.Confirm = true
+		statusInput.PlanHash = statusPlan.PlanHash
+		_, changed, err := setStockStatus(fixture.deps())(ctx, &mcp.CallToolRequest{}, statusInput)
+		r.NoError(err)
+		r.NotNil(changed.Record)
+		a.Equal(stockStatusDamaged, changed.Record.Status)
+		a.Equal(7.0, changed.Record.Quantity)
+
+		category := fixture.ensure(t, testenv.FixtureCategory)
+		serializedPartName, err := fixture.run.Name("stocktake-serialized-part")
+		r.NoError(err)
+		serializedPart, err := fixture.client.CreatePart(ctx, inventree.PartCreate{Name: serializedPartName, Category: dvgoutils.Ptr(category.ID), Active: dvgoutils.Ptr(true), Component: dvgoutils.Ptr(true), Trackable: dvgoutils.Ptr(true)})
+		r.NoError(err)
+		serial := "1"
+		var serializedItems []inventree.StockItem
+		err = fixture.client.Post(ctx, "/api/stock/", map[string]any{"part": serializedPart.PK, "location": location.ID, "quantity": 1, "serial_numbers": serial}, &serializedItems)
+		r.NoError(err)
+		r.Len(serializedItems, 1)
+		serialized := serializedItems[0]
+		serializedInput := SetStockStatusInput{DryRun: true, StockItemID: serialized.PK, Status: stockStatusAttention, Reason: "integration serialized stock inspection"}
+		_, serializedPlan, err := setStockStatus(fixture.deps())(ctx, &mcp.CallToolRequest{}, serializedInput)
+		r.NoError(err)
+		serializedInput.DryRun = false
+		serializedInput.Confirm = true
+		serializedInput.PlanHash = serializedPlan.PlanHash
+		_, serializedChanged, err := setStockStatus(fixture.deps())(ctx, &mcp.CallToolRequest{}, serializedInput)
+		r.NoError(err)
+		r.NotNil(serializedChanged.Record)
+		r.NotNil(serializedChanged.Record.Serial)
+		a.Equal(serial, *serializedChanged.Record.Serial)
+		a.Equal(1.0, serializedChanged.Record.Quantity)
+
+		_, serializedQuantity, err := adjustStockQuantity(fixture.deps())(ctx, &mcp.CallToolRequest{}, AdjustStockQuantityInput{DryRun: true, StockItemID: serialized.PK, Delta: -1, Reason: "integration serialized count"})
+		r.NoError(err)
+		a.Equal(StatusClarificationRequired, serializedQuantity.Status)
+		_, serializedCount, err := stocktakeAdjustment(fixture.deps())(ctx, &mcp.CallToolRequest{}, StocktakeAdjustmentInput{DryRun: true, StockItemID: serialized.PK, ObservedQuantity: 0, Reason: "integration serialized count"})
+		r.NoError(err)
+		a.Equal(StatusClarificationRequired, serializedCount.Status)
 	})
 
 	t.Run("attachment_target_matrix_upload_download_and_max_bytes", func(t *testing.T) {
@@ -476,10 +577,11 @@ func TestMilestoneHappyPathToolsAgainstInvenTree(t *testing.T) {
 }
 
 type milestoneToolFixture struct {
-	shared  *testenv.SharedInvenTree
-	run     *testenv.Run
-	account *testenv.Account
-	client  *inventree.Client
+	shared         *testenv.SharedInvenTree
+	run            *testenv.Run
+	account        *testenv.Account
+	client         *inventree.Client
+	stockPlanStore *stockPlanStore
 }
 
 type attachmentTarget struct {
@@ -500,10 +602,11 @@ func newMilestoneToolFixture(t *testing.T, shared *testenv.SharedInvenTree) mile
 	r.NoError(err)
 
 	return milestoneToolFixture{
-		shared:  shared,
-		run:     run,
-		account: account,
-		client:  client,
+		shared:         shared,
+		run:            run,
+		account:        account,
+		client:         client,
+		stockPlanStore: newStockPlanStore(time.Now, randomStockPlanToken),
 	}
 }
 
@@ -514,6 +617,7 @@ func (f milestoneToolFixture) deps() Dependencies {
 		},
 		UploadMode:     upload.ModeStdio,
 		UploadMaxBytes: upload.DefaultMaxBytes,
+		stockPlanStore: f.stockPlanStore,
 	}
 }
 

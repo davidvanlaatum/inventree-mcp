@@ -133,7 +133,7 @@ func TestToolReferenceDocumentsRegisteredWriteTools(t *testing.T) {
 			a.Equal("operational", auth.MutationClass)
 			a.Equal([]string{ScopeInventreeWrite, ScopeInventreeOperational}, auth.Scopes)
 			a.Contains(toolReference, "`"+ScopeInventreeOperational+"`")
-		case ReceivePurchaseOrderToolName:
+		case AdjustStockQuantityToolName, SetStockStatusToolName, StocktakeAdjustmentToolName, ReceivePurchaseOrderToolName:
 			a.Equal("operational", auth.MutationClass)
 			a.Equal([]string{ScopeInventreeRead, ScopeInventreeWrite, ScopeInventreeOperational}, auth.Scopes)
 			a.Contains(toolReference, "`"+ScopeInventreeRead+"`")
