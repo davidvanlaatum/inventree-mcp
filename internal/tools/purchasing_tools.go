@@ -2,7 +2,12 @@ package tools
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"errors"
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
 	"time"
@@ -47,6 +52,20 @@ type PurchaseOrderWorkflowClient interface {
 	SearchPurchaseOrderLines(context.Context, inventree.PurchaseOrderLineQuery) ([]inventree.PurchaseOrderLineItem, error)
 	CreatePurchaseOrderLine(context.Context, inventree.PurchaseOrderLineCreate) (inventree.PurchaseOrderLineItem, error)
 	UpdatePurchaseOrderLine(context.Context, int, inventree.PatchFields) (inventree.PurchaseOrderLineItem, error)
+}
+
+type PurchaseOrderReceiveClient interface {
+	GetPart(context.Context, int) (inventree.Part, error)
+	GetSupplierPart(context.Context, int) (inventree.SupplierPart, error)
+	GetPurchaseOrder(context.Context, int) (inventree.PurchaseOrder, error)
+	GetPurchaseOrderLine(context.Context, int) (inventree.PurchaseOrderLineItem, error)
+	GetStockLocation(context.Context, int) (inventree.StockLocation, error)
+	ReceivePurchaseOrder(context.Context, int, inventree.PurchaseOrderReceive) ([]inventree.StockItem, error)
+}
+
+type PurchaseOrderIssueClient interface {
+	GetPurchaseOrder(context.Context, int) (inventree.PurchaseOrder, error)
+	IssuePurchaseOrder(context.Context, int) error
 }
 
 type PurchaseOrderSearchInput struct {
@@ -162,6 +181,76 @@ type PurchaseOrderWorkflowOutput struct {
 	Clarification     *ClarificationResponse            `json:"clarification,omitempty"`
 }
 
+type ReceivePurchaseOrderInput struct {
+	DryRun         bool                       `json:"dry_run,omitempty" jsonschema:"Validate and return the complete receiving plan without creating stock."`
+	ConfirmReceive bool                       `json:"confirm_receive,omitempty" jsonschema:"Required true for the operational write after reviewing a dry run."`
+	PlanHash       string                     `json:"plan_hash,omitempty" jsonschema:"Exact plan hash returned by the latest dry run; required with confirm_receive."`
+	OrderID        int                        `json:"order_id" jsonschema:"Existing purchase-order primary key."`
+	LocationID     *int                       `json:"location_id,omitempty" jsonschema:"Fallback stock-location primary key used when an item and its order line have no destination."`
+	Items          []ReceivePurchaseOrderItem `json:"items" jsonschema:"Purchase-order line quantities to receive into newly created stock items."`
+}
+
+type ReceivePurchaseOrderItem struct {
+	LineItemID    int     `json:"line_item_id" jsonschema:"Existing purchase-order line primary key belonging to order_id."`
+	Quantity      float64 `json:"quantity" jsonschema:"Positive quantity no greater than the line's outstanding quantity."`
+	LocationID    *int    `json:"location_id,omitempty" jsonschema:"Optional item-specific destination overriding the line and global locations."`
+	Status        *int    `json:"status,omitempty" jsonschema:"Optional non-negative InvenTree stock status code; defaults to InvenTree's OK status."`
+	BatchCode     *string `json:"batch_code,omitempty" jsonschema:"Optional batch code for the new stock item."`
+	ExpiryDate    *string `json:"expiry_date,omitempty" jsonschema:"Optional expiry date in YYYY-MM-DD form."`
+	SerialNumbers *string `json:"serial_numbers,omitempty" jsonschema:"Optional InvenTree serial-number expression for tracked stock."`
+	Packaging     *string `json:"packaging,omitempty" jsonschema:"Optional non-blank packaging override for the received stock; omitted, empty, or whitespace-only values use the supplier-part packaging."`
+	Note          *string `json:"note,omitempty" jsonschema:"Optional note for the received stock."`
+	Barcode       *string `json:"barcode,omitempty" jsonschema:"Optional unique barcode for the received stock."`
+}
+
+type ReceivePurchaseOrderPlanItem struct {
+	LineItemID           int                      `json:"line_item_id"`
+	SupplierPartID       int                      `json:"supplier_part_id"`
+	PartID               int                      `json:"part_id"`
+	OrderedQuantity      float64                  `json:"ordered_quantity"`
+	PreviouslyReceived   float64                  `json:"previously_received"`
+	OutstandingBefore    float64                  `json:"outstanding_before"`
+	ReceiveQuantity      float64                  `json:"receive_quantity"`
+	SupplierPackQuantity float64                  `json:"supplier_pack_quantity"`
+	BaseStockQuantity    float64                  `json:"base_stock_quantity"`
+	SourcePurchasePrice  *inventree.DecimalString `json:"source_purchase_price,omitempty"`
+	SourcePriceCurrency  string                   `json:"source_price_currency,omitempty"`
+	OutstandingAfter     float64                  `json:"outstanding_after"`
+	LocationID           int                      `json:"location_id"`
+	Status               *int                     `json:"status,omitempty"`
+	BatchCode            *string                  `json:"batch_code,omitempty"`
+	ExpiryDate           *string                  `json:"expiry_date,omitempty"`
+	SerialNumbers        *string                  `json:"serial_numbers,omitempty"`
+	Packaging            *string                  `json:"packaging,omitempty"`
+	Note                 *string                  `json:"note,omitempty"`
+	Barcode              *string                  `json:"barcode,omitempty"`
+}
+
+type ReceivePurchaseOrderOutput struct {
+	Status        string                         `json:"status"`
+	DryRun        bool                           `json:"dry_run"`
+	Order         *inventree.PurchaseOrder       `json:"order,omitempty"`
+	Plan          []ReceivePurchaseOrderPlanItem `json:"plan"`
+	PlanHash      string                         `json:"plan_hash,omitempty"`
+	StockItems    []inventree.StockItem          `json:"stock_items,omitempty"`
+	Failure       *PurchaseOrderWorkflowFailure  `json:"failure,omitempty"`
+	Clarification *ClarificationResponse         `json:"clarification,omitempty"`
+}
+
+type IssuePurchaseOrderInput struct {
+	DryRun       bool `json:"dry_run,omitempty" jsonschema:"Validate and return the issue plan without placing the order."`
+	ConfirmIssue bool `json:"confirm_issue,omitempty" jsonschema:"Required true to place the purchase order with its supplier."`
+	OrderID      int  `json:"order_id" jsonschema:"Existing pending purchase-order primary key."`
+}
+
+type IssuePurchaseOrderOutput struct {
+	Status        string                   `json:"status"`
+	DryRun        bool                     `json:"dry_run"`
+	Order         *inventree.PurchaseOrder `json:"order,omitempty"`
+	Action        string                   `json:"action"`
+	Clarification *ClarificationResponse   `json:"clarification,omitempty"`
+}
+
 func registerPurchasingLookupTools(server *mcp.Server, deps Dependencies) {
 	addReadOnlyTool(server, deps, SearchPurchaseOrdersToolName, "Search purchase orders", "Searches purchase orders for duplicate checks and recovery.", searchPurchaseOrders(deps))
 	addReadOnlyTool(server, deps, GetPurchaseOrderToolName, "Get purchase order", "Retrieves one purchase order by stable ID.", getPurchaseOrder(deps))
@@ -174,6 +263,8 @@ func registerPurchasingWriteTools(server *mcp.Server, deps Dependencies) {
 	addWriteTool(server, deps, AddPurchaseOrderLineToolName, "Add purchase order line", "Adds a validated supplier-part line to an existing purchase order.", addPurchaseOrderLine(deps))
 	addWriteTool(server, deps, UpdatePurchaseOrderLineToolName, "Update purchase order line", "Partially updates a purchase-order line after supplier consistency validation.", updatePurchaseOrderLine(deps))
 	addWriteTool(server, deps, CreatePurchaseOrderWorkflowToolName, "Create purchase order with lines", "Plans or retry-recoverably creates or updates a purchase order and validated lines.", createPurchaseOrderWithLines(deps))
+	addWriteTool(server, deps, IssuePurchaseOrderToolName, "Issue purchase order", "Plans or explicitly confirms placing a pending purchase order with its supplier.", issuePurchaseOrder(deps))
+	addWriteTool(server, deps, ReceivePurchaseOrderToolName, "Receive purchase order items", "Plans or explicitly confirms creation of new stock items from outstanding purchase-order line quantities.", receivePurchaseOrderItems(deps))
 }
 
 func searchPurchaseOrders(deps Dependencies) mcp.ToolHandlerFor[PurchaseOrderSearchInput, LookupOutput[inventree.PurchaseOrder]] {
@@ -354,6 +445,261 @@ func createPurchaseOrderWithLines(deps Dependencies) mcp.ToolHandlerFor[Purchase
 				return executePurchaseOrderWorkflow(ctx, client, input, preview)
 			})(ctx, req, input)
 	}
+}
+
+func receivePurchaseOrderItems(deps Dependencies) mcp.ToolHandlerFor[ReceivePurchaseOrderInput, ReceivePurchaseOrderOutput] {
+	return LookupHandler[PurchaseOrderReceiveClient, ReceivePurchaseOrderInput, ReceivePurchaseOrderOutput](deps, ReceivePurchaseOrderToolName,
+		func(ctx context.Context, _ *mcp.CallToolRequest, client PurchaseOrderReceiveClient, input ReceivePurchaseOrderInput) (*mcp.CallToolResult, ReceivePurchaseOrderOutput, error) {
+			out := ReceivePurchaseOrderOutput{Status: StatusOK, DryRun: input.DryRun, Plan: []ReceivePurchaseOrderPlanItem{}}
+			if input.OrderID <= 0 || len(input.Items) == 0 {
+				return receiveClarification(out, "Which purchase order lines should be received?", "purchase_order_receipt", "order_id must be positive and at least one receipt item is required", "order_id", map[string]any{"order_id": input.OrderID})
+			}
+			if input.LocationID != nil && *input.LocationID <= 0 {
+				return receiveClarification(out, "Which fallback stock location should receive the items?", "location", "location_id must be positive when provided", "location_id", map[string]any{"location_id": *input.LocationID})
+			}
+
+			order, err := client.GetPurchaseOrder(ctx, input.OrderID)
+			if err != nil {
+				return nil, out, err
+			}
+			out.Order = &order
+			if order.Status != inventree.PurchaseOrderStatusPlaced {
+				return receiveClarification(out, "Should this purchase order be issued before receiving stock?", "purchase_order", "purchase order must be in PLACED status before items can be received; use issue_purchase_order separately", "order_id", map[string]any{"order_id": input.OrderID, "status": order.Status})
+			}
+			seenLines := make(map[int]bool, len(input.Items))
+			seenBarcodes := make(map[string]bool, len(input.Items))
+			locations := map[int]bool{}
+			supplierParts := map[int]inventree.SupplierPart{}
+			partsBySupplierPart := map[int]inventree.Part{}
+			requestItems := make([]inventree.PurchaseOrderReceiveItem, 0, len(input.Items))
+
+			for _, item := range input.Items {
+				quantityText, quantityOK := receiveQuantityString(item.Quantity)
+				if item.LineItemID <= 0 || !quantityOK {
+					return receiveClarification(out, "Which purchase-order line and schema-valid positive quantity should be received?", "purchase_order_line", "line_item_id must be positive and quantity must be finite, greater than zero, and contain at most 10 integer and 5 fractional digits", "line_item_id", map[string]any{"line_item_id": item.LineItemID, "quantity": item.Quantity})
+				}
+				if seenLines[item.LineItemID] {
+					return receiveClarification(out, "Should duplicate receipt rows be combined?", "purchase_order_line", "each line_item_id may appear only once per receiving request", "items", map[string]any{"line_item_id": item.LineItemID})
+				}
+				seenLines[item.LineItemID] = true
+				if item.LocationID != nil && *item.LocationID <= 0 {
+					return receiveClarification(out, "Which item-specific stock location should receive this line?", "location", "item location_id must be positive when provided", "items", map[string]any{"line_item_id": item.LineItemID, "location_id": *item.LocationID})
+				}
+				if item.Status != nil && *item.Status < 0 {
+					return receiveClarification(out, "Which stock status should be assigned to the new item?", "status", "status must be a non-negative InvenTree stock status code", "items", map[string]any{"line_item_id": item.LineItemID, "status": *item.Status})
+				}
+				if item.ExpiryDate != nil && !validDate(*item.ExpiryDate) {
+					return receiveClarification(out, "What expiry date should be assigned to the new item?", "expiry_date", "expiry_date must use YYYY-MM-DD", "items", map[string]any{"line_item_id": item.LineItemID, "expiry_date": *item.ExpiryDate})
+				}
+				if item.Barcode != nil && strings.TrimSpace(*item.Barcode) != "" {
+					barcode := strings.TrimSpace(*item.Barcode)
+					if seenBarcodes[barcode] {
+						return receiveClarification(out, "Which unique barcode should be used for each new stock item?", "barcode", "barcode values must be unique within a receiving request", "items", map[string]any{"barcode": barcode})
+					}
+					seenBarcodes[barcode] = true
+				}
+
+				line, err := client.GetPurchaseOrderLine(ctx, item.LineItemID)
+				if err != nil {
+					return nil, out, err
+				}
+				if line.Order != input.OrderID {
+					return receiveClarification(out, "Which purchase-order line belongs to this order?", "purchase_order_line", "line_item_id belongs to a different purchase order", "line_item_id", map[string]any{"order_id": input.OrderID, "line_item_id": item.LineItemID, "actual_order_id": line.Order})
+				}
+				supplierPart, found := supplierParts[line.Part]
+				if !found {
+					supplierPart, err = client.GetSupplierPart(ctx, line.Part)
+					if err != nil {
+						return nil, out, err
+					}
+					supplierParts[line.Part] = supplierPart
+				}
+				basePart, found := partsBySupplierPart[line.Part]
+				if !found {
+					basePart, err = client.GetPart(ctx, supplierPart.Part)
+					if err != nil {
+						return nil, out, err
+					}
+					partsBySupplierPart[line.Part] = basePart
+				}
+				if basePart.Virtual {
+					return receiveClarification(out, "Should this virtual part line be handled outside stock receiving?", "part", "virtual parts do not create stock items when received and are excluded from the new-stock-only workflow", "line_item_id", map[string]any{"line_item_id": item.LineItemID, "supplier_part_id": line.Part, "part_id": basePart.PK})
+				}
+				packQuantity := supplierPart.PackQuantityNative
+				if packQuantity <= 0 {
+					packQuantity = 1
+				}
+				var resolvedPackaging *string
+				if item.Packaging != nil && strings.TrimSpace(*item.Packaging) != "" {
+					packaging := strings.TrimSpace(*item.Packaging)
+					resolvedPackaging = &packaging
+				} else {
+					resolvedPackaging = supplierPart.Packaging
+				}
+				outstanding := line.Quantity - line.Received
+				if outstanding <= 0 || item.Quantity > outstanding+1e-9 {
+					return receiveClarification(out, "What quantity should be received from this outstanding line?", "quantity", "receive quantity must not exceed the line's outstanding quantity", "items", map[string]any{"line_item_id": item.LineItemID, "quantity": item.Quantity, "outstanding_quantity": outstanding})
+				}
+				locationID := 0
+				switch {
+				case item.LocationID != nil:
+					locationID = *item.LocationID
+				case line.Destination != nil:
+					locationID = *line.Destination
+				case input.LocationID != nil:
+					locationID = *input.LocationID
+				default:
+					return receiveClarification(out, "Which stock location should receive this line?", "location", "no item, purchase-order line, or global receiving location is available", "location_id", map[string]any{"line_item_id": item.LineItemID})
+				}
+				if !locations[locationID] {
+					if _, err := client.GetStockLocation(ctx, locationID); err != nil {
+						return nil, out, err
+					}
+					locations[locationID] = true
+				}
+				out.Plan = append(out.Plan, ReceivePurchaseOrderPlanItem{
+					LineItemID: item.LineItemID, SupplierPartID: line.Part, PartID: basePart.PK, OrderedQuantity: line.Quantity, PreviouslyReceived: line.Received,
+					OutstandingBefore: outstanding, ReceiveQuantity: item.Quantity, SupplierPackQuantity: packQuantity,
+					BaseStockQuantity: item.Quantity * packQuantity, SourcePurchasePrice: line.PurchasePrice,
+					SourcePriceCurrency: line.PurchasePriceCurrency, OutstandingAfter: outstanding - item.Quantity,
+					LocationID: locationID, Status: item.Status, BatchCode: item.BatchCode, ExpiryDate: item.ExpiryDate,
+					SerialNumbers: item.SerialNumbers, Packaging: resolvedPackaging, Note: item.Note, Barcode: item.Barcode,
+				})
+				resolvedLocation := locationID
+				requestItems = append(requestItems, inventree.PurchaseOrderReceiveItem{
+					LineItem: item.LineItemID, Location: &resolvedLocation, Quantity: quantityText,
+					BatchCode: item.BatchCode, ExpiryDate: item.ExpiryDate, SerialNumbers: item.SerialNumbers,
+					Status: item.Status, Packaging: resolvedPackaging, Note: item.Note, Barcode: item.Barcode,
+				})
+			}
+
+			if input.DryRun {
+				planHash, err := receivePlanHash(input.OrderID, order.Status, out.Plan)
+				if err != nil {
+					return nil, out, err
+				}
+				out.PlanHash = planHash
+				return TextResult(StatusOK), out, nil
+			}
+			if !input.ConfirmReceive {
+				return receiveClarification(out, "Should a dry-run plan be reviewed before these quantities are received?", "confirmation", "run with dry_run:true first, then provide its plan_hash with confirm_receive:true", "dry_run", map[string]any{"order_id": input.OrderID, "dry_run": true})
+			}
+			planHash, err := receivePlanHash(input.OrderID, order.Status, out.Plan)
+			if err != nil {
+				return nil, out, err
+			}
+			if input.PlanHash == "" || input.PlanHash != planHash {
+				return receiveClarification(out, "Which current dry-run plan should authorize this receipt?", "confirmation", "plan_hash must match the latest dry-run plan for the current order and line state", "plan_hash", map[string]any{"order_id": input.OrderID, "dry_run": true})
+			}
+			out.PlanHash = planHash
+			stockItems, err := client.ReceivePurchaseOrder(ctx, input.OrderID, inventree.PurchaseOrderReceive{Items: requestItems})
+			if err != nil {
+				var apiErr *inventree.APIError
+				if errors.As(err, &apiErr) && apiErr.StatusCode >= 400 && apiErr.StatusCode < 500 {
+					return nil, out, err
+				}
+				return receiveUnknownResult(out, "purchase-order receipt result is unknown")
+			}
+			out.StockItems = stockItems
+			if len(stockItems) == 0 {
+				return receiveUnknownResult(out, "purchase-order receipt returned no stock items")
+			}
+			refreshed, err := client.GetPurchaseOrder(ctx, input.OrderID)
+			if err != nil {
+				return receiveUnknownResult(out, "purchase-order receipt succeeded but the refreshed order state is unavailable")
+			}
+			out.Order = &refreshed
+			return TextResult(StatusOK), out, nil
+		})
+}
+
+func issuePurchaseOrder(deps Dependencies) mcp.ToolHandlerFor[IssuePurchaseOrderInput, IssuePurchaseOrderOutput] {
+	return LookupHandler[PurchaseOrderIssueClient, IssuePurchaseOrderInput, IssuePurchaseOrderOutput](deps, IssuePurchaseOrderToolName,
+		func(ctx context.Context, _ *mcp.CallToolRequest, client PurchaseOrderIssueClient, input IssuePurchaseOrderInput) (*mcp.CallToolResult, IssuePurchaseOrderOutput, error) {
+			out := IssuePurchaseOrderOutput{Status: StatusOK, DryRun: input.DryRun}
+			if input.OrderID <= 0 {
+				clarification := NewClarification("Which pending purchase order should be issued?", "purchase_order", "order_id must be positive", "order_id", true, nil, map[string]any{"order_id": input.OrderID})
+				out.Status = StatusClarificationRequired
+				out.Clarification = &clarification
+				return TextResult(StatusClarificationRequired), out, nil
+			}
+			order, err := client.GetPurchaseOrder(ctx, input.OrderID)
+			if err != nil {
+				return nil, out, err
+			}
+			out.Order = &order
+			if order.Status == inventree.PurchaseOrderStatusPlaced {
+				out.Action = "already_placed"
+				return TextResult(StatusOK), out, nil
+			}
+			if order.Status != inventree.PurchaseOrderStatusPending {
+				clarification := NewClarification("Which pending purchase order should be issued?", "purchase_order", "only a PENDING purchase order can be issued by this tool", "order_id", true, candidatesFor([]inventree.PurchaseOrder{order}), map[string]any{"order_id": input.OrderID, "status": order.Status})
+				out.Status = StatusClarificationRequired
+				out.Clarification = &clarification
+				return TextResult(StatusClarificationRequired), out, nil
+			}
+			out.Action = "issue_purchase_order"
+			if input.DryRun {
+				return TextResult(StatusOK), out, nil
+			}
+			if !input.ConfirmIssue {
+				clarification := NewClarification("Should this purchase order now be placed with its supplier?", "confirmation", "confirm_issue must be true after reviewing the pending purchase order", "confirm_issue", true, nil, map[string]any{"order_id": input.OrderID, "confirm_issue": true})
+				out.Status = StatusClarificationRequired
+				out.Clarification = &clarification
+				return TextResult(StatusClarificationRequired), out, nil
+			}
+			if err := client.IssuePurchaseOrder(ctx, input.OrderID); err != nil {
+				return nil, out, err
+			}
+			issued, err := client.GetPurchaseOrder(ctx, input.OrderID)
+			if err != nil {
+				return nil, out, err
+			}
+			out.Order = &issued
+			return TextResult(StatusOK), out, nil
+		})
+}
+
+func receiveClarification(out ReceivePurchaseOrderOutput, question, subject, reason, retry string, fields map[string]any) (*mcp.CallToolResult, ReceivePurchaseOrderOutput, error) {
+	clarification := NewClarification(question, subject, reason, retry, true, nil, fields)
+	out.Status = StatusClarificationRequired
+	out.Clarification = &clarification
+	return TextResult(StatusClarificationRequired), out, nil
+}
+
+func receiveUnknownResult(out ReceivePurchaseOrderOutput, message string) (*mcp.CallToolResult, ReceivePurchaseOrderOutput, error) {
+	out.Status = StatusPartialFailure
+	out.Failure = &PurchaseOrderWorkflowFailure{
+		Action:       ReceivePurchaseOrderToolName,
+		Message:      message,
+		RecoveryPlan: "Do not retry the receipt blindly. Read every purchase-order line and call search_stock_items with purchase_order_id to determine whether the mutation succeeded before preparing a new dry-run plan.",
+	}
+	return TextResult(StatusPartialFailure), out, nil
+}
+
+func receiveQuantityString(quantity float64) (string, bool) {
+	if math.IsNaN(quantity) || math.IsInf(quantity, 0) || quantity <= 0 {
+		return "", false
+	}
+	formatted := strconv.FormatFloat(quantity, 'f', -1, 64)
+	parts := strings.SplitN(formatted, ".", 2)
+	if len(parts[0]) > 10 || (len(parts) == 2 && len(parts[1]) > 5) {
+		return "", false
+	}
+	return formatted, true
+}
+
+func receivePlanHash(orderID, orderStatus int, plan []ReceivePurchaseOrderPlanItem) (string, error) {
+	payload, err := json.Marshal(struct {
+		OrderID     int                            `json:"order_id"`
+		OrderStatus int                            `json:"order_status"`
+		Plan        []ReceivePurchaseOrderPlanItem `json:"plan"`
+	}{OrderID: orderID, OrderStatus: orderStatus, Plan: plan})
+	if err != nil {
+		return "", err
+	}
+	digest := sha256.Sum256(payload)
+	return hex.EncodeToString(digest[:]), nil
 }
 
 func executePurchaseOrderWorkflow(ctx context.Context, client PurchaseOrderWorkflowClient, input PurchaseOrderWorkflowInput, preview PurchasePreviewOutput) (*mcp.CallToolResult, PurchaseOrderWorkflowOutput, error) {

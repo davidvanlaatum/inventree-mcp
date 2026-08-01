@@ -56,6 +56,8 @@ const (
 	AddPurchaseOrderLineToolName        = "add_purchase_order_line"
 	UpdatePurchaseOrderLineToolName     = "update_purchase_order_line"
 	CreatePurchaseOrderWorkflowToolName = "create_purchase_order_with_lines"
+	IssuePurchaseOrderToolName          = "issue_purchase_order"
+	ReceivePurchaseOrderToolName        = "receive_purchase_order_items"
 	UploadAttachmentToolName            = "upload_attachment"
 	UploadAttachmentFromURLToolName     = "upload_attachment_from_url"
 	CreateLinkAttachmentToolName        = "create_link_attachment"
@@ -120,6 +122,8 @@ var writeToolNames = []string{
 	AddPurchaseOrderLineToolName,
 	UpdatePurchaseOrderLineToolName,
 	CreatePurchaseOrderWorkflowToolName,
+	IssuePurchaseOrderToolName,
+	ReceivePurchaseOrderToolName,
 	UploadAttachmentToolName,
 	UploadAttachmentFromURLToolName,
 	CreateLinkAttachmentToolName,
@@ -155,6 +159,9 @@ func init() {
 		case CreateStockItemToolName, InitialStockWorkflowToolName:
 			scopes = []string{ScopeInventreeWrite, ScopeInventreeOperational}
 			mutationClass = "operational"
+		case ReceivePurchaseOrderToolName:
+			scopes = []string{ScopeInventreeRead, ScopeInventreeWrite, ScopeInventreeOperational}
+			mutationClass = "operational"
 		case UploadAttachmentToolName, UploadAttachmentFromURLToolName, CreateLinkAttachmentToolName, UpdateAttachmentMetadataToolName, SetPrimaryImageToolName:
 			scopes = []string{ScopeInventreeWrite, ScopeInventreeUpload}
 		case DeleteAttachmentToolName:
@@ -176,9 +183,9 @@ func init() {
 			Annotations:     annotations,
 		}
 	}
-	for _, name := range []string{SearchPurchaseOrdersToolName, GetPurchaseOrderToolName, SearchPurchaseOrderLinesToolName, GetPurchaseOrderLineToolName, CreatePurchaseOrderToolName, AddPurchaseOrderLineToolName, UpdatePurchaseOrderLineToolName, CreatePurchaseOrderWorkflowToolName} {
+	for _, name := range []string{SearchPurchaseOrdersToolName, GetPurchaseOrderToolName, SearchPurchaseOrderLinesToolName, GetPurchaseOrderLineToolName, CreatePurchaseOrderToolName, AddPurchaseOrderLineToolName, UpdatePurchaseOrderLineToolName, CreatePurchaseOrderWorkflowToolName, IssuePurchaseOrderToolName, ReceivePurchaseOrderToolName} {
 		auth := ToolAuthorizations[name]
-		auth.MilestoneStatus = ToolFuture
+		auth.MilestoneStatus = ToolMilestone1
 		ToolAuthorizations[name] = auth
 	}
 }
@@ -227,11 +234,12 @@ type PartParametersInput struct {
 }
 
 type StockItemsInput struct {
-	Search     string `json:"search,omitempty" jsonschema:"Optional search text passed to the InvenTree endpoint."`
-	PartID     int    `json:"part_id,omitempty" jsonschema:"Optional part primary key filter."`
-	LocationID int    `json:"location_id,omitempty" jsonschema:"Optional stock location primary key filter."`
-	Limit      int    `json:"limit,omitempty" jsonschema:"Maximum number of records to return. Defaults to 20 and is capped at 100."`
-	Offset     int    `json:"offset,omitempty" jsonschema:"Pagination offset for deterministic retries."`
+	Search          string `json:"search,omitempty" jsonschema:"Optional search text passed to the InvenTree endpoint."`
+	PartID          int    `json:"part_id,omitempty" jsonschema:"Optional part primary key filter."`
+	LocationID      int    `json:"location_id,omitempty" jsonschema:"Optional stock location primary key filter."`
+	PurchaseOrderID int    `json:"purchase_order_id,omitempty" jsonschema:"Optional source purchase-order primary key filter for receipt recovery."`
+	Limit           int    `json:"limit,omitempty" jsonschema:"Maximum number of records to return. Defaults to 20 and is capped at 100."`
+	Offset          int    `json:"offset,omitempty" jsonschema:"Pagination offset for deterministic retries."`
 }
 
 type DownloadInput struct {
@@ -423,11 +431,12 @@ func searchStockItems(deps Dependencies) mcp.ToolHandlerFor[StockItemsInput, Loo
 	return LookupHandler[StockLookupClient, StockItemsInput, LookupOutput[inventree.StockItem]](deps, SearchStockItemsToolName,
 		func(ctx context.Context, _ *mcp.CallToolRequest, client StockLookupClient, input StockItemsInput) (*mcp.CallToolResult, LookupOutput[inventree.StockItem], error) {
 			records, err := client.SearchStockItems(ctx, inventree.StockItemQuery{
-				Search:     input.Search,
-				PartID:     input.PartID,
-				LocationID: input.LocationID,
-				Limit:      NormalizeLookupLimit(input.Limit),
-				Offset:     input.Offset,
+				Search:          input.Search,
+				PartID:          input.PartID,
+				LocationID:      input.LocationID,
+				PurchaseOrderID: input.PurchaseOrderID,
+				Limit:           NormalizeLookupLimit(input.Limit),
+				Offset:          input.Offset,
 			})
 			return listOutput(records, err)
 		})

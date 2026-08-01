@@ -7,7 +7,7 @@
   "tools": [
     {
       "name": "add_purchase_order_line",
-      "milestone_status": "future",
+      "milestone_status": "milestone_1",
       "mutation_class": "write",
       "scopes": [
         "inventree.write"
@@ -107,7 +107,7 @@
     },
     {
       "name": "create_purchase_order",
-      "milestone_status": "future",
+      "milestone_status": "milestone_1",
       "mutation_class": "write",
       "scopes": [
         "inventree.write"
@@ -123,7 +123,7 @@
     },
     {
       "name": "create_purchase_order_with_lines",
-      "milestone_status": "future",
+      "milestone_status": "milestone_1",
       "mutation_class": "write",
       "scopes": [
         "inventree.write"
@@ -270,7 +270,7 @@
     },
     {
       "name": "get_purchase_order",
-      "milestone_status": "future",
+      "milestone_status": "milestone_1",
       "mutation_class": "read_only",
       "scopes": [
         "inventree.read"
@@ -286,7 +286,7 @@
     },
     {
       "name": "get_purchase_order_line",
-      "milestone_status": "future",
+      "milestone_status": "milestone_1",
       "mutation_class": "read_only",
       "scopes": [
         "inventree.read"
@@ -313,6 +313,22 @@
       },
       "upload_sources": null,
       "http_registration": "registered"
+    },
+    {
+      "name": "issue_purchase_order",
+      "milestone_status": "milestone_1",
+      "mutation_class": "write",
+      "scopes": [
+        "inventree.write"
+      ],
+      "annotations": {
+        "read_only": false,
+        "destructive": false,
+        "idempotent": false,
+        "open_world": false
+      },
+      "upload_sources": null,
+      "http_registration": "registered_with_oauth_scope_guard"
     },
     {
       "name": "list_attachments",
@@ -345,6 +361,24 @@
       },
       "upload_sources": null,
       "http_registration": "registered"
+    },
+    {
+      "name": "receive_purchase_order_items",
+      "milestone_status": "milestone_1",
+      "mutation_class": "operational",
+      "scopes": [
+        "inventree.read",
+        "inventree.write",
+        "inventree.operational"
+      ],
+      "annotations": {
+        "read_only": false,
+        "destructive": false,
+        "idempotent": false,
+        "open_world": false
+      },
+      "upload_sources": null,
+      "http_registration": "registered_with_oauth_scope_guard"
     },
     {
       "name": "search_companies",
@@ -428,7 +462,7 @@
     },
     {
       "name": "search_purchase_order_lines",
-      "milestone_status": "future",
+      "milestone_status": "milestone_1",
       "mutation_class": "read_only",
       "scopes": [
         "inventree.read"
@@ -444,7 +478,7 @@
     },
     {
       "name": "search_purchase_orders",
-      "milestone_status": "future",
+      "milestone_status": "milestone_1",
       "mutation_class": "read_only",
       "scopes": [
         "inventree.read"
@@ -576,7 +610,7 @@
     },
     {
       "name": "update_purchase_order_line",
-      "milestone_status": "future",
+      "milestone_status": "milestone_1",
       "mutation_class": "write",
       "scopes": [
         "inventree.write"
@@ -679,8 +713,8 @@
     },
     {
       "name": "receive_purchase_order_checklist",
-      "milestone_status": "future",
-      "registered": false
+      "milestone_status": "milestone_1",
+      "registered": true
     },
     {
       "name": "stocktake_review",

@@ -242,6 +242,39 @@ func TestWriteMethodsUseExpectedEndpoints(t *testing.T) {
 				a.Equal("", body["notes"])
 			},
 		},
+		{
+			name: "receive purchase order creates stock through receive endpoint",
+			call: func(ctx context.Context, client *Client) error {
+				_, err := client.ReceivePurchaseOrder(ctx, 120, PurchaseOrderReceive{Items: []PurchaseOrderReceiveItem{{LineItem: 130, Location: dvgoutils.Ptr(40), Quantity: "1.5", Status: dvgoutils.Ptr(10), BatchCode: dvgoutils.Ptr("B-1")}}})
+				return err
+			},
+			method:   http.MethodPost,
+			path:     "/api/order/po/120/receive/",
+			response: `[{"pk":50,"part":10,"location":40,"quantity":1.5,"status":10,"batch":"B-1"}]`,
+			assert: func(a *assert.Assertions, body map[string]any) {
+				items := body["items"].([]any)
+				item := items[0].(map[string]any)
+				a.Equal(float64(130), item["line_item"])
+				a.Equal(float64(40), item["location"])
+				a.Equal("1.5", item["quantity"])
+				a.Equal(float64(10), item["status"])
+				a.Equal("B-1", item["batch_code"])
+				_, hasGlobalLocation := body["location"]
+				a.False(hasGlobalLocation)
+			},
+		},
+		{
+			name: "issue purchase order uses explicit status transition endpoint",
+			call: func(ctx context.Context, client *Client) error {
+				return client.IssuePurchaseOrder(ctx, 120)
+			},
+			method:   http.MethodPost,
+			path:     "/api/order/po/120/issue/",
+			response: `{}`,
+			assert: func(a *assert.Assertions, body map[string]any) {
+				a.Empty(body)
+			},
+		},
 	}
 
 	for _, tt := range tests {

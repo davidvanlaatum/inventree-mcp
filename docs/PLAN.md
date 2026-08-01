@@ -393,6 +393,7 @@ Mutating non-destructive tools:
 - `add_purchase_order_line`
 - `update_purchase_order_line`
 - `create_purchase_order_with_lines`
+- `issue_purchase_order`
 - `create_build_order`
 - `import_parts`
 - `import_supplier_parts`
@@ -602,17 +603,22 @@ Important behaviors:
 - `update_purchase_order_line`
 - `preview_purchase_order_with_lines`
 - `create_purchase_order_with_lines`
+- `issue_purchase_order`
 - `receive_purchase_order_items`
 - `close_purchase_order`
 
 Important behaviors:
 
 - Use supplier-part links when receiving purchasable items.
-- Return created stock items and received quantities.
+- Require `issue_purchase_order` with `confirm_issue:true` before a pending order is placed with its supplier; receiving never issues an order implicitly.
+- `receive_purchase_order_items` accepts schema-valid partial outstanding quantities only for a placed order, rejects virtual parts because they do not create stock, resolves location from item override to line destination to global fallback, and creates new stock items without merging into or updating existing stock.
+- Return a deterministic `plan_hash` with each dry run. The plan includes the supplier pack conversion, resulting base-stock quantity, resolved packaging, and source line purchase price/currency. The operational call requires both `confirm_receive:true` and the exact hash for the current preflight plan; changed order, line, supplier-pack, packaging, or source price state invalidates the confirmation. InvenTree's global currency conversion configuration is not revisioned through this endpoint, so a concurrent administrator change remains outside the hash boundary.
+- Return the refreshed purchase order, resolved receiving plan, created stock items, and received quantities. If the non-idempotent receive result is ambiguous, return structured `partial_failure` recovery guidance and do not invite a blind retry.
+- Treat concurrent receipt of the same purchase-order line as unsupported. InvenTree 1.4.3 serializes its line updates but does not atomically cap a previously prepared receipt to the newly outstanding quantity; an MCP-process lock would not protect against the InvenTree UI, direct API clients, or other MCP replicas, so the operator accepted this narrow residual risk without local locking.
 - Require explicit confirmation before closing an order.
 - `update_purchase_order_line` should use PATCH and serialize only supplied fields.
 - `preview_purchase_order_with_lines` is the milestone dry-run tool. It must be read-only, reject write intent, and perform supplier-part validation without creating a purchase order.
-- `create_purchase_order_with_lines` was not registered in milestone 1. Its post-milestone F-S03 creation slice takes a supplier, stable supplier reference, description/date fields, and line inputs; runs preview-equivalent validation first; then creates or updates the purchase order and lines while returning stable purchase-order and line IDs for retry/recovery. The exact `(supplier_id, supplier_reference)` pair is the retry identity, while InvenTree generates its pattern-compliant internal reference. It remains marked `future` in the checked tool manifest until the full story, including product-gated receiving, is complete.
+- `create_purchase_order_with_lines` was not registered in the original milestone 1 delivery. Its post-milestone F-S03 workflow takes a supplier, stable supplier reference, description/date fields, and line inputs; runs preview-equivalent validation first; then creates or updates the purchase order and lines while returning stable purchase-order and line IDs for retry/recovery. The exact `(supplier_id, supplier_reference)` pair is the retry identity, while InvenTree generates its pattern-compliant internal reference. The completed F-S03 purchasing tools are classified as implemented in the checked manifest.
 - Purchase-order write tools must include read/search support for purchase orders and lines so duplicate checks and recovery after interrupted writes do not require raw REST calls.
 
 ### Sales Tools
@@ -665,7 +671,7 @@ Prompts can encode common operator workflows. Mark each prompt as `milestone_1`,
 - `attachment_image_checklist` (`milestone_1`)
 - `initial_stock_entry_checklist` (`milestone_1`)
 - `purchase_preview_checklist` (`milestone_1`)
-- `receive_purchase_order_checklist` (`future`)
+- `receive_purchase_order_checklist` (`milestone_1`)
 - `bom_import_review` (`future`)
 - `stocktake_review` (`future`)
 
@@ -877,7 +883,6 @@ Validation:
 ### Future Workflow Tools
 
 - BOM import workflow.
-- Purchase order receiving workflow; the create/read/recovery slice, including `create_purchase_order_with_lines` as the preferred first write path after preview validation, is implemented under F-S03 while receiving remains product-gated.
 - Build order create/allocate/complete workflow.
 - Stocktake adjustment workflow.
 - Live order-entry hardening from browser/order-page workflows: fill missing duplicate-check and recovery reads, ensure write tools have consistent dry-run/preflight behavior, validate blank/null manufacturer part numbers before mutation or document a fallback convention, and return redacted InvenTree response-body details in tool errors.

@@ -24,11 +24,12 @@ type CategoryParameterTemplateQuery struct {
 }
 
 type StockItemQuery struct {
-	Search     string
-	PartID     int
-	LocationID int
-	Limit      int
-	Offset     int
+	Search          string
+	PartID          int
+	LocationID      int
+	PurchaseOrderID int
+	Limit           int
+	Offset          int
 }
 
 type AttachmentQuery struct {
@@ -109,6 +110,9 @@ func (q StockItemQuery) values() url.Values {
 	}
 	if q.LocationID != 0 {
 		values.Set("location", strconv.Itoa(q.LocationID))
+	}
+	if q.PurchaseOrderID != 0 {
+		values.Set("purchase_order", strconv.Itoa(q.PurchaseOrderID))
 	}
 	return values
 }
