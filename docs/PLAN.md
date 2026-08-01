@@ -612,7 +612,7 @@ Important behaviors:
 - Require explicit confirmation before closing an order.
 - `update_purchase_order_line` should use PATCH and serialize only supplied fields.
 - `preview_purchase_order_with_lines` is the milestone dry-run tool. It must be read-only, reject write intent, and perform supplier-part validation without creating a purchase order.
-- `create_purchase_order_with_lines` is a later mutating workflow and should not be registered in milestone 1. It should take a supplier, supplier reference, description/date fields, idempotency key, and line inputs; run preview-equivalent validation first; then create or update the purchase order and lines while returning stable purchase-order and line IDs for retry/recovery.
+- `create_purchase_order_with_lines` was not registered in milestone 1. Its post-milestone F-S03 creation slice takes a supplier, stable supplier reference, description/date fields, and line inputs; runs preview-equivalent validation first; then creates or updates the purchase order and lines while returning stable purchase-order and line IDs for retry/recovery. The exact `(supplier_id, supplier_reference)` pair is the retry identity, while InvenTree generates its pattern-compliant internal reference. It remains marked `future` in the checked tool manifest until the full story, including product-gated receiving, is complete.
 - Purchase-order write tools must include read/search support for purchase orders and lines so duplicate checks and recovery after interrupted writes do not require raw REST calls.
 
 ### Sales Tools
@@ -754,7 +754,7 @@ Stock movement, purchase receiving, build allocation, and build completion shoul
 - No token logging.
 - Upstream InvenTree base URL must not be derived from request data.
 - Mutating tools should be auditable by method name, object type, object ID, dry-run state, and confirmation state.
-- Read operations may retry on transient failures. Non-idempotent writes must not be automatically retried unless the workflow has an idempotency key or performs safe duplicate-detection reads.
+- Read operations may retry on transient failures. Non-idempotent writes must not be automatically retried unless the workflow has a stable retry identity or performs safe duplicate-detection reads.
 - Request timeouts should be explicit and context-aware for both MCP handlers and upstream InvenTree API calls.
 - Bulk attachment delete is out of scope initially. If added later, require stricter confirmation, dry-run listing, object/prefix scoping, and destructive annotations.
 
@@ -877,7 +877,7 @@ Validation:
 ### Future Workflow Tools
 
 - BOM import workflow.
-- Purchase order create/receive workflow, including `create_purchase_order_with_lines` as the preferred first write path after preview validation.
+- Purchase order receiving workflow; the create/read/recovery slice, including `create_purchase_order_with_lines` as the preferred first write path after preview validation, is implemented under F-S03 while receiving remains product-gated.
 - Build order create/allocate/complete workflow.
 - Stocktake adjustment workflow.
 - Live order-entry hardening from browser/order-page workflows: fill missing duplicate-check and recovery reads, ensure write tools have consistent dry-run/preflight behavior, validate blank/null manufacturer part numbers before mutation or document a fallback convention, and return redacted InvenTree response-body details in tool errors.

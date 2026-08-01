@@ -158,7 +158,7 @@ func TestCheckedToolManifestMatchesGeneratedMetadata(t *testing.T) {
 	a.Equal(generated, checked)
 
 	toolReference := docs.ToolReferenceMarkdown()
-	milestoneRows := markdownRowsByFirstCell(section(toolReference, "## Milestone 1 Tools", "## Future Tools"))
+	milestoneRows := markdownRowsByFirstCell(section(toolReference, "## Registered Tools", "## Future Tools"))
 	skeletonRows := markdownRowsByFirstCell(section(toolReference, "## Skeleton Tools", "## Registered Prompts"))
 	for _, entry := range checked.Tools {
 		a.Contains(toolReference, "`"+entry.Name+"`")

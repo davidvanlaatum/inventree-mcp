@@ -179,6 +179,69 @@ func TestWriteMethodsUseExpectedEndpoints(t *testing.T) {
 				a.False(hasSalesOrder)
 			},
 		},
+		{
+			name: "create purchase order",
+			call: func(ctx context.Context, client *Client) error {
+				_, err := client.CreatePurchaseOrder(ctx, PurchaseOrderCreate{Supplier: 30, SupplierReference: dvgoutils.Ptr("EBAY-42"), Description: dvgoutils.Ptr("order page import")})
+				return err
+			},
+			method:   http.MethodPost,
+			path:     "/api/order/po/",
+			response: `{"pk":120,"reference":"PO-0001","supplier":30,"supplier_reference":"EBAY-42"}`,
+			assert: func(a *assert.Assertions, body map[string]any) {
+				_, hasReference := body["reference"]
+				a.False(hasReference)
+				a.Equal(float64(30), body["supplier"])
+				a.Equal("EBAY-42", body["supplier_reference"])
+				a.Equal("order page import", body["description"])
+			},
+		},
+		{
+			name: "update purchase order preserves explicit empty",
+			call: func(ctx context.Context, client *Client) error {
+				_, err := client.UpdatePurchaseOrder(ctx, 120, PatchFields{"description": Set("")})
+				return err
+			},
+			method:   http.MethodPatch,
+			path:     "/api/order/po/120/",
+			response: `{"pk":120,"reference":"checkout-42","supplier":30,"description":""}`,
+			assert: func(a *assert.Assertions, body map[string]any) {
+				a.Equal("", body["description"])
+			},
+		},
+		{
+			name: "create purchase order line",
+			call: func(ctx context.Context, client *Client) error {
+				_, err := client.CreatePurchaseOrderLine(ctx, PurchaseOrderLineCreate{Order: 120, SupplierPart: 40, Reference: dvgoutils.Ptr("checkout-42-1"), Quantity: 2, PurchasePrice: dvgoutils.Ptr("1.25"), PurchasePriceCurrency: dvgoutils.Ptr("AUD")})
+				return err
+			},
+			method:   http.MethodPost,
+			path:     "/api/order/po-line/",
+			response: `{"pk":130,"order":120,"part":40,"reference":"checkout-42-1","quantity":2}`,
+			assert: func(a *assert.Assertions, body map[string]any) {
+				a.Equal(float64(120), body["order"])
+				a.Equal(float64(40), body["part"])
+				a.Equal(false, body["auto_pricing"])
+				a.Equal(false, body["merge_items"])
+				a.Equal("checkout-42-1", body["reference"])
+				a.Equal("1.25", body["purchase_price"])
+				a.Equal("AUD", body["purchase_price_currency"])
+			},
+		},
+		{
+			name: "update purchase order line uses patch",
+			call: func(ctx context.Context, client *Client) error {
+				_, err := client.UpdatePurchaseOrderLine(ctx, 130, PatchFields{"quantity": Set(3.0), "notes": Set("")})
+				return err
+			},
+			method:   http.MethodPatch,
+			path:     "/api/order/po-line/130/",
+			response: `{"pk":130,"order":120,"part":40,"quantity":3,"notes":""}`,
+			assert: func(a *assert.Assertions, body map[string]any) {
+				a.Equal(float64(3), body["quantity"])
+				a.Equal("", body["notes"])
+			},
+		},
 	}
 
 	for _, tt := range tests {

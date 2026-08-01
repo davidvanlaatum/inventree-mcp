@@ -97,6 +97,74 @@ func TestMilestoneHappyPathToolsAgainstInvenTree(t *testing.T) {
 		a.Empty(orders, "purchase preview must not create purchase orders")
 	})
 
+	t.Run("purchase_order_create_and_retry_happy_path", func(t *testing.T) {
+		r := require.New(t)
+		a := assert.New(t)
+		ctx, _, _ := testhandler.SetupTestHandler(t)
+		fixture := newMilestoneToolFixture(t, shared)
+		supplier := fixture.ensure(t, testenv.FixtureSupplier)
+		supplierPart := fixture.ensure(t, testenv.FixtureSupplierPart)
+		destination := fixture.ensure(t, testenv.FixtureLocation)
+		supplierReference, err := fixture.run.Name("order-page")
+		r.NoError(err)
+		price := 1.25
+		input := PurchaseOrderWorkflowInput{
+			SupplierID:        supplier.ID,
+			SupplierReference: supplierReference,
+			Description:       dvgoutils.Ptr("order-page integration workflow"),
+			Lines: []PurchaseOrderWorkflowLine{{
+				SupplierPartID: supplierPart.ID,
+				Quantity:       4,
+				UnitPrice:      &price,
+				Currency:       "AUD",
+				Notes:          "created by F-S03 integration coverage",
+				DestinationID:  &destination.ID,
+			}, {
+				SupplierPartID: supplierPart.ID,
+				Quantity:       2,
+				UnitPrice:      &price,
+				Currency:       "AUD",
+				Notes:          "separate same-part line must not merge",
+				DestinationID:  &destination.ID,
+			}},
+		}
+
+		_, created, err := createPurchaseOrderWithLines(fixture.deps())(ctx, &mcp.CallToolRequest{}, input)
+		r.NoError(err)
+		a.Equal(StatusOK, created.Status)
+		r.NotNil(created.PurchaseOrder)
+		r.Len(created.Lines, 2)
+		a.NotEmpty(created.PurchaseOrder.Reference)
+		a.Equal(supplierReference, created.PurchaseOrder.SupplierReference)
+		a.Equal(supplierReference+"-1", created.Lines[0].Reference)
+		a.Equal(supplierReference+"-2", created.Lines[1].Reference)
+		a.NotEqual(created.Lines[0].PK, created.Lines[1].PK)
+		r.NotNil(created.Lines[0].Destination)
+		r.NotNil(created.Lines[1].Destination)
+		a.Equal(destination.ID, *created.Lines[0].Destination)
+		a.Equal(destination.ID, *created.Lines[1].Destination)
+
+		input.Description = dvgoutils.Ptr("updated by retry recovery")
+		input.Lines[0].Quantity = 5
+		_, retried, err := createPurchaseOrderWithLines(fixture.deps())(ctx, &mcp.CallToolRequest{}, input)
+		r.NoError(err)
+		a.Equal(StatusOK, retried.Status)
+		r.NotNil(retried.PurchaseOrder)
+		r.Len(retried.Lines, 2)
+		a.Equal(created.PurchaseOrder.PK, retried.PurchaseOrder.PK)
+		a.Equal(created.Lines[0].PK, retried.Lines[0].PK)
+		a.Equal(created.Lines[1].PK, retried.Lines[1].PK)
+		a.Equal(5.0, retried.Lines[0].Quantity)
+
+		orders, err := fixture.client.SearchPurchaseOrders(ctx, inventree.PurchaseOrderQuery{Search: supplierReference, Supplier: supplier.ID})
+		r.NoError(err)
+		exactOrders := exactSupplierReferenceMatches(orders, supplier.ID, supplierReference)
+		r.Len(exactOrders, 1)
+		lines, err := fixture.client.SearchPurchaseOrderLines(ctx, inventree.PurchaseOrderLineQuery{Order: exactOrders[0].PK})
+		r.NoError(err)
+		r.Len(lines, 2)
+	})
+
 	t.Run("attachment_target_matrix_upload_download_and_max_bytes", func(t *testing.T) {
 		for _, modelType := range attachmentTargetModelTypes() {
 			t.Run(modelType, func(t *testing.T) {

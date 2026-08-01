@@ -158,15 +158,27 @@ Bulk attachment delete (`DELETE /api/attachment/`) is schema-confirmed but out o
 The initial endpoint manifest covers schema-confirmed paths, methods, operation IDs, selected query filters, request schemas, response schemas, and PATCH support for every milestone client-method dependency in these areas:
 
 - Part and category search/create/update.
-- Company search/create/update and role filters.
+- Company search/get/create/update and role filters.
 - Manufacturer part and supplier part link creation.
 - Stock location search, stock item search, and stock item creation.
 - Parameter values, parameter templates, and category parameter template links.
-- Purchase order preview inputs and supplier-part validation dependencies, including direct supplier-part retrieval for stable `supplier_part_id` validation.
+- Purchase order preview plus F-S03 order/line search, get, create, and PATCH dependencies, including direct supplier and supplier-part retrieval for stable-ID validation.
 - Attachment, link attachment, URL upload, and primary-image update behavior.
 
-Future endpoint-specific client methods must use manifest entries rather than ad hoc path strings. Adding a method without a manifest entry or changing `docs/api-schema.yaml` without updating the manifest/provenance should fail the schema checks.
+Future endpoint-specific client methods must use manifest entries rather than ad hoc path strings. Adding a method without a manifest entry or changing `docs/api-schema.yaml` without updating the manifest/provenance should fail the schema checks. Purchase-order receiving endpoints remain schema references only until the create/merge/update stock decision and operational scope are approved.
 The manifest is endpoint-level schema coverage, not a complete upload authorization boundary. Attachment `model_type`, accepted file fields, URL sources, and primary-image object rules remain enforced by the attachment/image client and tool tests when those tools are implemented. The manifest records in-scope and deferred attachment model types so those later tests have a machine-readable scope source.
+
+## Verified Purchase Order Endpoints
+
+- `GET /api/company/{id}/` validates the stable supplier company and supplier role before order creation.
+- `GET` and `POST /api/order/po/` search and create purchase orders. F-S03 searches by supplier plus the generic `search` field, then requires an exact client-side `supplier_reference` match for retry recovery; InvenTree generates its pattern-compliant internal `reference` when the workflow creates an order.
+- `GET` and `PATCH /api/order/po/{id}/` retrieve and partially update purchase-order metadata.
+- `GET` and `POST /api/order/po-line/` search and create supplier-part-backed lines.
+- `GET` and `PATCH /api/order/po-line/{id}/` retrieve and partially update individual lines.
+- The pinned 1.4.0 API schema declares line `purchase_price` as a decimal string, but the live create response encodes it as a JSON number. The typed client accepts both encodings and preserves the value as a decimal string.
+- Purchase-order line creates explicitly send `auto_pricing:false` and `merge_items:false` so InvenTree does not replace previewed prices or combine separately referenced workflow lines.
+- The order list schema exposes supplier, exact reference, status, search, scheduled-start date, and target-date filters. The line list exposes order, supplier-part (`part`), pending, received, and search filters.
+- The receive endpoint is schema-confirmed but intentionally not exposed until F-S03 resolves how received stock is created, merged, or updated and which explicit operational confirmation is required.
 
 ## Verified Parameter Endpoints
 

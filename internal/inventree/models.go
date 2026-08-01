@@ -1,5 +1,25 @@
 package inventree
 
+import "encoding/json"
+
+// DecimalString preserves schema decimal values while accepting InvenTree
+// responses that encode the same field as either a JSON string or number.
+type DecimalString string
+
+func (value *DecimalString) UnmarshalJSON(data []byte) error {
+	var text string
+	if err := json.Unmarshal(data, &text); err == nil {
+		*value = DecimalString(text)
+		return nil
+	}
+	var number json.Number
+	if err := json.Unmarshal(data, &number); err != nil {
+		return err
+	}
+	*value = DecimalString(number.String())
+	return nil
+}
+
 type Part struct {
 	PK              int     `json:"pk"`
 	Name            string  `json:"name"`
@@ -118,16 +138,30 @@ type ManufacturerPart struct {
 }
 
 type PurchaseOrder struct {
-	PK        int    `json:"pk"`
-	Reference string `json:"reference"`
-	Supplier  int    `json:"supplier"`
-	Status    int    `json:"status"`
+	PK                int     `json:"pk"`
+	Reference         string  `json:"reference"`
+	Supplier          int     `json:"supplier"`
+	SupplierReference string  `json:"supplier_reference"`
+	Description       string  `json:"description"`
+	CreationDate      *string `json:"creation_date"`
+	StartDate         *string `json:"start_date"`
+	TargetDate        *string `json:"target_date"`
+	OrderCurrency     *string `json:"order_currency"`
+	Destination       *int    `json:"destination"`
+	Status            int     `json:"status"`
 }
 
 type PurchaseOrderLineItem struct {
-	PK           int     `json:"pk"`
-	Order        int     `json:"order"`
-	Part         int     `json:"part"`
-	SupplierPart *int    `json:"supplier_part"`
-	Quantity     float64 `json:"quantity"`
+	PK                    int            `json:"pk"`
+	Order                 int            `json:"order"`
+	Part                  int            `json:"part"`
+	SupplierPart          *int           `json:"supplier_part,omitempty"`
+	Destination           *int           `json:"destination"`
+	Line                  string         `json:"line"`
+	Reference             string         `json:"reference"`
+	Notes                 string         `json:"notes"`
+	Quantity              float64        `json:"quantity"`
+	TargetDate            *string        `json:"target_date"`
+	PurchasePrice         *DecimalString `json:"purchase_price"`
+	PurchasePriceCurrency string         `json:"purchase_price_currency"`
 }

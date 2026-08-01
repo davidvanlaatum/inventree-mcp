@@ -83,6 +83,10 @@ func TestClientMethodsAgainstInvenTree(t *testing.T) {
 		r.NotEmpty(suppliers)
 		r.Equal(supplier.ID, suppliers[0].PK)
 		r.True(suppliers[0].IsSupplier)
+		gotSupplier, err := fixture.client.GetCompany(ctx, supplier.ID)
+		r.NoError(err)
+		r.Equal(supplier.ID, gotSupplier.PK)
+		r.True(gotSupplier.IsSupplier)
 
 		manufacturers, err := fixture.client.SearchManufacturers(ctx, inventree.SearchQuery{Search: manufacturer.Name})
 		r.NoError(err)
@@ -417,8 +421,26 @@ func TestClientMethodsAgainstInvenTree(t *testing.T) {
 		fixture := newClientMethodFixture(t, shared)
 		supplier := fixture.ensure(t, testenv.FixtureSupplier)
 		supplierPart := fixture.ensure(t, testenv.FixtureSupplierPart)
-		order := createPurchaseOrder(t, fixture.client, supplier.ID)
-		line := createPurchaseOrderLine(t, fixture.client, order.PK, supplierPart.ID, 3)
+		destination := fixture.ensure(t, testenv.FixtureLocation)
+		orderWithoutSupplierReference, err := fixture.client.CreatePurchaseOrder(ctx, inventree.PurchaseOrderCreate{Supplier: supplier.ID})
+		r.NoError(err)
+		r.NotZero(orderWithoutSupplierReference.PK)
+		r.NotEmpty(orderWithoutSupplierReference.Reference)
+		r.Empty(orderWithoutSupplierReference.SupplierReference)
+		supplierReference, err := fixture.run.Name("po")
+		r.NoError(err)
+		order, err := fixture.client.CreatePurchaseOrder(ctx, inventree.PurchaseOrderCreate{Supplier: supplier.ID, SupplierReference: &supplierReference, Description: dvgoutils.Ptr("client-method integration order")})
+		r.NoError(err)
+		r.NotZero(order.PK)
+		r.NotEmpty(order.Reference)
+		r.Equal(supplierReference, order.SupplierReference)
+		lineReference, err := fixture.run.Name("po-line")
+		r.NoError(err)
+		line, err := fixture.client.CreatePurchaseOrderLine(ctx, inventree.PurchaseOrderLineCreate{Order: order.PK, SupplierPart: supplierPart.ID, Reference: &lineReference, Quantity: 3, PurchasePrice: dvgoutils.Ptr("1.25"), PurchasePriceCurrency: dvgoutils.Ptr("AUD"), Destination: &destination.ID})
+		r.NoError(err)
+		r.NotZero(line.PK)
+		r.NotNil(line.Destination)
+		r.Equal(destination.ID, *line.Destination)
 
 		orders, err := fixture.client.SearchPurchaseOrders(ctx, inventree.PurchaseOrderQuery{Supplier: supplier.ID})
 		r.NoError(err)
@@ -435,6 +457,18 @@ func TestClientMethodsAgainstInvenTree(t *testing.T) {
 		r.NoError(err)
 		r.NotEmpty(lines)
 		r.Contains(purchaseOrderLineIDs(lines), line.PK)
+		gotLine, err := fixture.client.GetPurchaseOrderLine(ctx, line.PK)
+		r.NoError(err)
+		r.Equal(line.PK, gotLine.PK)
+		r.Equal(supplierPart.ID, gotLine.Part)
+		r.NotNil(gotLine.Destination)
+		r.Equal(destination.ID, *gotLine.Destination)
+		updatedOrder, err := fixture.client.UpdatePurchaseOrder(ctx, order.PK, inventree.PatchFields{"description": inventree.Set("updated client-method integration order")})
+		r.NoError(err)
+		r.Equal("updated client-method integration order", updatedOrder.Description)
+		updatedLine, err := fixture.client.UpdatePurchaseOrderLine(ctx, line.PK, inventree.PatchFields{"order": inventree.Set(order.PK), "part": inventree.Set(supplierPart.ID), "quantity": inventree.Set(4.0)})
+		r.NoError(err)
+		r.Equal(4.0, updatedLine.Quantity)
 	})
 }
 
@@ -544,45 +578,6 @@ func setPartImage(t *testing.T, baseURL string, token string, partID int, filena
 		r.NoError(err)
 		r.Failf("part image upload failed", "status %d body %s", resp.StatusCode, string(body))
 	}
-}
-
-func createPurchaseOrder(t *testing.T, client *inventree.Client, supplierID int) inventree.PurchaseOrder {
-	t.Helper()
-	r := require.New(t)
-	ctx, _, _ := testhandler.SetupTestHandler(t)
-
-	reference := "PO-" + strconv.Itoa(supplierID)
-	req, err := client.NewRequest(ctx, http.MethodPost, "/api/order/po/", nil, map[string]any{
-		"reference":   reference,
-		"supplier":    supplierID,
-		"description": "Run-scoped integration fixture purchase order",
-	})
-	r.NoError(err)
-	var created inventree.PurchaseOrder
-	r.NoError(client.DoJSON(req, &created))
-	r.NotZero(created.PK)
-	r.Equal(reference, created.Reference)
-	r.Equal(supplierID, created.Supplier)
-	return created
-}
-
-func createPurchaseOrderLine(t *testing.T, client *inventree.Client, orderID int, supplierPartID int, quantity float64) inventree.PurchaseOrderLineItem {
-	t.Helper()
-	r := require.New(t)
-	ctx, _, _ := testhandler.SetupTestHandler(t)
-
-	req, err := client.NewRequest(ctx, http.MethodPost, "/api/order/po-line/", nil, map[string]any{
-		"order":    orderID,
-		"part":     supplierPartID,
-		"quantity": quantity,
-	})
-	r.NoError(err)
-	var created inventree.PurchaseOrderLineItem
-	r.NoError(client.DoJSON(req, &created))
-	r.NotZero(created.PK)
-	r.Equal(orderID, created.Order)
-	r.Equal(quantity, created.Quantity)
-	return created
 }
 
 func attachmentIDs(attachments []inventree.Attachment) []int {

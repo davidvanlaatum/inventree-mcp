@@ -52,15 +52,26 @@ type ManufacturerPartQuery struct {
 }
 
 type PurchaseOrderQuery struct {
-	Supplier int
-	Limit    int
-	Offset   int
+	Search           string
+	Supplier         int
+	Reference        string
+	Status           *int
+	StartDateAfter   string
+	StartDateBefore  string
+	TargetDateAfter  string
+	TargetDateBefore string
+	Limit            int
+	Offset           int
 }
 
 type PurchaseOrderLineQuery struct {
-	Order  int
-	Limit  int
-	Offset int
+	Search       string
+	Order        int
+	SupplierPart int
+	Pending      *bool
+	Received     *bool
+	Limit        int
+	Offset       int
 }
 
 func (q SearchQuery) values() url.Values {
@@ -141,8 +152,29 @@ func (q ManufacturerPartQuery) values() url.Values {
 
 func (q PurchaseOrderQuery) values() url.Values {
 	values := url.Values{}
+	if q.Search != "" {
+		values.Set("search", q.Search)
+	}
 	if q.Supplier != 0 {
 		values.Set("supplier", strconv.Itoa(q.Supplier))
+	}
+	if q.Reference != "" {
+		values.Set("reference", q.Reference)
+	}
+	if q.Status != nil {
+		values.Set("status", strconv.Itoa(*q.Status))
+	}
+	if q.StartDateAfter != "" {
+		values.Set("start_date_after", q.StartDateAfter)
+	}
+	if q.StartDateBefore != "" {
+		values.Set("start_date_before", q.StartDateBefore)
+	}
+	if q.TargetDateAfter != "" {
+		values.Set("target_date_after", q.TargetDateAfter)
+	}
+	if q.TargetDateBefore != "" {
+		values.Set("target_date_before", q.TargetDateBefore)
 	}
 	setPagination(values, q.Limit, q.Offset)
 	return values
@@ -150,8 +182,20 @@ func (q PurchaseOrderQuery) values() url.Values {
 
 func (q PurchaseOrderLineQuery) values() url.Values {
 	values := url.Values{}
+	if q.Search != "" {
+		values.Set("search", q.Search)
+	}
 	if q.Order != 0 {
 		values.Set("order", strconv.Itoa(q.Order))
+	}
+	if q.SupplierPart != 0 {
+		values.Set("part", strconv.Itoa(q.SupplierPart))
+	}
+	if q.Pending != nil {
+		values.Set("pending", strconv.FormatBool(*q.Pending))
+	}
+	if q.Received != nil {
+		values.Set("received", strconv.FormatBool(*q.Received))
 	}
 	setPagination(values, q.Limit, q.Offset)
 	return values
