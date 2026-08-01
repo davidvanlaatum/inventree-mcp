@@ -104,6 +104,24 @@ type PurchaseOrderLineCreate struct {
 	Destination           *int    `json:"destination,omitempty"`
 }
 
+type PurchaseOrderReceive struct {
+	Items    []PurchaseOrderReceiveItem `json:"items"`
+	Location *int                       `json:"location,omitempty"`
+}
+
+type PurchaseOrderReceiveItem struct {
+	LineItem      int     `json:"line_item"`
+	Location      *int    `json:"location,omitempty"`
+	Quantity      string  `json:"quantity"`
+	BatchCode     *string `json:"batch_code,omitempty"`
+	ExpiryDate    *string `json:"expiry_date,omitempty"`
+	SerialNumbers *string `json:"serial_numbers,omitempty"`
+	Status        *int    `json:"status,omitempty"`
+	Packaging     *string `json:"packaging,omitempty"`
+	Note          *string `json:"note,omitempty"`
+	Barcode       *string `json:"barcode,omitempty"`
+}
+
 type AttachmentCreate struct {
 	ModelType   string
 	ModelID     int
@@ -206,6 +224,16 @@ func (c *Client) UpdatePurchaseOrderLine(ctx context.Context, id int, fields Pat
 	var out PurchaseOrderLineItem
 	err := c.Patch(ctx, fmt.Sprintf("/api/order/po-line/%d/", id), fields, &out)
 	return out, err
+}
+
+func (c *Client) ReceivePurchaseOrder(ctx context.Context, id int, input PurchaseOrderReceive) ([]StockItem, error) {
+	var out []StockItem
+	err := c.Post(ctx, fmt.Sprintf("/api/order/po/%d/receive/", id), input, &out)
+	return out, err
+}
+
+func (c *Client) IssuePurchaseOrder(ctx context.Context, id int) error {
+	return c.Post(ctx, fmt.Sprintf("/api/order/po/%d/issue/", id), struct{}{}, nil)
 }
 
 func (c *Client) UploadAttachment(ctx context.Context, input AttachmentCreate) (Attachment, error) {

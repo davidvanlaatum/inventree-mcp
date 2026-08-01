@@ -21,6 +21,7 @@ func TestPromptManifestClassifiesMilestoneAndFuturePrompts(t *testing.T) {
 		AttachmentImageChecklistPromptName,
 		InitialStockEntryChecklistPromptName,
 		PurchasePreviewChecklistPromptName,
+		ReceivePurchaseOrderChecklistPromptName,
 	} {
 		entry, ok := entries[name]
 		r.True(ok, "missing prompt %s", name)
@@ -28,7 +29,7 @@ func TestPromptManifestClassifiesMilestoneAndFuturePrompts(t *testing.T) {
 		a.NotEmpty(entry.Checklist, name)
 	}
 
-	for _, name := range []string{"receive_purchase_order_checklist", "bom_import_review", "stocktake_review"} {
+	for _, name := range []string{"bom_import_review", "stocktake_review"} {
 		entry, ok := entries[name]
 		r.True(ok, "missing future prompt %s", name)
 		a.Equal(PromptFuture, entry.Status, name)

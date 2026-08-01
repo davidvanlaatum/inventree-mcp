@@ -10,11 +10,12 @@ const (
 	PromptMilestone1 = "milestone_1"
 	PromptFuture     = "future"
 
-	NewPartEntryChecklistPromptName      = "new_part_entry_checklist"
-	ParameterReuseChecklistPromptName    = "parameter_reuse_checklist"
-	AttachmentImageChecklistPromptName   = "attachment_image_checklist"
-	InitialStockEntryChecklistPromptName = "initial_stock_entry_checklist"
-	PurchasePreviewChecklistPromptName   = "purchase_preview_checklist"
+	NewPartEntryChecklistPromptName         = "new_part_entry_checklist"
+	ParameterReuseChecklistPromptName       = "parameter_reuse_checklist"
+	AttachmentImageChecklistPromptName      = "attachment_image_checklist"
+	InitialStockEntryChecklistPromptName    = "initial_stock_entry_checklist"
+	PurchasePreviewChecklistPromptName      = "purchase_preview_checklist"
+	ReceivePurchaseOrderChecklistPromptName = "receive_purchase_order_checklist"
 )
 
 type PromptManifestEntry struct {
@@ -88,10 +89,17 @@ var PromptManifest = []PromptManifestEntry{
 - Use preview_purchase_order_with_lines only for no-write output; it must not create purchase orders or purchase-order lines.`,
 	},
 	{
-		Name:        "receive_purchase_order_checklist",
+		Name:        ReceivePurchaseOrderChecklistPromptName,
 		Title:       "Receive purchase order checklist",
-		Description: "Future checklist for purchase-order receiving workflows.",
-		Status:      PromptFuture,
+		Description: "Checklist for dry-run purchase-order receiving with stable line and location IDs, outstanding-quantity checks, and explicit confirmation.",
+		Status:      PromptMilestone1,
+		Checklist: `Use this checklist before receiving purchase-order items:
+- Resolve the purchase order, each purchase-order line, and every effective stock location to stable IDs.
+- Use dry_run:true first and verify each requested quantity is schema-valid, positive, and no greater than the line's outstanding quantity; virtual parts are excluded because they do not create stock.
+- Resolve receiving location in this order: item location_id, purchase-order line destination, then global location_id.
+- Receiving creates new stock items through InvenTree's native purchase-order receive endpoint; it never merges into or updates existing stock.
+- Submit the exact dry-run plan_hash with confirm_receive:true for the operational write; invalid input returns structured clarification and changed state requires a new dry run.
+- If execution returns partial_failure, read line and stock state before preparing a new plan and never retry the receipt blindly.`,
 	},
 	{
 		Name:        "bom_import_review",

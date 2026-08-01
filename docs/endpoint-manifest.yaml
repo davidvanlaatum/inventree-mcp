@@ -354,3 +354,17 @@ endpoints:
     request_schema: '#/components/schemas/PatchedPurchaseOrderLineItem'
     request_content_type: application/json
     response_schema: '#/components/schemas/PurchaseOrderLineItem'
+  - id: receive_purchase_order_items
+    area: purchasing
+    path: /api/order/po/{id}/receive/
+    method: POST
+    operation_id: order_po_receive_create
+    request_schema: '#/components/schemas/PurchaseOrderReceive'
+    request_content_type: application/json
+    response_schema: '#/components/schemas/StockItem'
+  - id: issue_purchase_order
+    area: purchasing
+    path: /api/order/po/{id}/issue/
+    method: POST
+    operation_id: order_po_issue_create
+    response_status: 201

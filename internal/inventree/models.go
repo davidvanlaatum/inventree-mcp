@@ -2,6 +2,12 @@ package inventree
 
 import "encoding/json"
 
+const (
+	PurchaseOrderStatusPending  = 10
+	PurchaseOrderStatusPlaced   = 20
+	PurchaseOrderStatusComplete = 30
+)
+
 // DecimalString preserves schema decimal values while accepting InvenTree
 // responses that encode the same field as either a JSON string or number.
 type DecimalString string
@@ -67,14 +73,16 @@ type StockLocation struct {
 }
 
 type StockItem struct {
-	PK       int     `json:"pk"`
-	Part     int     `json:"part"`
-	Location *int    `json:"location"`
-	Quantity float64 `json:"quantity"`
-	Serial   *string `json:"serial"`
-	Batch    *string `json:"batch"`
-	Notes    *string `json:"notes"`
-	Status   int     `json:"status"`
+	PK                     int     `json:"pk"`
+	Part                   int     `json:"part"`
+	Location               *int    `json:"location"`
+	Quantity               float64 `json:"quantity"`
+	Serial                 *string `json:"serial"`
+	Batch                  *string `json:"batch"`
+	Notes                  *string `json:"notes"`
+	Status                 int     `json:"status"`
+	PurchaseOrder          *int    `json:"purchase_order"`
+	PurchaseOrderReference *string `json:"purchase_order_reference"`
 }
 
 type Parameter struct {
@@ -120,13 +128,15 @@ type Attachment struct {
 }
 
 type SupplierPart struct {
-	PK          int    `json:"pk"`
-	Part        int    `json:"part"`
-	Supplier    int    `json:"supplier"`
-	SKU         string `json:"SKU"`
-	Description string `json:"description"`
-	Active      bool   `json:"active"`
-	Primary     bool   `json:"primary"`
+	PK                 int     `json:"pk"`
+	Part               int     `json:"part"`
+	Supplier           int     `json:"supplier"`
+	SKU                string  `json:"SKU"`
+	Description        string  `json:"description"`
+	Active             bool    `json:"active"`
+	Primary            bool    `json:"primary"`
+	Packaging          *string `json:"packaging"`
+	PackQuantityNative float64 `json:"pack_quantity_native"`
 }
 
 type ManufacturerPart struct {
@@ -161,6 +171,7 @@ type PurchaseOrderLineItem struct {
 	Reference             string         `json:"reference"`
 	Notes                 string         `json:"notes"`
 	Quantity              float64        `json:"quantity"`
+	Received              float64        `json:"received"`
 	TargetDate            *string        `json:"target_date"`
 	PurchasePrice         *DecimalString `json:"purchase_price"`
 	PurchasePriceCurrency string         `json:"purchase_price_currency"`

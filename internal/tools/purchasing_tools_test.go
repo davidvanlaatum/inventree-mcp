@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"math"
+	"net/http"
 	"strings"
 	"testing"
 
@@ -65,6 +67,431 @@ func TestCreatePurchaseOrderWithLinesDryRunPreflightsWithoutWrites(t *testing.T)
 	a.Equal("EBAY-42-1", output.Actions[1].Reference)
 	a.Zero(fake.createOrderCalls)
 	a.Zero(fake.createLineCalls)
+}
+
+func TestReceivePurchaseOrderDryRunResolvesLocationsWithoutWriting(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	lineDestination := 41
+	itemDestination := 42
+	globalDestination := 43
+	fake := &fakePurchasingClient{
+		orders: []inventree.PurchaseOrder{{PK: 120, Reference: "PO-1", Supplier: 30, Status: inventree.PurchaseOrderStatusPlaced}},
+		lines: []inventree.PurchaseOrderLineItem{
+			{PK: 130, Order: 120, Part: 40, Quantity: 5, Received: 1, Destination: &lineDestination},
+			{PK: 131, Order: 120, Part: 41, Quantity: 4, Received: 0},
+			{PK: 132, Order: 120, Part: 42, Quantity: 3, Received: 0},
+		},
+	}
+
+	_, output, err := receivePurchaseOrderItems(purchasingDeps(fake))(ctx, &mcp.CallToolRequest{}, ReceivePurchaseOrderInput{
+		DryRun: true, OrderID: 120, LocationID: &globalDestination,
+		Items: []ReceivePurchaseOrderItem{
+			{LineItemID: 130, Quantity: 2},
+			{LineItemID: 131, Quantity: 1, LocationID: &itemDestination},
+			{LineItemID: 132, Quantity: 1},
+		},
+	})
+	r.NoError(err)
+	a.Equal(StatusOK, output.Status)
+	a.True(output.DryRun)
+	r.Len(output.Plan, 3)
+	a.NotEmpty(output.PlanHash)
+	a.Equal(lineDestination, output.Plan[0].LocationID)
+	a.Equal(4.0, output.Plan[0].OutstandingBefore)
+	a.Equal(2.0, output.Plan[0].OutstandingAfter)
+	a.Equal(itemDestination, output.Plan[1].LocationID)
+	a.Equal(globalDestination, output.Plan[2].LocationID)
+	a.Zero(fake.receiveCalls)
+}
+
+func TestReceivePurchaseOrderRequiresConfirmationThenCreatesStock(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	locationID := 40
+	status := 10
+	batch := "B-1"
+	fake := &fakePurchasingClient{
+		orders:     []inventree.PurchaseOrder{{PK: 120, Reference: "PO-1", Supplier: 30, Status: inventree.PurchaseOrderStatusPlaced}},
+		lines:      []inventree.PurchaseOrderLineItem{{PK: 130, Order: 120, Part: 40, Quantity: 3, Destination: &locationID}},
+		stockItems: []inventree.StockItem{{PK: 50, Part: 10, Location: &locationID, Quantity: 1, Status: status, Batch: &batch}},
+	}
+	input := ReceivePurchaseOrderInput{OrderID: 120, Items: []ReceivePurchaseOrderItem{{LineItemID: 130, Quantity: 1, Status: &status, BatchCode: &batch}}}
+
+	_, unconfirmed, err := receivePurchaseOrderItems(purchasingDeps(fake))(ctx, &mcp.CallToolRequest{}, input)
+	r.NoError(err)
+	a.Equal(StatusClarificationRequired, unconfirmed.Status)
+	r.NotNil(unconfirmed.Clarification)
+	a.Equal("dry_run", unconfirmed.Clarification.Retry)
+	a.Zero(fake.receiveCalls)
+
+	input.DryRun = true
+	_, plan, err := receivePurchaseOrderItems(purchasingDeps(fake))(ctx, &mcp.CallToolRequest{}, input)
+	r.NoError(err)
+	r.NotEmpty(plan.PlanHash)
+	input.DryRun = false
+	input.ConfirmReceive = true
+	input.PlanHash = plan.PlanHash
+	_, confirmed, err := receivePurchaseOrderItems(purchasingDeps(fake))(ctx, &mcp.CallToolRequest{}, input)
+	r.NoError(err)
+	a.Equal(StatusOK, confirmed.Status)
+	r.Len(confirmed.StockItems, 1)
+	a.Equal(50, confirmed.StockItems[0].PK)
+	a.Equal(1, fake.receiveCalls)
+	r.Len(fake.lastReceive.Items, 1)
+	a.Equal(130, fake.lastReceive.Items[0].LineItem)
+	a.Equal("1", fake.lastReceive.Items[0].Quantity)
+	r.NotNil(fake.lastReceive.Items[0].Location)
+	a.Equal(locationID, *fake.lastReceive.Items[0].Location)
+}
+
+func TestReceivePurchaseOrderRejectsStalePlanAndSchemaInvalidQuantity(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	locationID := 40
+	fake := &fakePurchasingClient{
+		orders: []inventree.PurchaseOrder{{PK: 120, Status: inventree.PurchaseOrderStatusPlaced}},
+		lines:  []inventree.PurchaseOrderLineItem{{PK: 130, Order: 120, Part: 40, Quantity: 3, Destination: &locationID}},
+	}
+
+	input := ReceivePurchaseOrderInput{DryRun: true, OrderID: 120, Items: []ReceivePurchaseOrderItem{{LineItemID: 130, Quantity: 1}}}
+	handler := receivePurchaseOrderItems(purchasingDeps(fake))
+	_, plan, err := handler(ctx, &mcp.CallToolRequest{}, input)
+	r.NoError(err)
+	r.NotEmpty(plan.PlanHash)
+	fake.lines[0].Received = 1
+	input.DryRun = false
+	input.ConfirmReceive = true
+	input.PlanHash = plan.PlanHash
+	_, stale, err := handler(ctx, &mcp.CallToolRequest{}, input)
+	r.NoError(err)
+	a.Equal(StatusClarificationRequired, stale.Status)
+	a.Equal("plan_hash", stale.Clarification.Retry)
+	a.Zero(fake.receiveCalls)
+
+	for _, quantity := range []float64{0, -1, 0.000001, 10000000000, math.NaN(), math.Inf(1)} {
+		_, invalid, callErr := receivePurchaseOrderItems(purchasingDeps(fake))(ctx, &mcp.CallToolRequest{}, ReceivePurchaseOrderInput{
+			DryRun: true, OrderID: 120, Items: []ReceivePurchaseOrderItem{{LineItemID: 130, Quantity: quantity}},
+		})
+		r.NoError(callErr)
+		a.Equal(StatusClarificationRequired, invalid.Status)
+	}
+	a.Zero(fake.receiveCalls)
+}
+
+func TestReceivePurchaseOrderPlanBindsSupplierPackConversionAndPackaging(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	locationID := 40
+	packaging := "reel"
+	price := inventree.DecimalString("4.00")
+	fake := &fakePurchasingClient{
+		orders:       []inventree.PurchaseOrder{{PK: 120, Status: inventree.PurchaseOrderStatusPlaced}},
+		lines:        []inventree.PurchaseOrderLineItem{{PK: 130, Order: 120, Part: 40, Quantity: 3, Destination: &locationID, PurchasePrice: &price, PurchasePriceCurrency: "AUD"}},
+		supplierPart: inventree.SupplierPart{PK: 40, Part: 10, Packaging: &packaging, PackQuantityNative: 2},
+		stockItems:   []inventree.StockItem{{PK: 50, Part: 10, Quantity: 2}},
+	}
+	input := ReceivePurchaseOrderInput{DryRun: true, OrderID: 120, Items: []ReceivePurchaseOrderItem{{LineItemID: 130, Quantity: 1, Packaging: dvgoutils.Ptr("")}}}
+	handler := receivePurchaseOrderItems(purchasingDeps(fake))
+	_, plan, err := handler(ctx, &mcp.CallToolRequest{}, input)
+	r.NoError(err)
+	r.Len(plan.Plan, 1)
+	a.Equal(2.0, plan.Plan[0].SupplierPackQuantity)
+	a.Equal(2.0, plan.Plan[0].BaseStockQuantity)
+	r.NotNil(plan.Plan[0].Packaging)
+	a.Equal(packaging, *plan.Plan[0].Packaging)
+	r.NotNil(plan.Plan[0].SourcePurchasePrice)
+	a.Equal(price, *plan.Plan[0].SourcePurchasePrice)
+	a.Equal("AUD", plan.Plan[0].SourcePriceCurrency)
+
+	fake.supplierPart.PackQuantityNative = 3
+	input.DryRun = false
+	input.ConfirmReceive = true
+	input.PlanHash = plan.PlanHash
+	_, stale, err := handler(ctx, &mcp.CallToolRequest{}, input)
+	r.NoError(err)
+	a.Equal(StatusClarificationRequired, stale.Status)
+	a.Zero(fake.receiveCalls)
+
+	fake.supplierPart.PackQuantityNative = 2
+	input.DryRun = true
+	input.ConfirmReceive = false
+	input.PlanHash = ""
+	_, pricePlan, err := handler(ctx, &mcp.CallToolRequest{}, input)
+	r.NoError(err)
+	changedPrice := inventree.DecimalString("5.00")
+	fake.lines[0].PurchasePrice = &changedPrice
+	input.DryRun = false
+	input.ConfirmReceive = true
+	input.PlanHash = pricePlan.PlanHash
+	_, stalePrice, err := handler(ctx, &mcp.CallToolRequest{}, input)
+	r.NoError(err)
+	a.Equal(StatusClarificationRequired, stalePrice.Status)
+	a.Zero(fake.receiveCalls)
+
+	fake.lines[0].PurchasePrice = &price
+	input.DryRun = true
+	input.ConfirmReceive = false
+	input.PlanHash = ""
+	_, currentPlan, err := handler(ctx, &mcp.CallToolRequest{}, input)
+	r.NoError(err)
+	input.DryRun = false
+	input.ConfirmReceive = true
+	input.PlanHash = currentPlan.PlanHash
+	_, confirmed, err := handler(ctx, &mcp.CallToolRequest{}, input)
+	r.NoError(err)
+	a.Equal(StatusOK, confirmed.Status)
+	r.NotNil(fake.lastReceive.Items[0].Packaging)
+	a.Equal(packaging, *fake.lastReceive.Items[0].Packaging)
+}
+
+func TestReceivePurchaseOrderRejectsVirtualPart(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	locationID := 40
+	fake := &fakePurchasingClient{
+		orders:       []inventree.PurchaseOrder{{PK: 120, Status: inventree.PurchaseOrderStatusPlaced}},
+		lines:        []inventree.PurchaseOrderLineItem{{PK: 130, Order: 120, Part: 40, Quantity: 1, Destination: &locationID}},
+		supplierPart: inventree.SupplierPart{PK: 40, Part: 10},
+		part:         inventree.Part{PK: 10, Virtual: true},
+	}
+
+	_, output, err := receivePurchaseOrderItems(purchasingDeps(fake))(ctx, &mcp.CallToolRequest{}, ReceivePurchaseOrderInput{
+		DryRun: true, OrderID: 120, Items: []ReceivePurchaseOrderItem{{LineItemID: 130, Quantity: 1}},
+	})
+	r.NoError(err)
+	a.Equal(StatusClarificationRequired, output.Status)
+	a.Contains(output.Clarification.Reason, "virtual parts")
+	a.Zero(fake.receiveCalls)
+}
+
+func TestReceivePurchaseOrderReturnsUnknownResultWithoutBlindRetry(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	locationID := 40
+	fake := &fakePurchasingClient{
+		orders:     []inventree.PurchaseOrder{{PK: 120, Status: inventree.PurchaseOrderStatusPlaced}},
+		lines:      []inventree.PurchaseOrderLineItem{{PK: 130, Order: 120, Part: 40, Quantity: 1, Destination: &locationID}},
+		receiveErr: errors.New("ambiguous timeout"),
+	}
+	input := ReceivePurchaseOrderInput{DryRun: true, OrderID: 120, Items: []ReceivePurchaseOrderItem{{LineItemID: 130, Quantity: 1}}}
+	_, plan, err := receivePurchaseOrderItems(purchasingDeps(fake))(ctx, &mcp.CallToolRequest{}, input)
+	r.NoError(err)
+	input.DryRun = false
+	input.ConfirmReceive = true
+	input.PlanHash = plan.PlanHash
+
+	_, output, err := receivePurchaseOrderItems(purchasingDeps(fake))(ctx, &mcp.CallToolRequest{}, input)
+	r.NoError(err)
+	a.Equal(StatusPartialFailure, output.Status)
+	r.NotNil(output.Failure)
+	a.Contains(output.Failure.RecoveryPlan, "Do not retry")
+	a.Equal(1, fake.receiveCalls)
+}
+
+func TestReceivePurchaseOrderDistinguishesRejectedAndAmbiguousResults(t *testing.T) {
+	t.Parallel()
+	locationID := 40
+	tests := []struct {
+		name              string
+		stockItems        []inventree.StockItem
+		receiveErr        error
+		refreshErr        error
+		wantError         bool
+		wantPartial       bool
+		wantReturnedStock bool
+	}{
+		{name: "definite validation rejection", receiveErr: &inventree.APIError{StatusCode: http.StatusBadRequest, Kind: inventree.ErrorKindValidation, Detail: "invalid serial"}, wantError: true},
+		{name: "successful response without stock", wantPartial: true},
+		{name: "refresh failure after returned stock", stockItems: []inventree.StockItem{{PK: 50, Part: 10, Quantity: 1}}, refreshErr: errors.New("refresh unavailable"), wantPartial: true, wantReturnedStock: true},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			r := require.New(t)
+			a := assert.New(t)
+			ctx, _, _ := testhandler.SetupTestHandler(t)
+			fake := &fakePurchasingClient{
+				orders:     []inventree.PurchaseOrder{{PK: 120, Status: inventree.PurchaseOrderStatusPlaced}},
+				lines:      []inventree.PurchaseOrderLineItem{{PK: 130, Order: 120, Part: 40, Quantity: 1, Destination: &locationID}},
+				stockItems: test.stockItems, receiveErr: test.receiveErr, getOrderErrAfterReceive: test.refreshErr,
+			}
+			input := ReceivePurchaseOrderInput{DryRun: true, OrderID: 120, Items: []ReceivePurchaseOrderItem{{LineItemID: 130, Quantity: 1}}}
+			handler := receivePurchaseOrderItems(purchasingDeps(fake))
+			_, plan, err := handler(ctx, &mcp.CallToolRequest{}, input)
+			r.NoError(err)
+			input.DryRun = false
+			input.ConfirmReceive = true
+			input.PlanHash = plan.PlanHash
+			_, output, err := handler(ctx, &mcp.CallToolRequest{}, input)
+			if test.wantError {
+				r.Error(err)
+				a.Nil(output.Failure)
+			} else {
+				r.NoError(err)
+			}
+			if test.wantPartial {
+				a.Equal(StatusPartialFailure, output.Status)
+				r.NotNil(output.Failure)
+				a.Contains(output.Failure.RecoveryPlan, "purchase_order_id")
+			}
+			if test.wantReturnedStock {
+				r.Len(output.StockItems, 1)
+			}
+			a.Equal(1, fake.receiveCalls)
+		})
+	}
+}
+
+func TestReceivePurchaseOrderRejectsOverReceiptAndWrongOrder(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	locationID := 40
+	fake := &fakePurchasingClient{
+		orders: []inventree.PurchaseOrder{{PK: 120, Reference: "PO-1", Supplier: 30, Status: inventree.PurchaseOrderStatusPlaced}},
+		lines:  []inventree.PurchaseOrderLineItem{{PK: 130, Order: 120, Quantity: 3, Received: 2, Destination: &locationID}, {PK: 131, Order: 121, Quantity: 3, Destination: &locationID}},
+	}
+
+	_, over, err := receivePurchaseOrderItems(purchasingDeps(fake))(ctx, &mcp.CallToolRequest{}, ReceivePurchaseOrderInput{DryRun: true, OrderID: 120, Items: []ReceivePurchaseOrderItem{{LineItemID: 130, Quantity: 2}}})
+	r.NoError(err)
+	a.Equal(StatusClarificationRequired, over.Status)
+	a.Contains(over.Clarification.Reason, "outstanding")
+
+	_, wrongOrder, err := receivePurchaseOrderItems(purchasingDeps(fake))(ctx, &mcp.CallToolRequest{}, ReceivePurchaseOrderInput{DryRun: true, OrderID: 120, Items: []ReceivePurchaseOrderItem{{LineItemID: 131, Quantity: 1}}})
+	r.NoError(err)
+	a.Equal(StatusClarificationRequired, wrongOrder.Status)
+	a.Contains(wrongOrder.Clarification.Reason, "different purchase order")
+	a.Zero(fake.receiveCalls)
+}
+
+func TestReceivePurchaseOrderPreflightGuardsPreventWrites(t *testing.T) {
+	t.Parallel()
+	locationID := 40
+	barcode := " SAME "
+	tests := []struct {
+		name        string
+		orderStatus int
+		line        inventree.PurchaseOrderLineItem
+		input       ReceivePurchaseOrderInput
+		locationErr error
+	}{
+		{name: "order not placed", orderStatus: inventree.PurchaseOrderStatusPending, line: inventree.PurchaseOrderLineItem{PK: 130, Order: 120, Part: 40, Quantity: 2, Destination: &locationID}, input: ReceivePurchaseOrderInput{DryRun: true, OrderID: 120, Items: []ReceivePurchaseOrderItem{{LineItemID: 130, Quantity: 1}}}},
+		{name: "fully received", orderStatus: inventree.PurchaseOrderStatusPlaced, line: inventree.PurchaseOrderLineItem{PK: 130, Order: 120, Part: 40, Quantity: 2, Received: 2, Destination: &locationID}, input: ReceivePurchaseOrderInput{DryRun: true, OrderID: 120, Items: []ReceivePurchaseOrderItem{{LineItemID: 130, Quantity: 1}}}},
+		{name: "duplicate line", orderStatus: inventree.PurchaseOrderStatusPlaced, line: inventree.PurchaseOrderLineItem{PK: 130, Order: 120, Part: 40, Quantity: 2, Destination: &locationID}, input: ReceivePurchaseOrderInput{DryRun: true, OrderID: 120, Items: []ReceivePurchaseOrderItem{{LineItemID: 130, Quantity: 1}, {LineItemID: 130, Quantity: 1}}}},
+		{name: "missing location", orderStatus: inventree.PurchaseOrderStatusPlaced, line: inventree.PurchaseOrderLineItem{PK: 130, Order: 120, Part: 40, Quantity: 2}, input: ReceivePurchaseOrderInput{DryRun: true, OrderID: 120, Items: []ReceivePurchaseOrderItem{{LineItemID: 130, Quantity: 1}}}},
+		{name: "invalid location", orderStatus: inventree.PurchaseOrderStatusPlaced, line: inventree.PurchaseOrderLineItem{PK: 130, Order: 120, Part: 40, Quantity: 2, Destination: &locationID}, input: ReceivePurchaseOrderInput{DryRun: true, OrderID: 120, Items: []ReceivePurchaseOrderItem{{LineItemID: 130, Quantity: 1}}}, locationErr: errors.New("location not found")},
+		{name: "negative status", orderStatus: inventree.PurchaseOrderStatusPlaced, line: inventree.PurchaseOrderLineItem{PK: 130, Order: 120, Part: 40, Quantity: 2, Destination: &locationID}, input: ReceivePurchaseOrderInput{DryRun: true, OrderID: 120, Items: []ReceivePurchaseOrderItem{{LineItemID: 130, Quantity: 1, Status: dvgoutils.Ptr(-1)}}}},
+		{name: "invalid expiry", orderStatus: inventree.PurchaseOrderStatusPlaced, line: inventree.PurchaseOrderLineItem{PK: 130, Order: 120, Part: 40, Quantity: 2, Destination: &locationID}, input: ReceivePurchaseOrderInput{DryRun: true, OrderID: 120, Items: []ReceivePurchaseOrderItem{{LineItemID: 130, Quantity: 1, ExpiryDate: dvgoutils.Ptr("01-08-2026")}}}},
+		{name: "duplicate trimmed barcode", orderStatus: inventree.PurchaseOrderStatusPlaced, line: inventree.PurchaseOrderLineItem{PK: 130, Order: 120, Part: 40, Quantity: 2, Destination: &locationID}, input: ReceivePurchaseOrderInput{DryRun: true, OrderID: 120, Items: []ReceivePurchaseOrderItem{{LineItemID: 130, Quantity: 0.5, Barcode: &barcode}, {LineItemID: 131, Quantity: 0.5, Barcode: dvgoutils.Ptr("SAME")}}}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			r := require.New(t)
+			a := assert.New(t)
+			ctx, _, _ := testhandler.SetupTestHandler(t)
+			lines := []inventree.PurchaseOrderLineItem{test.line}
+			if test.name == "duplicate trimmed barcode" {
+				lines = append(lines, inventree.PurchaseOrderLineItem{PK: 131, Order: 120, Part: 41, Quantity: 2, Destination: &locationID})
+			}
+			fake := &fakePurchasingClient{
+				orders:      []inventree.PurchaseOrder{{PK: 120, Status: test.orderStatus}},
+				lines:       lines,
+				locationErr: test.locationErr,
+			}
+			_, output, err := receivePurchaseOrderItems(purchasingDeps(fake))(ctx, &mcp.CallToolRequest{}, test.input)
+			if test.locationErr != nil {
+				r.Error(err)
+			} else {
+				r.NoError(err)
+				a.Equal(StatusClarificationRequired, output.Status)
+			}
+			a.Zero(fake.receiveCalls)
+		})
+	}
+}
+
+func TestReceiveQuantityStringSchemaBounds(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	for _, test := range []struct {
+		quantity float64
+		want     string
+		valid    bool
+	}{
+		{quantity: 0.00001, want: "0.00001", valid: true},
+		{quantity: 9999999999, want: "9999999999", valid: true},
+		{quantity: 1.23456, want: "1.23456", valid: true},
+		{quantity: 0.000001, valid: false},
+		{quantity: 1.234567, valid: false},
+		{quantity: 10000000000, valid: false},
+	} {
+		actual, valid := receiveQuantityString(test.quantity)
+		r.Equal(test.valid, valid)
+		r.Equal(test.want, actual)
+	}
+}
+
+func TestIssuePurchaseOrderRequiresConfirmationAndPlacesPendingOrder(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	fake := &fakePurchasingClient{orders: []inventree.PurchaseOrder{{PK: 120, Reference: "PO-1", Supplier: 30, Status: inventree.PurchaseOrderStatusPending}}}
+
+	_, dryRun, err := issuePurchaseOrder(purchasingDeps(fake))(ctx, &mcp.CallToolRequest{}, IssuePurchaseOrderInput{DryRun: true, OrderID: 120})
+	r.NoError(err)
+	a.Equal(StatusOK, dryRun.Status)
+	a.Equal("issue_purchase_order", dryRun.Action)
+	a.Zero(fake.issueCalls)
+
+	_, unconfirmed, err := issuePurchaseOrder(purchasingDeps(fake))(ctx, &mcp.CallToolRequest{}, IssuePurchaseOrderInput{OrderID: 120})
+	r.NoError(err)
+	a.Equal(StatusClarificationRequired, unconfirmed.Status)
+	r.NotNil(unconfirmed.Clarification)
+	a.Equal("confirm_issue", unconfirmed.Clarification.Retry)
+	a.Zero(fake.issueCalls)
+
+	_, issued, err := issuePurchaseOrder(purchasingDeps(fake))(ctx, &mcp.CallToolRequest{}, IssuePurchaseOrderInput{OrderID: 120, ConfirmIssue: true})
+	r.NoError(err)
+	a.Equal(StatusOK, issued.Status)
+	r.NotNil(issued.Order)
+	a.Equal(inventree.PurchaseOrderStatusPlaced, issued.Order.Status)
+	a.Equal(1, fake.issueCalls)
+}
+
+func TestIssuePurchaseOrderGuardsNonPendingOrders(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	fake := &fakePurchasingClient{orders: []inventree.PurchaseOrder{{PK: 120, Status: inventree.PurchaseOrderStatusPlaced}}}
+
+	_, placed, err := issuePurchaseOrder(purchasingDeps(fake))(ctx, &mcp.CallToolRequest{}, IssuePurchaseOrderInput{OrderID: 120, ConfirmIssue: true})
+	r.NoError(err)
+	a.Equal(StatusOK, placed.Status)
+	a.Equal("already_placed", placed.Action)
+	a.Zero(fake.issueCalls)
+
+	fake.orders[0].Status = inventree.PurchaseOrderStatusComplete
+	_, complete, err := issuePurchaseOrder(purchasingDeps(fake))(ctx, &mcp.CallToolRequest{}, IssuePurchaseOrderInput{OrderID: 120, ConfirmIssue: true})
+	r.NoError(err)
+	a.Equal(StatusClarificationRequired, complete.Status)
+	a.Zero(fake.issueCalls)
 }
 
 func TestCreatePurchaseOrderWithLinesCreatesAndIdempotentlyUpdates(t *testing.T) {
@@ -293,6 +720,7 @@ func purchasingDeps(fake *fakePurchasingClient) Dependencies {
 
 type fakePurchasingClient struct {
 	company                    inventree.Company
+	part                       inventree.Part
 	orders                     []inventree.PurchaseOrder
 	lines                      []inventree.PurchaseOrderLineItem
 	supplierParts              []inventree.SupplierPart
@@ -306,6 +734,36 @@ type fakePurchasingClient struct {
 	updateLineCalls            int
 	createLineErr              error
 	failCreateLineAt           int
+	receiveCalls               int
+	receiveErr                 error
+	issueCalls                 int
+	lastReceive                inventree.PurchaseOrderReceive
+	stockItems                 []inventree.StockItem
+	locationErr                error
+	getOrderErrAfterReceive    error
+}
+
+func (f *fakePurchasingClient) IssuePurchaseOrder(_ context.Context, id int) error {
+	f.issueCalls++
+	for index := range f.orders {
+		if f.orders[index].PK == id {
+			f.orders[index].Status = inventree.PurchaseOrderStatusPlaced
+		}
+	}
+	return nil
+}
+
+func (f *fakePurchasingClient) ReceivePurchaseOrder(_ context.Context, _ int, input inventree.PurchaseOrderReceive) ([]inventree.StockItem, error) {
+	f.receiveCalls++
+	f.lastReceive = input
+	return f.stockItems, f.receiveErr
+}
+
+func (f *fakePurchasingClient) GetPart(_ context.Context, id int) (inventree.Part, error) {
+	if f.part.PK != 0 {
+		return f.part, nil
+	}
+	return inventree.Part{PK: id}, nil
 }
 
 func (f *fakePurchasingClient) GetCompany(_ context.Context, id int) (inventree.Company, error) {
@@ -316,6 +774,9 @@ func (f *fakePurchasingClient) GetCompany(_ context.Context, id int) (inventree.
 }
 
 func (f *fakePurchasingClient) GetStockLocation(_ context.Context, id int) (inventree.StockLocation, error) {
+	if f.locationErr != nil {
+		return inventree.StockLocation{}, f.locationErr
+	}
 	return inventree.StockLocation{PK: id, Name: "Receiving"}, nil
 }
 
@@ -336,6 +797,9 @@ func (f *fakePurchasingClient) SearchPurchaseOrders(_ context.Context, query inv
 }
 
 func (f *fakePurchasingClient) GetPurchaseOrder(_ context.Context, id int) (inventree.PurchaseOrder, error) {
+	if f.receiveCalls > 0 && f.getOrderErrAfterReceive != nil {
+		return inventree.PurchaseOrder{}, f.getOrderErrAfterReceive
+	}
 	for _, order := range f.orders {
 		if order.PK == id {
 			return order, nil

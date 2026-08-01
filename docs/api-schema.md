@@ -162,10 +162,10 @@ The initial endpoint manifest covers schema-confirmed paths, methods, operation 
 - Manufacturer part and supplier part link creation.
 - Stock location search, stock item search, and stock item creation.
 - Parameter values, parameter templates, and category parameter template links.
-- Purchase order preview plus F-S03 order/line search, get, create, and PATCH dependencies, including direct supplier and supplier-part retrieval for stable-ID validation.
+- Purchase order preview plus F-S03 order/line search, get, create, PATCH, issue, and receive dependencies, including direct supplier and supplier-part retrieval for stable-ID validation.
 - Attachment, link attachment, URL upload, and primary-image update behavior.
 
-Future endpoint-specific client methods must use manifest entries rather than ad hoc path strings. Adding a method without a manifest entry or changing `docs/api-schema.yaml` without updating the manifest/provenance should fail the schema checks. Purchase-order receiving endpoints remain schema references only until the create/merge/update stock decision and operational scope are approved.
+Future endpoint-specific client methods must use manifest entries rather than ad hoc path strings. Adding a method without a manifest entry or changing `docs/api-schema.yaml` without updating the manifest/provenance should fail the schema checks.
 The manifest is endpoint-level schema coverage, not a complete upload authorization boundary. Attachment `model_type`, accepted file fields, URL sources, and primary-image object rules remain enforced by the attachment/image client and tool tests when those tools are implemented. The manifest records in-scope and deferred attachment model types so those later tests have a machine-readable scope source.
 
 ## Verified Purchase Order Endpoints
@@ -175,10 +175,13 @@ The manifest is endpoint-level schema coverage, not a complete upload authorizat
 - `GET` and `PATCH /api/order/po/{id}/` retrieve and partially update purchase-order metadata.
 - `GET` and `POST /api/order/po-line/` search and create supplier-part-backed lines.
 - `GET` and `PATCH /api/order/po-line/{id}/` retrieve and partially update individual lines.
+- `POST /api/order/po/{id}/issue/` explicitly places a pending order with its supplier. This status transition is separate from receiving and requires operator confirmation at the tool layer.
+- `POST /api/order/po/{id}/receive/` receives line quantities only after the order is placed and returns newly created stock items for non-virtual parts. The tool enforces the schema's 15-digit, 5-decimal-place quantity bounds, resolves supplier `pack_quantity_native` into the resulting base-stock quantity, resolves default packaging, validates every item destination, rejects virtual parts, binds confirmation to the current dry-run plan, and never merges into or updates existing stock. A definite API 4xx remains an actionable rejection; an ambiguous transport, decode, or server result is treated as an unknown non-idempotent result requiring line and source-order stock readback before retry.
+- `GET /api/stock/` supports the schema-backed `purchase_order` filter and exposes each result's `purchase_order` and `purchase_order_reference`; `search_stock_items` publishes these fields so ambiguous receipt results can be reconciled through the authorized MCP surface.
 - The pinned 1.4.0 API schema declares line `purchase_price` as a decimal string, but the live create response encodes it as a JSON number. The typed client accepts both encodings and preserves the value as a decimal string.
 - Purchase-order line creates explicitly send `auto_pricing:false` and `merge_items:false` so InvenTree does not replace previewed prices or combine separately referenced workflow lines.
 - The order list schema exposes supplier, exact reference, status, search, scheduled-start date, and target-date filters. The line list exposes order, supplier-part (`part`), pending, received, and search filters.
-- The receive endpoint is schema-confirmed but intentionally not exposed until F-S03 resolves how received stock is created, merged, or updated and which explicit operational confirmation is required.
+- Receiving is classified as operational and requires `inventree.read`, `inventree.write`, and `inventree.operational`; read scope guarantees that the same caller can perform source-order stock recovery after an ambiguous result. Issuing is an ordinary confirmed purchasing write and requires `inventree.write`.
 
 ## Verified Parameter Endpoints
 

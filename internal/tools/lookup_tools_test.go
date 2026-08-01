@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"testing"
 
+	"github.com/davidvanlaatum/dvgoutils"
 	"github.com/davidvanlaatum/dvgoutils/logging/testhandler"
 	"github.com/davidvanlaatum/inventree-mcp/internal/inventree"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -152,16 +153,18 @@ func TestSearchStockItemsUsesStableFilters(t *testing.T) {
 
 	ctx, _, _ := testhandler.SetupTestHandler(t)
 	fake := &fakeMilestoneLookupClient{
-		stockItems: []inventree.StockItem{{PK: 50, Part: 10, Quantity: 2}},
+		stockItems: []inventree.StockItem{{PK: 50, Part: 10, Quantity: 2, PurchaseOrder: dvgoutils.Ptr(120), PurchaseOrderReference: dvgoutils.Ptr("PO-1")}},
 	}
 	handler := searchStockItems(depsForFake(fake))
 
-	result, output, err := handler(ctx, &mcp.CallToolRequest{}, StockItemsInput{PartID: 10, LocationID: 40, Limit: 250})
+	result, output, err := handler(ctx, &mcp.CallToolRequest{}, StockItemsInput{PartID: 10, LocationID: 40, PurchaseOrderID: 120, Limit: 250})
 	r.NoError(err)
 	r.NotNil(result)
 	a.Equal(StatusOK, output.Status)
 	a.Equal(1, output.Count)
-	a.Equal(inventree.StockItemQuery{PartID: 10, LocationID: 40, Limit: 100}, fake.lastSearchStockItemsQuery)
+	a.Equal(inventree.StockItemQuery{PartID: 10, LocationID: 40, PurchaseOrderID: 120, Limit: 100}, fake.lastSearchStockItemsQuery)
+	r.NotNil(output.Results[0].PurchaseOrder)
+	a.Equal(120, *output.Results[0].PurchaseOrder)
 }
 
 func TestPreviewPurchaseOrderUsesSupplierPartIDWithoutWrites(t *testing.T) {

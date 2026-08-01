@@ -163,6 +163,61 @@ func TestMilestoneHappyPathToolsAgainstInvenTree(t *testing.T) {
 		lines, err := fixture.client.SearchPurchaseOrderLines(ctx, inventree.PurchaseOrderLineQuery{Order: exactOrders[0].PK})
 		r.NoError(err)
 		r.Len(lines, 2)
+
+		_, issuePlan, err := issuePurchaseOrder(fixture.deps())(ctx, &mcp.CallToolRequest{}, IssuePurchaseOrderInput{DryRun: true, OrderID: exactOrders[0].PK})
+		r.NoError(err)
+		a.Equal(StatusOK, issuePlan.Status)
+		a.Equal("issue_purchase_order", issuePlan.Action)
+		_, issued, err := issuePurchaseOrder(fixture.deps())(ctx, &mcp.CallToolRequest{}, IssuePurchaseOrderInput{OrderID: exactOrders[0].PK, ConfirmIssue: true})
+		r.NoError(err)
+		r.NotNil(issued.Order)
+		a.Equal(inventree.PurchaseOrderStatusPlaced, issued.Order.Status)
+
+		receiveInput := ReceivePurchaseOrderInput{DryRun: true, OrderID: exactOrders[0].PK, Items: []ReceivePurchaseOrderItem{{LineItemID: lines[0].PK, Quantity: 2, BatchCode: dvgoutils.Ptr("receipt-a")}, {LineItemID: lines[1].PK, Quantity: 1, BatchCode: dvgoutils.Ptr("receipt-b")}}}
+		_, receivePlan, err := receivePurchaseOrderItems(fixture.deps())(ctx, &mcp.CallToolRequest{}, receiveInput)
+		r.NoError(err)
+		a.Equal(StatusOK, receivePlan.Status)
+		r.Len(receivePlan.Plan, 2)
+		a.Equal(destination.ID, receivePlan.Plan[0].LocationID)
+		a.Equal(destination.ID, receivePlan.Plan[1].LocationID)
+		receiveInput.DryRun = false
+		receiveInput.ConfirmReceive = true
+		receiveInput.PlanHash = receivePlan.PlanHash
+		_, received, err := receivePurchaseOrderItems(fixture.deps())(ctx, &mcp.CallToolRequest{}, receiveInput)
+		r.NoError(err)
+		a.Equal(StatusOK, received.Status)
+		r.Len(received.StockItems, 2)
+		a.NotEqual(received.StockItems[0].PK, received.StockItems[1].PK)
+		orderStock, err := fixture.client.SearchStockItems(ctx, inventree.StockItemQuery{PurchaseOrderID: exactOrders[0].PK})
+		r.NoError(err)
+		r.Len(orderStock, 2)
+		for _, stockItem := range orderStock {
+			r.NotNil(stockItem.PurchaseOrder)
+			a.Equal(exactOrders[0].PK, *stockItem.PurchaseOrder)
+		}
+		linesAfterReceipt, err := fixture.client.SearchPurchaseOrderLines(ctx, inventree.PurchaseOrderLineQuery{Order: exactOrders[0].PK})
+		r.NoError(err)
+		r.Len(linesAfterReceipt, 2)
+		receivedByLine := map[int]float64{}
+		for _, line := range linesAfterReceipt {
+			receivedByLine[line.PK] = line.Received
+		}
+		a.Equal(2.0, receivedByLine[lines[0].PK])
+		a.Equal(1.0, receivedByLine[lines[1].PK])
+
+		completeInput := ReceivePurchaseOrderInput{DryRun: true, OrderID: exactOrders[0].PK, Items: []ReceivePurchaseOrderItem{{LineItemID: lines[0].PK, Quantity: 3, BatchCode: dvgoutils.Ptr("receipt-c")}, {LineItemID: lines[1].PK, Quantity: 1, BatchCode: dvgoutils.Ptr("receipt-d")}}}
+		_, completePlan, err := receivePurchaseOrderItems(fixture.deps())(ctx, &mcp.CallToolRequest{}, completeInput)
+		r.NoError(err)
+		r.NotEmpty(completePlan.PlanHash)
+		completeInput.DryRun = false
+		completeInput.ConfirmReceive = true
+		completeInput.PlanHash = completePlan.PlanHash
+		_, completed, err := receivePurchaseOrderItems(fixture.deps())(ctx, &mcp.CallToolRequest{}, completeInput)
+		r.NoError(err)
+		a.Equal(StatusOK, completed.Status)
+		r.NotNil(completed.Order)
+		a.Equal(inventree.PurchaseOrderStatusComplete, completed.Order.Status)
+		r.Len(completed.StockItems, 2)
 	})
 
 	t.Run("attachment_target_matrix_upload_download_and_max_bytes", func(t *testing.T) {

@@ -422,6 +422,9 @@ func TestWriteToolAuthorizationsUseWriteScope(t *testing.T) {
 		case CreateStockItemToolName, InitialStockWorkflowToolName:
 			a.Equal("operational", auth.MutationClass)
 			a.Equal([]string{ScopeInventreeWrite, ScopeInventreeOperational}, auth.Scopes)
+		case ReceivePurchaseOrderToolName:
+			a.Equal("operational", auth.MutationClass)
+			a.Equal([]string{ScopeInventreeRead, ScopeInventreeWrite, ScopeInventreeOperational}, auth.Scopes)
 		case UploadAttachmentToolName, CreateLinkAttachmentToolName, UpdateAttachmentMetadataToolName, SetPrimaryImageToolName:
 			a.Equal("write", auth.MutationClass)
 			a.Equal([]string{ScopeInventreeWrite, ScopeInventreeUpload}, auth.Scopes)
@@ -454,6 +457,9 @@ func TestWriteToolInputsExcludeSalesAndCustomerWorkflowFields(t *testing.T) {
 		reflect.TypeOf(UpsertPartWorkflowInput{}),
 		reflect.TypeOf(InitialStockWorkflowInput{}),
 		reflect.TypeOf(CreateStockItemInput{}),
+		reflect.TypeOf(IssuePurchaseOrderInput{}),
+		reflect.TypeOf(ReceivePurchaseOrderInput{}),
+		reflect.TypeOf(ReceivePurchaseOrderItem{}),
 		reflect.TypeOf(SetPartParametersInput{}),
 		reflect.TypeOf(ParameterSetInput{}),
 		reflect.TypeOf(UploadAttachmentInput{}),
@@ -467,6 +473,8 @@ func TestWriteToolInputsExcludeSalesAndCustomerWorkflowFields(t *testing.T) {
 		reflect.TypeOf(inventree.SupplierPartCreate{}),
 		reflect.TypeOf(inventree.ManufacturerPartCreate{}),
 		reflect.TypeOf(inventree.StockItemCreate{}),
+		reflect.TypeOf(inventree.PurchaseOrderReceive{}),
+		reflect.TypeOf(inventree.PurchaseOrderReceiveItem{}),
 		reflect.TypeOf(inventree.ParameterCreate{}),
 		reflect.TypeOf(inventree.AttachmentCreate{}),
 	} {

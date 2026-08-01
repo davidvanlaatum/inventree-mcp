@@ -184,6 +184,11 @@ func TestStdioServerListsOnlyMilestonePrompts(t *testing.T) {
 			"structured clarification",
 			"must not create purchase orders",
 		},
+		tools.ReceivePurchaseOrderChecklistPromptName: {
+			"stable IDs",
+			"dry_run:true",
+			"confirm_receive:true",
+		},
 	}
 	for name, snippets := range expectedPrompts {
 		a.True(names[name], name)
@@ -196,7 +201,7 @@ func TestStdioServerListsOnlyMilestonePrompts(t *testing.T) {
 		}
 	}
 
-	for _, name := range []string{"receive_purchase_order_checklist", "bom_import_review", "stocktake_review"} {
+	for _, name := range []string{"bom_import_review", "stocktake_review"} {
 		a.False(names[name], name)
 		_, err := session.GetPrompt(ctx, &mcp.GetPromptParams{Name: name})
 		a.Error(err, name)
