@@ -1306,6 +1306,7 @@ Tasks:
 ### F-S18: Local CLI Self-Update
 
 - Status: `Future`
+- Issue: [#64](https://github.com/davidvanlaatum/inventree-mcp/issues/64)
 - Depends on: M0-S04 and product, Go, QA, and infosec review of the update policy
 - Scope: add an explicit local `inventree-mcp self-update` command for supported direct binary/archive installations. The command must remain a local CLI operation: it is not an MCP tool, is never callable through STDIO or HTTP MCP sessions, does not run automatically in the background, and does not let the server replace itself in response to a remote request. Package-managed installations must defer to their package manager instead of overwriting managed files.
 - Acceptance:
