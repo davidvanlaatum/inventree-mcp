@@ -6,6 +6,22 @@
   ],
   "tools": [
     {
+      "name": "add_purchase_order_line",
+      "milestone_status": "future",
+      "mutation_class": "write",
+      "scopes": [
+        "inventree.write"
+      ],
+      "annotations": {
+        "read_only": false,
+        "destructive": false,
+        "idempotent": false,
+        "open_world": false
+      },
+      "upload_sources": null,
+      "http_registration": "registered_with_oauth_scope_guard"
+    },
+    {
       "name": "create_company",
       "milestone_status": "milestone_1",
       "mutation_class": "write",
@@ -76,6 +92,38 @@
     {
       "name": "create_part",
       "milestone_status": "milestone_1",
+      "mutation_class": "write",
+      "scopes": [
+        "inventree.write"
+      ],
+      "annotations": {
+        "read_only": false,
+        "destructive": false,
+        "idempotent": false,
+        "open_world": false
+      },
+      "upload_sources": null,
+      "http_registration": "registered_with_oauth_scope_guard"
+    },
+    {
+      "name": "create_purchase_order",
+      "milestone_status": "future",
+      "mutation_class": "write",
+      "scopes": [
+        "inventree.write"
+      ],
+      "annotations": {
+        "read_only": false,
+        "destructive": false,
+        "idempotent": false,
+        "open_world": false
+      },
+      "upload_sources": null,
+      "http_registration": "registered_with_oauth_scope_guard"
+    },
+    {
+      "name": "create_purchase_order_with_lines",
+      "milestone_status": "future",
       "mutation_class": "write",
       "scopes": [
         "inventree.write"
@@ -221,6 +269,38 @@
       "http_registration": "registered"
     },
     {
+      "name": "get_purchase_order",
+      "milestone_status": "future",
+      "mutation_class": "read_only",
+      "scopes": [
+        "inventree.read"
+      ],
+      "annotations": {
+        "read_only": true,
+        "destructive": false,
+        "idempotent": true,
+        "open_world": false
+      },
+      "upload_sources": null,
+      "http_registration": "registered"
+    },
+    {
+      "name": "get_purchase_order_line",
+      "milestone_status": "future",
+      "mutation_class": "read_only",
+      "scopes": [
+        "inventree.read"
+      ],
+      "annotations": {
+        "read_only": true,
+        "destructive": false,
+        "idempotent": true,
+        "open_world": false
+      },
+      "upload_sources": null,
+      "http_registration": "registered"
+    },
+    {
       "name": "health_version",
       "milestone_status": "milestone_1",
       "mutation_class": "read_only",
@@ -347,6 +427,38 @@
       "http_registration": "registered"
     },
     {
+      "name": "search_purchase_order_lines",
+      "milestone_status": "future",
+      "mutation_class": "read_only",
+      "scopes": [
+        "inventree.read"
+      ],
+      "annotations": {
+        "read_only": true,
+        "destructive": false,
+        "idempotent": true,
+        "open_world": false
+      },
+      "upload_sources": null,
+      "http_registration": "registered"
+    },
+    {
+      "name": "search_purchase_orders",
+      "milestone_status": "future",
+      "mutation_class": "read_only",
+      "scopes": [
+        "inventree.read"
+      ],
+      "annotations": {
+        "read_only": true,
+        "destructive": false,
+        "idempotent": true,
+        "open_world": false
+      },
+      "upload_sources": null,
+      "http_registration": "registered"
+    },
+    {
       "name": "search_stock_items",
       "milestone_status": "milestone_1",
       "mutation_class": "read_only",
@@ -449,6 +561,22 @@
     {
       "name": "update_part",
       "milestone_status": "milestone_1",
+      "mutation_class": "write",
+      "scopes": [
+        "inventree.write"
+      ],
+      "annotations": {
+        "read_only": false,
+        "destructive": false,
+        "idempotent": false,
+        "open_world": false
+      },
+      "upload_sources": null,
+      "http_registration": "registered_with_oauth_scope_guard"
+    },
+    {
+      "name": "update_purchase_order_line",
+      "milestone_status": "future",
       "mutation_class": "write",
       "scopes": [
         "inventree.write"

@@ -94,6 +94,15 @@ func TestReadMethodsUseExpectedEndpoints(t *testing.T) {
 			response:  `{"count":1,"next":null,"previous":null,"results":[{"pk":31,"name":"maker","is_manufacturer":true}]}`,
 		},
 		{
+			name: "get company",
+			call: func(ctx context.Context, client *Client) error {
+				_, err := client.GetCompany(ctx, 30)
+				return err
+			},
+			wantPath: "/api/company/30/",
+			response: `{"pk":30,"name":"acme","is_supplier":true}`,
+		},
+		{
 			name: "search stock locations",
 			call: func(ctx context.Context, client *Client) error {
 				_, err := client.SearchStockLocations(ctx, SearchQuery{Search: "bin"})
@@ -212,11 +221,12 @@ func TestReadMethodsUseExpectedEndpoints(t *testing.T) {
 		{
 			name: "search purchase orders",
 			call: func(ctx context.Context, client *Client) error {
-				_, err := client.SearchPurchaseOrders(ctx, PurchaseOrderQuery{Supplier: 30})
+				status := 10
+				_, err := client.SearchPurchaseOrders(ctx, PurchaseOrderQuery{Search: "external", Supplier: 30, Reference: "PO-1", Status: &status, StartDateAfter: "2026-08-01", StartDateBefore: "2026-08-02", TargetDateAfter: "2026-08-03", TargetDateBefore: "2026-08-04", Limit: 5, Offset: 2})
 				return err
 			},
 			wantPath:  "/api/order/po/",
-			wantQuery: url.Values{"supplier": []string{"30"}},
+			wantQuery: url.Values{"search": []string{"external"}, "supplier": []string{"30"}, "reference": []string{"PO-1"}, "status": []string{"10"}, "start_date_after": []string{"2026-08-01"}, "start_date_before": []string{"2026-08-02"}, "target_date_after": []string{"2026-08-03"}, "target_date_before": []string{"2026-08-04"}, "limit": []string{"5"}, "offset": []string{"2"}},
 			response:  `{"count":1,"next":null,"previous":null,"results":[{"pk":120,"reference":"PO-1","supplier":30}]}`,
 		},
 		{
@@ -231,12 +241,22 @@ func TestReadMethodsUseExpectedEndpoints(t *testing.T) {
 		{
 			name: "search purchase order lines",
 			call: func(ctx context.Context, client *Client) error {
-				_, err := client.SearchPurchaseOrderLines(ctx, PurchaseOrderLineQuery{Order: 120})
+				pending, received := true, false
+				_, err := client.SearchPurchaseOrderLines(ctx, PurchaseOrderLineQuery{Search: "SKU", Order: 120, SupplierPart: 40, Pending: &pending, Received: &received, Limit: 6, Offset: 3})
 				return err
 			},
 			wantPath:  "/api/order/po-line/",
-			wantQuery: url.Values{"order": []string{"120"}},
+			wantQuery: url.Values{"search": []string{"SKU"}, "order": []string{"120"}, "part": []string{"40"}, "pending": []string{"true"}, "received": []string{"false"}, "limit": []string{"6"}, "offset": []string{"3"}},
 			response:  `{"count":1,"next":null,"previous":null,"results":[{"pk":130,"order":120,"part":10,"quantity":1}]}`,
+		},
+		{
+			name: "get purchase order line",
+			call: func(ctx context.Context, client *Client) error {
+				_, err := client.GetPurchaseOrderLine(ctx, 130)
+				return err
+			},
+			wantPath: "/api/order/po-line/130/",
+			response: `{"pk":130,"order":120,"part":40,"quantity":1}`,
 		},
 	}
 

@@ -80,7 +80,7 @@ Before `M1C-S04` is complete, mutating, operational, destructive, and upload too
 | [M1I-S02](#m1i-s02-final-review-panel) | Run final Go, QA, product, and infosec review panel. | Done |
 | [F-S01](#f-s01-evaluate-docker-compose-testcontainers-stack) | Evaluate Docker Compose-based Testcontainers stack. | Future |
 | [F-S02](#f-s02-bom-import-workflow) | BOM import workflow. | Future |
-| [F-S03](#f-s03-purchase-order-write-and-receiving) | Purchase order write and receiving. | Future |
+| [F-S03](#f-s03-purchase-order-write-and-receiving) | Purchase order write and receiving. | Planned |
 | [F-S04](#f-s04-build-order-workflows) | Build order workflows. | Future |
 | [F-S05](#f-s05-stocktake-adjustments) | Stocktake adjustments. | Future |
 | [F-S06](#f-s06-systemd-notify-and-watchdog-support) | Native systemd notification support for packaged HTTP deployments. | Future |
@@ -956,13 +956,14 @@ Tasks:
 
 ### F-S03: Purchase Order Write And Receiving
 
-- Status: `Future`
+- Status: `Planned`
 - Issue: [#48](https://github.com/davidvanlaatum/inventree-mcp/issues/48)
 - Depends on: milestone 1 complete and product review
-- Scope: create purchase orders and purchase-order lines from stable supplier-part inputs, then receive purchase-order lines into stock when the operational workflow is explicitly in scope. The highest-value first write workflow is `create_purchase_order_with_lines`: accept a supplier, supplier reference, description/date fields, an idempotency key, and validated line inputs, then create or update the purchase order and lines after the same preview math and supplier-part checks used by `preview_purchase_order_with_lines`.
+- Progress: purchase-order and line read/search, create/PATCH, and the retry-recoverable `create_purchase_order_with_lines` slice are implemented on the feature branch. The operator approved `(supplier_id, supplier_reference)` as the workflow recovery identity so InvenTree can generate its pattern-compliant internal order reference. Receiving remains excluded pending the documented stock create/merge/update product decision.
+- Scope: create purchase orders and purchase-order lines from stable supplier-part inputs, then receive purchase-order lines into stock when the operational workflow is explicitly in scope. The highest-value first write workflow is `create_purchase_order_with_lines`: accept a supplier, stable supplier reference, description/date fields, and validated line inputs, then create or update the purchase order and lines after the same preview math and supplier-part checks used by `preview_purchase_order_with_lines`.
 - Acceptance:
   - Purchase-order creation uses stable supplier IDs and schema-verified write endpoints, with dry-run planning when lines are supplied.
-  - `create_purchase_order_with_lines` supports preview-equivalent validation before mutation, returns the purchase order ID and line IDs, and uses an idempotency key to make retries safe after client or tool interruption.
+  - `create_purchase_order_with_lines` supports preview-equivalent validation before mutation, returns the purchase order ID and line IDs, and uses an exact `(supplier_id, supplier_reference)` lookup to recover interrupted sequential attempts.
   - Purchase-order line create/update tools validate supplier-part identity, quantity, price, currency, and supplier consistency before writing.
   - Duplicate and recovery reads cover purchase orders and purchase-order lines by supplier, supplier reference, status/date where schema-supported, and stable ID so operators can recover from partial or interrupted writes.
   - Receiving workflow defines whether stock is created, merged, or updated, and requires explicit operator confirmation before operational stock changes.
@@ -971,14 +972,17 @@ Tasks:
 
 Tasks:
 
-- [ ] Define purchase order creation workflow.
-- [ ] Add `create_purchase_order`.
-- [ ] Add `create_purchase_order_with_lines` with idempotent create/update behavior after preview validation.
-- [ ] Add purchase-order line create/update tools.
-- [ ] Add purchase-order and purchase-order-line search/read tools for duplicate checks, retry, and recovery.
+- [x] Define purchase order creation workflow.
+- [x] Add `create_purchase_order`.
+- [x] Add `create_purchase_order_with_lines` with retry-recoverable create/update behavior after preview validation.
+- [x] Add purchase-order line create/update tools.
+- [x] Add purchase-order and purchase-order-line search/read tools for duplicate checks, retry, and recovery.
 - [ ] Define receiving workflow.
 - [ ] Add purchase-order receiving workflow only after product scope is confirmed.
 - [ ] Add operational/destructive scope review.
+- Validation: `INVENTREE_TEST_SKIP_DOCKER=1 go test -race -count=1 ./...` passed; focused `go test -race ./internal/inventree -run '^TestClientMethodsAgainstInvenTree$/po$' -count=1` passed against `inventree/inventree:1.4.0`; focused `go test -race ./internal/tools -run '^TestMilestoneHappyPathToolsAgainstInvenTree$/purchase_order_create_and_retry_happy_path$' -count=1` passed; `go test -race -p=1 ./...` passed with the default-on Docker suites; `go generate ./internal/tools` produced the checked manifest; `go mod tidy -diff` passed; `golangci-lint run` reported 0 issues; `git diff --check` passed. Live validation confirmed that InvenTree generates a pattern-compliant internal PO reference when the workflow supplies only `supplier_reference`, and exposed the documented numeric `purchase_price` response drift handled by the typed client.
+- Review: Senior Go Developer, Senior QA / Test Architect, Senior Product Manager, and Senior Infosec Reviewer panel completed. Initial review found clarification after partial mutation, missing line-destination output, untested interrupted-create and mid-line recovery, an unactionable duplicate-line clarification, optional-field documentation drift, stale issue metadata, and an overstated `idempotentHint:true`. Fixes preflight all existing-line conflicts before PATCH, model and live-test destination, cover unknown create results and completed-line recovery, document and test duplicate-line repair, distinguish the one-shot low-level path, align issue #48, explicitly disable InvenTree auto-pricing/line merging, and retain `idempotentHint:false` with the concurrency risk documented. Focused Go, product, QA, and infosec follow-up review found no unresolved actionable findings.
+- Residual risk: receiving remains intentionally unavailable. The retry-recoverable workflow updates lines derived from the same supplier reference and one-based input index; it does not delete extra existing lines when a retry supplies fewer lines because removal semantics were not approved. Concurrent creators can still race between the duplicate-recovery read and order creation because InvenTree does not enforce uniqueness on `(supplier, supplier_reference)`; an interrupted caller must retry with the same pair so the workflow can recover the created ID.
 
 ### F-S04: Build Order Workflows
 

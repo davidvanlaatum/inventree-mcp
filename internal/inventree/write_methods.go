@@ -77,6 +77,33 @@ type StockItemCreate struct {
 	Notes    *string `json:"notes,omitempty"`
 }
 
+type PurchaseOrderCreate struct {
+	Reference         string  `json:"reference,omitempty"`
+	Supplier          int     `json:"supplier"`
+	SupplierReference *string `json:"supplier_reference,omitempty"`
+	Description       *string `json:"description,omitempty"`
+	CreationDate      *string `json:"creation_date,omitempty"`
+	StartDate         *string `json:"start_date,omitempty"`
+	TargetDate        *string `json:"target_date,omitempty"`
+	OrderCurrency     *string `json:"order_currency,omitempty"`
+	Destination       *int    `json:"destination,omitempty"`
+}
+
+type PurchaseOrderLineCreate struct {
+	Order                 int     `json:"order"`
+	SupplierPart          int     `json:"part"`
+	AutoPricing           bool    `json:"auto_pricing"`
+	MergeItems            bool    `json:"merge_items"`
+	Line                  *string `json:"line,omitempty"`
+	Reference             *string `json:"reference,omitempty"`
+	Notes                 *string `json:"notes,omitempty"`
+	Quantity              float64 `json:"quantity"`
+	TargetDate            *string `json:"target_date,omitempty"`
+	PurchasePrice         *string `json:"purchase_price,omitempty"`
+	PurchasePriceCurrency *string `json:"purchase_price_currency,omitempty"`
+	Destination           *int    `json:"destination,omitempty"`
+}
+
 type AttachmentCreate struct {
 	ModelType   string
 	ModelID     int
@@ -155,6 +182,30 @@ func (c *Client) CreateStockItem(ctx context.Context, input StockItemCreate) (St
 		return StockItem{}, fmt.Errorf("InvenTree stock create returned no stock items")
 	}
 	return batch[0], nil
+}
+
+func (c *Client) CreatePurchaseOrder(ctx context.Context, input PurchaseOrderCreate) (PurchaseOrder, error) {
+	var out PurchaseOrder
+	err := c.Post(ctx, "/api/order/po/", input, &out)
+	return out, err
+}
+
+func (c *Client) UpdatePurchaseOrder(ctx context.Context, id int, fields PatchFields) (PurchaseOrder, error) {
+	var out PurchaseOrder
+	err := c.Patch(ctx, fmt.Sprintf("/api/order/po/%d/", id), fields, &out)
+	return out, err
+}
+
+func (c *Client) CreatePurchaseOrderLine(ctx context.Context, input PurchaseOrderLineCreate) (PurchaseOrderLineItem, error) {
+	var out PurchaseOrderLineItem
+	err := c.Post(ctx, "/api/order/po-line/", input, &out)
+	return out, err
+}
+
+func (c *Client) UpdatePurchaseOrderLine(ctx context.Context, id int, fields PatchFields) (PurchaseOrderLineItem, error) {
+	var out PurchaseOrderLineItem
+	err := c.Patch(ctx, fmt.Sprintf("/api/order/po-line/%d/", id), fields, &out)
+	return out, err
 }
 
 func (c *Client) UploadAttachment(ctx context.Context, input AttachmentCreate) (Attachment, error) {

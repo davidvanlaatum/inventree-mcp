@@ -12,6 +12,7 @@ coverage_areas:
   - parameters
   - attachments
   - purchasing_preview
+  - purchasing
 
 forbidden_paths:
   - /api/notes-image-upload/
@@ -110,6 +111,12 @@ endpoints:
     operation_id: company_create
     request_schema: '#/components/schemas/Company'
     request_content_type: multipart/form-data
+    response_schema: '#/components/schemas/Company'
+  - id: get_company
+    area: companies
+    path: /api/company/{id}/
+    method: GET
+    operation_id: company_retrieve
     response_schema: '#/components/schemas/Company'
   - id: update_company
     area: companies
@@ -309,3 +316,41 @@ endpoints:
     method: GET
     operation_id: order_po_line_list
     response_schema: '#/components/schemas/PaginatedPurchaseOrderLineItemList'
+  - id: get_purchase_order_line
+    area: purchasing
+    path: /api/order/po-line/{id}/
+    method: GET
+    operation_id: order_po_line_retrieve
+    response_schema: '#/components/schemas/PurchaseOrderLineItem'
+  - id: create_purchase_order
+    area: purchasing
+    path: /api/order/po/
+    method: POST
+    operation_id: order_po_create
+    request_schema: '#/components/schemas/PurchaseOrder'
+    request_content_type: application/json
+    response_schema: '#/components/schemas/PurchaseOrder'
+  - id: update_purchase_order
+    area: purchasing
+    path: /api/order/po/{id}/
+    method: PATCH
+    operation_id: order_po_partial_update
+    request_schema: '#/components/schemas/PatchedPurchaseOrder'
+    request_content_type: application/json
+    response_schema: '#/components/schemas/PurchaseOrder'
+  - id: add_purchase_order_line
+    area: purchasing
+    path: /api/order/po-line/
+    method: POST
+    operation_id: order_po_line_create
+    request_schema: '#/components/schemas/PurchaseOrderLineItem'
+    request_content_type: application/json
+    response_schema: '#/components/schemas/PurchaseOrderLineItem'
+  - id: update_purchase_order_line
+    area: purchasing
+    path: /api/order/po-line/{id}/
+    method: PATCH
+    operation_id: order_po_line_partial_update
+    request_schema: '#/components/schemas/PatchedPurchaseOrderLineItem'
+    request_content_type: application/json
+    response_schema: '#/components/schemas/PurchaseOrderLineItem'

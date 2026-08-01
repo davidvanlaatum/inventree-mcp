@@ -72,6 +72,12 @@ func (c *Client) SearchCompanies(ctx context.Context, query SearchQuery) ([]Comp
 	return listAll[Company](ctx, c, "/api/company/", query.values())
 }
 
+func (c *Client) GetCompany(ctx context.Context, id int) (Company, error) {
+	var out Company
+	err := c.get(ctx, fmt.Sprintf("/api/company/%d/", id), &out)
+	return out, err
+}
+
 func (c *Client) SearchSuppliers(ctx context.Context, query SearchQuery) ([]Company, error) {
 	return c.searchCompaniesWithRole(ctx, query, "is_supplier")
 }
@@ -308,6 +314,12 @@ func (c *Client) GetPurchaseOrder(ctx context.Context, id int) (PurchaseOrder, e
 
 func (c *Client) SearchPurchaseOrderLines(ctx context.Context, query PurchaseOrderLineQuery) ([]PurchaseOrderLineItem, error) {
 	return listAll[PurchaseOrderLineItem](ctx, c, "/api/order/po-line/", query.values())
+}
+
+func (c *Client) GetPurchaseOrderLine(ctx context.Context, id int) (PurchaseOrderLineItem, error) {
+	var out PurchaseOrderLineItem
+	err := c.get(ctx, fmt.Sprintf("/api/order/po-line/%d/", id), &out)
+	return out, err
 }
 
 func (c *Client) get(ctx context.Context, path string, out any) error {

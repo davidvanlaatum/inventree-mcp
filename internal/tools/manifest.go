@@ -7,7 +7,10 @@ import (
 	"slices"
 )
 
-const ToolMilestone1 = "milestone_1"
+const (
+	ToolMilestone1 = "milestone_1"
+	ToolFuture     = "future"
+)
 
 type ToolManifestDocument struct {
 	SchemaVersion int                 `json:"schema_version"`
@@ -37,7 +40,7 @@ func GenerateToolManifest() ToolManifestDocument {
 	for _, auth := range ToolAuthorizations {
 		entries = append(entries, ToolManifestEntry{
 			Name:             auth.Name,
-			MilestoneStatus:  ToolMilestone1,
+			MilestoneStatus:  auth.MilestoneStatus,
 			MutationClass:    auth.MutationClass,
 			Scopes:           append([]string(nil), auth.Scopes...),
 			Annotations:      auth.Annotations,
