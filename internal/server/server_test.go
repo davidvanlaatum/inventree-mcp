@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -742,6 +743,205 @@ func TestSDKProtectedResourceMetadataHandlerPublishesOAuthResourceMetadata(t *te
 	a.Equal([]string{"https://mcp.example.com"}, metadata.AuthorizationServers)
 	a.Equal([]string{tools.ScopeInventreeRead, tools.ScopeInventreeWrite}, metadata.ScopesSupported)
 	a.Equal("InvenTree MCP", metadata.ResourceName)
+}
+
+func TestProductionHTTPMuxProtectsMCPAndPublishesResourceMetadata(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	keyring, err := oauth.NewKeyring([]oauth.Key{{
+		ID:       "current",
+		Material: []byte("0123456789abcdef0123456789abcdef"),
+		State:    oauth.KeyStateActive,
+	}})
+	r.NoError(err)
+	cfg := config.Config{
+		Transport:        config.TransportHTTP,
+		Environment:      config.EnvironmentProduction,
+		Path:             "/mcp",
+		OAuthIssuerURL:   "https://auth.example.test",
+		OAuthResourceURL: "https://mcp.example.test/mcp",
+		OAuthClientIDs:   []string{"https://chatgpt.com/client-metadata"},
+		OAuthKeyring: oauth.KeyringConfig{Keys: []oauth.KeyConfig{{
+			ID:             "current",
+			MaterialBase64: "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY",
+			State:          oauth.KeyStateActive,
+		}}},
+	}
+	var clientCalls atomic.Int32
+	deps := tools.Dependencies{
+		EnableWriteTools:    true,
+		AuthorizationMode:   tools.AuthorizationModeOAuth,
+		ResourceMetadataURL: cfg.OAuthProtectedResourceMetadataURL(),
+		ClientFromContext: func(context.Context) (any, error) {
+			clientCalls.Add(1)
+			return serverLookupClient{}, nil
+		},
+	}
+	handler, err := HTTPMux(ctx, cfg, New(deps))
+	r.NoError(err)
+
+	metadataReq := httptest.NewRequest(http.MethodGet, "/.well-known/oauth-protected-resource/mcp", nil)
+	metadataRecorder := httptest.NewRecorder()
+	handler.ServeHTTP(metadataRecorder, metadataReq)
+	r.Equal(http.StatusOK, metadataRecorder.Code)
+	var metadata oauthex.ProtectedResourceMetadata
+	r.NoError(json.Unmarshal(metadataRecorder.Body.Bytes(), &metadata))
+	a.Equal(cfg.OAuthResourceURL, metadata.Resource)
+	a.Equal([]string{cfg.OAuthIssuerURL}, metadata.AuthorizationServers)
+	a.ElementsMatch([]string{
+		tools.ScopeInventreeRead,
+		tools.ScopeInventreeWrite,
+		tools.ScopeInventreeUpload,
+		tools.ScopeInventreeOperational,
+		tools.ScopeInventreeDestructive,
+	}, metadata.ScopesSupported)
+	rootMetadataRecorder := httptest.NewRecorder()
+	handler.ServeHTTP(rootMetadataRecorder, httptest.NewRequest(http.MethodGet, "/.well-known/oauth-protected-resource", nil))
+	r.Equal(http.StatusNotFound, rootMetadataRecorder.Code)
+
+	missingBearer := postMCP(t, handler, `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","clientInfo":{"name":"test-client","version":"v0.0.0"},"capabilities":{}}}`)
+	r.Equal(http.StatusUnauthorized, missingBearer.Code)
+	a.Contains(missingBearer.Header().Get("WWW-Authenticate"), `resource_metadata="https://mcp.example.test/.well-known/oauth-protected-resource/mcp"`)
+
+	now := time.Now()
+	codec := oauth.EnvelopeCodec{Keyring: keyring}
+	accessToken, err := codec.Seal(ctx, oauth.AssociatedData{
+		Issuer:   cfg.OAuthIssuerURL,
+		Audience: cfg.OAuthResourceURL,
+		ClientID: cfg.OAuthClientIDs[0],
+		Type:     oauth.TokenTypeAccess,
+	}, oauth.TokenClaims{
+		Type:             oauth.TokenTypeAccess,
+		Issuer:           cfg.OAuthIssuerURL,
+		Audience:         cfg.OAuthResourceURL,
+		Subject:          "operator-1",
+		ClientID:         cfg.OAuthClientIDs[0],
+		Scopes:           []string{tools.ScopeInventreeRead},
+		IssuedAt:         now,
+		ExpiresAt:        now.Add(time.Hour),
+		SessionExpiresAt: now.Add(2 * time.Hour),
+		Credential:       oauth.Credential{Scheme: inventree.AuthSchemeToken, Token: "secret-inventree-token"},
+	})
+	r.NoError(err)
+
+	listRecorder := postMCPWithBearer(t, handler, accessToken, `{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}`)
+	r.Equal(http.StatusOK, listRecorder.Code)
+	listedTools := decodeListedTools(t, listRecorder.Body.Bytes())
+	a.NotNil(listedTools[tools.CreatePartToolName])
+	a.Equal([]string{"oauth2:inventree.write"}, securitySchemeSummaries(listedTools[tools.CreatePartToolName].Meta[tools.MetaSecuritySchemesKey]))
+
+	deniedRecorder := postMCPWithBearer(t, handler, accessToken, `{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"create_part","arguments":{"name":"10k resistor","category_id":20}}}`)
+	r.Equal(http.StatusOK, deniedRecorder.Code)
+	a.Contains(deniedRecorder.Body.String(), `"isError":true`)
+	a.Contains(deniedRecorder.Body.String(), `insufficient_scope`)
+	a.Contains(deniedRecorder.Body.String(), `scope=\"inventree.write\"`)
+	a.Equal(int32(0), clientCalls.Load())
+
+	rawUpstreamRecorder := postMCPWithBearer(t, handler, "secret-inventree-token", `{"jsonrpc":"2.0","id":4,"method":"tools/list","params":{}}`)
+	r.Equal(http.StatusUnauthorized, rawUpstreamRecorder.Code)
+	a.NotContains(rawUpstreamRecorder.Body.String(), tools.CreatePartToolName)
+}
+
+func TestProductionHTTPAuthenticatesBeforeDebugTrafficCapture(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	cfg := config.Config{
+		Transport:              config.TransportHTTP,
+		Environment:            config.EnvironmentProduction,
+		Path:                   "/mcp",
+		MCPMaxRequestBodyBytes: config.DefaultMCPMaxRequestBodyBytes,
+		OAuthIssuerURL:         "https://auth.example.test",
+		OAuthResourceURL:       "https://mcp.example.test/mcp",
+		OAuthClientIDs:         []string{"https://chatgpt.com/client-metadata"},
+		OAuthKeyring: oauth.KeyringConfig{Keys: []oauth.KeyConfig{{
+			ID:             "current",
+			MaterialBase64: "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY",
+			State:          oauth.KeyStateActive,
+		}}},
+	}
+	var output strings.Builder
+	handler, err := httpMux(ctx, cfg, New(tools.Dependencies{}), &trafficLog{w: &output})
+	r.NoError(err)
+
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(`{"secret":"unauthenticated"}`)))
+
+	r.Equal(http.StatusUnauthorized, recorder.Code)
+	a.Empty(output.String())
+}
+
+func TestHTTPServerCancellationGracefullyDrainsActiveRequests(t *testing.T) {
+	r := require.New(t)
+	a := assert.New(t)
+
+	type contextKey string
+	const key contextKey = "root"
+	rootCtx, cancel := context.WithCancel(context.WithValue(t.Context(), key, "value"))
+	requestStarted := make(chan bool, 1)
+	releaseRequest := make(chan struct{})
+	requestCanceled := make(chan bool, 1)
+	handler := http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		requestStarted <- req.Context().Value(key) == "value"
+		select {
+		case <-releaseRequest:
+			requestCanceled <- false
+			w.WriteHeader(http.StatusNoContent)
+		case <-req.Context().Done():
+			requestCanceled <- true
+		}
+	})
+	cfg := config.Config{Listen: "127.0.0.1:0"}
+	httpServer := newHTTPServer(rootCtx, cfg, handler)
+	a.Equal(defaultHTTPReadHeaderTimeout, httpServer.ReadHeaderTimeout)
+
+	listener, err := net.Listen("tcp", cfg.Listen)
+	r.NoError(err)
+	serveErr := make(chan error, 1)
+	go func() {
+		serveErr <- serveHTTP(rootCtx, httpServer, listener)
+	}()
+	requestErr := make(chan error, 1)
+	go func() {
+		client := &http.Client{Timeout: 2 * time.Second}
+		response, err := client.Get("http://" + listener.Addr().String()) //nolint:noctx // Server root-context cancellation is the behavior under test.
+		if response != nil {
+			_ = response.Body.Close()
+		}
+		requestErr <- err
+	}()
+
+	select {
+	case rootValuePresent := <-requestStarted:
+		r.True(rootValuePresent)
+	case <-time.After(2 * time.Second):
+		r.Fail("HTTP client request did not reach the server")
+	}
+	cancel()
+	select {
+	case err := <-serveErr:
+		r.Fail("HTTP server stopped before the active request drained", "error: %v", err)
+	case <-time.After(100 * time.Millisecond):
+	}
+	close(releaseRequest)
+	r.False(<-requestCanceled)
+	select {
+	case err := <-serveErr:
+		r.ErrorIs(err, context.Canceled)
+	case <-time.After(2 * time.Second):
+		r.Fail("HTTP server did not stop after context cancellation")
+	}
+	select {
+	case err := <-requestErr:
+		r.NoError(err)
+	case <-time.After(2 * time.Second):
+		r.Fail("HTTP client request did not complete after server cancellation")
+	}
 }
 
 func postMCP(t *testing.T, handler http.Handler, body string) *httptest.ResponseRecorder {

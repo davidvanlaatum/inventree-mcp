@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"errors"
 	"net/http"
 	"testing"
 	"time"
@@ -40,6 +41,79 @@ func TestRunServeReportsConfigErrors(t *testing.T) {
 	r.Equal(2, code)
 	a.Empty(stdout.String())
 	a.Contains(stderr.String(), "InvenTree URL is required")
+}
+
+func TestRunServeTreatsRootCancellationAsGracefulShutdown(t *testing.T) {
+	r := require.New(t)
+	a := assert.New(t)
+
+	originalServerRun := serverRun
+	t.Cleanup(func() {
+		serverRun = originalServerRun
+	})
+	serverRun = func(ctx context.Context, _ config.Config, _ tools.Dependencies) error {
+		return ctx.Err()
+	}
+	parentCtx, cancel := context.WithCancel(t.Context())
+	cancel()
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := runWithContext(parentCtx, []string{
+		"serve",
+		"--transport", "http",
+		"--environment", "development",
+		"--dev-incomplete-oauth",
+		"--inventree-url", "https://inventory.example.test",
+	}, &stdout, &stderr, mapEnv(nil))
+
+	r.Equal(0, code)
+	a.Empty(stdout.String())
+	a.Empty(stderr.String())
+}
+
+func TestRunServeReportsShutdownFailureAfterRootCancellation(t *testing.T) {
+	r := require.New(t)
+	a := assert.New(t)
+
+	originalServerRun := serverRun
+	t.Cleanup(func() {
+		serverRun = originalServerRun
+	})
+	shutdownErr := errors.New("shutdown failed")
+	serverRun = func(ctx context.Context, _ config.Config, _ tools.Dependencies) error {
+		return errors.Join(ctx.Err(), shutdownErr)
+	}
+	parentCtx, cancel := context.WithCancel(t.Context())
+	cancel()
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := runWithContext(parentCtx, []string{
+		"serve",
+		"--transport", "http",
+		"--environment", "development",
+		"--dev-incomplete-oauth",
+		"--inventree-url", "https://inventory.example.test",
+	}, &stdout, &stderr, mapEnv(nil))
+
+	r.Equal(2, code)
+	a.Empty(stdout.String())
+	a.Contains(stderr.String(), shutdownErr.Error())
+}
+
+func TestRunServeRedactsMalformedOAuthKeyFlag(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+
+	const sensitiveValue = "broken:active:super-secret-key-material:extra"
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := run([]string{"serve", "--oauth-key", sensitiveValue}, &stdout, &stderr, mapEnv(nil))
+
+	r.Equal(2, code)
+	a.Empty(stdout.String())
+	a.Contains(stderr.String(), "flag provided but not defined: -oauth-key")
+	a.NotContains(stderr.String(), sensitiveValue)
 }
 
 func TestRunServeHelpExitsSuccessfully(t *testing.T) {
@@ -113,16 +187,46 @@ func TestRunServeStdioDoesNotWriteStdout(t *testing.T) {
 	a.True(ok)
 }
 
-func TestDependenciesForConfigLeavesHTTPClientUnavailableUntilOAuth(t *testing.T) {
+func TestDependenciesForConfigLeavesDevelopmentHTTPClientUnavailable(t *testing.T) {
 	t.Parallel()
 	r := require.New(t)
 	a := assert.New(t)
 
-	deps, err := dependenciesForConfig(config.Config{Transport: config.TransportHTTP})
+	deps, err := dependenciesForConfig(config.Config{
+		Transport:   config.TransportHTTP,
+		Environment: config.EnvironmentDevelopment,
+	})
 
 	r.NoError(err)
 	a.Nil(deps.ClientFromContext)
 	a.False(deps.EnableWriteTools)
+}
+
+func TestDependenciesForConfigBuildsProductionHTTPOAuthDependencies(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+
+	deps, err := dependenciesForConfig(config.Config{
+		Transport:           config.TransportHTTP,
+		Environment:         config.EnvironmentProduction,
+		InvenTreeURL:        "https://inventory.example.test",
+		InvenTreeTimeout:    5 * time.Second,
+		OAuthIssuerURL:      "https://mcp.example.test",
+		OAuthResourceURL:    "https://mcp.example.test/mcp",
+		UploadMaxBytes:      1234,
+		OAuthAccessLifetime: 10 * time.Minute,
+	})
+
+	r.NoError(err)
+	a.True(deps.EnableWriteTools)
+	a.Equal(tools.AuthorizationModeOAuth, deps.AuthorizationMode)
+	a.Equal("https://mcp.example.test/.well-known/oauth-protected-resource/mcp", deps.ResourceMetadataURL)
+	a.Equal(int64(1234), deps.UploadMaxBytes)
+	a.Equal(5*time.Second, deps.UploadTimeout)
+	r.NotNil(deps.ClientFromContext)
+	_, err = deps.ClientFromContext(context.Background())
+	a.ErrorContains(err, "OAuth credential unavailable")
 }
 
 func TestDependenciesForConfigBuildsStdioClient(t *testing.T) {

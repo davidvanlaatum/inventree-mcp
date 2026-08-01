@@ -10,6 +10,8 @@ import (
 	"os"
 	"strings"
 	"time"
+
+	"github.com/davidvanlaatum/inventree-mcp/internal/oauth"
 )
 
 const (
@@ -28,6 +30,13 @@ const (
 	EnvLogLevel               = "INVENTREE_MCP_LOG_LEVEL"
 	EnvDebugTrafficLog        = "INVENTREE_MCP_DEBUG_TRAFFIC_LOG"
 	EnvDevIncompleteOAuth     = "INVENTREE_MCP_DEV_INCOMPLETE_OAUTH"
+	EnvOAuthIssuerURL         = "INVENTREE_MCP_OAUTH_ISSUER_URL"
+	EnvOAuthResourceURL       = "INVENTREE_MCP_OAUTH_RESOURCE_URL"
+	EnvOAuthKeys              = "INVENTREE_MCP_OAUTH_KEYS"
+	EnvOAuthClientIDs         = "INVENTREE_MCP_OAUTH_CLIENT_IDS"
+	EnvOAuthAccessLifetime    = "INVENTREE_MCP_OAUTH_ACCESS_LIFETIME"
+	EnvOAuthRefreshLifetime   = "INVENTREE_MCP_OAUTH_REFRESH_LIFETIME"
+	EnvOAuthSessionLifetime   = "INVENTREE_MCP_OAUTH_SESSION_LIFETIME"
 
 	invalidDuration               = time.Duration(-1)
 	DefaultListen                 = "127.0.0.1:28686"
@@ -72,6 +81,13 @@ type Config struct {
 	LogLevel               string
 	DebugTrafficLog        string
 	DevIncompleteOAuth     bool
+	OAuthIssuerURL         string
+	OAuthResourceURL       string
+	OAuthKeyring           oauth.KeyringConfig
+	OAuthClientIDs         []string
+	OAuthAccessLifetime    time.Duration
+	OAuthRefreshLifetime   time.Duration
+	OAuthSessionLifetime   time.Duration
 }
 
 type Env func(string) string
@@ -101,8 +117,19 @@ func ParseServeWithEnv(args []string, getenv Env, output io.Writer) (Config, err
 			EnvMCPMaxRequestBodyBytes,
 			DefaultMCPMaxRequestBodyBytes,
 		),
-		LogLevel:        envDefault(getenv, EnvLogLevel, "info"),
-		DebugTrafficLog: strings.TrimSpace(getenv(EnvDebugTrafficLog)),
+		LogLevel:            envDefault(getenv, EnvLogLevel, "info"),
+		DebugTrafficLog:     strings.TrimSpace(getenv(EnvDebugTrafficLog)),
+		OAuthIssuerURL:      getenv(EnvOAuthIssuerURL),
+		OAuthResourceURL:    getenv(EnvOAuthResourceURL),
+		OAuthKeyring:        oauth.KeyringConfig{Keys: keyListEnv(getenv, EnvOAuthKeys)},
+		OAuthClientIDs:      commaListEnv(getenv, EnvOAuthClientIDs),
+		OAuthAccessLifetime: durationDefault(getenv, EnvOAuthAccessLifetime, oauth.DefaultAccessTokenLifetime),
+		OAuthRefreshLifetime: durationDefault(
+			getenv,
+			EnvOAuthRefreshLifetime,
+			oauth.DefaultRefreshTokenLifetime,
+		),
+		OAuthSessionLifetime: durationDefault(getenv, EnvOAuthSessionLifetime, oauth.DefaultSessionLifetime),
 	}
 
 	fs := flag.NewFlagSet("serve", flag.ContinueOnError)
@@ -126,7 +153,19 @@ func ParseServeWithEnv(args []string, getenv Env, output io.Writer) (Config, err
 	fs.Int64Var(&cfg.MCPMaxRequestBodyBytes, "mcp-max-request-body-bytes", cfg.MCPMaxRequestBodyBytes, flagHelp("maximum bytes accepted in one MCP HTTP request body", EnvMCPMaxRequestBodyBytes))
 	fs.StringVar(&cfg.LogLevel, "log-level", cfg.LogLevel, flagHelp("log level", EnvLogLevel))
 	fs.StringVar(&cfg.DebugTrafficLog, "debug-traffic-log", cfg.DebugTrafficLog, flagHelp("append full MCP request/response JSON to this debug log file", EnvDebugTrafficLog))
-	fs.BoolVar(&cfg.DevIncompleteOAuth, "dev-incomplete-oauth", boolEnv(getenv, EnvDevIncompleteOAuth), flagHelp("allow development-only HTTP parsing before OAuth startup wiring is available", EnvDevIncompleteOAuth))
+	fs.BoolVar(&cfg.DevIncompleteOAuth, "dev-incomplete-oauth", boolEnv(getenv, EnvDevIncompleteOAuth), flagHelp("allow development-only HTTP parsing without OAuth setup wiring", EnvDevIncompleteOAuth))
+	fs.StringVar(&cfg.OAuthIssuerURL, "oauth-issuer-url", cfg.OAuthIssuerURL, flagHelp("public HTTPS OAuth issuer URL", EnvOAuthIssuerURL))
+	fs.StringVar(&cfg.OAuthResourceURL, "oauth-resource-url", cfg.OAuthResourceURL, flagHelp("public HTTPS MCP resource URL", EnvOAuthResourceURL))
+	fs.Func("oauth-client-id", flagHelp("allowed OAuth client_id metadata URL; repeatable", EnvOAuthClientIDs), func(value string) error {
+		value = strings.TrimSpace(value)
+		if value != "" {
+			cfg.OAuthClientIDs = append(cfg.OAuthClientIDs, value)
+		}
+		return nil
+	})
+	fs.DurationVar(&cfg.OAuthAccessLifetime, "oauth-access-lifetime", cfg.OAuthAccessLifetime, flagHelp("OAuth access token lifetime", EnvOAuthAccessLifetime))
+	fs.DurationVar(&cfg.OAuthRefreshLifetime, "oauth-refresh-lifetime", cfg.OAuthRefreshLifetime, flagHelp("OAuth refresh token lifetime", EnvOAuthRefreshLifetime))
+	fs.DurationVar(&cfg.OAuthSessionLifetime, "oauth-session-lifetime", cfg.OAuthSessionLifetime, flagHelp("OAuth maximum connector session lifetime", EnvOAuthSessionLifetime))
 
 	if err := fs.Parse(args); err != nil {
 		return Config{}, err
@@ -188,6 +227,11 @@ func (c Config) Validate() error {
 	}
 
 	if c.Transport == TransportHTTP {
+		if c.Environment == EnvironmentProduction {
+			if parsed, err := url.ParseRequestURI(c.InvenTreeURL); err == nil && parsed.Scheme != "https" {
+				validationErrors = append(validationErrors, errors.New("production HTTP mode requires an HTTPS InvenTree URL"))
+			}
+		}
 		if c.MCPMaxRequestBodyBytes <= 0 {
 			validationErrors = append(validationErrors, errors.New("MCP max request body bytes must be greater than zero"))
 		} else if minimum := MinimumMCPRequestBodyBytes(c.UploadMaxBytes); minimum > 0 && c.MCPMaxRequestBodyBytes < minimum {
@@ -204,20 +248,97 @@ func (c Config) Validate() error {
 			validationErrors = append(validationErrors, errors.New("HTTP listen address is required"))
 		}
 		if c.InvenTreeToken != "" {
-			validationErrors = append(validationErrors, errors.New("configured InvenTree tokens are STDIO-only until HTTP OAuth startup wiring is available"))
+			validationErrors = append(validationErrors, errors.New("configured InvenTree tokens are STDIO-only; HTTP runtime credentials come from MCP OAuth access tokens"))
 		}
 		if c.InvenTreeAuthScheme != AuthSchemeToken {
-			validationErrors = append(validationErrors, errors.New("configured InvenTree auth schemes are STDIO-only until HTTP OAuth startup wiring is available"))
+			validationErrors = append(validationErrors, errors.New("configured InvenTree auth schemes are STDIO-only; HTTP upstream credentials come from MCP OAuth access tokens"))
 		}
 		if c.Environment == EnvironmentProduction {
-			validationErrors = append(validationErrors, errors.New("production HTTP mode is disabled until OAuth startup and setup wiring is available"))
+			validationErrors = append(validationErrors, c.validateProductionHTTP()...)
 		}
 		if c.Environment == EnvironmentDevelopment && !c.DevIncompleteOAuth {
-			validationErrors = append(validationErrors, errors.New("development HTTP mode requires --dev-incomplete-oauth until OAuth startup and setup wiring is available"))
+			validationErrors = append(validationErrors, errors.New("development HTTP mode requires --dev-incomplete-oauth until OAuth setup wiring is available"))
 		}
 	}
 
 	return errors.Join(validationErrors...)
+}
+
+func (c Config) validateProductionHTTP() []error {
+	var validationErrors []error
+	if c.DevIncompleteOAuth {
+		validationErrors = append(validationErrors, errors.New("production HTTP mode rejects --dev-incomplete-oauth"))
+	}
+	if err := validateHTTPSURL(c.OAuthIssuerURL, "OAuth issuer URL"); err != nil {
+		validationErrors = append(validationErrors, err)
+	}
+	if err := validateHTTPSURL(c.OAuthResourceURL, "OAuth resource URL"); err != nil {
+		validationErrors = append(validationErrors, err)
+	} else if parsed, err := url.Parse(c.OAuthResourceURL); err == nil && strings.HasSuffix(parsed.Path, "/") {
+		validationErrors = append(validationErrors, errors.New("OAuth resource URL must not end with /"))
+	}
+	if len(c.OAuthClientIDs) == 0 {
+		validationErrors = append(validationErrors, errors.New("at least one OAuth client ID is required for production HTTP"))
+	}
+	for _, clientID := range c.OAuthClientIDs {
+		if err := validateHTTPSURL(clientID, "OAuth client ID"); err != nil {
+			validationErrors = append(validationErrors, err)
+		}
+	}
+	if _, err := c.OAuthKeyring.Keyring(); err != nil {
+		validationErrors = append(validationErrors, err)
+	}
+	if c.OAuthAccessLifetime <= 0 {
+		validationErrors = append(validationErrors, errors.New("OAuth access token lifetime must be greater than zero"))
+	}
+	if c.OAuthRefreshLifetime <= 0 {
+		validationErrors = append(validationErrors, errors.New("OAuth refresh token lifetime must be greater than zero"))
+	}
+	if c.OAuthSessionLifetime <= 0 {
+		validationErrors = append(validationErrors, errors.New("OAuth session lifetime must be greater than zero"))
+	}
+	if c.OAuthAccessLifetime > 0 && c.OAuthRefreshLifetime > 0 && c.OAuthAccessLifetime >= c.OAuthRefreshLifetime {
+		validationErrors = append(validationErrors, errors.New("OAuth access token lifetime must be shorter than refresh token lifetime"))
+	}
+	if c.OAuthRefreshLifetime > 0 && c.OAuthSessionLifetime > 0 && c.OAuthRefreshLifetime > c.OAuthSessionLifetime {
+		validationErrors = append(validationErrors, errors.New("OAuth refresh token lifetime must not exceed session lifetime"))
+	}
+	return validationErrors
+}
+
+func (c Config) OAuthProtectedResourceMetadataURL() string {
+	if c.OAuthResourceURL == "" {
+		return ""
+	}
+	parsed, err := url.Parse(c.OAuthResourceURL)
+	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+		return ""
+	}
+	metadataPath := "/.well-known/oauth-protected-resource"
+	if resourcePath := strings.TrimSuffix(parsed.Path, "/"); resourcePath != "" {
+		metadataPath += resourcePath
+	}
+	return (&url.URL{Scheme: parsed.Scheme, Host: parsed.Host, Path: metadataPath}).String()
+}
+
+func validateHTTPSURL(raw string, label string) error {
+	if raw == "" {
+		return fmt.Errorf("%s is required", label)
+	}
+	parsed, err := url.ParseRequestURI(raw)
+	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+		return fmt.Errorf("%s must be an absolute URL", label)
+	}
+	if parsed.Scheme != "https" {
+		return fmt.Errorf("%s must use https", label)
+	}
+	if parsed.User != nil {
+		return fmt.Errorf("%s must not include userinfo", label)
+	}
+	if parsed.RawQuery != "" || parsed.Fragment != "" {
+		return fmt.Errorf("%s must not include query or fragment", label)
+	}
+	return nil
 }
 
 // MinimumMCPRequestBodyBytes returns a request-body limit that can carry a
@@ -274,6 +395,58 @@ func listEnv(getenv Env, key string) []string {
 		}
 	}
 	return out
+}
+
+func keyListEnv(getenv Env, key string) []oauth.KeyConfig {
+	raw := getenv(key)
+	if raw == "" {
+		return nil
+	}
+	parts := strings.Split(raw, ",")
+	keys := make([]oauth.KeyConfig, 0, len(parts))
+	for index, part := range parts {
+		key, err := parseKeyConfig(part)
+		if err == nil {
+			keys = append(keys, key)
+			continue
+		}
+		keys = append(keys, oauth.KeyConfig{ID: fmt.Sprintf("invalid_oauth_key_entry_%d", index+1)})
+	}
+	return keys
+}
+
+func commaListEnv(getenv Env, key string) []string {
+	raw := getenv(key)
+	if raw == "" {
+		return nil
+	}
+	parts := strings.Split(raw, ",")
+	out := make([]string, 0, len(parts))
+	for _, part := range parts {
+		if value := strings.TrimSpace(part); value != "" {
+			out = append(out, value)
+		}
+	}
+	return out
+}
+
+func parseKeyConfig(raw string) (oauth.KeyConfig, error) {
+	parts := strings.Split(strings.TrimSpace(raw), ":")
+	if len(parts) != 3 {
+		return oauth.KeyConfig{}, errors.New("OAuth key must use key-id:active|decrypt_only:base64-32-byte-key")
+	}
+	id := strings.TrimSpace(parts[0])
+	state := oauth.KeyState(strings.TrimSpace(parts[1]))
+	material := strings.TrimSpace(parts[2])
+	if id == "" || material == "" {
+		return oauth.KeyConfig{}, errors.New("OAuth key ID and material are required")
+	}
+	switch state {
+	case oauth.KeyStateActive, oauth.KeyStateDecryptOnly:
+	default:
+		return oauth.KeyConfig{}, fmt.Errorf("OAuth key state must be %q or %q", oauth.KeyStateActive, oauth.KeyStateDecryptOnly)
+	}
+	return oauth.KeyConfig{ID: id, State: state, MaterialBase64: material}, nil
 }
 
 func int64Default(getenv Env, key string, fallback int64) int64 {

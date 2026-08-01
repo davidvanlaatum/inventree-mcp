@@ -84,7 +84,7 @@ Before `M1C-S04` is complete, mutating, operational, destructive, and upload too
 | [F-S04](#f-s04-build-order-workflows) | Build order workflows. | Future |
 | [F-S05](#f-s05-stocktake-adjustments) | Stocktake adjustments. | Future |
 | [F-S06](#f-s06-systemd-notify-and-watchdog-support) | Native systemd notification support for packaged HTTP deployments. | Future |
-| [F-S07](#f-s07-production-http-oauth-startup) | Wire production HTTP startup to OAuth configuration and server dependencies. | Future |
+| [F-S07](#f-s07-production-http-oauth-startup) | Wire production HTTP startup to OAuth configuration and server dependencies. | Done |
 | [F-S08](#f-s08-chatgpt-connector-oauth-setup-flow) | Implement ChatGPT connector authorization, token, and setup-page flow. | Future |
 | [F-S09](#f-s09-reverse-proxy-canonical-url-enforcement) | Enforce public issuer/resource URLs behind a trusted reverse proxy. | Future |
 | [F-S10](#f-s10-packaged-http-deployment-and-live-connector-validation) | Validate packaged HTTP deployment and live ChatGPT connector setup. | Future |
@@ -481,7 +481,7 @@ Tasks:
 - Scope: enforce per-tool OAuth scopes and request-scoped InvenTree credentials.
 - Validation: `go test ./internal/oauth ./internal/config ./internal/tools ./internal/server` passed; `INVENTREE_TEST_SKIP_DOCKER=1 go test ./...` passed; `git diff --check` passed.
 - Review: Senior Go Developer, Senior QA / Test Architect, Senior Product Manager, and Senior Infosec Reviewer reviews run. Initial Go review found request-scoped credentials were not wired into a concrete tool dependency path and that the Go SDK lacks a top-level `securitySchemes` field; fixed with `OAuthClientFromContext`, request-scoped credential propagation tests, decoded descriptor metadata tests, and explicit SDK residual-risk docs. Initial QA review requested concurrent credential isolation, multi-scope denial, and per-tool descriptor metadata coverage; fixed and rerun, with a final isolation-test refinement tying each bearer token to its own upstream authorization-derived response. Initial product review requested clearer operator-facing wording that full HTTP tool registration is internal server-construction capability until CLI/setup/deployment wiring exists and stale config messages are refreshed; fixed and rerun. Initial infosec review found the credential carrier redacted JSON but not formatting/logging paths; fixed with `String`, `GoString`, `slog.LogValuer`, and JSON/fmt/slog tests. Focused Go, QA, product, and infosec reruns found no remaining actionable findings.
-- Residual risk: the current Go MCP SDK `mcp.Tool` type has no first-class top-level `securitySchemes` field, so scoped tools publish `securitySchemes` and `openai/securitySchemes` through descriptor `_meta` mirrors until SDK support or custom descriptor serialization is added. Production HTTP CLI startup, connector setup wiring, reverse-proxy canonical URL enforcement, and full deployment validation remain gated for follow-up work; the current CLI HTTP path stays development-only/read-only.
+- Residual risk: the current Go MCP SDK `mcp.Tool` type has no first-class top-level `securitySchemes` field, so scoped tools publish `securitySchemes` and `openai/securitySchemes` through descriptor `_meta` mirrors until SDK support or custom descriptor serialization is added. The earlier production-startup gate was superseded by F-S07. Connector authorization/setup wiring, the remaining canonical URL and trusted-proxy enforcement for those routes, and full deployment validation remain gated follow-up work; development HTTP still exposes only its limited read-only surface.
 - Acceptance:
   - Global bearer auth only authenticates and populates context.
   - Tool-specific guard checks manifest before handler dispatch.
@@ -920,7 +920,7 @@ Review:
 
 Residual risk:
 
-- Production HTTP CLI startup, connector setup wiring, reverse-proxy canonical URL enforcement, packaged-service validation, and live ChatGPT connector deployment remain accepted follow-up risk. Milestone 1 beta readiness covers the STDIO operator workflows, registered development HTTP surface, and implemented/tested OAuth and scope primitives, not an end-to-end production ChatGPT connector deployment.
+- The production HTTP CLI startup risk recorded by this milestone was superseded by F-S07's protected-resource startup implementation. Connector authorization/setup wiring, the remaining canonical URL and trusted-proxy enforcement for those routes, packaged-service validation, and live ChatGPT connector deployment remain accepted follow-up risk. Milestone 1 beta readiness covers the STDIO operator workflows, registered development HTTP surface, and implemented/tested OAuth and scope primitives, not an end-to-end production ChatGPT connector deployment.
 
 ## Future Backlog
 
@@ -1031,10 +1031,13 @@ Tasks:
 
 ### F-S07: Production HTTP OAuth Startup
 
-- Status: `Future`
+- Status: `Done`
 - Issue: [#52](https://github.com/davidvanlaatum/inventree-mcp/issues/52)
 - Depends on: M1C-S04, M1I-S02, product review, and infosec review
 - Scope: replace the current development-only HTTP gate with production HTTP startup that constructs OAuth services, keyrings, protected-resource middleware, scoped tool dependencies, and HTTP routes from explicit configuration.
+- Validation: `go test ./internal/config ./internal/oauth ./internal/server ./cmd/inventree-mcp ./docs` passed; `go generate ./internal/tools` produced no drift; `go test -race -p=1 ./...` passed, including the default-on InvenTree Testcontainers suites; `golangci-lint run` reported 0 issues; `goreleaser check` validated `.goreleaser.yaml`; `git diff --check` passed.
+- Review: Senior Go Developer, Senior QA / Test Architect, Senior Product Manager, and Senior Infosec Reviewer reviews completed on the reconciled SDK `v1.7.0` implementation. Findings covered malformed CLI key disclosure, real production-mux Testcontainers coverage, subtest-local contexts/assertions, path-specific RFC 9728 discovery, bounded signal-driven graceful shutdown and error reporting, production upstream HTTPS, required token subject/issued-at/session claims, authentication before debug body capture, environment-only envelope keys and lifecycle/package guidance, and stale F-S09/milestone/deployment boundaries. Code, tests, task contracts, and operator docs were updated. Focused reruns by all four roles found no remaining actionable findings. This final validation/review evidence update changes only task metadata and did not require another reviewer rerun.
+- Residual risk: production HTTP can validate existing sealed access-token envelopes and protect `/mcp`, but live ChatGPT connector setup still waits for F-S08 authorization/setup endpoints, F-S09's remaining canonical URL and trusted-proxy enforcement for those routes, and F-S10 packaged deployment validation. Stateless refresh envelopes remain replayable until expiry or absolute session expiry as documented by M1C-S03, and the opt-in debug traffic log remains sensitive operator-controlled output.
 - Acceptance:
   - Production HTTP `serve --transport http` starts only when all required OAuth issuer, resource, key, lifetime, client metadata, and InvenTree base URL settings are valid.
   - Raw InvenTree credentials remain rejected as HTTP runtime credentials outside the setup flow.
@@ -1046,14 +1049,14 @@ Tasks:
 
 Tasks:
 
-- [ ] Define the production HTTP OAuth config shape and environment variables.
-- [ ] Load and validate OAuth envelope keys with explicit key IDs and active/decrypt-only states.
-- [ ] Construct the OAuth token verifier and request-scoped `OAuthClientFromContext` dependencies from production config.
-- [ ] Wire protected MCP HTTP routes to SDK bearer middleware and protected-resource metadata.
-- [ ] Enable full HTTP tool registration only when OAuth authorization mode is active.
-- [ ] Preserve development-only incomplete-OAuth startup as non-production behavior.
-- [ ] Add unit and integration tests for config, route wiring, verifier failures, and scoped tool exposure.
-- [ ] Update operator and release documentation.
+- [x] Define the production HTTP OAuth config shape and environment variables.
+- [x] Load and validate OAuth envelope keys with explicit key IDs and active/decrypt-only states.
+- [x] Construct the OAuth token verifier and request-scoped `OAuthClientFromContext` dependencies from production config.
+- [x] Wire protected MCP HTTP routes to SDK bearer middleware and protected-resource metadata.
+- [x] Enable full HTTP tool registration only when OAuth authorization mode is active.
+- [x] Preserve development-only incomplete-OAuth startup as non-production behavior.
+- [x] Add unit and integration tests for config, route wiring, verifier failures, and scoped tool exposure.
+- [x] Update operator and release documentation.
 
 ### F-S08: ChatGPT Connector OAuth Setup Flow
 
@@ -1089,9 +1092,10 @@ Tasks:
 - Status: `Future`
 - Issue: [#54](https://github.com/davidvanlaatum/inventree-mcp/issues/54)
 - Depends on: F-S07, F-S08, deployment design review, product review, and infosec review
-- Scope: make production HTTP metadata, challenges, redirects, and token audience checks use explicitly configured public HTTPS issuer/resource URLs behind a trusted reverse proxy without trusting arbitrary inbound host or forwarded headers.
+- Scope: complete canonical public URL and trusted-proxy enforcement for the F-S08 authorization/setup surfaces while preserving F-S07's configured protected-resource metadata, bearer-challenge, and MCP token-audience behavior without trusting arbitrary inbound host or forwarded headers.
 - Acceptance:
-  - Production metadata, challenges, authorization URLs, token URLs, redirect targets, and token audiences use configured canonical public HTTPS issuer/resource URLs.
+  - F-S07 protected-resource metadata, bearer challenges, and MCP access-token audiences continue to use configured canonical public HTTPS issuer/resource URLs independent of inbound host headers.
+  - Authorization-server metadata, authorization URLs, token URLs, and redirect targets introduced by F-S08 use the same configured canonical public URLs.
   - Internal listener scheme, host, port, container names, and untrusted forwarded headers never appear in public OAuth metadata, challenges, redirects, errors, or tokens.
   - Trusted proxy configuration is explicit, validated, and documented.
   - Path-prefix behavior is defined and tested for supported proxy routing modes.
@@ -1101,8 +1105,8 @@ Tasks:
 
 Tasks:
 
-- [ ] Define canonical issuer/resource URL and trusted-proxy configuration.
-- [ ] Route OAuth metadata, challenge, authorization, token, and MCP audience behavior through configured public URLs.
+- [ ] Define trusted-proxy and path-prefix configuration plus any canonical URL settings still required by F-S08 authorization/setup routes.
+- [ ] Route authorization-server metadata, authorization, token, and redirect behavior through configured public URLs while preserving F-S07 metadata, challenge, and MCP audience behavior.
 - [ ] Implement trusted-proxy and path-prefix handling only for explicitly supported deployments.
 - [ ] Add internal-host leakage and forwarded-header trust tests.
 - [ ] Add reverse-proxy deployment recipes and troubleshooting notes.

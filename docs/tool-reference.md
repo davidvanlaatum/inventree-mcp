@@ -10,7 +10,7 @@ This file is the operator-facing and agent-facing reference for registered MCP t
 go generate ./internal/tools
 ```
 
-The manifest is checked in and tested. It records each registered tool's `milestone_1` status, mutation class (`read_only`, `write`, `operational`, or `destructive`), required scopes, MCP annotation booleans, upload source class, and HTTP registration state. Read-only tools and `health_version` are `registered` for HTTP development mode. Write, operational, upload, image, and destructive tools are `registered_with_oauth_scope_guard` when HTTP OAuth scope enforcement is enabled.
+The manifest is checked in and tested. It records each registered tool's `milestone_1` status, mutation class (`read_only`, `write`, `operational`, or `destructive`), required scopes, MCP annotation booleans, upload source class, and HTTP registration state. Read-only tools and `health_version` are `registered` for HTTP development mode. Production HTTP startup registers write, operational, upload, image, and destructive tools only with OAuth authorization mode enabled, where they are `registered_with_oauth_scope_guard`.
 
 ## Manifest Fields
 
