@@ -26,8 +26,8 @@ func TestDefaultOptionsPinInvenTreeVersion(t *testing.T) {
 
 	opts := DefaultOptions()
 
-	a.Equal("inventree/inventree:1.4.0", opts.Image)
-	a.Equal("1.4.0", opts.ExpectedVersion)
+	a.Equal("inventree/inventree:1.4.3", opts.Image)
+	a.Equal("1.4.3", opts.ExpectedVersion)
 	a.Equal("511", opts.ExpectedAPIVersion)
 	a.Equal(defaultStartupTimeout, opts.StartupTimeout)
 	a.NoError(ValidateOptions(opts))
@@ -706,7 +706,7 @@ func TestHTTPHelpersFetchVersionCreateAndProveToken(t *testing.T) {
 		switch req.URL.Path {
 		case "/api/version/":
 			assertBasicAuth(t, req)
-			return http.StatusOK, `{"version":{"server":"1.4.0","api":511}}`
+			return http.StatusOK, `{"version":{"server":"1.4.3","api":511}}`
 		case "/api/user/me/token/":
 			assertBasicAuth(t, req)
 			r.Equal(defaultTokenName, req.URL.Query().Get("name"))

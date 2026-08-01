@@ -760,12 +760,12 @@ Stock movement, purchase receiving, build allocation, and build completion shoul
 
 ## Compatibility Decisions
 
-- InvenTree compatibility baseline: InvenTree `1.4.0` for the checked-in schema snapshot.
-- Docker image for blocking Testcontainers tests: `inventree/inventree:1.4.0`, matching checked-in `docs/api-schema.yaml` OpenAPI 3.0.3 / API version `511`. Do not use a digest as the primary pin because the version should be clear in config, logs, and failure output. Do not use floating tags such as `stable` for blocking tests.
+- InvenTree blocking integration-test baseline: InvenTree `1.4.3`, which reports API version `511` and passes the blocking integration suite against the existing client contracts. This pin does not define the minimum supported InvenTree version.
+- Docker image for blocking Testcontainers tests: `inventree/inventree:1.4.3`, targeting the checked-in `docs/api-schema.yaml` OpenAPI 3.0.3 / API version `511` client contract. Do not use a digest as the primary pin because the version should be clear in config, logs, and failure output. Do not use floating tags such as `stable` for blocking tests.
 - Separate stable-canary compatibility job: use `inventree/inventree:stable`, record the resolved InvenTree version and image digest/tag, and report schema drift as non-blocking until the schema/provenance update workflow is run.
 - Integration startup should fetch `/api/schema/` and record the API version. Blocking schema-sensitive tests must fail when the runtime schema version differs from checked-in `docs/api-schema.yaml`, unless they run against the recorded image version/schema pair known to match the checked-in schema.
 - Schema update workflow: refresh `docs/api-schema.yaml`, update `docs/api-schema.md` provenance and capability tables, update the pinned InvenTree version tag or recorded tag/schema pair, then run the blocking integration suite.
-- API schema compatibility baseline: current local `docs/api-schema.yaml` fetched from the internal InvenTree instance, OpenAPI 3.0.3 / API version `511`, with runtime InvenTree version `1.4.0`.
+- API schema source baseline: current local `docs/api-schema.yaml` fetched from the internal InvenTree `1.4.0` instance, OpenAPI 3.0.3 / API version `511`; blocking Testcontainers coverage confirms that InvenTree `1.4.3` reports API `511` and satisfies the exercised client contracts, but does not prove byte-for-byte schema identity or establish a minimum supported InvenTree version.
 - Upstream InvenTree auth schemes: `Token` and `Bearer` only.
 - STDIO auth behavior: read the upstream InvenTree token only from `INVENTREE_TOKEN`. Non-secret connection settings, such as URL, auth scheme, and timeouts, may come from environment or flags.
 - HTTP auth behavior: use MCP-owned OAuth bearer tokens with encrypted upstream InvenTree credential envelopes.
@@ -894,7 +894,7 @@ Target API:
 func TestIntegration(t *testing.T) {
     ctx, _, _ := testhandler.SetupTestHandler(t)
     shared, err := testenv.StartSharedInvenTree(ctx, testenv.Options{
-        Image: "inventree/inventree:1.4.0",
+        Image: "inventree/inventree:1.4.3",
     })
     require.NoError(t, err)
     t.Cleanup(func() {
@@ -1216,7 +1216,7 @@ Milestone README recipes:
 - HTTP mode uses MCP-owned OAuth bearer tokens for ChatGPT Developer Connector compatibility and does not pass raw InvenTree `Authorization` headers through unchanged.
 - HTTP OAuth tokens are encrypted, authenticated, stateless envelopes that seal the upstream InvenTree credential.
 - STDIO mode supports configured `Token` or `Bearer` upstream InvenTree auth only.
-- Blocking compatibility targets InvenTree `1.4.0` for the checked-in schema snapshot.
+- Blocking integration tests target InvenTree `1.4.3`, which reports API version `511` and passes the exercised client contracts from the checked-in schema baseline. This test pin does not define the minimum supported InvenTree version.
 - Latest stable InvenTree is covered only by a non-blocking `inventree/inventree:stable` canary until schema/provenance updates are applied.
 - Destructive operations are allowed behind confirmation and accurate MCP annotations.
 - Tool inputs require API-required fields only, unless additional fields are needed to avoid ambiguous writes.

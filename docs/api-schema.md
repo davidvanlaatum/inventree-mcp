@@ -23,7 +23,7 @@ Current fetched schema:
 - Runtime evidence: operator-provided InvenTree About dialog screenshot on `2026-07-04`, confirmed upstream Git tag `1.4.0` resolves to commit `0a9a8b1c54d0811ede0a61ffe3b0427f82ee28e5`.
 
 When `docs/api-schema.yaml` changes, update this provenance block and any endpoint capability tables in the same change.
-The manifest stores the same schema SHA256 and API version; schema drift tests fail until both this provenance block and `docs/endpoint-manifest.yaml` are updated. The blocking Testcontainers suite pins `inventree/inventree:1.4.0` and fails if the runtime version or API version differs from this provenance.
+The manifest stores the same schema SHA256 and API version; schema drift tests fail until both this provenance block and `docs/endpoint-manifest.yaml` are updated. The blocking Testcontainers suite pins `inventree/inventree:1.4.3` and fails if the runtime API version differs from this provenance. A Docker-backed validation on `2026-08-01` confirmed InvenTree `1.4.3` still reports API version `511` and passes the blocking integration suite against the existing client contracts. This does not establish byte-for-byte identity with the checked-in schema snapshot originally fetched from InvenTree `1.4.0`.
 
 ## Verified Auth and Token Endpoints
 
