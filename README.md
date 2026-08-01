@@ -23,14 +23,16 @@ Useful STDIO options:
 - `--inventree-timeout 30s`; default is `30s`.
 - `--upload-allow-root /trusted/path` or `INVENTREE_UPLOAD_ALLOW_ROOTS=/trusted/path`; enables STDIO local-file uploads from trusted operator-controlled roots.
 - `--upload-max-bytes 10485760` or `INVENTREE_UPLOAD_MAX_BYTES=10485760`; raises or lowers the upload byte limit.
-- `--debug-traffic-log /secure/path/mcp-traffic.jsonl` or `INVENTREE_MCP_DEBUG_TRAFFIC_LOG=/secure/path/mcp-traffic.jsonl`; appends full MCP request/response traffic for local debugging. Treat the file as sensitive because it can contain tool arguments, results, and credentials supplied by the MCP client.
+- `--debug-traffic-log /secure/path/mcp-traffic.jsonl` or `INVENTREE_MCP_DEBUG_TRAFFIC_LOG=/secure/path/mcp-traffic.jsonl`; appends MCP request/response traffic for local debugging. Treat the file as sensitive because it can contain tool arguments, results, and credentials supplied by the MCP client.
 - `--inventree-tls-skip-verify`; intended only for local/test deployments and requires `--environment development`.
 
 For first-release workflow details, use [Operator recipes](docs/operator-recipes.md). For exact registered tool metadata, use [Tool reference](docs/tool-reference.md) and the checked [tool manifest](docs/tool-manifest.json).
 
 HTTP mode currently runs only the development server surface from the CLI. Production HTTP mode is intentionally disabled until OAuth startup and setup wiring are complete. Development-only HTTP startup requires `--environment development --dev-incomplete-oauth` and rejects configured raw InvenTree tokens.
 
-The debug traffic log option also applies to development HTTP mode. HTTP logging records request URIs, request bodies, response bodies, and streaming response chunks; oversized HTTP request bodies fail closed while response capture is capped in the log.
+HTTP mode bounds each MCP request with `--mcp-max-request-body-bytes 15000000` or `INVENTREE_MCP_MAX_REQUEST_BODY_BYTES=15000000`. The limit must cover inline upload base64 plus JSON overhead and does not constrain STDIO uploads.
+
+The debug traffic log option also applies to development HTTP mode. HTTP logging records request URIs, request bodies, response bodies, and streaming response chunks. Request bodies and non-streaming responses are captured up to 1 MiB with `body_truncated:true` when more data was forwarded; streaming response chunks are capped individually. Requests exceeding the configured MCP request limit fail closed.
 
 ## Install From A Release
 

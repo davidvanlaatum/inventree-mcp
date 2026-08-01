@@ -23,7 +23,7 @@ func TestReadOnlyAnnotationsSetExplicitPointerFalseHints(t *testing.T) {
 	a.False(*annotations.OpenWorldHint)
 }
 
-func TestAnnotationJSONMatchesSDKPointerFalseBehavior(t *testing.T) {
+func TestAnnotationJSONMatchesSDKExplicitFalseBehavior(t *testing.T) {
 	t.Parallel()
 	r := require.New(t)
 	a := assert.New(t)
@@ -32,7 +32,7 @@ func TestAnnotationJSONMatchesSDKPointerFalseBehavior(t *testing.T) {
 
 	r.NoError(err)
 	a.Contains(string(data), `"destructiveHint":false`)
+	a.Contains(string(data), `"idempotentHint":false`)
 	a.Contains(string(data), `"openWorldHint":false`)
-	a.NotContains(string(data), "readOnlyHint")
-	a.NotContains(string(data), "idempotentHint")
+	a.Contains(string(data), `"readOnlyHint":false`)
 }
