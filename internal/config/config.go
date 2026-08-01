@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"math"
 	"net/url"
 	"os"
 	"strings"
@@ -25,7 +26,9 @@ const (
 	EnvInvenTreeTLSSkipVerify = "INVENTREE_TLS_SKIP_VERIFY"
 	EnvUploadAllowRoots       = "INVENTREE_UPLOAD_ALLOW_ROOTS"
 	EnvUploadMaxBytes         = "INVENTREE_UPLOAD_MAX_BYTES"
+	EnvMCPMaxRequestBodyBytes = "INVENTREE_MCP_MAX_REQUEST_BODY_BYTES"
 	EnvLogLevel               = "INVENTREE_MCP_LOG_LEVEL"
+	EnvDebugTrafficLog        = "INVENTREE_MCP_DEBUG_TRAFFIC_LOG"
 	EnvDevIncompleteOAuth     = "INVENTREE_MCP_DEV_INCOMPLETE_OAUTH"
 	EnvOAuthIssuerURL         = "INVENTREE_MCP_OAUTH_ISSUER_URL"
 	EnvOAuthResourceURL       = "INVENTREE_MCP_OAUTH_RESOURCE_URL"
@@ -35,8 +38,10 @@ const (
 	EnvOAuthRefreshLifetime   = "INVENTREE_MCP_OAUTH_REFRESH_LIFETIME"
 	EnvOAuthSessionLifetime   = "INVENTREE_MCP_OAUTH_SESSION_LIFETIME"
 
-	invalidDuration = time.Duration(-1)
-	DefaultListen   = "127.0.0.1:28686"
+	invalidDuration               = time.Duration(-1)
+	DefaultListen                 = "127.0.0.1:28686"
+	DefaultMCPMaxRequestBodyBytes = int64(8 * 1024 * 1024)
+	mcpRequestBodyOverheadBytes   = int64(1024 * 1024)
 )
 
 type Environment string
@@ -72,7 +77,9 @@ type Config struct {
 	InvenTreeTLSSkipVerify bool
 	UploadAllowRoots       []string
 	UploadMaxBytes         int64
+	MCPMaxRequestBodyBytes int64
 	LogLevel               string
+	DebugTrafficLog        string
 	DevIncompleteOAuth     bool
 	OAuthIssuerURL         string
 	OAuthResourceURL       string
@@ -105,7 +112,13 @@ func ParseServeWithEnv(args []string, getenv Env, output io.Writer) (Config, err
 		InvenTreeTimeout:    durationDefault(getenv, EnvInvenTreeTimeout, 30*time.Second),
 		UploadAllowRoots:    listEnv(getenv, EnvUploadAllowRoots),
 		UploadMaxBytes:      int64Default(getenv, EnvUploadMaxBytes, 5*1024*1024),
+		MCPMaxRequestBodyBytes: int64Default(
+			getenv,
+			EnvMCPMaxRequestBodyBytes,
+			DefaultMCPMaxRequestBodyBytes,
+		),
 		LogLevel:            envDefault(getenv, EnvLogLevel, "info"),
+		DebugTrafficLog:     strings.TrimSpace(getenv(EnvDebugTrafficLog)),
 		OAuthIssuerURL:      getenv(EnvOAuthIssuerURL),
 		OAuthResourceURL:    getenv(EnvOAuthResourceURL),
 		OAuthKeyring:        oauth.KeyringConfig{Keys: keyListEnv(getenv, EnvOAuthKeys)},
@@ -137,7 +150,9 @@ func ParseServeWithEnv(args []string, getenv Env, output io.Writer) (Config, err
 		return nil
 	})
 	fs.Int64Var(&cfg.UploadMaxBytes, "upload-max-bytes", cfg.UploadMaxBytes, flagHelp("maximum bytes accepted from one upload source", EnvUploadMaxBytes))
+	fs.Int64Var(&cfg.MCPMaxRequestBodyBytes, "mcp-max-request-body-bytes", cfg.MCPMaxRequestBodyBytes, flagHelp("maximum bytes accepted in one MCP HTTP request body", EnvMCPMaxRequestBodyBytes))
 	fs.StringVar(&cfg.LogLevel, "log-level", cfg.LogLevel, flagHelp("log level", EnvLogLevel))
+	fs.StringVar(&cfg.DebugTrafficLog, "debug-traffic-log", cfg.DebugTrafficLog, flagHelp("append full MCP request/response JSON to this debug log file", EnvDebugTrafficLog))
 	fs.BoolVar(&cfg.DevIncompleteOAuth, "dev-incomplete-oauth", boolEnv(getenv, EnvDevIncompleteOAuth), flagHelp("allow development-only HTTP parsing before OAuth startup wiring is available", EnvDevIncompleteOAuth))
 	fs.StringVar(&cfg.OAuthIssuerURL, "oauth-issuer-url", cfg.OAuthIssuerURL, flagHelp("public HTTPS OAuth issuer URL", EnvOAuthIssuerURL))
 	fs.StringVar(&cfg.OAuthResourceURL, "oauth-resource-url", cfg.OAuthResourceURL, flagHelp("public HTTPS MCP resource URL", EnvOAuthResourceURL))
@@ -220,6 +235,15 @@ func (c Config) Validate() error {
 	}
 
 	if c.Transport == TransportHTTP {
+		if c.MCPMaxRequestBodyBytes <= 0 {
+			validationErrors = append(validationErrors, errors.New("MCP max request body bytes must be greater than zero"))
+		} else if minimum := MinimumMCPRequestBodyBytes(c.UploadMaxBytes); minimum > 0 && c.MCPMaxRequestBodyBytes < minimum {
+			validationErrors = append(validationErrors, fmt.Errorf(
+				"MCP max request body bytes must be at least %d for upload max bytes %d",
+				minimum,
+				c.UploadMaxBytes,
+			))
+		}
 		if c.Path == "" || !strings.HasPrefix(c.Path, "/") {
 			validationErrors = append(validationErrors, errors.New("HTTP path must start with /"))
 		}
@@ -312,6 +336,19 @@ func validateHTTPSURL(raw string, label string) error {
 		return fmt.Errorf("%s must not include query or fragment", label)
 	}
 	return nil
+}
+
+// MinimumMCPRequestBodyBytes returns a request-body limit that can carry a
+// maximum-sized inline upload after base64 expansion plus bounded JSON and
+// tool-argument overhead.
+func MinimumMCPRequestBodyBytes(uploadMaxBytes int64) int64 {
+	if uploadMaxBytes <= 0 {
+		return 0
+	}
+	if uploadMaxBytes > ((math.MaxInt64-mcpRequestBodyOverheadBytes)/4)*3-2 {
+		return math.MaxInt64
+	}
+	return ((uploadMaxBytes+2)/3)*4 + mcpRequestBodyOverheadBytes
 }
 
 func envDefault(getenv Env, key, fallback string) string {

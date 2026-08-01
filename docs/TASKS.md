@@ -34,6 +34,8 @@ Before marking a story `Done`, add or update story-local completion notes:
 
 When any story status changes, update both the Task Index row and the story-local `Status:` line in the same change. Before handoff, re-read both locations for every edited story and fix any mismatch.
 
+When a story has an `Issue:` link, keep the GitHub issue aligned with changes to the story's title, status, dependencies, scope, acceptance criteria, and task checklist, and add progress, validation, review, or residual-risk context when it is relevant to the handoff. Ask the operator before creating any GitHub issue for a story, then add the resulting `Issue:` link to the story. Do not close a linked issue merely because the story is marked `Done` locally or a PR is opened; close it through an accurate closing reference in the implementing PR when that PR is merged, or close it only after the merge is verified. If the merged PR does not complete the issue scope, keep the issue open and update it with the remaining work.
+
 When updating an already-pushed branch or existing PR, prefer fresh follow-up commits over amending or force-pushing. Rewrite published history only for an explicit operator request or a concrete repository hygiene issue, and use `--force-with-lease` when a rewrite is unavoidable. Keep existing PR titles, descriptions, checklists, validation notes, review summaries, residual risks, and follow-up lists current whenever follow-up commits change the branch scope or status. Prefer squash merge when merging PRs unless the operator or repository policy requires another strategy.
 
 Remove draft status once the PR is ready for human review: all automated or subagent review feedback has been addressed or explicitly documented, required rerun reviews are complete, the PR title/body/checklist are current, and the pipeline has passed on the latest pushed commit. Do not mark the PR ready while CI is pending, failing, or stale for an older head SHA.
@@ -91,6 +93,9 @@ Before `M1C-S04` is complete, mutating, operational, destructive, and upload too
 | [F-S13](#f-s13-category-parameter-defaults) | Manage category parameter defaults using existing templates. | Future |
 | [F-S14](#f-s14-bulk-parameter-propagation-and-audit-workflows) | Add dry-run bulk parameter propagation and consistency audits. | Future |
 | [F-S15](#f-s15-live-order-entry-tool-hardening) | Close gaps found during live order-entry use of the MCP tools. | Future |
+| [F-S16](#f-s16-mcp-go-sdk-v17-and-2026-07-28-protocol-adoption) | Adopt MCP Go SDK v1.7 and the MCP 2026-07-28 protocol safely. | Done |
+| [F-S17](#f-s17-native-mcp-elicitation-for-structured-clarifications) | Add native MCP elicitation while preserving structured clarification fallback. | Planned |
+| [F-S18](#f-s18-local-cli-self-update) | Add an explicit local CLI self-update workflow for direct binary installs. | Future |
 
 ## Milestone 0: Repository And Planning
 
@@ -265,7 +270,7 @@ Tasks:
   - HTTP streamable server runs stateless.
   - Request/tool scoped loggers are derived and reattached to context.
   - Health/version tool is read-only.
-  - Tool annotation helper tests cover SDK `v1.6.1` pointer false behavior for `destructiveHint` and `openWorldHint`.
+  - Tool annotation helper tests cover the current SDK's explicit false wire behavior for all annotation hints.
 
 Tasks:
 
@@ -405,7 +410,7 @@ Tasks:
 - Depends on: M1A-S03
 - Scope: prove official MCP SDK `auth`/`oauthex` behavior against the planned HTTP architecture.
 - Acceptance:
-  - Uses reviewed SDK baseline `v1.6.1` or records upgrade findings.
+  - Uses the reviewed SDK baseline (initially `v1.6.1`, upgraded by F-S16 to `v1.7.0`) or records upgrade findings.
   - Confirms `auth.RequireBearerToken`, `auth.RequireBearerTokenOptions`, `auth.TokenVerifier`, and `auth.TokenInfoFromContext` behavior.
   - Proves token info or selected credential carrier reaches tool handlers under stateless HTTP.
   - Updates plan if SDK API assumptions are wrong.
@@ -922,6 +927,7 @@ Residual risk:
 ### F-S01: Evaluate Docker Compose Testcontainers Stack
 
 - Status: `Future`
+- Issue: [#46](https://github.com/davidvanlaatum/inventree-mcp/issues/46)
 - Depends on: M1H-S01
 - Scope: evaluate whether `github.com/testcontainers/testcontainers-go/modules/compose` can replace or complement the hand-wired InvenTree Testcontainers stack by using official InvenTree Docker Compose files plus test-specific overrides.
 - Acceptance:
@@ -939,6 +945,7 @@ Tasks:
 ### F-S02: BOM Import Workflow
 
 - Status: `Future`
+- Issue: [#47](https://github.com/davidvanlaatum/inventree-mcp/issues/47)
 - Depends on: milestone 1 complete and product review
 
 Tasks:
@@ -950,6 +957,7 @@ Tasks:
 ### F-S03: Purchase Order Write And Receiving
 
 - Status: `Future`
+- Issue: [#48](https://github.com/davidvanlaatum/inventree-mcp/issues/48)
 - Depends on: milestone 1 complete and product review
 - Scope: create purchase orders and purchase-order lines from stable supplier-part inputs, then receive purchase-order lines into stock when the operational workflow is explicitly in scope. The highest-value first write workflow is `create_purchase_order_with_lines`: accept a supplier, supplier reference, description/date fields, an idempotency key, and validated line inputs, then create or update the purchase order and lines after the same preview math and supplier-part checks used by `preview_purchase_order_with_lines`.
 - Acceptance:
@@ -975,6 +983,7 @@ Tasks:
 ### F-S04: Build Order Workflows
 
 - Status: `Future`
+- Issue: [#49](https://github.com/davidvanlaatum/inventree-mcp/issues/49)
 - Depends on: milestone 1 complete and product review
 
 Tasks:
@@ -986,6 +995,7 @@ Tasks:
 ### F-S05: Stocktake Adjustments
 
 - Status: `Future`
+- Issue: [#50](https://github.com/davidvanlaatum/inventree-mcp/issues/50)
 - Depends on: milestone 1 complete and product review
 
 Tasks:
@@ -997,6 +1007,7 @@ Tasks:
 ### F-S06: Systemd Notify And Watchdog Support
 
 - Status: `Future`
+- Issue: [#51](https://github.com/davidvanlaatum/inventree-mcp/issues/51)
 - Depends on: F-S07 and product review
 - Scope: add native systemd notification support for packaged HTTP deployments.
 - Acceptance:
@@ -1021,6 +1032,7 @@ Tasks:
 ### F-S07: Production HTTP OAuth Startup
 
 - Status: `Done`
+- Issue: [#52](https://github.com/davidvanlaatum/inventree-mcp/issues/52)
 - Depends on: M1C-S04, M1I-S02, product review, and infosec review
 - Scope: replace the current development-only HTTP gate with production HTTP startup that constructs OAuth services, keyrings, protected-resource middleware, scoped tool dependencies, and HTTP routes from explicit configuration.
 - Validation: `go test ./...` passed after review follow-up fixes; `go test ./internal/config ./internal/oauth ./internal/server ./cmd/inventree-mcp ./docs` passed after review follow-up fixes; `git diff --check` passed.
@@ -1049,6 +1061,7 @@ Tasks:
 ### F-S08: ChatGPT Connector OAuth Setup Flow
 
 - Status: `Future`
+- Issue: [#53](https://github.com/davidvanlaatum/inventree-mcp/issues/53)
 - Depends on: F-S07, current official OpenAI connector documentation verification, product review, and infosec review
 - Scope: implement the operator-facing OAuth authorization flow for ChatGPT connector setup, including authorization, setup credential collection, authorization-code issuance, token exchange, refresh, and credential-source metadata.
 - Acceptance:
@@ -1077,6 +1090,7 @@ Tasks:
 ### F-S09: Reverse-Proxy Canonical URL Enforcement
 
 - Status: `Future`
+- Issue: [#54](https://github.com/davidvanlaatum/inventree-mcp/issues/54)
 - Depends on: F-S07, F-S08, deployment design review, product review, and infosec review
 - Scope: make production HTTP metadata, challenges, redirects, and token audience checks use explicitly configured public HTTPS issuer/resource URLs behind a trusted reverse proxy without trusting arbitrary inbound host or forwarded headers.
 - Acceptance:
@@ -1099,6 +1113,7 @@ Tasks:
 ### F-S10: Packaged HTTP Deployment And Live Connector Validation
 
 - Status: `Future`
+- Issue: [#55](https://github.com/davidvanlaatum/inventree-mcp/issues/55)
 - Depends on: F-S07, F-S08, F-S09, release package availability, and product review
 - Scope: validate the installed package and a real ChatGPT connector setup path end to end before documenting production HTTP deployment as supported.
 - Acceptance:
@@ -1123,6 +1138,7 @@ Tasks:
 ### F-S11: Parameter Template Administration
 
 - Status: `Future`
+- Issue: [#56](https://github.com/davidvanlaatum/inventree-mcp/issues/56)
 - Depends on: milestone 1 complete, product review, and infosec review
 - Scope: administer `/api/parameter/template/` records and provide a guarded template-merge workflow for consolidating duplicate or overlapping templates.
 - Acceptance:
@@ -1145,6 +1161,7 @@ Tasks:
 ### F-S12: Global Parameter Value Search And Delete
 
 - Status: `Future`
+- Issue: [#57](https://github.com/davidvanlaatum/inventree-mcp/issues/57)
 - Depends on: milestone 1 complete, product review, and infosec review
 - Scope: expose cross-inventory `/api/parameter/` reads and guarded deletion of individual part parameter rows beyond the current part-scoped `get_part_parameters` tool.
 - Acceptance:
@@ -1165,6 +1182,7 @@ Tasks:
 ### F-S13: Category Parameter Defaults
 
 - Status: `Future`
+- Issue: [#58](https://github.com/davidvanlaatum/inventree-mcp/issues/58)
 - Depends on: milestone 1 complete, product review, and infosec review
 - Scope: manage `/api/part/category/parameters/` category parameter defaults using existing parameter templates by default.
 - Acceptance:
@@ -1185,6 +1203,7 @@ Tasks:
 ### F-S14: Bulk Parameter Propagation And Audit Workflows
 
 - Status: `Future`
+- Issue: [#59](https://github.com/davidvanlaatum/inventree-mcp/issues/59)
 - Depends on: F-S11, F-S12, F-S13, product review, QA review, and infosec review
 - Scope: add safe bulk operator workflows for parameter propagation across matched parts and consistency audits that identify duplicate or overlapping templates and overloaded fields.
 - Acceptance:
@@ -1205,6 +1224,7 @@ Tasks:
 ### F-S15: Live Order Entry Tool Hardening
 
 - Status: `Future`
+- Issue: [#60](https://github.com/davidvanlaatum/inventree-mcp/issues/60)
 - Depends on: milestone 1 complete, product review, QA review, and infosec review
 - Scope: turn the first live order-entry run from an eBay order page into regression coverage and tool-surface hardening. The live run proved `search_manufacturers`, `create_company`, `create_supplier_part`, and `preview_purchase_order_with_lines` were useful, but still required REST fallbacks for category administration, duplicate checks, parameter template/default administration, parameter value recovery, image/attachment recovery, and purchase-order write/recovery steps.
 - Acceptance:
@@ -1226,3 +1246,94 @@ Tasks:
 - [ ] Add dry-run/preflight support for lower-level write tools used during order entry where it is currently missing.
 - [ ] Add missing read/search and duplicate-check tools or fold them into the dependent future stories that own the endpoint family.
 - [ ] Update tool reference, operator recipes, and prompt/operator guidance for the hardened order-entry workflow.
+
+### F-S16: MCP Go SDK v1.7 And 2026-07-28 Protocol Adoption
+
+- Status: `Done`
+- Issue: [#44](https://github.com/davidvanlaatum/inventree-mcp/issues/44)
+- Depends on: M1A-S03, M1C-S04, and M1I-S02
+- Scope: upgrade the official MCP Go SDK from `v1.6.1` to `v1.7.0`, adopt the MCP `2026-07-28` stateless/sessionless protocol behavior, preserve legacy-client compatibility, and explicitly configure the new HTTP request-safety controls without changing tool business behavior.
+- Validation: `go test -race -p=1 ./...` passed, including the default-on InvenTree Testcontainers suites; focused config, protocol, OAuth discovery, cancellation, request-limit, and traffic-log tests passed; `go generate ./internal/tools` produced no unexpected generated changes; `golangci-lint run` reported 0 issues; `git diff --check` passed. One earlier parallel package run hit a transient Testcontainers reaper/network collision; the serial race run completed cleanly afterward.
+- Review: Senior Go Developer, Senior QA / Test Architect, Senior Product Manager, and Senior Infosec Reviewer reviews completed. Findings covering STDIO/HTTP config coupling, debug-log request forwarding, stateless POST session IDs, explicit STDIO negotiation, cancellation errors, authenticated discovery, traffic-log truncation docs, elicitation capability wording, and transport-specific operator guidance were fixed. Focused reruns by every affected role reported no remaining actionable findings.
+- Residual risk: HTTP debug logging buffers up to the configured request limit per concurrent request, so operators must keep limits and reverse-proxy rate controls conservative. The 1 MiB JSON overhead is a policy allowance rather than a schema-derived maximum. Cancellation of an upstream write remains an unknown-result boundary. Live ChatGPT connector elicitation/handshake validation and its destructive-confirmation decision remain in F-S17; production OAuth startup remains separately gated.
+- Acceptance:
+  - The module pins `github.com/modelcontextprotocol/go-sdk` `v1.7.0`, and the ordinary test suite passes without compatibility escape flags.
+  - STDIO and stateless streamable HTTP negotiate MCP `2026-07-28` through `server/discover` while legacy `initialize` clients remain supported.
+  - Stateless HTTP ignores session IDs, rejects unsupported GET/DELETE session operations, and propagates aborted `2026-07-28` POST cancellation to in-flight handlers.
+  - Streamable HTTP has an explicit bounded request-body limit large enough for the configured inline-upload limit after base64 and JSON overhead; invalid limit combinations fail configuration validation.
+  - Tool annotations serialize explicit `readOnlyHint` and `idempotentHint` booleans and keep explicit false pointer hints for destructive/open-world behavior.
+  - Protocol-boundary tests cover discovery, legacy initialization, sessionless behavior, request-body rejection, cancellation, annotations, OAuth scope enforcement, and request-scoped credential isolation.
+  - `docs/PLAN.md`, tool reference, operator recipes, and SDK/protocol validation evidence are aligned with the adopted behavior.
+  - The existing `_meta["securitySchemes"]` compatibility mirror remains documented because SDK `v1.7.0` still has no first-class top-level `securitySchemes` field on `mcp.Tool`.
+
+Tasks:
+
+- [x] Upgrade the official MCP Go SDK dependency and tidy transitive dependencies.
+- [x] Add explicit streamable HTTP body-limit and request-cancellation options.
+- [x] Validate the HTTP body limit against the configured inline-upload limit.
+- [x] Update protocol and traffic-log tests for `server/discover` plus legacy initialization.
+- [x] Add sessionless HTTP, oversized-body, and aborted-request cancellation coverage.
+- [x] Update annotation wire-contract tests for explicit false booleans.
+- [x] Re-run OAuth scope and request-scoped credential propagation tests on SDK `v1.7.0`.
+- [x] Align plan, task, tool-reference, and operator documentation.
+
+### F-S17: Native MCP Elicitation For Structured Clarifications
+
+- Status: `Planned`
+- Issue: [#45](https://github.com/davidvanlaatum/inventree-mcp/issues/45)
+- Depends on: F-S16, product review, QA review, and live ChatGPT connector capability verification
+- Scope: use MCP multi-round-trip requests and structured elicitation for missing or ambiguous operator input while preserving the existing `clarification_required` result contract as a compatibility fallback for clients that cannot complete elicitation.
+- Acceptance:
+  - A documented capability policy decides when handlers return native elicitation versus the existing structured clarification result.
+  - Eligible clarification paths issue focused structured elicitation requests that collect only non-secret values the operator can reasonably supply.
+  - Authentication credentials, tokens, uploaded content, and other secrets are never requested through elicitation.
+  - MCP `2026-07-28` clients advertising the required elicitation capability can complete the clarification and retry cycle through MRTR without creating partial writes.
+  - Legacy clients and clients missing elicitation capability receive the existing `clarification_required` output with stable retry fields and values.
+  - Destructive confirmations remain enforced by the server and are not treated as satisfied merely because the client rendered an elicitation UI.
+  - Unit and protocol-boundary tests cover accepted, declined, cancelled, malformed, unsupported-capability, legacy-client, retry-state, and no-partial-write paths.
+  - Live ChatGPT connector validation proves at least one read ambiguity, one write preflight, and one destructive confirmation path before broad migration.
+  - Tool reference, operator recipes, prompts, and public clarification contracts explain native elicitation and fallback behavior.
+
+Tasks:
+
+- [ ] Verify current ChatGPT connector MRTR and elicitation behavior against official docs and a live development connector.
+- [ ] Resolve whether accepted native elicitation may supply an explicit destructive-confirmation value on retry or whether destructive confirmation must remain in the structured fallback/tool-input flow; rendering an elicitation UI alone never confirms an action.
+- [ ] Define the hybrid native-elicitation and structured-fallback policy.
+- [ ] Add reusable clarification-to-elicitation request and retry-state helpers.
+- [ ] Convert a narrow representative clarification set before expanding across tools.
+- [ ] Preserve destructive confirmation and no-partial-write boundaries.
+- [ ] Add MCP `2026-07-28`, legacy-client, unsupported-capability, and cancellation tests.
+- [ ] Run live connector validation and record evidence.
+- [ ] Update tool reference, operator recipes, prompts, and task evidence.
+
+### F-S18: Local CLI Self-Update
+
+- Status: `Future`
+- Issue: [#64](https://github.com/davidvanlaatum/inventree-mcp/issues/64)
+- Depends on: M0-S04 and product, Go, QA, and infosec review of the update policy
+- Scope: add an explicit local `inventree-mcp self-update` command for supported direct binary/archive installations. The command must remain a local CLI operation: it is not an MCP tool, is never callable through STDIO or HTTP MCP sessions, does not run automatically in the background, and does not let the server replace itself in response to a remote request. Package-managed installations must defer to their package manager instead of overwriting managed files.
+- Acceptance:
+  - The supported operating-system, architecture, installation-source, privilege, downgrade, prerelease, target-version, and release trust-root policy is decided and documented before implementation; unsupported cases fail without changing the installed binary and give actionable manual-update guidance. The trust decision either accepts canonical GitHub HTTPS and repository release control as the trust root with the residual checksum-only supply-chain risk documented, or requires an independently authenticated signature/attestation with a pinned verification identity or key.
+  - The implementation evaluates a maintained Go self-update library before adding custom download, archive, checksum, or executable-replacement plumbing. The recorded decision compares release-asset and checksum compatibility, supported platform replacement semantics, redirect/archive controls, rollback and cross-process locking, injectable test seams, maintenance cadence, and dependency/security cost, and identifies every responsibility that remains custom.
+  - Direct-install updates resolve an explicit GitHub release from the canonical repository, select the exact platform/architecture artifact, and verify its published checksum before extracting or replacing anything; metadata mismatch, missing checksum, unexpected archive contents, redirects outside policy, truncated downloads, and verification failures fail closed. Download and expanded-entry sizes are bounded during streaming and decompression; archives must contain exactly one expected regular executable and reject symlink, hardlink, device, duplicate, traversal, and trailing-payload entries.
+  - Package-managed `deb`, `rpm`, and `apk` installations are detected conservatively or require an explicit supported installation marker, never overwrite package-owned `/usr/bin/inventree-mcp`, and return the appropriate package-manager/manual-upgrade guidance.
+  - Replacement uses exclusively created unpredictable owner-only staging and backup files on a verified destination filesystem plus a deterministic, owner-validated lock path or directory with exclusive acquisition semantics. It defines executable, parent-directory, ownership, symlink, and hardlink policy; revalidates path and ownership state immediately before replacement; and refuses changed or unsafe state without attempting privilege elevation.
+  - Before installation, the updater runs only the staged binary's bounded `version` command with disconnected stdin, bounded stdout/stderr, a safe working directory, and a minimal allowlisted environment that excludes auth, proxy, cookie, netrc, InvenTree, and MCP values, and requires the requested build version. Candidate execution occurs only after the artifact satisfies the selected release trust-root/signature policy; the known project `version` path is regression-tested to perform no network or configuration access, but this is not represented as a portable sandbox against a compromised trusted artifact unless the supported platform policy adds and tests an OS-level sandbox. The updater then atomically replaces the executable where the supported operating system permits it, preserves the defined mode and ownership policy plus a recoverable previous binary, repeats the bounded version check through the installed path, and atomically restores the previous binary, mode, and ownership state on failure. Platforms that cannot safely replace a running executable, including Windows unless a tested helper/relaunch design is selected, fail without mutation.
+  - The platform-appropriate cross-process lock prevents simultaneous updaters from changing the executable or recovery artifacts, and its documented stale-lock policy permits safe recovery after an updater is killed without allowing overlapping replacements.
+  - Update checks use a dedicated bounded HTTP client with no cookie jar or inherited server transport/auth state, allow only the canonical HTTPS GitHub API/release origins plus explicitly reviewed asset/CDN redirects, and never forward an optional GitHub token or other credential across origins. Update checks and replacements do not send InvenTree or MCP credentials or log sensitive environment values.
+  - Deterministic tests cover current-version no-op, successful update, requested-version update, downgrade/prerelease policy, unsupported platform/install source, package-managed refusal, unavailable or ambiguous package ownership and install markers, unwritable targets without elevation attempts, release/asset mismatch, missing or incorrect checksums, redirect rejection and cross-origin credential stripping, truncated or oversized compressed downloads, decompression expansion limits, request timeout/cancellation, archive traversal and forbidden/unexpected/duplicate/trailing entries, and proof that no InvenTree or MCP authorization header is sent.
+  - Filesystem security tests cover symlink/hardlink substitution, unsafe ownership or parent-directory state, destination state changing before replacement, exclusive staging/backup creation, deterministic owner-validated lock acquisition, and refusal without elevation. Candidate-process tests seed sensitive environment and proxy values and prove the allowlisted environment, disconnected input, output bounds, safe working directory, owner-only staging permissions, and known project `version` no-network/no-config behavior without claiming isolation from an artifact accepted by a compromised trust root.
+  - Every no-op, unsupported/package/privilege refusal, network failure, metadata/checksum failure, and archive rejection test proves the installed executable and recovery artifacts remain unchanged and that staging files and locks are absent or deterministically cleaned up.
+  - Replacement tests cover staged and installed version mismatch, malformed output, nonzero exit, timeout, interrupted replacement, cleanup failure, successful installed mode/ownership policy, exact binary/mode/ownership restoration after post-install sanity failure, and a platform-appropriate subprocess race proving a second updater cannot mutate the executable or recovery artifacts and that stale-lock recovery is safe after a killed updater.
+  - README, release instructions, operator recipes, packaging notes, shell completion/help output if present, and `AGENTS.md` release guidance are aligned with the supported self-update behavior and its package-manager boundary.
+
+Tasks:
+
+- [ ] Decide and document the supported direct-install and platform matrix, version-selection policy, release trust root and signature/attestation policy, residual supply-chain risk, and package-manager boundary.
+- [ ] Evaluate maintained Go self-update libraries against the release archive and checksum layout.
+- [ ] Add the local-only `self-update` CLI command and injectable release/download/filesystem/process seams.
+- [ ] Add verified artifact selection, bounded download, safe extraction, staged and installed version checks, atomic replacement, cross-process locking with stale-lock recovery, and rollback.
+- [ ] Add package-managed install refusal and actionable manual-update guidance.
+- [ ] Add deterministic unit and platform-appropriate integration tests without invoking live updates against the developer's installed binary.
+- [ ] Update release, packaging, README, operator, CLI help, and agent guidance.
+- [ ] Run focused Go, QA, product, and infosec review and resolve or document findings.

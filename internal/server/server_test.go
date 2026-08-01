@@ -3,9 +3,12 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -63,6 +66,66 @@ func TestStdioServerCanInitializeAndListTools(t *testing.T) {
 
 	cancel()
 	<-serverDone
+}
+
+func TestTrafficLogCapturesStdioJSONRPCMessages(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	var output strings.Builder
+	traffic := &trafficLog{w: &output}
+	clientTransport, serverTransport := mcp.NewInMemoryTransports()
+	serverDone := make(chan error, 1)
+	go func() {
+		serverDone <- New(tools.Dependencies{}).Run(ctx, loggingTransport{
+			transport: serverTransport,
+			log:       traffic,
+			name:      string(config.TransportStdio),
+		})
+	}()
+
+	client := mcp.NewClient(&mcp.Implementation{Name: "test-client", Version: "v0.0.0"}, nil)
+	session, err := client.Connect(ctx, clientTransport, nil)
+	r.NoError(err)
+	result := session.InitializeResult()
+	r.NotNil(result)
+	a.Equal("2026-07-28", result.ProtocolVersion)
+	_, err = session.ListTools(ctx, nil)
+	r.NoError(err)
+	r.NoError(session.Close())
+	cancel()
+	<-serverDone
+
+	var methods []string
+	var outboundCount int
+	for _, line := range strings.Split(strings.TrimSpace(output.String()), "\n") {
+		var entry trafficLogEntry
+		r.NoError(json.Unmarshal([]byte(line), &entry))
+		a.Equal(string(config.TransportStdio), entry.Transport)
+		a.NotEmpty(entry.Time)
+		if entry.Direction == "outbound" {
+			outboundCount++
+		}
+		if len(entry.Message) == 0 {
+			continue
+		}
+		var message map[string]any
+		r.NoError(json.Unmarshal(entry.Message, &message))
+		if method, ok := message["method"].(string); ok {
+			methods = append(methods, entry.Direction+":"+method)
+		}
+	}
+
+	a.Contains(methods, "inbound:server/discover")
+	a.Contains(methods, "inbound:tools/list")
+	a.NotContains(methods, "inbound:initialize")
+	a.NotContains(methods, "inbound:notifications/initialized")
+	a.Positive(outboundCount)
 }
 
 func TestStdioServerListsOnlyMilestonePrompts(t *testing.T) {
@@ -246,7 +309,7 @@ func TestHTTPHandlerUsesStatelessStreamableServer(t *testing.T) {
 	a := assert.New(t)
 
 	ctx, _, _ := testhandler.SetupTestHandler(t)
-	handler := HTTPHandler(ctx, New(tools.Dependencies{}))
+	handler := HTTPHandler(ctx, New(tools.Dependencies{}), config.DefaultMCPMaxRequestBodyBytes)
 
 	initRecorder := postMCP(t, handler, `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","clientInfo":{"name":"test-client","version":"v0.0.0"},"capabilities":{}}}`)
 	r.Equal(http.StatusOK, initRecorder.Code)
@@ -260,6 +323,159 @@ func TestHTTPHandlerUsesStatelessStreamableServer(t *testing.T) {
 		if auth.MutationClass != "read_only" {
 			a.NotContains(listRecorder.Body.String(), name)
 		}
+	}
+}
+
+func TestHTTPHandlerNegotiates20260728ThroughDiscover(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	httpServer := httptest.NewServer(HTTPHandler(ctx, New(tools.Dependencies{}), config.DefaultMCPMaxRequestBodyBytes))
+	defer httpServer.Close()
+
+	client := mcp.NewClient(&mcp.Implementation{Name: "test-client", Version: "v0.0.0"}, nil)
+	session, err := client.Connect(ctx, &mcp.StreamableClientTransport{Endpoint: httpServer.URL}, nil)
+	r.NoError(err)
+	defer func() {
+		r.NoError(session.Close())
+	}()
+
+	result := session.InitializeResult()
+	r.NotNil(result)
+	a.Equal("2026-07-28", result.ProtocolVersion)
+	r.NotNil(result.ServerInfo)
+	a.Equal("inventree-mcp", result.ServerInfo.Name)
+	a.Empty(session.ID())
+
+	listed, err := session.ListTools(ctx, nil)
+	r.NoError(err)
+	a.NotEmpty(listed.Tools)
+}
+
+func TestOAuthProtects20260728ServerDiscovery(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	resourceMetadataURL := "https://mcp.example.com/.well-known/oauth-protected-resource"
+	protected := auth.RequireBearerToken(serverTokenVerifier(t), &auth.RequireBearerTokenOptions{
+		ResourceMetadataURL: resourceMetadataURL,
+	})(HTTPHandler(ctx, New(tools.Dependencies{}), config.DefaultMCPMaxRequestBodyBytes))
+
+	missingBearer := postMCPDiscover(t, protected, "")
+	r.Equal(http.StatusUnauthorized, missingBearer.Code)
+	a.Contains(missingBearer.Header().Get("WWW-Authenticate"), resourceMetadataURL)
+
+	httpServer := httptest.NewServer(protected)
+	defer httpServer.Close()
+	client := mcp.NewClient(&mcp.Implementation{Name: "oauth-discovery-test", Version: "v0.0.0"}, nil)
+	session, err := client.Connect(ctx, &mcp.StreamableClientTransport{
+		Endpoint: httpServer.URL,
+		HTTPClient: &http.Client{Transport: bearerRoundTripper{
+			base:  http.DefaultTransport,
+			token: "read-token",
+		}},
+	}, nil)
+	r.NoError(err)
+	defer func() {
+		r.NoError(session.Close())
+	}()
+	r.NotNil(session.InitializeResult())
+	a.Equal("2026-07-28", session.InitializeResult().ProtocolVersion)
+}
+
+func TestHTTPHandlerRejectsSessionOperationsInStatelessMode(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	handler := HTTPHandler(ctx, New(tools.Dependencies{}), config.DefaultMCPMaxRequestBodyBytes)
+	post := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}`))
+	post.Header.Set("Content-Type", "application/json")
+	post.Header.Set("Accept", "application/json, text/event-stream")
+	post.Header.Set("Mcp-Session-Id", "ignored-session")
+	postRecorder := httptest.NewRecorder()
+	handler.ServeHTTP(postRecorder, post)
+	r.Equal(http.StatusOK, postRecorder.Code)
+	a.Empty(postRecorder.Header().Get("Mcp-Session-Id"))
+	a.Contains(postRecorder.Body.String(), tools.HealthVersionToolName)
+
+	for _, method := range []string{http.MethodGet, http.MethodDelete} {
+		req := httptest.NewRequest(method, "/mcp", nil)
+		req.Header.Set("Mcp-Session-Id", "legacy-session")
+		recorder := httptest.NewRecorder()
+
+		handler.ServeHTTP(recorder, req)
+
+		r.Equal(http.StatusMethodNotAllowed, recorder.Code, method)
+		a.Empty(recorder.Header().Get("Mcp-Session-Id"), method)
+	}
+}
+
+func TestHTTPHandlerRejectsOversizedRequestBody(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	handler := HTTPHandler(ctx, New(tools.Dependencies{}), 1024)
+	recorder := postMCP(t, handler, strings.Repeat(" ", 2048))
+
+	r.Equal(http.StatusRequestEntityTooLarge, recorder.Code)
+}
+
+func TestHTTPHandlerPropagatesAborted20260728RequestCancellation(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	started := make(chan struct{})
+	handlerCanceled := make(chan struct{})
+	srv := mcp.NewServer(&mcp.Implementation{Name: "cancellation-test", Version: "v0.0.0"}, nil)
+	mcp.AddTool(srv, &mcp.Tool{Name: "wait_for_cancellation"}, func(ctx context.Context, _ *mcp.CallToolRequest, _ map[string]any) (*mcp.CallToolResult, map[string]any, error) {
+		close(started)
+		<-ctx.Done()
+		close(handlerCanceled)
+		return nil, nil, ctx.Err()
+	})
+	httpServer := httptest.NewServer(HTTPHandler(ctx, srv, config.DefaultMCPMaxRequestBodyBytes))
+	defer httpServer.Close()
+
+	client := mcp.NewClient(&mcp.Implementation{Name: "test-client", Version: "v0.0.0"}, nil)
+	session, err := client.Connect(ctx, &mcp.StreamableClientTransport{Endpoint: httpServer.URL}, nil)
+	r.NoError(err)
+	defer func() {
+		r.NoError(session.Close())
+	}()
+
+	callCtx, cancel := context.WithCancel(ctx)
+	callDone := make(chan error, 1)
+	go func() {
+		_, err := session.CallTool(callCtx, &mcp.CallToolParams{Name: "wait_for_cancellation"})
+		callDone <- err
+	}()
+
+	select {
+	case <-started:
+	case <-time.After(5 * time.Second):
+		t.Fatal("tool handler did not start")
+	}
+	cancel()
+
+	select {
+	case <-handlerCanceled:
+	case <-time.After(5 * time.Second):
+		t.Fatal("tool handler context was not cancelled")
+	}
+	select {
+	case err := <-callDone:
+		r.Error(err)
+		r.ErrorIs(err, context.Canceled)
+	case <-time.After(5 * time.Second):
+		t.Fatal("cancelled tool call did not return")
 	}
 }
 
@@ -281,7 +497,7 @@ func TestHTTPToolsExposeSecuritySchemesAndEnforcePerToolScopes(t *testing.T) {
 	}
 	protected := auth.RequireBearerToken(serverTokenVerifier(t), &auth.RequireBearerTokenOptions{
 		ResourceMetadataURL: deps.ResourceMetadataURL,
-	})(HTTPHandler(ctx, New(deps)))
+	})(HTTPHandler(ctx, New(deps), config.DefaultMCPMaxRequestBodyBytes))
 
 	initRecorder := postMCPWithBearer(t, protected, "read-token", `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","clientInfo":{"name":"test-client","version":"v0.0.0"},"capabilities":{}}}`)
 	r.Equal(http.StatusOK, initRecorder.Code)
@@ -380,7 +596,7 @@ func TestHTTPOAuthCredentialPropagationIsRequestScoped(t *testing.T) {
 	}
 	protected := auth.RequireBearerToken(serverTokenVerifier(t), &auth.RequireBearerTokenOptions{
 		ResourceMetadataURL: deps.ResourceMetadataURL,
-	})(HTTPHandler(ctx, New(deps)))
+	})(HTTPHandler(ctx, New(deps), config.DefaultMCPMaxRequestBodyBytes))
 
 	var wg sync.WaitGroup
 	for _, tt := range []struct {
@@ -461,7 +677,7 @@ func TestSDKAuthMiddlewareProtectsStatelessHTTPAndPropagatesTokenInfo(t *testing
 	protected := auth.RequireBearerToken(tokenVerifier, &auth.RequireBearerTokenOptions{
 		ResourceMetadataURL: "https://mcp.example.com/.well-known/oauth-protected-resource",
 		Scopes:              []string{tools.ScopeInventreeRead},
-	})(HTTPHandler(ctx, srv))
+	})(HTTPHandler(ctx, srv, config.DefaultMCPMaxRequestBodyBytes))
 
 	missingBearer := postMCP(t, protected, `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","clientInfo":{"name":"test-client","version":"v0.0.0"},"capabilities":{}}}`)
 	r.Equal(http.StatusUnauthorized, missingBearer.Code)
@@ -652,6 +868,25 @@ func postMCPWithBearer(t *testing.T, handler http.Handler, token string, body st
 	return recorder
 }
 
+func postMCPDiscover(t *testing.T, handler http.Handler, token string) *httptest.ResponseRecorder {
+	t.Helper()
+
+	body := `{"jsonrpc":"2.0","id":1,"method":"server/discover","params":{"_meta":{"io.modelcontextprotocol/clientCapabilities":{},"io.modelcontextprotocol/clientInfo":{"name":"test-client","version":"v0.0.0"},"io.modelcontextprotocol/protocolVersion":"2026-07-28"}}}`
+	req := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(body))
+	req.Header.Set("Accept", "application/json, text/event-stream")
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Mcp-Method", "server/discover")
+	req.Header.Set("Mcp-Protocol-Version", "2026-07-28")
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	recorder := httptest.NewRecorder()
+
+	handler.ServeHTTP(recorder, req)
+
+	return recorder
+}
+
 func serverTokenVerifier(t *testing.T) auth.TokenVerifier {
 	t.Helper()
 
@@ -777,4 +1012,208 @@ func TestRequestAndToolScopedLoggersAreReattached(t *testing.T) {
 	})
 	r.NotNil(record)
 	a.Equal("stdio", record["transport"])
+}
+
+func TestTrafficLogMiddlewareCapturesHTTPBodies(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+
+	var output strings.Builder
+	traffic := &trafficLog{w: &output}
+	handler := traffic.middleware(string(config.TransportHTTP), config.DefaultMCPMaxRequestBodyBytes, http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		body, err := io.ReadAll(req.Body)
+		r.NoError(err)
+		a.Equal(`{"method":"tools/list"}`, string(body))
+		w.WriteHeader(http.StatusAccepted)
+		_, err = w.Write([]byte(`{"ok":true}`))
+		r.NoError(err)
+	}))
+
+	req := httptest.NewRequest(http.MethodPost, "/mcp?debug=true", strings.NewReader(`{"method":"tools/list"}`))
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, req)
+
+	r.Equal(http.StatusAccepted, recorder.Code)
+	r.Equal(`{"ok":true}`, recorder.Body.String())
+
+	lines := strings.Split(strings.TrimSpace(output.String()), "\n")
+	r.Len(lines, 2)
+	var inbound trafficLogEntry
+	var outbound trafficLogEntry
+	r.NoError(json.Unmarshal([]byte(lines[0]), &inbound))
+	r.NoError(json.Unmarshal([]byte(lines[1]), &outbound))
+	a.Equal("inbound", inbound.Direction)
+	a.Equal(http.MethodPost, inbound.Method)
+	a.Equal("/mcp?debug=true", inbound.Path)
+	a.Equal(`{"method":"tools/list"}`, inbound.Body)
+	a.Equal("outbound", outbound.Direction)
+	a.Equal(http.StatusAccepted, outbound.Status)
+	a.Equal(`{"ok":true}`, outbound.Body)
+}
+
+func TestTrafficLogMiddlewareRejectsUnreadableHTTPRequestBody(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+
+	var output strings.Builder
+	traffic := &trafficLog{w: &output}
+	called := false
+	handler := traffic.middleware(string(config.TransportHTTP), config.DefaultMCPMaxRequestBodyBytes, http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		called = true
+	}))
+
+	req := httptest.NewRequest(http.MethodPost, "/mcp", nil)
+	req.Body = errReadCloser{err: errors.New("read failed")}
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, req)
+
+	a.False(called)
+	a.Equal(http.StatusBadRequest, recorder.Code)
+	lines := strings.Split(strings.TrimSpace(output.String()), "\n")
+	r.Len(lines, 2)
+	var inbound trafficLogEntry
+	r.NoError(json.Unmarshal([]byte(lines[0]), &inbound))
+	a.Equal("inbound", inbound.Direction)
+	a.Equal("read failed", inbound.Error)
+}
+
+func TestTrafficLogMiddlewareRejectsOversizedHTTPRequestBody(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+
+	var output strings.Builder
+	traffic := &trafficLog{w: &output}
+	handler := traffic.middleware(string(config.TransportHTTP), maxHTTPDebugBodyBytes, http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		t.Fatal("handler should not be called for oversized debug traffic bodies")
+	}))
+
+	req := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(strings.Repeat("x", maxHTTPDebugBodyBytes+1)))
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, req)
+
+	a.Equal(http.StatusRequestEntityTooLarge, recorder.Code)
+	lines := strings.Split(strings.TrimSpace(output.String()), "\n")
+	r.Len(lines, 2)
+	var inbound trafficLogEntry
+	r.NoError(json.Unmarshal([]byte(lines[0]), &inbound))
+	a.True(inbound.BodyTruncated)
+	a.Len(inbound.Body, maxHTTPDebugBodyBytes)
+}
+
+func TestTrafficLogMiddlewareForwardsRequestsLargerThanCaptureLimit(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+
+	requestBody := strings.Repeat("x", maxHTTPDebugBodyBytes+1)
+	var output strings.Builder
+	traffic := &trafficLog{w: &output}
+	handler := traffic.middleware(string(config.TransportHTTP), int64(len(requestBody)+1), http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		body, err := io.ReadAll(req.Body)
+		r.NoError(err)
+		a.Equal(requestBody, string(body))
+		w.WriteHeader(http.StatusNoContent)
+	}))
+
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(requestBody)))
+	r.Equal(http.StatusNoContent, recorder.Code)
+
+	lines := strings.Split(strings.TrimSpace(output.String()), "\n")
+	r.Len(lines, 2)
+	var inbound trafficLogEntry
+	r.NoError(json.Unmarshal([]byte(lines[0]), &inbound))
+	a.True(inbound.BodyTruncated)
+	a.Len(inbound.Body, maxHTTPDebugBodyBytes)
+}
+
+func TestTrafficLogMiddlewareCapsHTTPResponseBodyAndStreamsSSEChunks(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+
+	var largeOutput strings.Builder
+	largeTraffic := &trafficLog{w: &largeOutput}
+	largeHandler := largeTraffic.middleware(string(config.TransportHTTP), config.DefaultMCPMaxRequestBodyBytes, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, err := w.Write([]byte(strings.Repeat("y", maxHTTPDebugBodyBytes+1)))
+		r.NoError(err)
+	}))
+	largeRecorder := httptest.NewRecorder()
+	largeHandler.ServeHTTP(largeRecorder, httptest.NewRequest(http.MethodPost, "/mcp", nil))
+
+	largeLines := strings.Split(strings.TrimSpace(largeOutput.String()), "\n")
+	r.Len(largeLines, 2)
+	var largeOutbound trafficLogEntry
+	r.NoError(json.Unmarshal([]byte(largeLines[1]), &largeOutbound))
+	a.True(largeOutbound.BodyTruncated)
+	a.Len(largeOutbound.Body, maxHTTPDebugBodyBytes)
+
+	var streamOutput strings.Builder
+	streamTraffic := &trafficLog{w: &streamOutput}
+	streamHandler := streamTraffic.middleware(string(config.TransportHTTP), config.DefaultMCPMaxRequestBodyBytes, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, err := w.Write([]byte("event: message\n\n"))
+		r.NoError(err)
+	}))
+	streamRecorder := httptest.NewRecorder()
+	streamHandler.ServeHTTP(streamRecorder, httptest.NewRequest(http.MethodPost, "/mcp", nil))
+
+	streamLines := strings.Split(strings.TrimSpace(streamOutput.String()), "\n")
+	r.Len(streamLines, 3)
+	var chunk trafficLogEntry
+	r.NoError(json.Unmarshal([]byte(streamLines[1]), &chunk))
+	a.Equal("outbound_chunk", chunk.Direction)
+	a.Equal("event: message\n\n", chunk.Body)
+	var final trafficLogEntry
+	r.NoError(json.Unmarshal([]byte(streamLines[2]), &final))
+	a.Equal("outbound", final.Direction)
+	a.Empty(final.Body)
+}
+
+func TestOpenTrafficLogRejectsUnsafeExistingFiles(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+
+	dir := t.TempDir()
+	worldReadable := filepath.Join(dir, "traffic.jsonl")
+	r.NoError(os.WriteFile(worldReadable, nil, 0o644))
+	_, _, err := openTrafficLog(worldReadable)
+	r.Error(err)
+	r.Contains(err.Error(), "permissions")
+
+	target := filepath.Join(dir, "target.jsonl")
+	r.NoError(os.WriteFile(target, nil, 0o600))
+	link := filepath.Join(dir, "link.jsonl")
+	if err := os.Symlink(target, link); err != nil {
+		t.Skipf("symlink not available: %v", err)
+	}
+	_, _, err = openTrafficLog(link)
+	r.Error(err)
+	r.Contains(err.Error(), "symlink")
+}
+
+type errReadCloser struct {
+	err error
+}
+
+type bearerRoundTripper struct {
+	base  http.RoundTripper
+	token string
+}
+
+func (t bearerRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
+	req = req.Clone(req.Context())
+	req.Header.Set("Authorization", "Bearer "+t.token)
+	return t.base.RoundTrip(req)
+}
+
+func (r errReadCloser) Read([]byte) (int, error) {
+	return 0, r.err
+}
+
+func (r errReadCloser) Close() error {
+	return nil
 }

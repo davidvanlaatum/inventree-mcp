@@ -31,6 +31,7 @@ func TestParseServeUsesEnvAndFlagPrecedence(t *testing.T) {
 	r.Equal(AuthSchemeBearer, cfg.InvenTreeAuthScheme)
 	r.Equal(5*time.Second, cfg.InvenTreeTimeout)
 	r.Equal(DefaultListen, cfg.Listen)
+	r.Equal(DefaultMCPMaxRequestBodyBytes, cfg.MCPMaxRequestBodyBytes)
 }
 
 func TestParseServeConfiguresUploadPolicy(t *testing.T) {
@@ -50,6 +51,96 @@ func TestParseServeConfiguresUploadPolicy(t *testing.T) {
 	r.NoError(err)
 	r.Equal([]string{"/env/one", "/env/two", "/flag/uploads"}, cfg.UploadAllowRoots)
 	r.Equal(int64(2048), cfg.UploadMaxBytes)
+}
+
+func TestParseServeConfiguresMCPRequestBodyLimit(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+
+	cfg, err := ParseServeWithEnv([]string{
+		"--transport", "http",
+		"--environment", "development",
+		"--dev-incomplete-oauth",
+		"--inventree-url", "https://inventory.example.test",
+		"--mcp-max-request-body-bytes", "9437184",
+	}, mapEnv(map[string]string{
+		EnvMCPMaxRequestBodyBytes: "8388608",
+	}), nil)
+	r.NoError(err)
+	r.Equal(int64(9437184), cfg.MCPMaxRequestBodyBytes)
+}
+
+func TestParseServeRejectsMCPRequestBodyLimitTooSmallForInlineUpload(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+
+	_, err := ParseServeWithEnv([]string{
+		"--transport", "http",
+		"--environment", "development",
+		"--dev-incomplete-oauth",
+		"--inventree-url", "https://inventory.example.test",
+		"--upload-max-bytes", "5242880",
+		"--mcp-max-request-body-bytes", "4194304",
+	}, mapEnv(nil), nil)
+	r.Error(err)
+	r.ErrorContains(err, "MCP max request body bytes must be at least")
+}
+
+func TestParseServeRejectsNonPositiveMCPRequestBodyLimit(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+
+	_, err := ParseServeWithEnv([]string{
+		"--transport", "http",
+		"--environment", "development",
+		"--dev-incomplete-oauth",
+		"--inventree-url", "https://inventory.example.test",
+		"--mcp-max-request-body-bytes", "0",
+	}, mapEnv(nil), nil)
+	r.Error(err)
+	r.ErrorContains(err, "MCP max request body bytes must be greater than zero")
+}
+
+func TestParseServeDoesNotCoupleStdioUploadAndHTTPBodyLimits(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+
+	cfg, err := ParseServeWithEnv([]string{
+		"--transport", "stdio",
+		"--inventree-url", "https://inventory.example.test",
+		"--upload-max-bytes", "10485760",
+		"--mcp-max-request-body-bytes", "1",
+	}, mapEnv(map[string]string{
+		EnvInvenTreeToken: "token",
+	}), nil)
+	r.NoError(err)
+	r.Equal(int64(10485760), cfg.UploadMaxBytes)
+	r.Equal(int64(1), cfg.MCPMaxRequestBodyBytes)
+}
+
+func TestMinimumMCPRequestBodyBytesIncludesBase64AndJSONOverhead(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+
+	r.Equal(int64(0), MinimumMCPRequestBodyBytes(0))
+	r.Equal(int64(1048580), MinimumMCPRequestBodyBytes(1))
+	r.LessOrEqual(MinimumMCPRequestBodyBytes(5*1024*1024), DefaultMCPMaxRequestBodyBytes)
+}
+
+func TestParseServeConfiguresDebugTrafficLog(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+
+	cfg, err := ParseServeWithEnv([]string{
+		"--transport", "stdio",
+		"--inventree-url", "https://inventory.example.test",
+		"--debug-traffic-log", "/tmp/flag-traffic.jsonl",
+	}, mapEnv(map[string]string{
+		EnvInvenTreeToken:  "token",
+		EnvDebugTrafficLog: "/tmp/env-traffic.jsonl",
+	}), nil)
+	r.NoError(err)
+	r.Equal("/tmp/flag-traffic.jsonl", cfg.DebugTrafficLog)
 }
 
 func TestParseServeRejectsMissingStdioRequiredValues(t *testing.T) {
@@ -336,7 +427,9 @@ func TestParseServeHelpMentionsEnvVars(t *testing.T) {
 		EnvInvenTreeAuthScheme,
 		EnvInvenTreeTimeout,
 		EnvInvenTreeTLSSkipVerify,
+		EnvMCPMaxRequestBodyBytes,
 		EnvLogLevel,
+		EnvDebugTrafficLog,
 		EnvDevIncompleteOAuth,
 		EnvOAuthIssuerURL,
 		EnvOAuthResourceURL,

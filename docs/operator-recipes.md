@@ -22,15 +22,23 @@ HTTP OAuth building blocks include token envelopes, request-scoped credential re
 
 ## STDIO Setup
 
-- Required inputs: `INVENTREE_URL`, `INVENTREE_TOKEN`, optional `INVENTREE_AUTH_SCHEME`, `INVENTREE_UPLOAD_ALLOW_ROOTS`, and `INVENTREE_UPLOAD_MAX_BYTES`.
+- Required inputs: `INVENTREE_URL`, `INVENTREE_TOKEN`, optional `INVENTREE_AUTH_SCHEME`, `INVENTREE_UPLOAD_ALLOW_ROOTS`, `INVENTREE_UPLOAD_MAX_BYTES`, and optional `INVENTREE_MCP_DEBUG_TRAFFIC_LOG`.
 - Preferred flow: validate configuration, seed logging context, run `inventree-mcp serve --transport stdio`, perform a read-only smoke test.
 - Local upload flow: configure trusted operator-controlled upload roots with `INVENTREE_UPLOAD_ALLOW_ROOTS` or repeated `--upload-allow-root`; tune the byte limit with `INVENTREE_UPLOAD_MAX_BYTES` or `--upload-max-bytes` when the default limit is too small.
+- MCP protocol flow: current clients use MCP `2026-07-28` discovery. Legacy initialization remains supported.
+- Debug traffic flow: set `--debug-traffic-log /secure/path/mcp-traffic.jsonl` or `INVENTREE_MCP_DEBUG_TRAFFIC_LOG` only while diagnosing MCP client behavior. The JSON Lines file records full MCP request and response payloads, including structured clarification results, tool arguments, and any sensitive data the MCP client sends.
 - Clarify when: auth scheme is neither `Token` nor `Bearer`, URL is missing, upload allowlisted roots are not trusted, or TLS skip verify is requested outside local/test use.
 - Expected output: STDIO MCP server ready for local clients.
 
 ## Reverse-Proxy HTTP Deployment
 
 Production reverse-proxy HTTP deployment has OAuth-protected startup wiring for `/mcp`, but still depends on connector setup endpoints, canonical reverse-proxy URL enforcement, and live deployment validation before it should be treated as supported for operators.
+
+HTTP request bodies are bounded by `INVENTREE_MCP_MAX_REQUEST_BODY_BYTES` or `--mcp-max-request-body-bytes`, which defaults to 8 MiB. If the HTTP inline-upload limit is raised, raise this limit enough for base64 expansion plus JSON overhead; HTTP startup rejects inconsistent values. The setting does not constrain STDIO uploads. Keep the limit finite on untrusted HTTP endpoints.
+
+Current HTTP clients use MCP `2026-07-28` sessionless POST requests, while legacy initialization remains supported. Client cancellation of a current-protocol POST propagates to the active tool handler; operators should treat cancellation as an unknown-result boundary for upstream writes unless the tool response or InvenTree read-back proves the outcome.
+
+HTTP mode accepts the same debug traffic log option as STDIO. HTTP debug entries include request URIs including query strings, request bodies, response bodies, and streaming response chunks. Request bodies and non-streaming responses are captured up to 1 MiB and use `body_truncated:true` when more data was forwarded; streaming response chunks are capped individually. Requests above the configured MCP request limit fail closed. Treat this file as sensitive and operator-local.
 
 - Required inputs: internal listen address, `INVENTREE_URL`, public HTTPS issuer/resource URLs, envelope keys, allowed client metadata URLs, and token lifetimes. Trusted proxy settings, rate limits, and setup endpoints remain future inputs.
 - Current preferred flow for smoke testing: bind `INVENTREE_MCP_LISTEN` to loopback or a private service network, set `INVENTREE_MCP_OAUTH_ISSUER_URL`, `INVENTREE_MCP_OAUTH_RESOURCE_URL`, `INVENTREE_MCP_OAUTH_KEYS`, and `INVENTREE_MCP_OAUTH_CLIENT_IDS`, then verify `/.well-known/oauth-protected-resource` and the protected `/mcp` bearer challenge through the reverse proxy.

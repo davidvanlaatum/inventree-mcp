@@ -30,6 +30,14 @@ Endpoint-backed tools must also map to a `docs/endpoint-manifest.yaml` entry who
 
 In OAuth authorization mode, scoped tools publish per-tool OAuth metadata in descriptor `_meta["securitySchemes"]` and `_meta["openai/securitySchemes"]`, matching the checked tool authorization manifest. The current Go MCP SDK `mcp.Tool` type does not expose a first-class top-level `securitySchemes` field; replace the mirror-only descriptor wiring with the canonical field when the SDK adds support or when the server owns custom tool descriptor serialization.
 
+## MCP Protocol Behavior
+
+The server uses official Go MCP SDK `v1.7.0`. New clients negotiate MCP `2026-07-28` through `server/discover`; legacy clients can still use `initialize`. Streamable HTTP is stateless and sessionless: it does not issue or honor `Mcp-Session-Id`, and standalone GET/DELETE session operations return `405 Method Not Allowed`. Aborting a `2026-07-28` POST cancels the in-flight tool handler.
+
+HTTP request bodies are bounded by `INVENTREE_MCP_MAX_REQUEST_BODY_BYTES` or `--mcp-max-request-body-bytes`. The default is 8 MiB. Configuration validation requires this limit to cover the configured inline upload maximum after base64 expansion plus 1 MiB of JSON and tool-argument overhead.
+
+SDK `v1.7.0` serializes `readOnlyHint` and `idempotentHint` even when false. The registered annotation booleans in this document therefore match the JSON wire representation as well as the checked manifest.
+
 ## Lookup Tool Framework
 
 Read-only lookup handlers use a context-resolved InvenTree client supplied through the tool dependency struct. Handlers depend on the lookup client interface instead of constructing a concrete HTTP client, so STDIO credentials and future HTTP OAuth credentials stay in the server layer.

@@ -15,7 +15,7 @@ Build an InvenTree MCP server in Go using the official Model Context Protocol Go
 
 - Language: Go.
 - MCP SDK: `github.com/modelcontextprotocol/go-sdk/mcp`.
-- MCP SDK version: reviewed baseline is `github.com/modelcontextprotocol/go-sdk` `v1.6.1`. Pin this or a later current official SDK release only after re-running the MCP transport, auth, and annotation spike because auth middleware and annotation field shapes may change.
+- MCP SDK version: reviewed baseline is `github.com/modelcontextprotocol/go-sdk` `v1.7.0`, supporting MCP protocol `2026-07-28` while retaining legacy protocol negotiation. Future upgrades must re-run the MCP transport, auth, request-limit, cancellation, and annotation checks because protocol and wire-shape behavior may change.
 - MCP STDIO transport: `mcp.StdioTransport`.
 - MCP HTTP transport: `mcp.NewStreamableHTTPHandler`.
 - HTTP auth support: implement a ChatGPT Developer Connector-compatible OAuth 2.1 layer owned by the MCP server. HTTP clients authenticate to `/mcp` with MCP-issued OAuth bearer tokens, not raw InvenTree tokens.
@@ -44,6 +44,7 @@ Use established libraries for protocol-heavy or environment-heavy concerns, but 
 - URL fetching: keep DNS resolution, dial policy, redirect policy, proxy behavior, content sniffing, and byte-limit enforcement behind a URL fetcher interface owned by `internal/upload`.
 - ID and token generation: inject randomness and ID generation for authorization codes, state, nonces, request IDs, and test determinism. Production must use cryptographically secure randomness for secrets and token material.
 - Logging: use `log/slog` with `github.com/davidvanlaatum/dvgoutils/logging` as the standard context logger mechanism. Request, transport, tool, workflow, and client code should get loggers from `logging.FromContext(ctx)`, attach request/tool/object attributes by deriving a child logger with `logger.With(...)`, and pass the child logger via `logging.WithLogger(ctx, logger.With(...))`. Code should fetch the logger from the updated context rather than reusing a logger captured before scoped attributes were attached. Use `logging.Err(err)` for error attributes. The process entrypoint and tests must seed contexts with a logger; missing loggers should fail visibly rather than silently discarding logs.
+- MCP traffic debug logging: `--debug-traffic-log` / `INVENTREE_MCP_DEBUG_TRAFFIC_LOG` may append MCP JSON-RPC request and response payloads to a local JSON Lines file for client interoperability debugging. This is intentionally unredacted debug evidence and must be documented as sensitive operator-controlled output. HTTP debug capture must reject unreadable or oversized request bodies before dispatch, cap captured response bodies, and avoid retaining unbounded streaming response data in memory.
 - Logging tests: use `github.com/davidvanlaatum/dvgoutils/logging/testhandler.SetupTestHandler(t)` for deterministic log capture, redaction assertions, and ordinary test contexts passed into code under test. Create the logger context inside each subtest that uses it so logs are attached to the correct `testing.T`; use a bounded cleanup context or `context.WithoutCancel(ctx)` for cleanup callbacks that run after `t.Context()` is canceled.
 - Other `dvgoutils` helpers: use `dvgoutils.Ptr` for pointer values such as explicit false tool annotation fields, and use `MapSlice`, `FilterSlice`, or `Must` only where they improve clarity without hiding control flow or error handling.
 - Configuration and secrets: keep config parsing separate from runtime dependencies. Key material, InvenTree credentials, and token lifetimes should enter through a typed config object, not scattered environment lookups.
@@ -59,7 +60,7 @@ OAuth spike acceptance criteria:
 
 OAuth spike results verified on 2026-07-07 from official OpenAI docs:
 
-- MCP Go SDK baseline remains `github.com/modelcontextprotocol/go-sdk` `v1.6.1` for the first auth implementation pass.
+- The first auth implementation pass used `github.com/modelcontextprotocol/go-sdk` `v1.6.1`; the current reviewed runtime baseline is `v1.7.0` and retains the verified bearer-middleware behavior.
 - `auth.TokenVerifier` has signature `func(context.Context, string, *http.Request) (*auth.TokenInfo, error)`, so the verifier can validate the bearer token against request URL/resource context before dispatch.
 - `auth.RequireBearerToken` rejects missing, invalid, expired, or insufficient-scope bearer tokens before the streamable HTTP handler runs, and emits a `WWW-Authenticate: Bearer` challenge with configured `resource_metadata` and `scope` parameters.
 - `auth.TokenInfoFromContext` is visible inside `tools/call` handlers when `auth.RequireBearerToken` wraps `mcp.NewStreamableHTTPHandler` running with `mcp.StreamableHTTPOptions{Stateless: true}`.
@@ -115,9 +116,11 @@ Authentication model:
 4. The access token is an encrypted, authenticated token envelope. The server decrypts and validates the envelope, verifies issuer, audience/resource, expiry, scopes, token type, `client_id`, key ID/version, and subject, then recovers the embedded upstream InvenTree credential.
 5. The recovered InvenTree credential is sent upstream as `Authorization: Token <token>` or `Authorization: Bearer <token>`.
 6. ChatGPT sees normal OAuth bearer tokens only. The embedded InvenTree credential must never be exposed as a readable claim, log field, tool error, or resource value.
-7. Only OAuth metadata, authorization, token, setup, and health endpoints are public by default. `/mcp` must require a valid MCP OAuth access token before dispatching any MCP method unless the ChatGPT connector compatibility spike proves pre-auth MCP discovery is required. If pre-auth discovery is required, restrict it to static `initialize` or capability data, never include request-specific InvenTree data, and document the exact allowed unauthenticated methods. Mutating tools may register for HTTP only when OAuth authorization mode is enabled, and each call must pass the per-tool scope guard before the handler runs.
+7. Only OAuth metadata, authorization, token, setup, and health endpoints are public by default. `/mcp` must require a valid MCP OAuth access token before dispatching any MCP method unless the ChatGPT connector compatibility spike proves pre-auth MCP discovery is required. If pre-auth discovery is required, restrict it to static `server/discover`, legacy `initialize`, or capability data, never include request-specific InvenTree data, and document the exact allowed unauthenticated methods. Mutating tools may register for HTTP only when OAuth authorization mode is enabled, and each call must pass the per-tool scope guard before the handler runs.
 
-HTTP session mode: run streamable HTTP in stateless mode using `mcp.StreamableHTTPOptions{Stateless: true}`. Do not bind a long-lived MCP session to process-global credentials. All InvenTree authorization must be resolved from the current OAuth token envelope.
+HTTP session mode: run streamable HTTP in stateless mode using `mcp.StreamableHTTPOptions{Stateless: true}`. SDK `v1.7.0` negotiates MCP `2026-07-28` through `server/discover`, uses per-request client/protocol metadata, ignores session IDs, and rejects standalone GET/DELETE session operations while retaining legacy `initialize` compatibility. Do not bind a long-lived MCP session to process-global credentials. All InvenTree authorization must be resolved from the current OAuth token envelope.
+
+Set `PropagateRequestCancellation: true` so an aborted MCP `2026-07-28` POST cancels its in-flight tool handler. Set `MaxRequestBodyBytes` from validated configuration rather than relying on the SDK default. The configured limit must cover `INVENTREE_UPLOAD_MAX_BYTES` after base64 expansion plus bounded JSON/tool-argument overhead, and must remain finite for untrusted HTTP clients.
 
 Production startup configuration:
 
@@ -220,7 +223,7 @@ httpHandler := auth.RequireBearerToken(verifier, &auth.RequireBearerTokenOptions
 
 Prefer the official MCP Go SDK `auth.RequireBearerToken`, `auth.ProtectedResourceMetadataHandler`, `auth.TokenVerifier`, and `auth.TokenInfoFromContext` primitives for protected-resource behavior. `internal/oauth` should provide the SDK token verifier, envelope codec, metadata construction, setup page, and authorization-server endpoints. Only implement custom middleware where the SDK auth package cannot express the required behavior.
 
-For SDK `v1.6.1`, `TokenVerifier` has the shape `func(context.Context, string, *http.Request) (*auth.TokenInfo, error)`. The verifier should decrypt the envelope and return SDK `auth.TokenInfo` with scopes, expiry, subject, and a non-serializable internal credential reference in `Extra`, or a documented private context key if `Extra` is unsuitable. If `Extra` is used, expose it only through a typed `internal/oauth.CredentialFromTokenInfo(*auth.TokenInfo)` accessor with an unexported key/type, and add tests proving the credential object is never serialized or logged. `ClientFromContext` must read exactly one selected carrier inside `CallTool` handlers; do not duplicate credentials into multiple context locations. Tool handlers and resource handlers must resolve credentials from `context.Context`; do not store credentials in server-global state.
+For SDK `v1.7.0`, `TokenVerifier` has the shape `func(context.Context, string, *http.Request) (*auth.TokenInfo, error)`. The verifier should decrypt the envelope and return SDK `auth.TokenInfo` with scopes, expiry, subject, and a non-serializable internal credential reference in `Extra`, or a documented private context key if `Extra` is unsuitable. If `Extra` is used, expose it only through a typed `internal/oauth.CredentialFromTokenInfo(*auth.TokenInfo)` accessor with an unexported key/type, and add tests proving the credential object is never serialized or logged. `ClientFromContext` must read exactly one selected carrier inside `CallTool` handlers; do not duplicate credentials into multiple context locations. Tool handlers and resource handlers must resolve credentials from `context.Context`; do not store credentials in server-global state.
 
 ## Releases And Packages
 
@@ -338,7 +341,7 @@ tests/
 
 Every tool registration must include explicit behavior metadata using SDK-native MCP tool annotations, including `ReadOnlyHint`, `DestructiveHint`, `IdempotentHint`, and `OpenWorldHint` where applicable. Keep a local classification table only as the source for registering and testing annotations, not as a replacement for SDK metadata.
 
-For the reviewed SDK baseline `v1.6.1`, `DestructiveHint` and `OpenWorldHint` are pointer booleans, while `ReadOnlyHint` and `IdempotentHint` are plain booleans with `omitempty`. Annotation helpers must set explicit false pointer values for `destructiveHint:false` and `openWorldHint:false` where appropriate. Tests for `readOnlyHint:false` and `idempotentHint:false` should assert local classification and registration behavior, not require JSON emission the SDK cannot produce.
+For the reviewed SDK baseline `v1.7.0`, `DestructiveHint` and `OpenWorldHint` remain pointer booleans, while `ReadOnlyHint` and `IdempotentHint` are plain booleans that now always serialize. Annotation helpers must set explicit false pointer values for `destructiveHint:false` and `openWorldHint:false` where appropriate, and JSON-level tests must require explicit `readOnlyHint:false` and `idempotentHint:false` for mutating non-idempotent tools.
 
 `openWorldHint` must be decided per tool. In particular, `upload_attachment_from_url` is open-world because it fetches caller-provided URLs, while `upload_attachment` is not open-world when it only accepts inline bytes or STDIO allowlisted local files.
 
@@ -793,7 +796,7 @@ Validation:
 
 - `GOFLAGS=-trimpath go test -race ./...`
 - Manual MCP STDIO smoke test.
-- Manual HTTP initialize/list-tools smoke test.
+- Manual HTTP `server/discover`/list-tools smoke test plus legacy `initialize` compatibility check.
 - Test that listed tools expose the expected mutation metadata.
 - Unit tests proving platform adapters can be replaced with fakes.
 
@@ -1012,7 +1015,7 @@ Implementation notes:
 - HTTP transport tests proving concurrent requests with different OAuth envelopes cannot leak credentials across handlers.
 - Shared-suite auth isolation tests using two distinct InvenTree users/tokens sealed into separate OAuth envelopes for parallel HTTP MCP calls.
 - Tests documenting stateless refresh replay limitations and the configured lifetime/key-rotation mitigations.
-- Tests for unauthenticated `initialize`/`tools/list` behavior versus authenticated InvenTree-contacting tool execution, aligned with the MCP SDK and OAuth protected-resource behavior.
+- Tests for unauthenticated static `server/discover` or legacy `initialize`/`tools/list` behavior versus authenticated InvenTree-contacting tool execution, aligned with the MCP SDK and OAuth protected-resource behavior.
 - HTTP tests proving raw inbound `Authorization: Token ...` is rejected for protected `/mcp` access and is never forwarded unchanged.
 - HTTP tests proving raw inbound `Authorization: Bearer ...` is accepted only when it is a valid MCP OAuth access envelope.
 - OAuth scope tests proving each tool's required scopes are enforced before handlers run.

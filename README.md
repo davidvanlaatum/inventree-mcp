@@ -23,6 +23,7 @@ Useful STDIO options:
 - `--inventree-timeout 30s`; default is `30s`.
 - `--upload-allow-root /trusted/path` or `INVENTREE_UPLOAD_ALLOW_ROOTS=/trusted/path`; enables STDIO local-file uploads from trusted operator-controlled roots.
 - `--upload-max-bytes 10485760` or `INVENTREE_UPLOAD_MAX_BYTES=10485760`; raises or lowers the upload byte limit.
+- `--debug-traffic-log /secure/path/mcp-traffic.jsonl` or `INVENTREE_MCP_DEBUG_TRAFFIC_LOG=/secure/path/mcp-traffic.jsonl`; appends MCP request/response traffic for local debugging. Treat the file as sensitive because it can contain tool arguments, results, and credentials supplied by the MCP client.
 - `--inventree-tls-skip-verify`; intended only for local/test deployments and requires `--environment development`.
 
 For first-release workflow details, use [Operator recipes](docs/operator-recipes.md). For exact registered tool metadata, use [Tool reference](docs/tool-reference.md) and the checked [tool manifest](docs/tool-manifest.json).
@@ -37,6 +38,10 @@ HTTP production mode requires MCP-owned OAuth settings and rejects raw `INVENTRE
 - Optional `INVENTREE_MCP_OAUTH_ACCESS_LIFETIME`, `INVENTREE_MCP_OAUTH_REFRESH_LIFETIME`, and `INVENTREE_MCP_OAUTH_SESSION_LIFETIME`.
 
 Development-only HTTP startup remains available with `--environment development --dev-incomplete-oauth`; it registers only the development server surface and still rejects configured raw InvenTree tokens.
+
+HTTP mode bounds each MCP request with `--mcp-max-request-body-bytes 15000000` or `INVENTREE_MCP_MAX_REQUEST_BODY_BYTES=15000000`. The limit must cover inline upload base64 plus JSON overhead and does not constrain STDIO uploads.
+
+The debug traffic log option also applies to development HTTP mode. HTTP logging records request URIs, request bodies, response bodies, and streaming response chunks. Request bodies and non-streaming responses are captured up to 1 MiB with `body_truncated:true` when more data was forwarded; streaming response chunks are capped individually. Requests exceeding the configured MCP request limit fail closed.
 
 ## Install From A Release
 
