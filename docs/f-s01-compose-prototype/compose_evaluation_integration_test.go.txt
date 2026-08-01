@@ -1,0 +1,171 @@
+//go:build !no_integration_tests
+
+package testenv
+
+import (
+	"context"
+	"io"
+	"net/http"
+	"net/netip"
+	"os"
+	"path/filepath"
+	"strconv"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/containerd/errdefs"
+	"github.com/davidvanlaatum/dvgoutils/logging/testhandler"
+	"github.com/moby/moby/api/types/mount"
+	dockernetwork "github.com/moby/moby/api/types/network"
+	"github.com/moby/moby/client"
+	"github.com/stretchr/testify/require"
+	"github.com/testcontainers/testcontainers-go"
+	"github.com/testcontainers/testcontainers-go/modules/compose"
+	"github.com/testcontainers/testcontainers-go/wait"
+)
+
+const envComposeEvaluation = "INVENTREE_TEST_COMPOSE"
+
+func TestComposeInvenTreeEvaluation(t *testing.T) {
+	r := require.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+
+	if SkipDocker(os.Getenv) || testing.Short() {
+		t.Skipf("Docker-backed InvenTree integration test excluded by %s or -short", EnvSkipDocker)
+	}
+	if !enabledEnvironmentFlag(os.Getenv(envComposeEvaluation)) {
+		t.Skipf("Compose compatibility evaluation requires %s=1", envComposeEvaluation)
+	}
+
+	composeDir := filepath.Join("testdata", "compose")
+	stack, err := compose.NewDockerCompose(
+		filepath.Join(composeDir, "inventree-1.4.3.yml"),
+		filepath.Join(composeDir, "test.override.yml"),
+	)
+	r.NoError(err)
+	downDone := false
+	t.Cleanup(func() {
+		if !downDone {
+			downCtx, cancelDown := context.WithTimeout(context.Background(), cleanupTimeout)
+			defer cancelDown()
+			r.NoError(stack.Down(downCtx, compose.RemoveOrphans(true), compose.RemoveVolumes(true)))
+		}
+		r.NoError(stack.Close())
+	})
+
+	stack.WithEnv(map[string]string{
+		"INVENTREE_TAG":         DefaultVersion,
+		"INVENTREE_EXT_VOLUME":  filepath.Join(t.TempDir(), "inventree-data"),
+		"INVENTREE_DB_NAME":     defaultDBName,
+		"INVENTREE_DB_USER":     defaultDBUser,
+		"INVENTREE_DB_PASSWORD": defaultDBPassword,
+		"INVENTREE_DB_PORT":     "5432",
+		"INVENTREE_CACHE_PORT":  "6379",
+		"INVENTREE_WEB_PORT":    "8000",
+	})
+	stack.WaitForService("inventree-db", wait.ForLog("database system is ready to accept connections").WithOccurrence(2).WithStartupTimeout(time.Minute))
+	stack.WaitForService("inventree-cache", wait.ForLog("Ready to accept connections").WithStartupTimeout(time.Minute))
+	stack.WaitForService(
+		"inventree-server",
+		wait.ForHTTP("/api/version/").
+			WithPort(defaultWebPort).
+			WithStatusCodeMatcher(func(status int) bool {
+				return status == http.StatusOK || status == http.StatusUnauthorized || status == http.StatusForbidden
+			}).
+			WithStartupTimeout(defaultStartupTimeout),
+	)
+
+	startupCtx, cancelStartup := context.WithTimeout(ctx, defaultStartupTimeout)
+	defer cancelStartup()
+	startedAt := time.Now()
+	r.NoError(stack.Up(startupCtx, compose.Wait(true)))
+	t.Logf("Compose core topology startup completed in %s", time.Since(startedAt).Round(time.Millisecond))
+
+	services := stack.Services()
+	r.ElementsMatch([]string{"inventree-cache", "inventree-db", "inventree-server"}, services)
+	containers := make(map[string]*testcontainers.DockerContainer, len(services))
+	networks := map[string]struct{}{}
+	volumes := map[string]struct{}{}
+	for _, service := range services {
+		container, err := stack.ServiceContainer(ctx, service)
+		r.NoError(err)
+		containers[service] = container
+		inspect, err := container.Inspect(ctx)
+		r.NoError(err)
+		published := 0
+		for _, bindings := range inspect.NetworkSettings.Ports {
+			published += len(bindings)
+		}
+		if service == "inventree-server" {
+			bindings := inspect.NetworkSettings.Ports[dockernetwork.MustParsePort(defaultWebPort)]
+			r.Len(bindings, 1, "server should publish exactly port 8000/tcp")
+			r.Equal(netip.MustParseAddr("127.0.0.1"), bindings[0].HostIP)
+			r.NotEmpty(bindings[0].HostPort)
+			r.Equal(1, published, "server should publish only port 8000/tcp")
+		} else {
+			r.Zero(published, "service %s should not publish a host port", service)
+		}
+		for network := range inspect.NetworkSettings.Networks {
+			networks[network] = struct{}{}
+		}
+		for _, mounted := range inspect.Mounts {
+			if mounted.Type == mount.TypeVolume && mounted.Name != "" {
+				volumes[mounted.Name] = struct{}{}
+			}
+		}
+		logs, err := container.Logs(ctx)
+		r.NoError(err)
+		content, err := io.ReadAll(logs)
+		r.NoError(err)
+		r.NoError(logs.Close())
+		r.NotEmpty(content, "service %s should expose logs", service)
+		t.Logf("Compose service %s exposed %d bytes of logs", service, len(content))
+	}
+
+	server := containers["inventree-server"]
+	baseURL, err := server.PortEndpoint(ctx, defaultWebPort, "http")
+	r.NoError(err)
+	baseURL = strings.TrimRight(baseURL, "/")
+
+	version, err := fetchVersion(ctx, http.DefaultClient, baseURL, defaultAdminUser, defaultAdminPassword)
+	r.NoError(err)
+	r.Equal(DefaultVersion, version.Version.Server)
+	r.Equal(DefaultAPIVersion, strconv.Itoa(version.Version.API))
+
+	firstToken, err := createToken(ctx, http.DefaultClient, baseURL, defaultAdminUser, defaultAdminPassword)
+	r.NoError(err)
+	secondToken, err := createToken(ctx, http.DefaultClient, baseURL, defaultAdminUser, defaultAdminPassword)
+	r.NoError(err)
+	r.Equal(firstToken, secondToken, "named bootstrap token creation should be deterministic")
+	r.NoError(proveToken(ctx, baseURL, firstToken, http.DefaultClient))
+
+	downCtx, cancelDown := context.WithTimeout(context.WithoutCancel(ctx), cleanupTimeout)
+	defer cancelDown()
+	downAt := time.Now()
+	r.NoError(stack.Down(downCtx, compose.RemoveOrphans(true), compose.RemoveVolumes(true)))
+	downDone = true
+	t.Logf("Compose Down cleanup completed in %s", time.Since(downAt).Round(time.Millisecond))
+	for service, container := range containers {
+		_, err := container.Inspect(ctx)
+		r.True(errdefs.IsNotFound(err), "service %s should be absent after Compose Down: %v", service, err)
+	}
+	dockerClient, err := testcontainers.NewDockerClientWithOpts(ctx)
+	r.NoError(err)
+	t.Cleanup(func() {
+		r.NoError(dockerClient.Close())
+	})
+	for network := range networks {
+		_, err := dockerClient.NetworkInspect(ctx, network, client.NetworkInspectOptions{})
+		r.True(errdefs.IsNotFound(err), "Compose network %s should be absent after Down: %v", network, err)
+	}
+	for volume := range volumes {
+		_, err := dockerClient.VolumeInspect(ctx, volume, client.VolumeInspectOptions{})
+		r.True(errdefs.IsNotFound(err), "Compose volume %s should be absent after Down: %v", volume, err)
+	}
+}
+
+func enabledEnvironmentFlag(value string) bool {
+	value = strings.TrimSpace(strings.ToLower(value))
+	return value == "1" || value == "true" || value == "yes"
+}

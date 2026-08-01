@@ -1,0 +1,59 @@
+services:
+  inventree-db:
+    container_name: !reset null
+    volumes: !reset []
+    restart: "no"
+
+  inventree-cache:
+    container_name: !reset null
+    env_file: !reset []
+    volumes: !reset []
+    restart: "no"
+
+  inventree-server:
+    container_name: !reset null
+    env_file: !reset []
+    volumes: !reset []
+    ports: !override
+      - target: 8000
+        published: "0"
+        host_ip: 127.0.0.1
+        protocol: tcp
+    environment:
+      INVENTREE_SITE_URL: http://localhost:8000
+      INVENTREE_DEBUG: "True"
+      INVENTREE_LOG_LEVEL: WARNING
+      INVENTREE_CONSOLE_LOG: "True"
+      INVENTREE_DB_ENGINE: postgresql
+      INVENTREE_DB_NAME: inventree
+      INVENTREE_DB_HOST: inventree-db
+      INVENTREE_DB_PORT: "5432"
+      INVENTREE_DB_USER: inventree
+      INVENTREE_DB_PASSWORD: inventree-test-password
+      INVENTREE_CACHE_HOST: inventree-cache
+      INVENTREE_CACHE_PORT: "6379"
+      INVENTREE_PLUGINS_ENABLED: "False"
+      INVENTREE_AUTO_UPDATE: "False"
+      INVENTREE_ADMIN_USER: admin
+      INVENTREE_ADMIN_EMAIL: admin@example.test
+      INVENTREE_ADMIN_PASSWORD: inventree-test-admin-password
+    command:
+      - sh
+      - -c
+      - invoke update --skip-backup --no-frontend --skip-static && exec gunicorn -c ./gunicorn.conf.py InvenTree.wsgi -b $${INVENTREE_WEB_ADDR}:$${INVENTREE_WEB_PORT} --chdir $${INVENTREE_BACKEND_DIR}/InvenTree
+    restart: "no"
+
+  inventree-worker:
+    container_name: !reset null
+    env_file: !reset []
+    volumes: !reset []
+    profiles: [full-topology]
+    restart: "no"
+
+  inventree-proxy:
+    container_name: !reset null
+    env_file: !reset []
+    ports: !reset []
+    volumes: !reset []
+    profiles: [full-topology]
+    restart: "no"

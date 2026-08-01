@@ -78,7 +78,7 @@ Before `M1C-S04` is complete, mutating, operational, destructive, and upload too
 | [M1H-S04](#m1h-s04-delete-attachment-confirmation-clarification) | Preserve structured delete confirmation clarification through MCP. | Done |
 | [M1I-S01](#m1i-s01-operator-docs-finalization) | Finalize README, operator recipes, and generated tool reference alignment. | Done |
 | [M1I-S02](#m1i-s02-final-review-panel) | Run final Go, QA, product, and infosec review panel. | Done |
-| [F-S01](#f-s01-evaluate-docker-compose-testcontainers-stack) | Evaluate Docker Compose-based Testcontainers stack. | Future |
+| [F-S01](#f-s01-evaluate-docker-compose-testcontainers-stack) | Evaluate Docker Compose-based Testcontainers stack. | Done |
 | [F-S02](#f-s02-bom-import-workflow) | BOM import workflow. | Future |
 | [F-S03](#f-s03-purchase-order-write-and-receiving) | Purchase order write and receiving. | Done |
 | [F-S04](#f-s04-build-order-workflows) | Build order workflows. | Future |
@@ -929,7 +929,7 @@ Residual risk:
 
 ### F-S01: Evaluate Docker Compose Testcontainers Stack
 
-- Status: `Future`
+- Status: `Done`
 - Issue: [#46](https://github.com/davidvanlaatum/inventree-mcp/issues/46)
 - Depends on: M1H-S01
 - Scope: evaluate whether `github.com/testcontainers/testcontainers-go/modules/compose` can replace or complement the hand-wired InvenTree Testcontainers stack by using official InvenTree Docker Compose files plus test-specific overrides.
@@ -940,10 +940,14 @@ Residual risk:
 
 Tasks:
 
-- [ ] Identify the official InvenTree compose files and required test overrides for pinned `inventree/inventree:1.4.3`.
-- [ ] Prototype a local compose stack using `testcontainers-go/modules/compose`.
-- [ ] Verify service logs, `ServiceContainer` inspection, endpoint discovery, and `Down` cleanup semantics.
-- [ ] Compare findings with the current direct-container `internal/testenv` implementation.
+- [x] Identify the official InvenTree compose files and required test overrides for pinned `inventree/inventree:1.4.3`.
+- [x] Prototype a local compose stack using `testcontainers-go/modules/compose`.
+- [x] Verify service logs, `ServiceContainer` inspection, endpoint discovery, and `Down` cleanup semantics.
+- [x] Compare findings with the current direct-container `internal/testenv` implementation.
+- Decision: reject Compose for the current integration environment. The prototype showed no material speed or coverage benefit and would add a large transitive dependency graph, an upstream Compose snapshot plus merge-sensitive overrides, additional per-service live-log setup, and a second cleanup lifecycle. See [Docker Compose Testcontainers Evaluation](testcontainers-compose-evaluation.md).
+- Validation: Compose prototype against `inventree/inventree:1.4.3` passed three times, with core startup from 36.768s to 52.825s and `Down` cleanup from 10.572s to 10.727s; the final strengthened rerun asserted the exact published-port set plus Docker not-found results for all containers, Compose networks, and created volumes. `go test ./internal/testenv -run '^TestStartInvenTreeStack$' -count=1 -v` passed in 55.08s for the direct comparison. `INVENTREE_TEST_SKIP_DOCKER=1 GOFLAGS=-trimpath go test -race -count=1 ./...`, `GOFLAGS=-trimpath go mod tidy -diff`, the retained-harness `gofmt -d`, and `git diff --check` passed.
+- Review: Senior Go Developer, Senior QA / Test Architect, Senior Product Manager, and Senior Infosec Reviewer panels completed. Initial Go review corrected live-log and transitive-dependency wording. QA and infosec required independently reproducible, sanitized prototype evidence. Follow-up QA and Go reviews tightened the exact published-port set and cleanup proof so unrelated Docker errors cannot masquerade as removal. The retained harness now requires Docker not-found results for every container, network, and created volume. Focused Go, QA, and infosec reruns found no unresolved actionable findings. Product review found the decision and future reconsideration gate clear; after issue #46 alignment and read-back, its focused follow-up also found no unresolved actionable findings.
+- Residual risk: single warm-image local runs are not performance benchmarks. The rejection remains appropriate because it does not depend on a small timing difference; it is based primarily on equivalent coverage and materially greater dependency, configuration-drift, logging, and lifecycle cost.
 
 ### F-S02: BOM Import Workflow
 
