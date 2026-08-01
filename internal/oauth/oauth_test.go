@@ -323,6 +323,42 @@ func TestAccessTokenVerifierValidatesEnvelopeClaimsAndCredential(t *testing.T) {
 			}(),
 		},
 		{
+			name: "missing session expiry",
+			aad:  AssociatedData{Issuer: issuer, Audience: audience, ClientID: clientID, Type: TokenTypeAccess},
+			claims: func() TokenClaims {
+				claims := claims
+				claims.SessionExpiresAt = time.Time{}
+				return claims
+			}(),
+		},
+		{
+			name: "missing subject",
+			aad:  AssociatedData{Issuer: issuer, Audience: audience, ClientID: clientID, Type: TokenTypeAccess},
+			claims: func() TokenClaims {
+				claims := claims
+				claims.Subject = ""
+				return claims
+			}(),
+		},
+		{
+			name: "missing issued at",
+			aad:  AssociatedData{Issuer: issuer, Audience: audience, ClientID: clientID, Type: TokenTypeAccess},
+			claims: func() TokenClaims {
+				claims := claims
+				claims.IssuedAt = time.Time{}
+				return claims
+			}(),
+		},
+		{
+			name: "future issued at",
+			aad:  AssociatedData{Issuer: issuer, Audience: audience, ClientID: clientID, Type: TokenTypeAccess},
+			claims: func() TokenClaims {
+				claims := claims
+				claims.IssuedAt = now.Add(time.Second)
+				return claims
+			}(),
+		},
+		{
 			name: "missing upstream credential",
 			aad:  AssociatedData{Issuer: issuer, Audience: audience, ClientID: clientID, Type: TokenTypeAccess},
 			claims: func() TokenClaims {
@@ -333,10 +369,12 @@ func TestAccessTokenVerifierValidatesEnvelopeClaimsAndCredential(t *testing.T) {
 		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			token, err := codec.Seal(ctx, tt.aad, tt.claims)
-			r.NoError(err)
-			_, err = verifier(ctx, token, httptest.NewRequest(http.MethodPost, "/mcp", nil))
-			r.ErrorIs(err, auth.ErrInvalidToken)
+			subtestCtx, _, _ := testhandler.SetupTestHandler(t)
+			subtestRequire := require.New(t)
+			token, err := codec.Seal(subtestCtx, tt.aad, tt.claims)
+			subtestRequire.NoError(err)
+			_, err = verifier(subtestCtx, token, httptest.NewRequest(http.MethodPost, "/mcp", nil))
+			subtestRequire.ErrorIs(err, auth.ErrInvalidToken)
 		})
 	}
 	_, err = verifier(ctx, "not-an-envelope", httptest.NewRequest(http.MethodPost, "/mcp", nil))
@@ -631,8 +669,6 @@ func TestServiceRefreshValidatesRefreshEnvelopeAndCredential(t *testing.T) {
 }
 
 func TestServiceRefreshRejectsInvalidRefreshClaims(t *testing.T) {
-	ctx, _, _ := testhandler.SetupTestHandler(t)
-	r := require.New(t)
 	now := time.Date(2026, 7, 7, 11, 30, 0, 0, time.UTC)
 	codec := testCodec(t)
 	service := Service{Codec: codec, Clock: fakeClock{now: now}}
@@ -694,10 +730,12 @@ func TestServiceRefreshRejectsInvalidRefreshClaims(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			token, err := codec.Seal(ctx, tc.aad, tc.claims)
-			r.NoError(err)
-			_, err = service.Refresh(ctx, token, aad)
-			r.ErrorIs(err, ErrInvalidToken)
+			subtestCtx, _, _ := testhandler.SetupTestHandler(t)
+			subtestRequire := require.New(t)
+			token, err := codec.Seal(subtestCtx, tc.aad, tc.claims)
+			subtestRequire.NoError(err)
+			_, err = service.Refresh(subtestCtx, token, aad)
+			subtestRequire.ErrorIs(err, ErrInvalidToken)
 		})
 	}
 }

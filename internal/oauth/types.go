@@ -53,10 +53,16 @@ func (c TokenClaims) validateForUse(now time.Time, expectedType string, aad Asso
 	if c.Issuer != aad.Issuer || c.Audience != aad.Audience || c.ClientID != aad.ClientID {
 		return ErrInvalidToken
 	}
+	if c.Subject == "" || c.IssuedAt.IsZero() || c.IssuedAt.After(now) {
+		return ErrInvalidToken
+	}
 	if !c.ExpiresAt.After(now) {
 		return ErrInvalidToken
 	}
-	if !c.SessionExpiresAt.IsZero() && !c.SessionExpiresAt.After(now) {
+	if !c.ExpiresAt.After(c.IssuedAt) {
+		return ErrInvalidToken
+	}
+	if c.SessionExpiresAt.IsZero() || !c.SessionExpiresAt.After(now) || c.ExpiresAt.After(c.SessionExpiresAt) {
 		return ErrInvalidToken
 	}
 	if err := c.Credential.Validate(); err != nil {

@@ -153,17 +153,9 @@ func ParseServeWithEnv(args []string, getenv Env, output io.Writer) (Config, err
 	fs.Int64Var(&cfg.MCPMaxRequestBodyBytes, "mcp-max-request-body-bytes", cfg.MCPMaxRequestBodyBytes, flagHelp("maximum bytes accepted in one MCP HTTP request body", EnvMCPMaxRequestBodyBytes))
 	fs.StringVar(&cfg.LogLevel, "log-level", cfg.LogLevel, flagHelp("log level", EnvLogLevel))
 	fs.StringVar(&cfg.DebugTrafficLog, "debug-traffic-log", cfg.DebugTrafficLog, flagHelp("append full MCP request/response JSON to this debug log file", EnvDebugTrafficLog))
-	fs.BoolVar(&cfg.DevIncompleteOAuth, "dev-incomplete-oauth", boolEnv(getenv, EnvDevIncompleteOAuth), flagHelp("allow development-only HTTP parsing before OAuth startup wiring is available", EnvDevIncompleteOAuth))
+	fs.BoolVar(&cfg.DevIncompleteOAuth, "dev-incomplete-oauth", boolEnv(getenv, EnvDevIncompleteOAuth), flagHelp("allow development-only HTTP parsing without OAuth setup wiring", EnvDevIncompleteOAuth))
 	fs.StringVar(&cfg.OAuthIssuerURL, "oauth-issuer-url", cfg.OAuthIssuerURL, flagHelp("public HTTPS OAuth issuer URL", EnvOAuthIssuerURL))
 	fs.StringVar(&cfg.OAuthResourceURL, "oauth-resource-url", cfg.OAuthResourceURL, flagHelp("public HTTPS MCP resource URL", EnvOAuthResourceURL))
-	fs.Func("oauth-key", flagHelp("OAuth envelope key as key-id:active|decrypt_only:base64-32-byte-key; repeatable", EnvOAuthKeys), func(value string) error {
-		key, err := parseKeyConfig(value)
-		if err != nil {
-			return err
-		}
-		cfg.OAuthKeyring.Keys = append(cfg.OAuthKeyring.Keys, key)
-		return nil
-	})
 	fs.Func("oauth-client-id", flagHelp("allowed OAuth client_id metadata URL; repeatable", EnvOAuthClientIDs), func(value string) error {
 		value = strings.TrimSpace(value)
 		if value != "" {
@@ -235,6 +227,11 @@ func (c Config) Validate() error {
 	}
 
 	if c.Transport == TransportHTTP {
+		if c.Environment == EnvironmentProduction {
+			if parsed, err := url.ParseRequestURI(c.InvenTreeURL); err == nil && parsed.Scheme != "https" {
+				validationErrors = append(validationErrors, errors.New("production HTTP mode requires an HTTPS InvenTree URL"))
+			}
+		}
 		if c.MCPMaxRequestBodyBytes <= 0 {
 			validationErrors = append(validationErrors, errors.New("MCP max request body bytes must be greater than zero"))
 		} else if minimum := MinimumMCPRequestBodyBytes(c.UploadMaxBytes); minimum > 0 && c.MCPMaxRequestBodyBytes < minimum {
@@ -251,16 +248,16 @@ func (c Config) Validate() error {
 			validationErrors = append(validationErrors, errors.New("HTTP listen address is required"))
 		}
 		if c.InvenTreeToken != "" {
-			validationErrors = append(validationErrors, errors.New("configured InvenTree tokens are STDIO-only until HTTP OAuth startup wiring is available"))
+			validationErrors = append(validationErrors, errors.New("configured InvenTree tokens are STDIO-only; HTTP runtime credentials come from MCP OAuth access tokens"))
 		}
 		if c.InvenTreeAuthScheme != AuthSchemeToken {
-			validationErrors = append(validationErrors, errors.New("configured InvenTree auth schemes are STDIO-only until HTTP OAuth startup wiring is available"))
+			validationErrors = append(validationErrors, errors.New("configured InvenTree auth schemes are STDIO-only; HTTP upstream credentials come from MCP OAuth access tokens"))
 		}
 		if c.Environment == EnvironmentProduction {
 			validationErrors = append(validationErrors, c.validateProductionHTTP()...)
 		}
 		if c.Environment == EnvironmentDevelopment && !c.DevIncompleteOAuth {
-			validationErrors = append(validationErrors, errors.New("development HTTP mode requires --dev-incomplete-oauth until OAuth startup and setup wiring is available"))
+			validationErrors = append(validationErrors, errors.New("development HTTP mode requires --dev-incomplete-oauth until OAuth setup wiring is available"))
 		}
 	}
 
@@ -277,6 +274,8 @@ func (c Config) validateProductionHTTP() []error {
 	}
 	if err := validateHTTPSURL(c.OAuthResourceURL, "OAuth resource URL"); err != nil {
 		validationErrors = append(validationErrors, err)
+	} else if parsed, err := url.Parse(c.OAuthResourceURL); err == nil && strings.HasSuffix(parsed.Path, "/") {
+		validationErrors = append(validationErrors, errors.New("OAuth resource URL must not end with /"))
 	}
 	if len(c.OAuthClientIDs) == 0 {
 		validationErrors = append(validationErrors, errors.New("at least one OAuth client ID is required for production HTTP"))
@@ -315,7 +314,11 @@ func (c Config) OAuthProtectedResourceMetadataURL() string {
 	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
 		return ""
 	}
-	return parsed.Scheme + "://" + parsed.Host + "/.well-known/oauth-protected-resource"
+	metadataPath := "/.well-known/oauth-protected-resource"
+	if resourcePath := strings.TrimSuffix(parsed.Path, "/"); resourcePath != "" {
+		metadataPath += resourcePath
+	}
+	return (&url.URL{Scheme: parsed.Scheme, Host: parsed.Host, Path: metadataPath}).String()
 }
 
 func validateHTTPSURL(raw string, label string) error {

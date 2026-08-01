@@ -32,18 +32,25 @@ HTTP OAuth building blocks include token envelopes, request-scoped credential re
 
 ## Reverse-Proxy HTTP Deployment
 
-Production reverse-proxy HTTP deployment has OAuth-protected startup wiring for `/mcp`, but still depends on connector setup endpoints, canonical reverse-proxy URL enforcement, and live deployment validation before it should be treated as supported for operators.
+Production reverse-proxy HTTP deployment has configured canonical protected-resource metadata, bearer challenges, token audiences, and OAuth-protected startup wiring for `/mcp`. It still depends on connector setup endpoints, the remaining canonical URL and trusted-proxy enforcement for those authorization/setup routes, and live deployment validation before it should be treated as supported for operators.
 
 HTTP request bodies are bounded by `INVENTREE_MCP_MAX_REQUEST_BODY_BYTES` or `--mcp-max-request-body-bytes`, which defaults to 8 MiB. If the HTTP inline-upload limit is raised, raise this limit enough for base64 expansion plus JSON overhead; HTTP startup rejects inconsistent values. The setting does not constrain STDIO uploads. Keep the limit finite on untrusted HTTP endpoints.
 
 Current HTTP clients use MCP `2026-07-28` sessionless POST requests, while legacy initialization remains supported. Client cancellation of a current-protocol POST propagates to the active tool handler; operators should treat cancellation as an unknown-result boundary for upstream writes unless the tool response or InvenTree read-back proves the outcome.
 
-HTTP mode accepts the same debug traffic log option as STDIO. HTTP debug entries include request URIs including query strings, request bodies, response bodies, and streaming response chunks. Request bodies and non-streaming responses are captured up to 1 MiB and use `body_truncated:true` when more data was forwarded; streaming response chunks are capped individually. Requests above the configured MCP request limit fail closed. Treat this file as sensitive and operator-local.
+HTTP mode accepts the same debug traffic log option as STDIO. HTTP debug entries include request URIs including query strings, request bodies, response bodies, and streaming response chunks. In production, bearer authentication runs before full-body traffic capture, so unauthenticated request bodies are rejected without being written to the debug log. Authenticated request bodies and non-streaming responses are captured up to 1 MiB and use `body_truncated:true` when more data was forwarded; streaming response chunks are capped individually. Requests above the configured MCP request limit fail closed. Treat this file as sensitive and operator-local.
 
 - Required inputs: internal listen address, `INVENTREE_URL`, public HTTPS issuer/resource URLs, envelope keys, allowed client metadata URLs, and token lifetimes. Trusted proxy settings, rate limits, and setup endpoints remain future inputs.
-- Current preferred flow for smoke testing: bind `INVENTREE_MCP_LISTEN` to loopback or a private service network, set `INVENTREE_MCP_OAUTH_ISSUER_URL`, `INVENTREE_MCP_OAUTH_RESOURCE_URL`, `INVENTREE_MCP_OAUTH_KEYS`, and `INVENTREE_MCP_OAUTH_CLIENT_IDS`, then verify `/.well-known/oauth-protected-resource` and the protected `/mcp` bearer challenge through the reverse proxy.
+- Current preferred flow for smoke testing: bind `INVENTREE_MCP_LISTEN` to loopback or a private service network, set `INVENTREE_MCP_OAUTH_ISSUER_URL`, `INVENTREE_MCP_OAUTH_RESOURCE_URL`, `INVENTREE_MCP_OAUTH_KEYS`, and `INVENTREE_MCP_OAUTH_CLIENT_IDS`, then verify the path-specific `/.well-known/oauth-protected-resource/mcp` document and the protected `/mcp` bearer challenge through the reverse proxy.
 - Clarify when: an operator expects live ChatGPT setup to complete, public URL differs from proxy routing, path prefix handling is unclear, production config enables TLS skip verify, or the requested client ID is not an HTTPS metadata URL.
-- Expected output now: HTTP MCP endpoint with OAuth protected-resource metadata and no MCP dispatch without a valid encrypted access-token envelope. Expected future output: full connector setup and reverse-proxy canonical URL enforcement.
+- Expected output now: HTTP MCP endpoint with canonical OAuth protected-resource metadata and no MCP dispatch without a valid encrypted access-token envelope. Expected future output: full connector setup plus canonical URL and trusted-proxy enforcement for its authorization/setup routes.
+
+### OAuth Envelope Key Lifecycle
+
+- Generate each 32-byte key with a cryptographically secure generator, for example `openssl rand -base64 32`, and assign a non-secret unique key ID. Store the resulting `INVENTREE_MCP_OAUTH_KEYS` value only in protected process environment or `/etc/inventree-mcp/inventree-mcp.env`, which packaged installs create with mode `0600`; never pass key material on the command line, commit it, or write it to the debug traffic log.
+- Keep exactly one key in `active` state. To rotate normally, add a new active key and change the former active key to `decrypt_only`, restart, and retain the old key only for the bounded grace period needed by outstanding envelopes—never longer than the configured absolute session lifetime. Remove it after that grace period and restart again.
+- If an envelope key may be compromised, remove it immediately instead of granting a grace period, install a new active key, restart the service, and require connector reauthorization because outstanding envelopes using the removed key become invalid. Rotate the sealed upstream InvenTree credentials as well if they may have been exposed.
+- A startup failure about missing, duplicate, weak, or state-invalid keys is fail-closed. Correct the protected configuration rather than weakening validation.
 
 ## Packaged Systemd Deployment
 

@@ -18,7 +18,6 @@ import (
 	"github.com/davidvanlaatum/inventree-mcp/internal/oauth"
 	"github.com/davidvanlaatum/inventree-mcp/internal/testenv"
 	"github.com/davidvanlaatum/inventree-mcp/internal/tools"
-	"github.com/modelcontextprotocol/go-sdk/auth"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -49,7 +48,7 @@ func TestHTTPOAuthFlowAgainstInvenTreeContainer(t *testing.T) {
 	part, err := shared.EnsureFixture(ctx, account, run, testenv.FixturePart)
 	r.NoError(err)
 
-	codec := testOAuthCodec(t)
+	codec, keyringConfig := testOAuthCodec(t)
 	issuer := "https://mcp.example.test"
 	audience := issuer + "/mcp"
 	redirectURI := "https://chatgpt.com/connector/oauth/callback_123"
@@ -98,13 +97,23 @@ func TestHTTPOAuthFlowAgainstInvenTreeContainer(t *testing.T) {
 	r.NotEmpty(pair.RefreshToken)
 
 	deps := tools.Dependencies{
-		AuthorizationMode:   tools.AuthorizationModeOAuth,
-		ResourceMetadataURL: issuer + "/.well-known/oauth-protected-resource",
-		ClientFromContext:   OAuthClientFromContext(shared.Environment().BaseURL, nil),
+		AuthorizationMode: tools.AuthorizationModeOAuth,
+		ClientFromContext: OAuthClientFromContext(shared.Environment().BaseURL, nil),
 	}
-	protected := auth.RequireBearerToken(oauthEnvelopeTokenVerifier(codec, issuer, audience, metadataURL), &auth.RequireBearerTokenOptions{
-		ResourceMetadataURL: deps.ResourceMetadataURL,
-	})(HTTPHandler(ctx, New(deps), config.DefaultMCPMaxRequestBodyBytes))
+	httpConfig := config.Config{
+		Transport:              config.TransportHTTP,
+		Environment:            config.EnvironmentProduction,
+		Path:                   "/mcp",
+		InvenTreeURL:           shared.Environment().BaseURL,
+		MCPMaxRequestBodyBytes: config.DefaultMCPMaxRequestBodyBytes,
+		OAuthIssuerURL:         issuer,
+		OAuthResourceURL:       audience,
+		OAuthKeyring:           keyringConfig,
+		OAuthClientIDs:         []string{metadataURL},
+	}
+	deps.ResourceMetadataURL = httpConfig.OAuthProtectedResourceMetadataURL()
+	protected, err := HTTPMux(ctx, httpConfig, New(deps))
+	r.NoError(err)
 
 	recorder := postMCPWithBearer(t, protected, pair.AccessToken, `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"search_parts","arguments":{"search":"`+part.Name+`"}}}`)
 	r.Equal(http.StatusOK, recorder.Code)
@@ -124,46 +133,17 @@ func TestHTTPOAuthFlowAgainstInvenTreeContainer(t *testing.T) {
 	a.NotContains(rawUpstreamRecorder.Body.String(), part.Name)
 }
 
-func testOAuthCodec(t *testing.T) oauth.EnvelopeCodec {
+func testOAuthCodec(t *testing.T) (oauth.EnvelopeCodec, oauth.KeyringConfig) {
 	t.Helper()
 
-	keyring, err := oauth.NewKeyring([]oauth.Key{{
-		ID:       "test-key",
-		Material: []byte("0123456789abcdef0123456789abcdef"),
-		State:    oauth.KeyStateActive,
-	}})
+	keyringConfig := oauth.KeyringConfig{Keys: []oauth.KeyConfig{{
+		ID:             "test-key",
+		MaterialBase64: "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY",
+		State:          oauth.KeyStateActive,
+	}}}
+	keyring, err := keyringConfig.Keyring()
 	require.NoError(t, err)
-	return oauth.EnvelopeCodec{Keyring: keyring}
-}
-
-func oauthEnvelopeTokenVerifier(codec oauth.EnvelopeCodec, issuer string, audience string, clientID string) auth.TokenVerifier {
-	return func(_ context.Context, token string, _ *http.Request) (*auth.TokenInfo, error) {
-		var claims oauth.TokenClaims
-		if err := codec.Open(token, oauth.AssociatedData{
-			Issuer:   issuer,
-			Audience: audience,
-			ClientID: clientID,
-			Type:     oauth.TokenTypeAccess,
-		}, &claims); err != nil {
-			return nil, auth.ErrInvalidToken
-		}
-		if claims.Type != oauth.TokenTypeAccess ||
-			claims.Issuer != issuer ||
-			claims.Audience != audience ||
-			claims.ClientID != clientID ||
-			!claims.ExpiresAt.After(time.Now()) ||
-			(!claims.SessionExpiresAt.IsZero() && !claims.SessionExpiresAt.After(time.Now())) {
-			return nil, auth.ErrInvalidToken
-		}
-		if err := claims.Credential.Validate(); err != nil {
-			return nil, auth.ErrInvalidToken
-		}
-		return oauth.TokenInfoWithCredential(&auth.TokenInfo{
-			Scopes:     append([]string(nil), claims.Scopes...),
-			Expiration: claims.ExpiresAt,
-			UserID:     claims.Subject,
-		}, claims.Credential), nil
-	}
+	return oauth.EnvelopeCodec{Keyring: keyring}, keyringConfig
 }
 
 func issueOAuthTestPair(

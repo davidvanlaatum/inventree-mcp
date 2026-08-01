@@ -32,9 +32,9 @@ HTTP production mode requires MCP-owned OAuth settings and rejects raw `INVENTRE
 
 - `INVENTREE_MCP_OAUTH_ISSUER_URL`: public HTTPS issuer URL.
 - `INVENTREE_MCP_OAUTH_RESOURCE_URL`: public HTTPS MCP resource URL, normally the public `/mcp` URL.
-- `INVENTREE_MCP_OAUTH_KEYS`: comma-separated `key-id:active|decrypt_only:base64-32-byte-key` entries.
+- `INVENTREE_MCP_OAUTH_KEYS`: comma-separated `key-id:active|decrypt_only:base64-32-byte-key` entries supplied through protected environment configuration; OAuth key material is not accepted as a CLI flag.
 - `INVENTREE_MCP_OAUTH_CLIENT_IDS`: comma-separated allowed OAuth `client_id` metadata URLs.
-- `INVENTREE_URL`: InvenTree base URL used for upstream API calls after the MCP OAuth envelope is validated.
+- `INVENTREE_URL`: HTTPS InvenTree base URL used for upstream API calls after the MCP OAuth envelope is validated.
 - Optional `INVENTREE_MCP_OAUTH_ACCESS_LIFETIME`, `INVENTREE_MCP_OAUTH_REFRESH_LIFETIME`, and `INVENTREE_MCP_OAUTH_SESSION_LIFETIME`.
 
 Development-only HTTP startup remains available with `--environment development --dev-incomplete-oauth`; it registers only the development server surface and still rejects configured raw InvenTree tokens.
@@ -53,7 +53,7 @@ Linux packages install:
 - `/etc/systemd/system/inventree-mcp.service`
 - `/etc/inventree-mcp/inventree-mcp.env`
 
-The packaged service is intended for HTTP mode behind a reverse proxy. Production HTTP startup now validates OAuth envelope keys, issuer/resource URLs, allowed client IDs, and token lifetimes before serving protected `/mcp` traffic. Install packages now for file layout testing, but do not enable the systemd service for a live ChatGPT connector until authorization/setup endpoints, reverse-proxy canonical URL enforcement, and live deployment validation land.
+The packaged service is intended for HTTP mode behind a reverse proxy. Production HTTP startup now validates OAuth envelope keys, issuer/resource URLs, allowed client IDs, and token lifetimes before serving protected `/mcp` traffic. Install packages now for file layout testing, but do not enable the systemd service for a live ChatGPT connector until authorization/setup endpoints, the remaining canonical URL and trusted-proxy enforcement for those routes, and live deployment validation land.
 
 For a development-only pre-OAuth HTTP runtime smoke test, run the binary directly. This starts the skeleton streamable HTTP server with only static MCP metadata and the read-only health/version tool.
 

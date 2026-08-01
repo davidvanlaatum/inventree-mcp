@@ -1,6 +1,7 @@
 package config
 
 import (
+	"bytes"
 	"os"
 	"strings"
 	"testing"
@@ -250,12 +251,11 @@ func TestParseServeAllowsProductionHTTPWithOAuthConfig(t *testing.T) {
 		"--transport", "http",
 		"--inventree-url", "https://inventory.example.test",
 		"--oauth-client-id", "https://chatgpt.com/client-metadata/b",
-		"--oauth-key", "next:decrypt_only:MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY",
 	}, mapEnv(map[string]string{
 		EnvOAuthIssuerURL:       "https://auth.example.test",
 		EnvOAuthResourceURL:     "https://mcp.example.test/mcp",
 		EnvOAuthClientIDs:       "https://chatgpt.com/client-metadata/a",
-		EnvOAuthKeys:            "current:active:MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY",
+		EnvOAuthKeys:            "current:active:MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY,next:decrypt_only:MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY",
 		EnvOAuthAccessLifetime:  "10m",
 		EnvOAuthRefreshLifetime: "24h",
 		EnvOAuthSessionLifetime: "720h",
@@ -264,12 +264,28 @@ func TestParseServeAllowsProductionHTTPWithOAuthConfig(t *testing.T) {
 
 	a.Equal(TransportHTTP, cfg.Transport)
 	a.Equal(EnvironmentProduction, cfg.Environment)
-	a.Equal("https://mcp.example.test/.well-known/oauth-protected-resource", cfg.OAuthProtectedResourceMetadataURL())
+	a.Equal("https://mcp.example.test/.well-known/oauth-protected-resource/mcp", cfg.OAuthProtectedResourceMetadataURL())
 	a.Equal([]string{"https://chatgpt.com/client-metadata/a", "https://chatgpt.com/client-metadata/b"}, cfg.OAuthClientIDs)
 	a.Len(cfg.OAuthKeyring.Keys, 2)
 	a.Equal(10*time.Minute, cfg.OAuthAccessLifetime)
 	a.Equal(24*time.Hour, cfg.OAuthRefreshLifetime)
 	a.Equal(720*time.Hour, cfg.OAuthSessionLifetime)
+}
+
+func TestParseServeRejectsTrailingSlashOAuthResourceURL(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+
+	_, err := ParseServeWithEnv([]string{
+		"--transport", "http",
+		"--inventree-url", "https://inventory.example.test",
+		"--oauth-issuer-url", "https://auth.example.test",
+		"--oauth-resource-url", "https://mcp.example.test/mcp/",
+		"--oauth-client-id", "https://chatgpt.com/client-metadata",
+	}, mapEnv(map[string]string{
+		EnvOAuthKeys: "current:active:MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY",
+	}), nil)
+	r.ErrorContains(err, "OAuth resource URL must not end with /")
 }
 
 func TestParseServeRejectsInvalidProductionOAuthConfig(t *testing.T) {
@@ -280,19 +296,19 @@ func TestParseServeRejectsInvalidProductionOAuthConfig(t *testing.T) {
 	_, err := ParseServeWithEnv([]string{
 		"--transport", "http",
 		"--dev-incomplete-oauth",
-		"--inventree-url", "https://inventory.example.test",
+		"--inventree-url", "http://inventory.example.test",
 		"--oauth-issuer-url", "http://mcp.example.test",
 		"--oauth-resource-url", "https://mcp.example.test/mcp?debug=true",
 		"--oauth-client-id", "http://chatgpt.example.test/client",
 		"--oauth-client-id", "https://user:pass@chatgpt.example.test/client",
-		"--oauth-key", "bad:active:not-base64",
 		"--oauth-access-lifetime", "48h",
 		"--oauth-refresh-lifetime", "24h",
 		"--oauth-session-lifetime", "12h",
-	}, mapEnv(nil), nil)
+	}, mapEnv(map[string]string{EnvOAuthKeys: "bad:active:not-base64"}), nil)
 	r.Error(err)
 
 	a.Contains(err.Error(), "production HTTP mode rejects --dev-incomplete-oauth")
+	a.Contains(err.Error(), "production HTTP mode requires an HTTPS InvenTree URL")
 	a.Contains(err.Error(), "OAuth issuer URL must use https")
 	a.Contains(err.Error(), "OAuth resource URL must not include query or fragment")
 	a.Contains(err.Error(), "OAuth client ID must use https")
@@ -321,6 +337,21 @@ func TestParseServeRedactsMalformedOAuthKeyEnv(t *testing.T) {
 	a.Contains(err.Error(), `OAuth key "invalid_oauth_key_entry_1"`)
 	a.NotContains(err.Error(), "super-secret-key-material")
 	a.NotContains(err.Error(), "broken:active")
+}
+
+func TestParseServeRedactsMalformedOAuthKeyFlag(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+
+	const sensitiveValue = "broken:active:super-secret-key-material:extra"
+	var output bytes.Buffer
+	_, err := ParseServeWithEnv([]string{"--oauth-key", sensitiveValue}, mapEnv(nil), &output)
+	r.Error(err)
+
+	a.Contains(err.Error(), "flag provided but not defined: -oauth-key")
+	a.NotContains(err.Error(), sensitiveValue)
+	a.NotContains(output.String(), sensitiveValue)
 }
 
 func TestParseServeAllowsDevelopmentHTTPOnlyWithExplicitIncompleteOAuthFlag(t *testing.T) {
@@ -433,7 +464,6 @@ func TestParseServeHelpMentionsEnvVars(t *testing.T) {
 		EnvDevIncompleteOAuth,
 		EnvOAuthIssuerURL,
 		EnvOAuthResourceURL,
-		EnvOAuthKeys,
 		EnvOAuthClientIDs,
 		EnvOAuthAccessLifetime,
 		EnvOAuthRefreshLifetime,
@@ -442,6 +472,7 @@ func TestParseServeHelpMentionsEnvVars(t *testing.T) {
 		a.Contains(help, envVar)
 	}
 	a.NotContains(help, EnvInvenTreeToken)
+	a.NotContains(help, "-oauth-key")
 }
 
 func mapEnv(values map[string]string) Env {

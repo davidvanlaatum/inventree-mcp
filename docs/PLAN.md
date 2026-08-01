@@ -126,14 +126,14 @@ Production startup configuration:
 
 - `INVENTREE_MCP_OAUTH_ISSUER_URL` / `--oauth-issuer-url`: configured public HTTPS issuer URL. Production startup rejects missing, non-HTTPS, query-bearing, or fragment-bearing values.
 - `INVENTREE_MCP_OAUTH_RESOURCE_URL` / `--oauth-resource-url`: configured public HTTPS resource URL used as token audience and protected-resource metadata `resource`.
-- `INVENTREE_MCP_OAUTH_KEYS` / repeated `--oauth-key`: comma-separated or repeated `key-id:active|decrypt_only:base64-32-byte-key` entries. Startup requires exactly one active key and accepts decrypt-only keys for rotation.
+- `INVENTREE_MCP_OAUTH_KEYS`: comma-separated `key-id:active|decrypt_only:base64-32-byte-key` entries supplied through protected process environment or the packaged owner-only environment file. Startup requires exactly one active key and accepts decrypt-only keys for rotation. Secret key material is intentionally not accepted through CLI flags because process arguments and shell history are not secret storage.
 - `INVENTREE_MCP_OAUTH_CLIENT_IDS` / repeated `--oauth-client-id`: comma-separated or repeated allowed HTTPS client metadata URLs. Access-token validation tries the configured client IDs as associated data and rejects tokens for unconfigured clients.
 - Optional lifetimes: `INVENTREE_MCP_OAUTH_ACCESS_LIFETIME`, `INVENTREE_MCP_OAUTH_REFRESH_LIFETIME`, and `INVENTREE_MCP_OAUTH_SESSION_LIFETIME`, defaulting to 15 minutes, 30 days, and 90 days. Startup requires positive lifetimes, access shorter than refresh, and refresh not longer than session.
 - Production HTTP rejects `INVENTREE_TOKEN`, non-default `INVENTREE_AUTH_SCHEME`, `INVENTREE_TLS_SKIP_VERIFY`, and `--dev-incomplete-oauth`. Raw InvenTree credentials are accepted only by the future setup flow and are sealed into OAuth envelopes before `/mcp` use.
 
 OAuth protected-resource discovery and challenge endpoints implemented by production startup:
 
-- `/.well-known/oauth-protected-resource` describes the `/mcp` resource.
+- `/.well-known/oauth-protected-resource/mcp` describes the `/mcp` resource, following the RFC 9728 path-specific well-known URL shape used by the MCP SDK. The bearer challenge advertises this exact configured metadata URL.
 - Unauthenticated protected requests return `401` with `WWW-Authenticate: Bearer resource_metadata="<metadata-url>"`.
 - The protected-resource metadata advertises the configured authorization server issuer, supported scopes, bearer method, resource URL, and resource name.
 - The protected-resource metadata URL is derived from the configured resource URL's scheme and host, not from request `Host` headers.
@@ -231,7 +231,7 @@ Releases are tag-driven through GitHub Actions and GoReleaser. Pushing a `vX.X.X
 
 The Linux packages install the `inventree-mcp` binary to `/usr/bin`, install `packaging/systemd/inventree-mcp.service` as `inventree-mcp.service`, and install `/etc/inventree-mcp/inventree-mcp.env` as a noreplace configuration file. Package maintainer scripts reload systemd and restart the service only when it is already enabled or active. The `apk` package carries the same files for artifact parity; Alpine/OpenRC service management is not implemented in the first release package.
 
-The packaged service is for HTTP mode behind a reverse proxy. Production HTTP startup can now serve protected streamable HTTP with OAuth envelope validation, request-scoped InvenTree credential recovery, protected-resource metadata, and the full tool surface behind per-tool scope guards. Connector authorization/setup endpoints, reverse-proxy canonical URL enforcement, and live packaged deployment validation still gate operator-ready ChatGPT deployment. Packages can be installed for file layout testing, but the systemd service should not be enabled for live connector use until that deployment path lands. The unit uses `Type=simple` because the current command does not implement systemd notify or watchdog support. Do not switch the unit to `Type=notify` or add `WatchdogSec` until the Go process sends systemd readiness/watchdog notifications and tests cover the behavior.
+The packaged service is for HTTP mode behind a reverse proxy. Production HTTP startup can now serve protected streamable HTTP with OAuth envelope validation, request-scoped InvenTree credential recovery, protected-resource metadata, and the full tool surface behind per-tool scope guards. Connector authorization/setup endpoints, the remaining canonical URL and trusted-proxy enforcement for those routes, and live packaged deployment validation still gate operator-ready ChatGPT deployment. Packages can be installed for file layout testing, but the systemd service should not be enabled for live connector use until that deployment path lands. The unit uses `Type=simple` because the current command does not implement systemd notify or watchdog support. Do not switch the unit to `Type=notify` or add `WatchdogSec` until the Go process sends systemd readiness/watchdog notifications and tests cover the behavior.
 
 ## Project Structure
 
@@ -994,7 +994,7 @@ Implementation notes:
 - Fake `http.RoundTripper` tests for InvenTree client request construction, upstream auth headers, retry policy, and error mapping.
 - URL fetcher interface tests proving SSRF policy can be tested without real external network access.
 - Structured logger tests using `dvgoutils/logging/testhandler` proving auth tokens, OAuth envelopes, uploaded file contents, and sensitive operator data are redacted, and that request/tool attributes attached with `logging.WithLogger` are present on downstream logs.
-- HTTP OAuth metadata endpoint tests for `/.well-known/oauth-protected-resource` and `/.well-known/oauth-authorization-server`.
+- HTTP OAuth metadata endpoint tests for the resource-derived path-specific route such as `/.well-known/oauth-protected-resource/mcp`. Authorization-server metadata at `/.well-known/oauth-authorization-server` remains future F-S08 coverage.
 - Metadata tests must assert issuer, authorization endpoint, token endpoint, supported grants, supported PKCE methods, resource identifier, scopes, and no internal host leakage.
 - HTTP protected-resource tests proving unauthenticated `/mcp` requests return `401` with the required `WWW-Authenticate` bearer challenge and `resource_metadata` reference.
 - Authorization-code and PKCE tests covering code challenge verification, redirect URI validation, state preservation, invalid verifier rejection, expired code rejection, wrong redirect URI rejection, cross-client code rejection, and reused-code rejection.
@@ -1157,7 +1157,7 @@ The full first beta milestone should include:
 - GitHub Actions CI, Dependabot, golangci-lint config, and pre-commit config.
 - README with quick-start links and minimal setup examples.
 
-This milestone proves the transport, auth, client, schema, and data-entry patterns while completing a useful operator loop: add or update a purchasable part, associate supplier/manufacturer data, create initial stock, and preview a purchase order. The milestone does not declare production ChatGPT/HTTP connector deployment ready; production HTTP startup, setup wiring, reverse-proxy canonical URL enforcement, and packaged-service validation remain gated follow-up work.
+This milestone proves the transport, auth, client, schema, and data-entry patterns while completing a useful operator loop: add or update a purchasable part, associate supplier/manufacturer data, create initial stock, and preview a purchase order. F-S07 subsequently completed OAuth-protected production HTTP startup for already sealed access-token envelopes. The milestone still does not declare production ChatGPT/HTTP connector deployment ready; authorization/setup wiring, remaining reverse-proxy enforcement for those routes, and packaged-service validation remain gated follow-up work.
 
 Blocking milestone tests:
 

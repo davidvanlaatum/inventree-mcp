@@ -10,6 +10,8 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
 
 	"github.com/davidvanlaatum/dvgoutils/logging"
 	"github.com/davidvanlaatum/inventree-mcp/internal/buildinfo"
@@ -23,12 +25,18 @@ import (
 )
 
 func main() {
-	os.Exit(run(os.Args[1:], os.Stdout, os.Stderr, os.Getenv))
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	os.Exit(runWithContext(ctx, os.Args[1:], os.Stdout, os.Stderr, os.Getenv))
 }
 
 var serverRun = server.Run
 
 func run(args []string, stdout, stderr io.Writer, getenv config.Env) int {
+	return runWithContext(context.Background(), args, stdout, stderr, getenv)
+}
+
+func runWithContext(parentCtx context.Context, args []string, stdout, stderr io.Writer, getenv config.Env) int {
 	if len(args) == 0 {
 		writeLine(stderr, "usage: inventree-mcp <serve|version> [flags]")
 		return 2
@@ -52,7 +60,7 @@ func run(args []string, stdout, stderr io.Writer, getenv config.Env) int {
 			writeLine(stderr, "inventree-mcp: %v", err)
 			return 2
 		}
-		ctx, err := platform.NewRootContext(context.Background(), platform.LoggerConfig{
+		ctx, err := platform.NewRootContext(parentCtx, platform.LoggerConfig{
 			Level:  cfg.LogLevel,
 			Output: stderr,
 		})
@@ -61,6 +69,9 @@ func run(args []string, stdout, stderr io.Writer, getenv config.Env) int {
 			return 2
 		}
 		if err := serve(ctx, cfg); err != nil {
+			if err == context.Canceled && parentCtx.Err() != nil {
+				return 0
+			}
 			writeLine(stderr, "inventree-mcp: %v", err)
 			return 2
 		}
