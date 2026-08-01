@@ -62,9 +62,9 @@ func RunStdio(ctx context.Context, srv *mcp.Server, traffic *trafficLog) error {
 }
 
 func RunHTTP(ctx context.Context, cfg config.Config, srv *mcp.Server, traffic *trafficLog) error {
-	handler := HTTPHandler(ctx, srv)
+	handler := HTTPHandler(ctx, srv, cfg.MCPMaxRequestBodyBytes)
 	if traffic != nil {
-		handler = traffic.middleware(string(config.TransportHTTP), handler)
+		handler = traffic.middleware(string(config.TransportHTTP), cfg.MCPMaxRequestBodyBytes, handler)
 	}
 	mux := http.NewServeMux()
 	mux.Handle(cfg.Path, handler)
@@ -75,12 +75,14 @@ func RunHTTP(ctx context.Context, cfg config.Config, srv *mcp.Server, traffic *t
 	return httpServer.ListenAndServe()
 }
 
-func HTTPHandler(ctx context.Context, srv *mcp.Server) http.Handler {
+func HTTPHandler(ctx context.Context, srv *mcp.Server, maxRequestBodyBytes int64) http.Handler {
 	handler := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server {
 		return srv
 	}, &mcp.StreamableHTTPOptions{
-		Stateless: true,
-		Logger:    logging.FromContext(ctx),
+		Stateless:                    true,
+		Logger:                       logging.FromContext(ctx),
+		MaxRequestBodyBytes:          maxRequestBodyBytes,
+		PropagateRequestCancellation: true,
 	})
 
 	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {

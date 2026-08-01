@@ -127,7 +127,7 @@ func (c loggingConnection) logMessage(direction string, msg jsonrpc.Message) {
 	c.log.write(trafficLogEntry{Transport: c.transport, Direction: direction, Message: payload})
 }
 
-func (l *trafficLog) middleware(transport string, next http.Handler) http.Handler {
+func (l *trafficLog) middleware(transport string, maxRequestBodyBytes int64, next http.Handler) http.Handler {
 	if l == nil {
 		return next
 	}
@@ -136,7 +136,7 @@ func (l *trafficLog) middleware(transport string, next http.Handler) http.Handle
 		var truncated bool
 		if req.Body != nil {
 			var err error
-			body, truncated, err = readHTTPDebugBody(req.Body)
+			body, truncated, err = readHTTPRequestBody(req.Body, maxRequestBodyBytes)
 			_ = req.Body.Close()
 			if err != nil {
 				l.write(trafficLogEntry{
@@ -163,17 +163,17 @@ func (l *trafficLog) middleware(transport string, next http.Handler) http.Handle
 					Direction:     "inbound",
 					Method:        req.Method,
 					Path:          req.URL.RequestURI(),
-					Body:          string(body),
+					Body:          string(truncateBytes(body, maxHTTPDebugBodyBytes)),
 					BodyTruncated: true,
 				})
-				http.Error(w, "debug traffic log request body limit exceeded", http.StatusRequestEntityTooLarge)
+				http.Error(w, "MCP request body limit exceeded", http.StatusRequestEntityTooLarge)
 				l.write(trafficLogEntry{
 					Transport: transport,
 					Direction: "outbound",
 					Method:    req.Method,
 					Path:      req.URL.RequestURI(),
 					Status:    http.StatusRequestEntityTooLarge,
-					Body:      "debug traffic log request body limit exceeded\n",
+					Body:      "MCP request body limit exceeded\n",
 				})
 				return
 			}
@@ -184,8 +184,8 @@ func (l *trafficLog) middleware(transport string, next http.Handler) http.Handle
 			Direction:     "inbound",
 			Method:        req.Method,
 			Path:          req.URL.RequestURI(),
-			Body:          string(body),
-			BodyTruncated: truncated,
+			Body:          string(truncateBytes(body, maxHTTPDebugBodyBytes)),
+			BodyTruncated: len(body) > maxHTTPDebugBodyBytes,
 		})
 
 		recorder := &trafficResponseRecorder{
@@ -270,15 +270,16 @@ func (r *trafficResponseRecorder) isEventStream() bool {
 	return strings.HasPrefix(strings.ToLower(r.Header().Get("Content-Type")), "text/event-stream")
 }
 
-func readHTTPDebugBody(body io.Reader) ([]byte, bool, error) {
-	payload, err := io.ReadAll(io.LimitReader(body, maxHTTPDebugBodyBytes+1))
+func readHTTPRequestBody(body io.Reader, maxBytes int64) ([]byte, bool, error) {
+	readLimit := maxBytes
+	if readLimit < int64(^uint64(0)>>1) {
+		readLimit++
+	}
+	payload, err := io.ReadAll(io.LimitReader(body, readLimit))
 	if err != nil {
 		return nil, false, err
 	}
-	if len(payload) > maxHTTPDebugBodyBytes {
-		return payload[:maxHTTPDebugBodyBytes], true, nil
-	}
-	return payload, false, nil
+	return payload, int64(len(payload)) > maxBytes, nil
 }
 
 func truncateBytes(data []byte, limit int) []byte {

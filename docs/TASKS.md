@@ -91,6 +91,8 @@ Before `M1C-S04` is complete, mutating, operational, destructive, and upload too
 | [F-S13](#f-s13-category-parameter-defaults) | Manage category parameter defaults using existing templates. | Future |
 | [F-S14](#f-s14-bulk-parameter-propagation-and-audit-workflows) | Add dry-run bulk parameter propagation and consistency audits. | Future |
 | [F-S15](#f-s15-live-order-entry-tool-hardening) | Close gaps found during live order-entry use of the MCP tools. | Future |
+| [F-S16](#f-s16-mcp-go-sdk-v17-and-2026-07-28-protocol-adoption) | Adopt MCP Go SDK v1.7 and the MCP 2026-07-28 protocol safely. | Done |
+| [F-S17](#f-s17-native-mcp-elicitation-for-structured-clarifications) | Add native MCP elicitation while preserving structured clarification fallback. | Planned |
 
 ## Milestone 0: Repository And Planning
 
@@ -265,7 +267,7 @@ Tasks:
   - HTTP streamable server runs stateless.
   - Request/tool scoped loggers are derived and reattached to context.
   - Health/version tool is read-only.
-  - Tool annotation helper tests cover SDK `v1.6.1` pointer false behavior for `destructiveHint` and `openWorldHint`.
+  - Tool annotation helper tests cover the current SDK's explicit false wire behavior for all annotation hints.
 
 Tasks:
 
@@ -405,7 +407,7 @@ Tasks:
 - Depends on: M1A-S03
 - Scope: prove official MCP SDK `auth`/`oauthex` behavior against the planned HTTP architecture.
 - Acceptance:
-  - Uses reviewed SDK baseline `v1.6.1` or records upgrade findings.
+  - Uses the reviewed SDK baseline (initially `v1.6.1`, upgraded by F-S16 to `v1.7.0`) or records upgrade findings.
   - Confirms `auth.RequireBearerToken`, `auth.RequireBearerTokenOptions`, `auth.TokenVerifier`, and `auth.TokenInfoFromContext` behavior.
   - Proves token info or selected credential carrier reaches tool handlers under stateless HTTP.
   - Updates plan if SDK API assumptions are wrong.
@@ -1223,3 +1225,62 @@ Tasks:
 - [ ] Add dry-run/preflight support for lower-level write tools used during order entry where it is currently missing.
 - [ ] Add missing read/search and duplicate-check tools or fold them into the dependent future stories that own the endpoint family.
 - [ ] Update tool reference, operator recipes, and prompt/operator guidance for the hardened order-entry workflow.
+
+### F-S16: MCP Go SDK v1.7 And 2026-07-28 Protocol Adoption
+
+- Status: `Done`
+- Issue: [#44](https://github.com/davidvanlaatum/inventree-mcp/issues/44)
+- Depends on: M1A-S03, M1C-S04, and M1I-S02
+- Scope: upgrade the official MCP Go SDK from `v1.6.1` to `v1.7.0`, adopt the MCP `2026-07-28` stateless/sessionless protocol behavior, preserve legacy-client compatibility, and explicitly configure the new HTTP request-safety controls without changing tool business behavior.
+- Validation: `go test -race -p=1 ./...` passed, including the default-on InvenTree Testcontainers suites; focused config, protocol, OAuth discovery, cancellation, request-limit, and traffic-log tests passed; `go generate ./internal/tools` produced no unexpected generated changes; `golangci-lint run` reported 0 issues; `git diff --check` passed. One earlier parallel package run hit a transient Testcontainers reaper/network collision; the serial race run completed cleanly afterward.
+- Review: Senior Go Developer, Senior QA / Test Architect, Senior Product Manager, and Senior Infosec Reviewer reviews completed. Findings covering STDIO/HTTP config coupling, debug-log request forwarding, stateless POST session IDs, explicit STDIO negotiation, cancellation errors, authenticated discovery, traffic-log truncation docs, elicitation capability wording, and transport-specific operator guidance were fixed. Focused reruns by every affected role reported no remaining actionable findings.
+- Residual risk: HTTP debug logging buffers up to the configured request limit per concurrent request, so operators must keep limits and reverse-proxy rate controls conservative. The 1 MiB JSON overhead is a policy allowance rather than a schema-derived maximum. Cancellation of an upstream write remains an unknown-result boundary. Live ChatGPT connector elicitation/handshake validation and its destructive-confirmation decision remain in F-S17; production OAuth startup remains separately gated.
+- Acceptance:
+  - The module pins `github.com/modelcontextprotocol/go-sdk` `v1.7.0`, and the ordinary test suite passes without compatibility escape flags.
+  - STDIO and stateless streamable HTTP negotiate MCP `2026-07-28` through `server/discover` while legacy `initialize` clients remain supported.
+  - Stateless HTTP ignores session IDs, rejects unsupported GET/DELETE session operations, and propagates aborted `2026-07-28` POST cancellation to in-flight handlers.
+  - Streamable HTTP has an explicit bounded request-body limit large enough for the configured inline-upload limit after base64 and JSON overhead; invalid limit combinations fail configuration validation.
+  - Tool annotations serialize explicit `readOnlyHint` and `idempotentHint` booleans and keep explicit false pointer hints for destructive/open-world behavior.
+  - Protocol-boundary tests cover discovery, legacy initialization, sessionless behavior, request-body rejection, cancellation, annotations, OAuth scope enforcement, and request-scoped credential isolation.
+  - `docs/PLAN.md`, tool reference, operator recipes, and SDK/protocol validation evidence are aligned with the adopted behavior.
+  - The existing `_meta["securitySchemes"]` compatibility mirror remains documented because SDK `v1.7.0` still has no first-class top-level `securitySchemes` field on `mcp.Tool`.
+
+Tasks:
+
+- [x] Upgrade the official MCP Go SDK dependency and tidy transitive dependencies.
+- [x] Add explicit streamable HTTP body-limit and request-cancellation options.
+- [x] Validate the HTTP body limit against the configured inline-upload limit.
+- [x] Update protocol and traffic-log tests for `server/discover` plus legacy initialization.
+- [x] Add sessionless HTTP, oversized-body, and aborted-request cancellation coverage.
+- [x] Update annotation wire-contract tests for explicit false booleans.
+- [x] Re-run OAuth scope and request-scoped credential propagation tests on SDK `v1.7.0`.
+- [x] Align plan, task, tool-reference, and operator documentation.
+
+### F-S17: Native MCP Elicitation For Structured Clarifications
+
+- Status: `Planned`
+- Issue: [#45](https://github.com/davidvanlaatum/inventree-mcp/issues/45)
+- Depends on: F-S16, product review, QA review, and live ChatGPT connector capability verification
+- Scope: use MCP multi-round-trip requests and structured elicitation for missing or ambiguous operator input while preserving the existing `clarification_required` result contract as a compatibility fallback for clients that cannot complete elicitation.
+- Acceptance:
+  - A documented capability policy decides when handlers return native elicitation versus the existing structured clarification result.
+  - Eligible clarification paths issue focused structured elicitation requests that collect only non-secret values the operator can reasonably supply.
+  - Authentication credentials, tokens, uploaded content, and other secrets are never requested through elicitation.
+  - MCP `2026-07-28` clients advertising the required elicitation capability can complete the clarification and retry cycle through MRTR without creating partial writes.
+  - Legacy clients and clients missing elicitation capability receive the existing `clarification_required` output with stable retry fields and values.
+  - Destructive confirmations remain enforced by the server and are not treated as satisfied merely because the client rendered an elicitation UI.
+  - Unit and protocol-boundary tests cover accepted, declined, cancelled, malformed, unsupported-capability, legacy-client, retry-state, and no-partial-write paths.
+  - Live ChatGPT connector validation proves at least one read ambiguity, one write preflight, and one destructive confirmation path before broad migration.
+  - Tool reference, operator recipes, prompts, and public clarification contracts explain native elicitation and fallback behavior.
+
+Tasks:
+
+- [ ] Verify current ChatGPT connector MRTR and elicitation behavior against official docs and a live development connector.
+- [ ] Resolve whether accepted native elicitation may supply an explicit destructive-confirmation value on retry or whether destructive confirmation must remain in the structured fallback/tool-input flow; rendering an elicitation UI alone never confirms an action.
+- [ ] Define the hybrid native-elicitation and structured-fallback policy.
+- [ ] Add reusable clarification-to-elicitation request and retry-state helpers.
+- [ ] Convert a narrow representative clarification set before expanding across tools.
+- [ ] Preserve destructive confirmation and no-partial-write boundaries.
+- [ ] Add MCP `2026-07-28`, legacy-client, unsupported-capability, and cancellation tests.
+- [ ] Run live connector validation and record evidence.
+- [ ] Update tool reference, operator recipes, prompts, and task evidence.

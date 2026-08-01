@@ -25,15 +25,20 @@ HTTP OAuth building blocks are implemented for milestone 1, including token enve
 - Required inputs: `INVENTREE_URL`, `INVENTREE_TOKEN`, optional `INVENTREE_AUTH_SCHEME`, `INVENTREE_UPLOAD_ALLOW_ROOTS`, `INVENTREE_UPLOAD_MAX_BYTES`, and optional `INVENTREE_MCP_DEBUG_TRAFFIC_LOG`.
 - Preferred flow: validate configuration, seed logging context, run `inventree-mcp serve --transport stdio`, perform a read-only smoke test.
 - Local upload flow: configure trusted operator-controlled upload roots with `INVENTREE_UPLOAD_ALLOW_ROOTS` or repeated `--upload-allow-root`; tune the byte limit with `INVENTREE_UPLOAD_MAX_BYTES` or `--upload-max-bytes` when the default limit is too small.
+- MCP protocol flow: current clients use MCP `2026-07-28` discovery. Legacy initialization remains supported.
 - Debug traffic flow: set `--debug-traffic-log /secure/path/mcp-traffic.jsonl` or `INVENTREE_MCP_DEBUG_TRAFFIC_LOG` only while diagnosing MCP client behavior. The JSON Lines file records full MCP request and response payloads, including structured clarification results, tool arguments, and any sensitive data the MCP client sends.
 - Clarify when: auth scheme is neither `Token` nor `Bearer`, URL is missing, upload allowlisted roots are not trusted, or TLS skip verify is requested outside local/test use.
 - Expected output: STDIO MCP server ready for local clients.
 
 ## Reverse-Proxy HTTP Deployment
 
+HTTP request bodies are bounded by `INVENTREE_MCP_MAX_REQUEST_BODY_BYTES` or `--mcp-max-request-body-bytes`, which defaults to 8 MiB. If the HTTP inline-upload limit is raised, raise this limit enough for base64 expansion plus JSON overhead; HTTP startup rejects inconsistent values. The setting does not constrain STDIO uploads. Keep the limit finite on untrusted HTTP endpoints.
+
+Current HTTP clients use MCP `2026-07-28` sessionless POST requests, while legacy initialization remains supported. Client cancellation of a current-protocol POST propagates to the active tool handler; operators should treat cancellation as an unknown-result boundary for upstream writes unless the tool response or InvenTree read-back proves the outcome.
+
 Production reverse-proxy HTTP deployment depends on the completed HTTP OAuth startup and setup wiring. In milestone 1, the core OAuth and per-tool scope pieces are present, but the packaged production service should remain disabled until the deployment path is wired and validated end to end.
 
-Development HTTP mode accepts the same debug traffic log option as STDIO. HTTP debug entries include request URIs including query strings, request bodies, response bodies, and streaming response chunks; oversized HTTP request bodies fail closed and response capture is capped in the log. Treat this file as sensitive and operator-local.
+Development HTTP mode accepts the same debug traffic log option as STDIO. HTTP debug entries include request URIs including query strings, request bodies, response bodies, and streaming response chunks. Request bodies and non-streaming responses are captured up to 1 MiB and use `body_truncated:true` when more data was forwarded; streaming response chunks are capped individually. Requests above the configured MCP request limit fail closed. Treat this file as sensitive and operator-local.
 
 - Required future inputs: internal listen address, public canonical HTTPS issuer/resource URLs, trusted proxy settings, envelope keys, rate-limit settings.
 - Future preferred flow: configure reverse proxy TLS, expose only the proxy-facing listener, set canonical URLs explicitly, configure trusted forwarded headers, validate metadata/challenge URLs.

@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/davidvanlaatum/dvgoutils/logging/testhandler"
+	"github.com/davidvanlaatum/inventree-mcp/internal/config"
 	"github.com/davidvanlaatum/inventree-mcp/internal/inventree"
 	"github.com/davidvanlaatum/inventree-mcp/internal/oauth"
 	"github.com/davidvanlaatum/inventree-mcp/internal/testenv"
@@ -103,7 +104,7 @@ func TestHTTPOAuthFlowAgainstInvenTreeContainer(t *testing.T) {
 	}
 	protected := auth.RequireBearerToken(oauthEnvelopeTokenVerifier(codec, issuer, audience, metadataURL), &auth.RequireBearerTokenOptions{
 		ResourceMetadataURL: deps.ResourceMetadataURL,
-	})(HTTPHandler(ctx, New(deps)))
+	})(HTTPHandler(ctx, New(deps), config.DefaultMCPMaxRequestBodyBytes))
 
 	recorder := postMCPWithBearer(t, protected, pair.AccessToken, `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"search_parts","arguments":{"search":"`+part.Name+`"}}}`)
 	r.Equal(http.StatusOK, recorder.Code)
