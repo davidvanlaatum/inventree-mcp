@@ -95,6 +95,12 @@ type Parameter struct {
 	Data      string `json:"data"`
 }
 
+type PartParameterPage struct {
+	Count   int
+	Results []Parameter
+	HasMore bool
+}
+
 type ParameterTemplate struct {
 	PK       int     `json:"pk"`
 	Name     string  `json:"name"`

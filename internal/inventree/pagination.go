@@ -56,6 +56,28 @@ func ListAll[T any](ctx context.Context, client *Client, path string, query url.
 	}
 }
 
+func listPage[T any](ctx context.Context, client *Client, path string, query url.Values) (Page[T], error) {
+	if client == nil {
+		return Page[T]{}, errors.New("InvenTree client is required")
+	}
+	var payload json.RawMessage
+	req, err := client.NewRequest(ctx, http.MethodGet, path, query, nil)
+	if err != nil {
+		return Page[T]{}, err
+	}
+	if err := client.DoJSON(req, &payload); err != nil {
+		return Page[T]{}, err
+	}
+	page, ok, err := decodePage[T](payload)
+	if err != nil {
+		return Page[T]{}, err
+	}
+	if ok {
+		return page, nil
+	}
+	return Page[T]{Count: len(page.Results), Results: page.Results}, nil
+}
+
 func decodePage[T any](payload json.RawMessage) (Page[T], bool, error) {
 	var page Page[T]
 	if err := json.Unmarshal(payload, &page); err != nil {

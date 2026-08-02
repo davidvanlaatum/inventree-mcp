@@ -162,12 +162,34 @@ func TestReadMethodsUseExpectedEndpoints(t *testing.T) {
 		{
 			name: "search part parameters",
 			call: func(ctx context.Context, client *Client) error {
-				_, err := client.SearchPartParameters(ctx, PartParameterQuery{PartID: 10, Limit: 9, Offset: 5})
+				_, err := client.SearchPartParameters(ctx, PartParameterQuery{Search: "10k", PartID: 10, TemplateID: 70, Limit: 9, Offset: 5})
 				return err
 			},
 			wantPath:  "/api/parameter/",
-			wantQuery: url.Values{"model_id": []string{"10"}, "model_type": []string{"part.part"}, "limit": []string{"9"}, "offset": []string{"5"}},
+			wantQuery: url.Values{"search": []string{"10k"}, "model_id": []string{"10"}, "model_type": []string{"part.part"}, "template": []string{"70"}, "limit": []string{"9"}, "offset": []string{"5"}},
 			response:  `{"count":1,"next":null,"previous":null,"results":[{"pk":60,"model_type":"part.part","model_id":10,"template":70,"data":"10k"}]}`,
+		},
+		{
+			name: "get part parameter",
+			call: func(ctx context.Context, client *Client) error {
+				_, err := client.GetPartParameter(ctx, 60)
+				return err
+			},
+			wantPath: "/api/parameter/60/",
+			response: `{"pk":60,"model_type":"part.part","model_id":10,"template":70,"data":"10k"}`,
+		},
+		{
+			name: "search part parameter page",
+			call: func(ctx context.Context, client *Client) error {
+				page, err := client.SearchPartParametersPage(ctx, PartParameterQuery{TemplateID: 70, Limit: 20, Offset: 40})
+				if err == nil && !page.HasMore {
+					return errors.New("expected another parameter page")
+				}
+				return err
+			},
+			wantPath:  "/api/parameter/",
+			wantQuery: url.Values{"model_type": []string{"part.part"}, "template": []string{"70"}, "limit": []string{"20"}, "offset": []string{"40"}},
+			response:  `{"count":100,"next":"https://inventory.example.test/api/parameter/?limit=20&offset=60","previous":null,"results":[{"pk":60,"model_type":"part.part","model_id":10,"template":70,"data":"10k"}]}`,
 		},
 		{
 			name: "search parameter templates",

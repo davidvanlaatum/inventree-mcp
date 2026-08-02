@@ -242,6 +242,7 @@ func registerWriteTools(server *mcp.Server, deps Dependencies) {
 	addWriteTool(server, deps, CreatePartToolName, "Create part", "Creates an InvenTree part in an existing category.", createPart(deps))
 	addWriteTool(server, deps, UpdatePartToolName, "Update part", "Partially updates an InvenTree part.", updatePart(deps))
 	addWriteTool(server, deps, SetPartParametersToolName, "Set part parameters", "Creates or updates part parameter values using existing linked templates.", setPartParameters(deps))
+	addWriteTool(server, deps, DeletePartParameterToolName, "Delete part parameter", "Deletes one parameter row by stable ID after confirm:true and verifies removal.", deletePartParameter(deps))
 	addWriteTool(server, deps, CreateCompanyToolName, "Create company", "Creates a supplier and/or manufacturer company.", createCompany(deps))
 	addWriteTool(server, deps, CreateSupplierPartToolName, "Create supplier part", "Creates a supplier-part link for existing records.", createSupplierPart(deps))
 	addWriteTool(server, deps, CreateManufacturerPartToolName, "Create manufacturer part", "Creates a manufacturer-part link for existing records.", createManufacturerPart(deps))

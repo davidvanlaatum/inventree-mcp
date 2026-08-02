@@ -198,6 +198,14 @@ func (c *Client) UpdatePartParameter(ctx context.Context, id int, fields PatchFi
 	return out, err
 }
 
+func (c *Client) DeletePartParameter(ctx context.Context, id int) error {
+	req, err := c.NewRequest(ctx, http.MethodDelete, fmt.Sprintf("/api/parameter/%d/", id), nil, nil)
+	if err != nil {
+		return err
+	}
+	return c.DoJSON(req, nil)
+}
+
 func (c *Client) CreateStockItem(ctx context.Context, input StockItemCreate) (StockItem, error) {
 	var raw json.RawMessage
 	if err := c.Post(ctx, "/api/stock/", input, &raw); err != nil {

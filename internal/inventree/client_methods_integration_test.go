@@ -343,6 +343,15 @@ func TestClientMethodsAgainstInvenTree(t *testing.T) {
 		r.Equal("part.part", parameters[0].ModelType)
 		r.Equal(part.ID, parameters[0].ModelID)
 		r.Equal("22k", parameters[0].Data)
+		parameterPage, err := fixture.client.SearchPartParametersPage(ctx, inventree.PartParameterQuery{PartID: part.ID, TemplateID: template.PK, Search: "22k", Limit: 1})
+		r.NoError(err)
+		r.NotEmpty(parameterPage.Results)
+		r.Equal(parameter.PK, parameterPage.Results[0].PK)
+
+		gotParameter, err := fixture.client.GetPartParameter(ctx, parameter.PK)
+		r.NoError(err)
+		r.Equal(parameter.PK, gotParameter.PK)
+		r.Equal(part.ID, gotParameter.ModelID)
 
 		templates, err := fixture.client.SearchParameterTemplates(ctx, inventree.SearchQuery{Search: template.Name})
 		r.NoError(err)
@@ -361,6 +370,12 @@ func TestClientMethodsAgainstInvenTree(t *testing.T) {
 		r.Equal(categoryTemplate.PK, categoryTemplates[0].PK)
 		r.Equal(category.ID, categoryTemplates[0].Category)
 		r.Equal(template.PK, categoryTemplates[0].Template)
+
+		r.NoError(fixture.client.DeletePartParameter(ctx, parameter.PK))
+		_, err = fixture.client.GetPartParameter(ctx, parameter.PK)
+		var apiErr *inventree.APIError
+		r.ErrorAs(err, &apiErr)
+		r.Equal(inventree.ErrorKindNotFound, apiErr.Kind)
 	})
 
 	t.Run("attachment", func(t *testing.T) {

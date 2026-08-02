@@ -198,8 +198,10 @@ The manifest is endpoint-level schema coverage, not a complete upload authorizat
 ## Verified Parameter Endpoints
 
 - `GET /api/parameter/` lists parameter values.
+- `GET /api/parameter/{id}/` retrieves one parameter value.
 - `POST /api/parameter/` creates parameter values.
 - `PATCH /api/parameter/{id}/` partially updates parameter values.
+- `DELETE /api/parameter/{id}/` deletes one parameter value.
 - `GET /api/parameter/template/` lists parameter templates.
 - `POST /api/parameter/template/` creates parameter templates.
 - `PATCH /api/parameter/template/{id}/` partially updates parameter templates.
@@ -211,6 +213,7 @@ Template and category-link creation/update endpoints are schema-verified for ref
 
 Parameter guidance:
 
+- The list endpoint exposes schema-backed `model_type`, `model_id`, `template`, `search`, `limit`, and `offset` filters. It does not expose a direct part-category filter; `search_part_parameters` requires at least one narrowing filter, reads bounded 100-row pages, resolves part records, and applies exact category/value filtering before returning deterministic row-ID-ordered pagination. It refuses searches whose complete filtered ordering cannot be established within a 1,000-row scan bound and asks for narrower filters.
 - Search and reuse existing parameter templates before creating new ones.
 - Use category parameter links to understand expected parameters for a category.
 - Ask the operator when multiple templates match by name, units, choices, checkbox state, or category association.

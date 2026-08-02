@@ -436,6 +436,10 @@ func TestWriteToolAuthorizationsUseWriteScope(t *testing.T) {
 			a.Equal("destructive", auth.MutationClass)
 			a.Equal([]string{ScopeInventreeWrite, ScopeInventreeUpload, ScopeInventreeDestructive}, auth.Scopes)
 			a.True(auth.Annotations.Destructive)
+		case DeletePartParameterToolName:
+			a.Equal("destructive", auth.MutationClass)
+			a.Equal([]string{ScopeInventreeRead, ScopeInventreeWrite, ScopeInventreeDestructive}, auth.Scopes)
+			a.True(auth.Annotations.Destructive)
 		default:
 			a.Equal("write", auth.MutationClass)
 			a.Equal([]string{ScopeInventreeWrite}, auth.Scopes)

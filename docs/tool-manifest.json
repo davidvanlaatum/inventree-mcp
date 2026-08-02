@@ -207,6 +207,24 @@
       "http_registration": "registered_with_oauth_scope_guard"
     },
     {
+      "name": "delete_part_parameter",
+      "milestone_status": "milestone_1",
+      "mutation_class": "destructive",
+      "scopes": [
+        "inventree.read",
+        "inventree.write",
+        "inventree.destructive"
+      ],
+      "annotations": {
+        "read_only": false,
+        "destructive": true,
+        "idempotent": false,
+        "open_world": false
+      },
+      "upload_sources": null,
+      "http_registration": "registered_with_oauth_scope_guard"
+    },
+    {
       "name": "download_attachment",
       "milestone_status": "milestone_1",
       "mutation_class": "read_only",
@@ -448,6 +466,22 @@
     },
     {
       "name": "search_part_categories",
+      "milestone_status": "milestone_1",
+      "mutation_class": "read_only",
+      "scopes": [
+        "inventree.read"
+      ],
+      "annotations": {
+        "read_only": true,
+        "destructive": false,
+        "idempotent": true,
+        "open_world": false
+      },
+      "upload_sources": null,
+      "http_registration": "registered"
+    },
+    {
+      "name": "search_part_parameters",
       "milestone_status": "milestone_1",
       "mutation_class": "read_only",
       "scopes": [

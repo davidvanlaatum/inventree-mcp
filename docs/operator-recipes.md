@@ -85,6 +85,14 @@ HTTP mode accepts the same debug traffic log option as STDIO. HTTP debug entries
 - Tool sequence: `search_parameter_templates`, `get_part_parameters`, `set_part_parameters`.
 - Expected output: parameter IDs updated/created and any unresolved parameter questions.
 
+## Review Or Delete A Part Parameter Value
+
+- Required inputs: one or more exact review filters (`template_id` or an unambiguous exact `template_name`, `value`, `category_id`, or `part_id`). Deletion additionally requires the stable `parameter_id` returned by search.
+- Preferred flow: call `search_part_parameters`, review the returned part, category, template, value, and parameter-row IDs, then call `delete_part_parameter` without confirmation to obtain the exact deletion candidate. Retry the same single row with `confirm:true` only after review.
+- Clarify when: no narrowing filter is supplied, an exact template name identifies zero or multiple templates, a template ID conflicts with the supplied name, the requested offset/limit window exceeds 1,000 rows, complete row-ID ordering cannot be established within the 1,000-row scan bound, or the request describes a whole-template or bulk deletion instead of one stable parameter row.
+- Expected output: deterministic paginated search results; confirmed deletion returns the deleted row snapshot and `verified:true` only after a detail read proves the row no longer exists.
+- HTTP note: search requires `inventree.read`; deletion requires `inventree.read`, `inventree.write`, and `inventree.destructive`.
+
 ## Create Initial Stock
 
 - Required inputs: part ID, stock location ID, quantity, status when required by local convention.
