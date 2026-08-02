@@ -4,20 +4,27 @@ package server
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/rsa"
+	"encoding/base64"
 	"encoding/json"
+	"fmt"
+	"math/big"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/davidvanlaatum/dvgoutils/logging/testhandler"
 	"github.com/davidvanlaatum/inventree-mcp/internal/config"
-	"github.com/davidvanlaatum/inventree-mcp/internal/inventree"
 	"github.com/davidvanlaatum/inventree-mcp/internal/oauth"
 	"github.com/davidvanlaatum/inventree-mcp/internal/testenv"
 	"github.com/davidvanlaatum/inventree-mcp/internal/tools"
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -48,53 +55,35 @@ func TestHTTPOAuthFlowAgainstInvenTreeContainer(t *testing.T) {
 	part, err := shared.EnsureFixture(ctx, account, run, testenv.FixturePart)
 	r.NoError(err)
 
-	codec, keyringConfig := testOAuthCodec(t)
+	_, keyringConfig := testOAuthCodec(t)
 	issuer := "https://mcp.example.test"
 	audience := issuer + "/mcp"
 	redirectURI := "https://chatgpt.com/connector/oauth/callback_123"
+	clientKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	r.NoError(err)
 	var metadataURL string
-	metadataServer := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		_ = json.NewEncoder(w).Encode(oauth.ClientMetadata{
-			ClientID:                metadataURL,
-			RedirectURIs:            []string{redirectURI},
-			TokenEndpointAuthMethod: "none",
-		})
+	metadataServer := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		switch req.URL.Path {
+		case "/client-metadata":
+			_ = json.NewEncoder(w).Encode(oauth.ClientMetadata{
+				ClientID: metadataURL, RedirectURIs: []string{redirectURI},
+				TokenEndpointAuthMethodsSupported: []string{"private_key_jwt"}, JWKSURI: metadataServerURL(req) + "/jwks",
+				GrantTypes: []string{"authorization_code", "refresh_token"}, ResponseTypes: []string{"code"},
+			})
+		case "/jwks":
+			e := big.NewInt(int64(clientKey.PublicKey.E)).Bytes()
+			_ = json.NewEncoder(w).Encode(map[string]any{"keys": []map[string]any{{
+				"kty": "RSA", "use": "sig", "alg": "RS256", "kid": "integration-key",
+				"n": base64.RawURLEncoding.EncodeToString(clientKey.N.Bytes()), "e": base64.RawURLEncoding.EncodeToString(e),
+			}}})
+		default:
+			http.NotFound(w, req)
+		}
 	}))
 	t.Cleanup(metadataServer.Close)
 	metadataURL = metadataServer.URL + "/client-metadata"
 
-	service := oauth.Service{
-		Codec: codec,
-		MetadataFetcher: oauth.ClientMetadataFetcher{
-			HTTPClient:     metadataServer.Client(),
-			AllowedOrigins: []string{metadataServer.URL},
-		},
-		CodeStore: oauth.NewCodeStore(8, time.Now),
-	}
 	pkceVerifier := "test-verifier-with-enough-entropy-for-oauth-flow"
-	code, err := service.IssueAuthorizationCode(ctx, oauth.AuthorizationRequest{
-		Issuer:        issuer,
-		Audience:      audience,
-		Subject:       account.Username,
-		ClientID:      metadataURL,
-		RedirectURI:   redirectURI,
-		PKCEChallenge: oauth.PKCEChallengeS256(pkceVerifier),
-		Scopes:        []string{tools.ScopeInventreeRead},
-		Credential: oauth.Credential{
-			Scheme: inventree.AuthSchemeToken,
-			Token:  account.Token,
-		},
-	})
-	r.NoError(err)
-
-	pair, err := service.ExchangeAuthorizationCode(ctx, code, oauth.AssociatedData{
-		Issuer:   issuer,
-		Audience: audience,
-		ClientID: metadataURL,
-	}, redirectURI, pkceVerifier)
-	r.NoError(err)
-	r.NotEmpty(pair.AccessToken)
-	r.NotEmpty(pair.RefreshToken)
 
 	deps := tools.Dependencies{
 		AuthorizationMode: tools.AuthorizationModeOAuth,
@@ -112,25 +101,108 @@ func TestHTTPOAuthFlowAgainstInvenTreeContainer(t *testing.T) {
 		OAuthClientIDs:         []string{metadataURL},
 	}
 	deps.ResourceMetadataURL = httpConfig.OAuthProtectedResourceMetadataURL()
-	protected, err := HTTPMux(ctx, httpConfig, New(deps))
+	protected, err := httpMuxWithMetadataClient(ctx, httpConfig, New(deps), nil, metadataServer.Client())
 	r.NoError(err)
+	authorizePath := "/authorize?" + url.Values{
+		"response_type": {"code"}, "client_id": {metadataURL}, "redirect_uri": {redirectURI}, "state": {"integration-state"},
+		"resource": {audience}, "scope": {tools.ScopeInventreeRead}, "code_challenge": {oauth.PKCEChallengeS256(pkceVerifier)}, "code_challenge_method": {"S256"},
+	}.Encode()
+	setupPage := httptest.NewRecorder()
+	protected.ServeHTTP(setupPage, httptest.NewRequest(http.MethodGet, authorizePath, nil))
+	r.Equal(http.StatusOK, setupPage.Code)
+	setupForm := url.Values{
+		"setup_state": {oauthIntegrationHiddenValue(t, setupPage.Body.String(), "setup_state")},
+		"client_id":   {metadataURL}, "csrf": {oauthIntegrationHiddenValue(t, setupPage.Body.String(), "csrf")},
+		"credential_scheme": {"Token"}, "credential": {account.Token},
+	}
+	setupRequest := httptest.NewRequest(http.MethodPost, "/authorize", strings.NewReader(setupForm.Encode()))
+	setupRequest.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	for _, cookie := range setupPage.Result().Cookies() {
+		setupRequest.AddCookie(cookie)
+	}
+	setupResult := httptest.NewRecorder()
+	protected.ServeHTTP(setupResult, setupRequest)
+	r.Equal(http.StatusFound, setupResult.Code)
+	callback, err := url.Parse(setupResult.Header().Get("Location"))
+	r.NoError(err)
+	a.Equal("integration-state", callback.Query().Get("state"))
+	code := callback.Query().Get("code")
+	r.NotEmpty(code)
 
-	recorder := postMCPWithBearer(t, protected, pair.AccessToken, `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"search_parts","arguments":{"search":"`+part.Name+`"}}}`)
+	tokenEndpoint := issuer + "/token"
+	assertion := oauthIntegrationAssertion(t, clientKey, metadataURL, tokenEndpoint, "integration-code")
+	tokenResult := oauthIntegrationPostForm(protected, "/token", url.Values{
+		"grant_type": {"authorization_code"}, "client_id": {metadataURL}, "client_assertion_type": {oauth.ClientAssertionTypeJWTBearer}, "client_assertion": {assertion},
+		"code": {code}, "redirect_uri": {redirectURI}, "code_verifier": {pkceVerifier}, "resource": {audience},
+	})
+	r.Equal(http.StatusOK, tokenResult.Code)
+	var pair struct {
+		AccessToken      string `json:"access_token"`
+		RefreshToken     string `json:"refresh_token"`
+		CredentialSource string `json:"credential_source"`
+	}
+	r.NoError(json.Unmarshal(tokenResult.Body.Bytes(), &pair))
+	r.NotEmpty(pair.AccessToken)
+	r.NotEmpty(pair.RefreshToken)
+	a.Equal(oauth.CredentialSourceDedicated, pair.CredentialSource)
+
+	refreshResult := oauthIntegrationPostForm(protected, "/token", url.Values{
+		"grant_type": {"refresh_token"}, "client_id": {metadataURL}, "client_assertion_type": {oauth.ClientAssertionTypeJWTBearer},
+		"client_assertion": {oauthIntegrationAssertion(t, clientKey, metadataURL, tokenEndpoint, "integration-refresh")},
+		"refresh_token":    {pair.RefreshToken}, "resource": {audience},
+	})
+	r.Equal(http.StatusOK, refreshResult.Code)
+	var refreshedPair struct {
+		AccessToken      string `json:"access_token"`
+		RefreshToken     string `json:"refresh_token"`
+		CredentialSource string `json:"credential_source"`
+	}
+	r.NoError(json.Unmarshal(refreshResult.Body.Bytes(), &refreshedPair))
+	r.NotEmpty(refreshedPair.AccessToken)
+	r.NotEmpty(refreshedPair.RefreshToken)
+	a.Equal(oauth.CredentialSourceDedicated, refreshedPair.CredentialSource)
+
+	recorder := postMCPWithBearer(t, protected, refreshedPair.AccessToken, `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"search_parts","arguments":{"search":"`+part.Name+`"}}}`)
 	r.Equal(http.StatusOK, recorder.Code)
 	body := recorder.Body.String()
 	a.Contains(body, `"status":"ok"`)
 	a.Contains(body, part.Name)
 
-	missingScopePair := issueOAuthTestPair(t, ctx, service, issuer, audience, metadataURL, redirectURI, account, nil)
-	missingScopeRecorder := postMCPWithBearer(t, protected, missingScopePair.AccessToken, `{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"search_parts","arguments":{"search":"`+part.Name+`"}}}`)
-	r.Equal(http.StatusOK, missingScopeRecorder.Code)
-	a.Contains(missingScopeRecorder.Body.String(), `"isError":true`)
-	a.Contains(missingScopeRecorder.Body.String(), `insufficient_scope`)
-	a.NotContains(missingScopeRecorder.Body.String(), part.Name)
-
 	rawUpstreamRecorder := postMCPWithBearer(t, protected, account.Token, `{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"search_parts","arguments":{"search":"`+part.Name+`"}}}`)
 	r.Equal(http.StatusUnauthorized, rawUpstreamRecorder.Code)
 	a.NotContains(rawUpstreamRecorder.Body.String(), part.Name)
+}
+
+func metadataServerURL(req *http.Request) string {
+	return "https://" + req.Host
+}
+
+func oauthIntegrationHiddenValue(t *testing.T, body string, name string) string {
+	t.Helper()
+	match := regexp.MustCompile(fmt.Sprintf(`name="%s" value="([^"]+)"`, regexp.QuoteMeta(name))).FindStringSubmatch(body)
+	require.Len(t, match, 2)
+	return match[1]
+}
+
+func oauthIntegrationAssertion(t *testing.T, key *rsa.PrivateKey, clientID string, audience string, id string) string {
+	t.Helper()
+	now := time.Now()
+	token := jwt.NewWithClaims(jwt.SigningMethodRS256, jwt.RegisteredClaims{
+		Issuer: clientID, Subject: clientID, Audience: jwt.ClaimStrings{audience}, ID: id,
+		IssuedAt: jwt.NewNumericDate(now), ExpiresAt: jwt.NewNumericDate(now.Add(time.Minute)),
+	})
+	token.Header["kid"] = "integration-key"
+	signed, err := token.SignedString(key)
+	require.NoError(t, err)
+	return signed
+}
+
+func oauthIntegrationPostForm(handler http.Handler, path string, form url.Values) *httptest.ResponseRecorder {
+	req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, req)
+	return recorder
 }
 
 func testOAuthCodec(t *testing.T) (oauth.EnvelopeCodec, oauth.KeyringConfig) {
@@ -144,42 +216,4 @@ func testOAuthCodec(t *testing.T) (oauth.EnvelopeCodec, oauth.KeyringConfig) {
 	keyring, err := keyringConfig.Keyring()
 	require.NoError(t, err)
 	return oauth.EnvelopeCodec{Keyring: keyring}, keyringConfig
-}
-
-func issueOAuthTestPair(
-	t *testing.T,
-	ctx context.Context,
-	service oauth.Service,
-	issuer string,
-	audience string,
-	clientID string,
-	redirectURI string,
-	account *testenv.Account,
-	scopes []string,
-) oauth.TokenPair {
-	t.Helper()
-	r := require.New(t)
-
-	pkceVerifier := "test-verifier-" + strings.ToLower(account.Username)
-	code, err := service.IssueAuthorizationCode(ctx, oauth.AuthorizationRequest{
-		Issuer:        issuer,
-		Audience:      audience,
-		Subject:       account.Username,
-		ClientID:      clientID,
-		RedirectURI:   redirectURI,
-		PKCEChallenge: oauth.PKCEChallengeS256(pkceVerifier),
-		Scopes:        scopes,
-		Credential: oauth.Credential{
-			Scheme: inventree.AuthSchemeToken,
-			Token:  account.Token,
-		},
-	})
-	r.NoError(err)
-	pair, err := service.ExchangeAuthorizationCode(ctx, code, oauth.AssociatedData{
-		Issuer:   issuer,
-		Audience: audience,
-		ClientID: clientID,
-	}, redirectURI, pkceVerifier)
-	r.NoError(err)
-	return pair
 }

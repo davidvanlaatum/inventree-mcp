@@ -19,22 +19,39 @@ const (
 )
 
 type ClientMetadata struct {
-	ClientID                string   `json:"client_id,omitempty"`
-	RedirectURIs            []string `json:"redirect_uris"`
-	TokenEndpointAuthMethod string   `json:"token_endpoint_auth_method,omitempty"`
-	GrantTypes              []string `json:"grant_types,omitempty"`
-	ResponseTypes           []string `json:"response_types,omitempty"`
-	Scope                   string   `json:"scope,omitempty"`
+	ClientID                          string   `json:"client_id,omitempty"`
+	RedirectURIs                      []string `json:"redirect_uris"`
+	TokenEndpointAuthMethod           string   `json:"token_endpoint_auth_method,omitempty"`
+	TokenEndpointAuthMethodsSupported []string `json:"token_endpoint_auth_methods_supported,omitempty"`
+	GrantTypes                        []string `json:"grant_types,omitempty"`
+	ResponseTypes                     []string `json:"response_types,omitempty"`
+	Scope                             string   `json:"scope,omitempty"`
+	JWKSURI                           string   `json:"jwks_uri,omitempty"`
 }
 
 type ClientMetadataFetcher struct {
-	HTTPClient     *http.Client
-	AllowedOrigins []string
-	MaxBytes       int64
-	Timeout        time.Duration
+	HTTPClient       *http.Client
+	AllowedOrigins   []string
+	AllowedClientIDs []string
+	MaxBytes         int64
+	Timeout          time.Duration
 }
 
 func (f ClientMetadataFetcher) FetchAndValidate(ctx context.Context, clientID string, redirectURI string) (ClientMetadata, error) {
+	metadata, err := f.Fetch(ctx, clientID)
+	if err != nil {
+		return ClientMetadata{}, err
+	}
+	if err := validateMetadataShape(metadata, clientID, redirectURI); err != nil {
+		return ClientMetadata{}, err
+	}
+	return metadata, nil
+}
+
+func (f ClientMetadataFetcher) Fetch(ctx context.Context, clientID string) (ClientMetadata, error) {
+	if len(f.AllowedClientIDs) > 0 && !slices.Contains(f.AllowedClientIDs, clientID) {
+		return ClientMetadata{}, fmt.Errorf("%w: client_id is not configured", ErrInvalidClientMetadata)
+	}
 	metadataURL, err := validateClientIDURL(clientID, f.AllowedOrigins)
 	if err != nil {
 		return ClientMetadata{}, err
@@ -80,7 +97,10 @@ func (f ClientMetadataFetcher) FetchAndValidate(ctx context.Context, clientID st
 	if err := decoder.Decode(&metadata); err != nil {
 		return ClientMetadata{}, fmt.Errorf("%w: decode failed", ErrInvalidClientMetadata)
 	}
-	if err := validateMetadataShape(metadata, clientID, redirectURI); err != nil {
+	if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
+		return ClientMetadata{}, fmt.Errorf("%w: trailing metadata content", ErrInvalidClientMetadata)
+	}
+	if err := validateMetadataShape(metadata, clientID, ""); err != nil {
 		return ClientMetadata{}, err
 	}
 	return metadata, nil
@@ -110,11 +130,23 @@ func validateMetadataShape(metadata ClientMetadata, clientID string, redirectURI
 	if metadata.ClientID != "" && metadata.ClientID != clientID {
 		return fmt.Errorf("%w: metadata client_id mismatch", ErrInvalidClientMetadata)
 	}
-	if len(metadata.RedirectURIs) == 0 || !slices.Contains(metadata.RedirectURIs, redirectURI) {
+	if redirectURI != "" && (len(metadata.RedirectURIs) == 0 || !slices.Contains(metadata.RedirectURIs, redirectURI)) {
 		return fmt.Errorf("%w: redirect_uri is not registered by metadata", ErrInvalidClientMetadata)
 	}
-	if metadata.TokenEndpointAuthMethod != "" && metadata.TokenEndpointAuthMethod != "none" {
-		return fmt.Errorf("%w: token_endpoint_auth_method must be none", ErrInvalidClientMetadata)
+	methods := metadata.TokenEndpointAuthMethodsSupported
+	if len(methods) == 0 && metadata.TokenEndpointAuthMethod != "" {
+		methods = []string{metadata.TokenEndpointAuthMethod}
+	}
+	if !slices.Contains(methods, "private_key_jwt") {
+		return fmt.Errorf("%w: token endpoint authentication must include private_key_jwt", ErrInvalidClientMetadata)
+	}
+	if metadata.JWKSURI == "" {
+		return fmt.Errorf("%w: private_key_jwt requires jwks_uri", ErrInvalidClientMetadata)
+	}
+	clientURL, _ := url.Parse(clientID)
+	jwksURL, err := url.Parse(metadata.JWKSURI)
+	if err != nil || jwksURL.Scheme != "https" || jwksURL.User != nil || jwksURL.Fragment != "" || !sameOrigin(clientURL, jwksURL) {
+		return fmt.Errorf("%w: jwks_uri must be HTTPS on the client metadata origin", ErrInvalidClientMetadata)
 	}
 	if len(metadata.ResponseTypes) > 0 && !slices.Contains(metadata.ResponseTypes, "code") {
 		return fmt.Errorf("%w: response_types must include code", ErrInvalidClientMetadata)

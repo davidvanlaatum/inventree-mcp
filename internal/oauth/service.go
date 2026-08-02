@@ -14,6 +14,12 @@ type CredentialValidator interface {
 	ValidateCredential(context.Context, Credential) error
 }
 
+type CredentialValidatorFunc func(context.Context, Credential) error
+
+func (f CredentialValidatorFunc) ValidateCredential(ctx context.Context, credential Credential) error {
+	return f(ctx, credential)
+}
+
 type Service struct {
 	Codec               EnvelopeCodec
 	MetadataFetcher     ClientMetadataFetcher
@@ -28,22 +34,25 @@ type Service struct {
 }
 
 type AuthorizationRequest struct {
-	Issuer        string
-	Audience      string
-	Subject       string
-	ClientID      string
-	RedirectURI   string
-	PKCEChallenge string
-	Scopes        []string
-	Credential    Credential
+	Issuer           string
+	Audience         string
+	Subject          string
+	ClientID         string
+	RedirectURI      string
+	PKCEChallenge    string
+	Scopes           []string
+	Credential       Credential
+	CredentialSource string
 }
 
 type TokenPair struct {
 	AccessToken      string
 	RefreshToken     string
+	Scopes           []string
 	AccessExpiresAt  time.Time
 	RefreshExpiresAt time.Time
 	SessionExpiresAt time.Time
+	CredentialSource string
 }
 
 func (s Service) IssueAuthorizationCode(ctx context.Context, req AuthorizationRequest) (string, error) {
@@ -84,6 +93,7 @@ func (s Service) IssueAuthorizationCode(ctx context.Context, req AuthorizationRe
 		IssuedAt:            now,
 		ExpiresAt:           expiresAt,
 		Credential:          req.Credential,
+		CredentialSource:    req.CredentialSource,
 	}
 	code, err := s.Codec.Seal(ctx, AssociatedData{
 		Issuer:   req.Issuer,
@@ -120,12 +130,13 @@ func (s Service) ExchangeAuthorizationCode(ctx context.Context, code string, aad
 		return TokenPair{}, err
 	}
 	return s.issuePair(ctx, TokenClaims{
-		Issuer:     claims.Issuer,
-		Audience:   claims.Audience,
-		Subject:    claims.Subject,
-		ClientID:   claims.ClientID,
-		Scopes:     claims.Scopes,
-		Credential: claims.Credential,
+		Issuer:           claims.Issuer,
+		Audience:         claims.Audience,
+		Subject:          claims.Subject,
+		ClientID:         claims.ClientID,
+		Scopes:           claims.Scopes,
+		Credential:       claims.Credential,
+		CredentialSource: claims.CredentialSource,
 	}, s.now().Add(defaultDuration(s.SessionLifetime, DefaultSessionLifetime)))
 }
 
@@ -148,12 +159,13 @@ func (s Service) Refresh(ctx context.Context, refreshToken string, aad Associate
 		}
 	}
 	return s.issuePair(ctx, TokenClaims{
-		Issuer:     claims.Issuer,
-		Audience:   claims.Audience,
-		Subject:    claims.Subject,
-		ClientID:   claims.ClientID,
-		Scopes:     claims.Scopes,
-		Credential: claims.Credential,
+		Issuer:           claims.Issuer,
+		Audience:         claims.Audience,
+		Subject:          claims.Subject,
+		ClientID:         claims.ClientID,
+		Scopes:           claims.Scopes,
+		Credential:       claims.Credential,
+		CredentialSource: claims.CredentialSource,
 	}, claims.SessionExpiresAt)
 }
 
@@ -228,9 +240,11 @@ func (s Service) issuePair(ctx context.Context, base TokenClaims, sessionExpires
 	return TokenPair{
 		AccessToken:      accessToken,
 		RefreshToken:     refreshToken,
+		Scopes:           append([]string(nil), base.Scopes...),
 		AccessExpiresAt:  accessExpiresAt,
 		RefreshExpiresAt: refreshExpiresAt,
 		SessionExpiresAt: sessionExpiresAt,
+		CredentialSource: base.CredentialSource,
 	}, nil
 }
 

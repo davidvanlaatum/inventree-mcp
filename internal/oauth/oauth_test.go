@@ -38,12 +38,13 @@ func TestClientMetadataFetcherValidatesCIMDAndRedirect(t *testing.T) {
 				http.Redirect(w, req, metadataPath+"/redirected", http.StatusTemporaryRedirect)
 			case "/metadata/redirected":
 				_ = json.NewEncoder(w).Encode(map[string]any{
-					"client_id":                  metadataPath,
-					"redirect_uris":              []string{redirectURI},
-					"token_endpoint_auth_method": "none",
-					"grant_types":                []string{"authorization_code"},
-					"response_types":             []string{"code"},
-					"future_extension":           "allowed",
+					"client_id":                             metadataPath,
+					"redirect_uris":                         []string{redirectURI},
+					"token_endpoint_auth_methods_supported": []string{"private_key_jwt"},
+					"jwks_uri":                              metadataPath + "/jwks",
+					"grant_types":                           []string{"authorization_code"},
+					"response_types":                        []string{"code"},
+					"future_extension":                      "allowed",
 				})
 			default:
 				http.NotFound(w, req)
@@ -77,14 +78,15 @@ func TestClientMetadataFetcherValidatesCIMDAndRedirect(t *testing.T) {
 			switch req.URL.Query().Get("case") {
 			case "wrong_redirect":
 				_ = json.NewEncoder(w).Encode(ClientMetadata{
-					RedirectURIs:            []string{"https://chatgpt.com/connector/oauth/other"},
-					TokenEndpointAuthMethod: "none",
+					RedirectURIs:                      []string{"https://chatgpt.com/connector/oauth/other"},
+					TokenEndpointAuthMethodsSupported: []string{"private_key_jwt"},
+					JWKSURI:                           clientServerURL(req) + "/jwks",
 				})
 			case "mismatch":
 				_ = json.NewEncoder(w).Encode(ClientMetadata{
-					ClientID:                "https://chatgpt.com/.well-known/client-metadata",
-					RedirectURIs:            []string{redirectURI},
-					TokenEndpointAuthMethod: "none",
+					ClientID:                          "https://chatgpt.com/.well-known/client-metadata",
+					RedirectURIs:                      []string{redirectURI},
+					TokenEndpointAuthMethodsSupported: []string{"private_key_jwt"},
 				})
 			default:
 				http.Error(w, "no metadata", http.StatusBadGateway)
@@ -424,9 +426,10 @@ func TestServiceIssuesOneTimeCodeAndDefaultTokenLifetimes(t *testing.T) {
 	var metadataURL string
 	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_ = json.NewEncoder(w).Encode(ClientMetadata{
-			ClientID:                metadataURL,
-			RedirectURIs:            []string{redirectURI},
-			TokenEndpointAuthMethod: "none",
+			ClientID:                          metadataURL,
+			RedirectURIs:                      []string{redirectURI},
+			TokenEndpointAuthMethodsSupported: []string{"private_key_jwt"},
+			JWKSURI:                           metadataURL + "/jwks",
 		})
 	}))
 	defer server.Close()
@@ -493,9 +496,10 @@ func TestServiceRejectsWrongPKCEVerifier(t *testing.T) {
 	var metadataURL string
 	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_ = json.NewEncoder(w).Encode(ClientMetadata{
-			ClientID:                metadataURL,
-			RedirectURIs:            []string{redirectURI},
-			TokenEndpointAuthMethod: "none",
+			ClientID:                          metadataURL,
+			RedirectURIs:                      []string{redirectURI},
+			TokenEndpointAuthMethodsSupported: []string{"private_key_jwt"},
+			JWKSURI:                           metadataURL + "/jwks",
 		})
 	}))
 	defer server.Close()
@@ -535,15 +539,17 @@ func TestServiceIssueAuthorizationCodeRejectsBadMetadataBeforeStoringCode(t *tes
 		switch req.URL.Query().Get("case") {
 		case "wrong_redirect":
 			_ = json.NewEncoder(w).Encode(ClientMetadata{
-				ClientID:                metadataURL + "?case=wrong_redirect",
-				RedirectURIs:            []string{"https://chatgpt.com/connector/oauth/other"},
-				TokenEndpointAuthMethod: "none",
+				ClientID:                          metadataURL + "?case=wrong_redirect",
+				RedirectURIs:                      []string{"https://chatgpt.com/connector/oauth/other"},
+				TokenEndpointAuthMethodsSupported: []string{"private_key_jwt"},
+				JWKSURI:                           metadataURL + "/jwks",
 			})
 		case "mismatch":
 			_ = json.NewEncoder(w).Encode(ClientMetadata{
-				ClientID:                "https://chatgpt.com/.well-known/client-metadata",
-				RedirectURIs:            []string{redirectURI},
-				TokenEndpointAuthMethod: "none",
+				ClientID:                          "https://chatgpt.com/.well-known/client-metadata",
+				RedirectURIs:                      []string{redirectURI},
+				TokenEndpointAuthMethodsSupported: []string{"private_key_jwt"},
+				JWKSURI:                           metadataURL + "/jwks",
 			})
 		default:
 			http.Error(w, "metadata unavailable", http.StatusBadGateway)

@@ -49,6 +49,8 @@ Current-user API token endpoints:
 - `GET /api/user/tokens/{id}/` retrieves current-user API token metadata.
 - `DELETE /api/user/tokens/{id}/` revokes or deletes a current-user API token.
 
+F-S08 uses `GET /api/user/me/` to bind setup to the authenticated InvenTree user and `GET /api/user/me/token/?name=inventree-mcp-chatgpt-<random-setup-id>` to create a uniquely named dedicated connector token without rotating the supplied credential or an earlier connector token. Default-on Testcontainers coverage verifies that the endpoint returns a one-time usable token secret on the pinned InvenTree baseline. Abandoned or expired authorizations can leave unused dedicated tokens that the operator must revoke through InvenTree's token management UI/API. If token creation is unavailable, setup discards the submitted secret and requires explicit operator consent before sealing a re-entered supplied credential.
+
 HTTP MCP connector auth mapping:
 
 - STDIO mode may use configured `Token` or `Bearer` upstream credentials directly.

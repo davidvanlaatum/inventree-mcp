@@ -30,6 +30,8 @@ Endpoint-backed tools must also map to a `docs/endpoint-manifest.yaml` entry who
 
 In OAuth authorization mode, scoped tools publish per-tool OAuth metadata in descriptor `_meta["securitySchemes"]` and `_meta["openai/securitySchemes"]`, matching the checked tool authorization manifest. The current Go MCP SDK `mcp.Tool` type does not expose a first-class top-level `securitySchemes` field; replace the mirror-only descriptor wiring with the canonical field when the SDK adds support or when the server owns custom tool descriptor serialization.
 
+Production connector linking uses the configured authorization-server metadata, CIMD client metadata, `private_key_jwt` assertions verified against a same-origin JWKS, and PKCE S256. The setup page validates a submitted InvenTree Token or Bearer credential and prefers a uniquely named dedicated connector token that does not rotate existing keys; sealing the supplied credential requires an explicit fallback choice. Abandoned or expired authorizations may require operator revocation of unused `inventree-mcp-chatgpt-*` tokens. MCP access/refresh/code/setup values are encrypted envelopes or one-time bounded state, and upstream credentials are never part of tool results or the MCP traffic log.
+
 ## MCP Protocol Behavior
 
 The server uses official Go MCP SDK `v1.7.0`. New clients negotiate MCP `2026-07-28` through `server/discover`; legacy clients can still use `initialize`. Streamable HTTP is stateless and sessionless: it does not issue or honor `Mcp-Session-Id`, and standalone GET/DELETE session operations return `405 Method Not Allowed`. Aborting a `2026-07-28` POST cancels the in-flight tool handler.

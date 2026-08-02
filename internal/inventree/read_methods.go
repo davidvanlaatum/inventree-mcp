@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"path"
+	"strings"
 	"time"
 )
 
@@ -31,6 +32,28 @@ var downloadAttachmentModelTypes = map[string]bool{
 	"manufacturerpart": true,
 	"supplierpart":     true,
 	"purchaseorder":    true,
+}
+
+func (c *Client) GetCurrentUser(ctx context.Context) (CurrentUser, error) {
+	var out CurrentUser
+	err := c.get(ctx, "/api/user/me/", &out)
+	return out, err
+}
+
+func (c *Client) CreateCurrentUserToken(ctx context.Context, name string) (UserToken, error) {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return UserToken{}, errors.New("current-user token name is required")
+	}
+	var out UserToken
+	req, err := c.NewRequest(ctx, http.MethodGet, "/api/user/me/token/", url.Values{"name": []string{name}}, nil)
+	if err == nil {
+		err = c.DoJSON(req, &out)
+	}
+	if err == nil && out.Token == "" {
+		return UserToken{}, errors.New("InvenTree did not return the newly created token secret")
+	}
+	return out, err
 }
 
 type DownloadedAttachment struct {

@@ -5,7 +5,7 @@
 
 Go-based Model Context Protocol server for common InvenTree data-entry workflows.
 
-Current status: milestone 1 STDIO workflows are implemented for part/company entry, parameters, initial stock, attachments/images, purchase previews, and prompt checklists. Production HTTP startup can run a protected streamable HTTP `/mcp` endpoint with OAuth access-token envelope validation and per-tool scope checks. The ChatGPT connector authorization/setup pages and live packaged deployment validation remain follow-up work.
+Current status: milestone 1 STDIO workflows are implemented for part/company entry, parameters, initial stock, attachments/images, purchase previews, and prompt checklists. Production HTTP startup serves the protected streamable HTTP `/mcp` endpoint plus an MCP-owned ChatGPT connector authorization/setup flow using CIMD `private_key_jwt`, PKCE S256, encrypted token envelopes, and per-tool scope checks. Reverse-proxy hardening and live packaged deployment validation remain follow-up work.
 
 ## Quick Start
 
@@ -37,6 +37,10 @@ HTTP production mode requires MCP-owned OAuth settings and rejects raw `INVENTRE
 - `INVENTREE_URL`: HTTPS InvenTree base URL used for upstream API calls after the MCP OAuth envelope is validated.
 - Optional `INVENTREE_MCP_OAUTH_ACCESS_LIFETIME`, `INVENTREE_MCP_OAUTH_REFRESH_LIFETIME`, and `INVENTREE_MCP_OAUTH_SESSION_LIFETIME`.
 
+The configured client metadata document must advertise `private_key_jwt`, the ChatGPT redirect URI shown by its app management page, and a same-origin HTTPS `jwks_uri`. The server validates each token request's signed client assertion against that JWKS and rejects assertion replay within one running process; shared replay state is required across restarts or multiple replicas. It does not accept an unsigned public-client downgrade.
+
+Setup creates a uniquely named `inventree-mcp-chatgpt-*` InvenTree token rather than rotating the submitted credential or an earlier connector token. Revoke unused dedicated tokens in InvenTree after abandoned, expired, or retired connector authorizations; the database-free server does not retain token IDs for automatic cleanup.
+
 Development-only HTTP startup remains available with `--environment development --dev-incomplete-oauth`; it registers only the development server surface and still rejects configured raw InvenTree tokens.
 
 HTTP mode bounds each MCP request with `--mcp-max-request-body-bytes 15000000` or `INVENTREE_MCP_MAX_REQUEST_BODY_BYTES=15000000`. The limit must cover inline upload base64 plus JSON overhead and does not constrain STDIO uploads.
@@ -53,7 +57,7 @@ Linux packages install:
 - `/etc/systemd/system/inventree-mcp.service`
 - `/etc/inventree-mcp/inventree-mcp.env`
 
-The packaged service is intended for HTTP mode behind a reverse proxy. Production HTTP startup validates OAuth envelope keys, issuer/resource URLs, allowed client IDs, and token lifetimes before serving protected `/mcp` traffic. The systemd unit uses `Type=notify`, reports ready only after those checks pass and the HTTP listener is bound, and sends watchdog heartbeats every half of systemd's configured 30-second watchdog interval. Once the managed HTTP lifecycle is initialized, graceful shutdown and fatal runtime failures publish sanitized service status. Configuration or logger initialization failures that occur before that lifecycle starts still exit non-zero, allowing systemd to record the failure and apply `Restart=on-failure` without a separate status notification path. If a heartbeat cannot be delivered, the server reports a degraded status and keeps serving; systemd's watchdog timeout terminates it and starts a replacement. Install packages now for file layout testing, but do not enable the systemd service for a live ChatGPT connector until authorization/setup endpoints, the remaining canonical URL and trusted-proxy enforcement for those routes, and live deployment validation land.
+The packaged service is intended for HTTP mode behind a reverse proxy. Production HTTP startup validates OAuth envelope keys, issuer/resource URLs, allowed client IDs, and token lifetimes before serving protected `/mcp` traffic and connector authorization routes. The systemd unit uses `Type=notify`, reports ready only after those checks pass and the HTTP listener is bound, and sends watchdog heartbeats every half of systemd's configured 30-second watchdog interval. Once the managed HTTP lifecycle is initialized, graceful shutdown and fatal runtime failures publish sanitized service status. Configuration or logger initialization failures that occur before that lifecycle starts still exit non-zero, allowing systemd to record the failure and apply `Restart=on-failure` without a separate status notification path. If a heartbeat cannot be delivered, the server reports a degraded status and keeps serving; systemd's watchdog timeout terminates it and starts a replacement. Install packages now for file layout testing, but do not enable the systemd service for a live ChatGPT connector until the remaining canonical URL/trusted-proxy enforcement and live deployment validation land.
 
 For a development-only pre-OAuth HTTP runtime smoke test, run the binary directly. This starts the skeleton streamable HTTP server with only static MCP metadata and the read-only health/version tool.
 

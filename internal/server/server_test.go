@@ -811,6 +811,16 @@ func TestProductionHTTPMuxProtectsMCPAndPublishesResourceMetadata(t *testing.T) 
 	rootMetadataRecorder := httptest.NewRecorder()
 	handler.ServeHTTP(rootMetadataRecorder, httptest.NewRequest(http.MethodGet, "/.well-known/oauth-protected-resource", nil))
 	r.Equal(http.StatusNotFound, rootMetadataRecorder.Code)
+	authorizationMetadataRecorder := httptest.NewRecorder()
+	handler.ServeHTTP(authorizationMetadataRecorder, httptest.NewRequest(http.MethodGet, "/.well-known/oauth-authorization-server", nil))
+	r.Equal(http.StatusOK, authorizationMetadataRecorder.Code)
+	var authorizationMetadata map[string]any
+	r.NoError(json.Unmarshal(authorizationMetadataRecorder.Body.Bytes(), &authorizationMetadata))
+	a.Equal(cfg.OAuthIssuerURL, authorizationMetadata["issuer"])
+	a.Equal(cfg.OAuthIssuerURL+"/authorize", authorizationMetadata["authorization_endpoint"])
+	a.Equal(cfg.OAuthIssuerURL+"/token", authorizationMetadata["token_endpoint"])
+	a.Equal([]any{"private_key_jwt"}, authorizationMetadata["token_endpoint_auth_methods_supported"])
+	a.Equal("no-store", authorizationMetadataRecorder.Header().Get("Cache-Control"))
 
 	missingBearer := postMCP(t, handler, `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","clientInfo":{"name":"test-client","version":"v0.0.0"},"capabilities":{}}}`)
 	r.Equal(http.StatusUnauthorized, missingBearer.Code)
@@ -909,6 +919,7 @@ func TestHTTPServerCancellationGracefullyDrainsActiveRequests(t *testing.T) {
 	cfg := config.Config{Listen: "127.0.0.1:0"}
 	httpServer := newHTTPServer(rootCtx, cfg, handler)
 	a.Equal(defaultHTTPReadHeaderTimeout, httpServer.ReadHeaderTimeout)
+	a.Equal(defaultHTTPReadTimeout, httpServer.ReadTimeout)
 
 	listener, err := net.Listen("tcp", cfg.Listen)
 	r.NoError(err)

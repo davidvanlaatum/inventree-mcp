@@ -48,7 +48,7 @@ When picking up an implementation task from `docs/TASKS.md`:
 - Release packages are configured in `.goreleaser.yaml` and include Linux `deb`, `rpm`, and `apk` packages plus archived binaries and checksums. Run `goreleaser release --snapshot --clean` locally when changing release/package behavior, and keep the `Release Preview` workflow passing on PRs.
 - Keep `.github/workflows/release.yml`, `.goreleaser.yaml`, `packaging/`, README release instructions, operator recipes, and this section aligned when release behavior changes.
 - The packaged systemd unit uses `Type=notify`, `NotifyAccess=main`, and `WatchdogSec=30s`. Keep its readiness ordering, half-timeout heartbeat cadence, stop-heartbeats-but-keep-serving failure behavior, and systemd-owned watchdog termination covered by deterministic tests when changing HTTP startup or shutdown. Configuration and logger initialization failures before the managed HTTP lifecycle starts remain ordinary non-zero exits handled by systemd rather than initializing a second early notification path.
-- Do not document `systemctl enable --now inventree-mcp.service` as usable for live connector deployment until production OAuth setup endpoints, reverse-proxy validation, and packaged deployment validation are complete.
+- Do not document `systemctl enable --now inventree-mcp.service` as usable for live connector deployment until reverse-proxy validation and packaged deployment validation are complete.
 - The `apk` package does not provide OpenRC management. Document any future Alpine/OpenRC support explicitly before claiming managed service support for Alpine.
 
 ## Technical Rules

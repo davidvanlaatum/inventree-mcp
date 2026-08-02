@@ -24,6 +24,7 @@ import (
 
 const (
 	defaultHTTPReadHeaderTimeout = 10 * time.Second
+	defaultHTTPReadTimeout       = 30 * time.Second
 	defaultHTTPShutdownTimeout   = 10 * time.Second
 )
 
@@ -94,6 +95,7 @@ func newHTTPServer(ctx context.Context, cfg config.Config, handler http.Handler)
 		Addr:              cfg.Listen,
 		Handler:           handler,
 		ReadHeaderTimeout: defaultHTTPReadHeaderTimeout,
+		ReadTimeout:       defaultHTTPReadTimeout,
 		BaseContext: func(net.Listener) context.Context {
 			return context.WithoutCancel(ctx)
 		},
@@ -160,6 +162,10 @@ func HTTPMux(ctx context.Context, cfg config.Config, srv *mcp.Server) (http.Hand
 }
 
 func httpMux(ctx context.Context, cfg config.Config, srv *mcp.Server, traffic *trafficLog) (http.Handler, error) {
+	return httpMuxWithMetadataClient(ctx, cfg, srv, traffic, nil)
+}
+
+func httpMuxWithMetadataClient(ctx context.Context, cfg config.Config, srv *mcp.Server, traffic *trafficLog, metadataClient *http.Client) (http.Handler, error) {
 	handler := HTTPHandler(ctx, srv, cfg.MCPMaxRequestBodyBytes)
 	mux := http.NewServeMux()
 	if cfg.Transport == config.TransportHTTP && cfg.Environment == config.EnvironmentProduction {
@@ -189,6 +195,46 @@ func httpMux(ctx context.Context, cfg config.Config, srv *mcp.Server, traffic *t
 			ResourceTOSURI:                "",
 			DPOPSigningAlgValuesSupported: nil,
 		}))
+		if metadataClient == nil {
+			metadataClient = &http.Client{Timeout: oauth.DefaultClientMetadataTimeout}
+		}
+		metadataFetcher := oauth.ClientMetadataFetcher{
+			HTTPClient:       metadataClient,
+			AllowedOrigins:   append([]string(nil), cfg.OAuthClientIDs...),
+			AllowedClientIDs: append([]string(nil), cfg.OAuthClientIDs...),
+		}
+		broker := oauth.InvenTreeCredentialBroker{
+			BaseURL:    cfg.InvenTreeURL,
+			HTTPClient: &http.Client{Timeout: cfg.InvenTreeTimeout},
+		}
+		oauthService := oauth.Service{
+			Codec:           oauth.EnvelopeCodec{Keyring: keyring},
+			MetadataFetcher: metadataFetcher,
+			CodeStore:       oauth.NewCodeStore(1024, time.Now),
+			CredentialValidator: oauth.CredentialValidatorFunc(func(ctx context.Context, credential oauth.Credential) error {
+				_, err := broker.ValidateCredential(ctx, credential)
+				return err
+			}),
+			AccessLifetime:  cfg.OAuthAccessLifetime,
+			RefreshLifetime: cfg.OAuthRefreshLifetime,
+			SessionLifetime: cfg.OAuthSessionLifetime,
+		}
+		authorizationServer := &oauth.AuthorizationServer{
+			Issuer:           cfg.OAuthIssuerURL,
+			Resource:         cfg.OAuthResourceURL,
+			Scopes:           supportedOAuthScopes(),
+			Service:          oauthService,
+			MetadataFetcher:  metadataFetcher,
+			CredentialBroker: broker,
+			AssertionVerifier: oauth.PrivateKeyJWTVerifier{
+				HTTPClient:  metadataClient,
+				ReplayStore: oauth.NewAssertionReplayStore(4096, time.Now),
+			},
+			RateLimiter: oauth.NewRequestRateLimiter(10, time.Minute, time.Now),
+		}
+		if err := authorizationServer.Register(mux); err != nil {
+			return nil, err
+		}
 	} else if traffic != nil {
 		handler = traffic.middleware(string(config.TransportHTTP), cfg.MCPMaxRequestBodyBytes, handler)
 	}
