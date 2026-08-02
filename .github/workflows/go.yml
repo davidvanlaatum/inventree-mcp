@@ -95,7 +95,19 @@ jobs:
           echo "build=$(go env GOCACHE)" >> "$GITHUB_OUTPUT"
           echo "mod=$(go env GOMODCACHE)" >> "$GITHUB_OUTPUT"
           echo "version=$(go env GOVERSION)" >> "$GITHUB_OUTPUT"
-      - name: Cache Gremlins Go test caches
+      - name: Restore clean Go test cache for pull request mutations
+        if: github.event_name == 'pull_request'
+        uses: actions/cache/restore@v6
+        with:
+          path: |
+            ${{ steps.go-cache-paths.outputs.build }}
+            ${{ steps.go-cache-paths.outputs.mod }}
+          key: ${{ runner.os }}-${{ runner.arch }}-${{ steps.go-cache-paths.outputs.version }}-test-go-${{ hashFiles('go.mod', 'go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ runner.arch }}-${{ steps.go-cache-paths.outputs.version }}-test-go-${{ hashFiles('go.mod', 'go.sum') }}-
+            ${{ runner.os }}-${{ runner.arch }}-${{ steps.go-cache-paths.outputs.version }}-test-go-
+      - name: Cache full Gremlins Go test caches
+        if: github.event_name != 'pull_request'
         uses: actions/cache@v6
         with:
           path: |
