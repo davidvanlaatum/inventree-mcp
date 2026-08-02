@@ -98,6 +98,9 @@ Before `M1C-S04` is complete, mutating, operational, destructive, and upload too
 | [F-S16](#f-s16-mcp-go-sdk-v17-and-2026-07-28-protocol-adoption) | Adopt MCP Go SDK v1.7 and the MCP 2026-07-28 protocol safely. | Done |
 | [F-S17](#f-s17-native-mcp-elicitation-for-structured-clarifications) | Add native MCP elicitation while preserving structured clarification fallback. | Planned |
 | [F-S18](#f-s18-local-cli-self-update) | Add an explicit local CLI self-update workflow for direct binary installs. | Future |
+| [F-S19](#f-s19-part-category-administration) | Add guarded part-category retrieval, creation, and editing. | Future |
+| [F-S20](#f-s20-company-and-sourcing-link-maintenance) | Add exact reads and guarded maintenance for companies and sourcing links. | Future |
+| [F-S21](#f-s21-stock-location-and-stock-record-administration) | Add stock-location administration and constrained stock-record maintenance. | Future |
 
 ## Milestone 0: Repository And Planning
 
@@ -1301,26 +1304,26 @@ Tasks:
 
 - Status: `Future`
 - Issue: [#60](https://github.com/davidvanlaatum/inventree-mcp/issues/60)
-- Depends on: milestone 1 complete, product review, QA review, and infosec review
-- Scope: turn the first live order-entry run from an eBay order page into regression coverage and tool-surface hardening. The live run proved `search_manufacturers`, `create_company`, `create_supplier_part`, and `preview_purchase_order_with_lines` were useful, but still required REST fallbacks for category administration, duplicate checks, parameter template/default administration, parameter value recovery, image/attachment recovery, and purchase-order write/recovery steps.
+- Depends on: milestone 1 complete, F-S19, F-S20, product review, QA review, and infosec review
+- Scope: turn the first live order-entry run from an eBay order page into regression coverage and cross-cutting tool hardening. F-S03 and F-S11 through F-S14 now own the purchase-order, parameter-template, parameter-value, category-default, and bulk-parameter endpoint families that originally required REST fallbacks. F-S19 and F-S20 own the remaining category and sourcing-link administration surfaces; this story retains end-to-end preflight, error, partial-failure recovery, and operator-workflow behavior.
 - Acceptance:
   - Combined write workflows preflight every required clarification before mutation where practical; when a later step can still fail, the error response includes created IDs, completed actions, remaining actions, and a concrete recovery plan.
   - `create_manufacturer_part` and `upsert_part_with_supplier_and_manufacturer` reject blank or null MPN before calling InvenTree when the instance requires nonblank values, or implement a documented operator-approved fallback convention.
   - InvenTree API errors returned through tools include the relevant response body fields, such as `MPN: This field cannot be blank`, while preserving token and sensitive-data redaction.
-  - Dry-run or preflight behavior is available consistently for write tools that operators use during order entry, including company creation, supplier-part creation, manufacturer-part creation, part/category creation, parameter writes, image upload, and purchase-order writes.
-  - The MCP tool surface exposes enough read/search operations to avoid REST fallbacks during duplicate checks and recovery: categories, parts, supplier parts, manufacturer parts, purchase orders, purchase-order lines, parameter templates, parameter values, category parameter defaults, and image/attachment state.
-  - Live or Testcontainers coverage reproduces the order-entry path with a blank-MPN manufacturer-part input, confirms no hidden partial state is left without recoverable IDs, and verifies the recovery/read tools can locate any intentionally created records.
+  - Dry-run or preflight behavior is available consistently for write tools that operators use during order entry, including company, supplier-part, manufacturer-part, part, category, parameter, image, and purchase-order writes supplied by this story or its completed dependencies.
+  - The completed dependency surfaces provide enough read/search operations to avoid REST fallbacks during duplicate checks and recovery for categories, parts, supplier parts, manufacturer parts, purchase orders, purchase-order lines, parameter templates, parameter values, category parameter defaults, and image/attachment state.
+  - Default-on pinned Testcontainers coverage reproduces the sanitized order-entry path with a blank-MPN manufacturer-part input, uses a subtest-owned run, account, client, and run-prefixed records, proves no hidden partial state is left without recoverable IDs, and verifies through scoped pre/post searches that every intentionally created record is returned or recoverable. A live run may supplement but does not replace this blocking regression.
   - Tool reference, operator recipes, and prompt/operator guidance are updated for any new recovery, dry-run/preflight, read/search, or write behavior added by this hardening story.
 
 Tasks:
 
 - [ ] Capture the live eBay order-entry workflow as an operator recipe and test scenario with sanitized fixture values.
-- [ ] Audit registered versus documented tool availability for category, part, supplier-part, manufacturer-part, purchase-order, purchase-order-line, parameter, and image workflows.
+- [ ] Recheck the registered and documented tools delivered by F-S03, F-S11 through F-S14, F-S19, and F-S20 against the end-to-end order-entry workflow.
 - [ ] Add blank/null MPN validation or a documented fallback convention for manufacturer-part creation and part-upsert workflows.
 - [ ] Include structured InvenTree response-body details in tool errors with redaction tests.
 - [ ] Add recovery metadata to multi-step workflow failures, including any created part/company/link IDs.
 - [ ] Add dry-run/preflight support for lower-level write tools used during order entry where it is currently missing.
-- [ ] Add missing read/search and duplicate-check tools or fold them into the dependent future stories that own the endpoint family.
+- [ ] Add only cross-cutting read, duplicate-check, or recovery behavior that does not belong to the endpoint-family stories.
 - [ ] Update tool reference, operator recipes, and prompt/operator guidance for the hardened order-entry workflow.
 
 ### F-S16: MCP Go SDK v1.7 And 2026-07-28 Protocol Adoption
@@ -1412,4 +1415,82 @@ Tasks:
 - [ ] Add package-managed install refusal and actionable manual-update guidance.
 - [ ] Add deterministic unit and platform-appropriate integration tests without invoking live updates against the developer's installed binary.
 - [ ] Update release, packaging, README, operator, CLI help, and agent guidance.
+- [ ] Run focused Go, QA, product, and infosec review and resolve or document findings.
+
+### F-S19: Part Category Administration
+
+- Status: `Future`
+- Issue: [#78](https://github.com/davidvanlaatum/inventree-mcp/issues/78)
+- Depends on: milestone 1 complete, product review, QA review, and infosec review
+- Scope: expose stable-ID part-category retrieval plus guarded category creation and PATCH-based editing so catalog setup and recovery do not require direct REST calls. Category deletion remains out of scope until a separate destructive-cleanup policy defines dependency handling for parts, child categories, defaults, and other references.
+- Acceptance:
+  - `get_part_category` retrieves one category by stable ID and returns the hierarchy and default metadata needed to review a create or update decision.
+  - `create_part_category` requires an explicit name, resolves an optional existing parent and default location, preserves explicit structural and default-field choices, and refuses product-defined same-parent duplicates before writing. The duplicate policy explicitly decides normalization, case and surrounding-whitespace behavior, root-versus-parent matching, same-name records under another parent, and bounded pagination beyond the first page.
+  - `update_part_category` preserves omitted versus explicit empty, false, and null values, validates the resulting parent/default-location identities, and prevents self-parenting or descendant-parent cycles before PATCH.
+  - Reparenting and structural-state changes report affected hierarchy context and require an operator-approved policy for categories that already contain parts or child categories; the implementation does not guess when the safe behavior is unclear.
+  - Create and update use read-before-write preflight, return stable IDs and recovery guidance for ambiguous outcomes, read back the result, and never delete or implicitly move parts, child categories, parameter defaults, or stock.
+  - Exact reads require `inventree.read`; category create/update require `inventree.read` and `inventree.write` because preflight can disclose existing records. Product and infosec review explicitly classify reparenting and structural-state changes and add any higher-impact confirmation or scope requirement before implementation.
+  - The endpoint manifest, schema provenance/capability notes, tool annotations, OAuth scopes, tool reference, operator recipes, prompts, and generated tool manifest are aligned.
+  - Deterministic injected-transport unit coverage exercises post-persist response loss and recovery behavior. Default-on pinned Testcontainers coverage exercises exact retrieval, root and child creation, partial update, the approved duplicate matrix including later-page matches, invalid references, hierarchy-cycle safeguards, real recovery identities, and read-back verification.
+
+Tasks:
+
+- [ ] Confirm the category create/update field set, duplicate normalization/pagination matrix, mutation classification, and the policy for reparenting or changing structural state when descendants or assigned parts exist.
+- [ ] Add missing endpoint-manifest entries and typed category create/update client methods.
+- [ ] Expose stable-ID category retrieval plus guarded create/update tools.
+- [ ] Add duplicate, hierarchy, reference, ambiguous-result, and read-back tests against the pinned InvenTree API.
+- [ ] Align schema notes, tool reference, operator recipes, prompts, and generated manifests.
+- [ ] Run focused Go, QA, product, and infosec review and resolve or document findings.
+
+### F-S20: Company And Sourcing Link Maintenance
+
+- Status: `Future`
+- Issue: [#79](https://github.com/davidvanlaatum/inventree-mcp/issues/79)
+- Depends on: milestone 1 complete, product review, QA review, and infosec review
+- Scope: expose exact reads and guarded partial updates for companies, supplier-part links, and manufacturer-part links, plus the missing sourcing-link search tools needed for duplicate checks and recovery. Deletion and customer/sales workflows remain out of scope.
+- Acceptance:
+  - Stable-ID reads are available for companies, supplier parts, and manufacturer parts, and search tools expose schema-backed supplier/manufacturer/part/SKU/MPN filters with bounded pagination and deterministic results.
+  - Company updates preserve omitted versus explicit values, exclude `is_customer` from tool input and reject attempted customer-role mutation, and refuse supplier/manufacturer role changes that would invalidate an in-scope operation without operator clarification. Customer/sales, address, and contact administration remain deferred.
+  - Supplier-part and manufacturer-part updates validate every referenced part, company, and link identity, preserve explicit false/empty/null values where supported, and preflight duplicate SKU/MPN or equivalent sourcing identities before PATCH.
+  - Update error paths return only a minimal allowlisted recovery projection with sanitized upstream field details, stable IDs and current records when known or uniquely recoverable, candidate matches plus read-before-retry guidance otherwise, and URL userinfo/query redaction. Upstream bodies, logs, and tool errors do not expose tokens, unrelated contact/tax/note fields, sensitive URLs, or other operator data. Cross-cutting hardening of the existing create tools remains owned by F-S15.
+  - No tool deletes companies or sourcing links, creates customer/sales state, or mutates unrelated purchase-order or attachment records.
+  - Exact reads require `inventree.read`; preflighting company and sourcing-link updates require `inventree.read` and `inventree.write`. Product and infosec review explicitly classify supplier/manufacturer role changes and add any higher-impact confirmation or scope requirement before implementation.
+  - Endpoint-manifest entries, typed client methods, tool annotations, OAuth scopes, tool reference, operator recipes, prompts, and generated manifests are aligned.
+  - Deterministic injected-transport unit coverage exercises post-persist response loss, minimal recovery projection, and redaction. Default-on pinned Testcontainers coverage exercises search/get/update success, role and identity validation, duplicate refusal, omitted-versus-explicit patch behavior, real recovery identities, and read-back verification for all three record families.
+
+Tasks:
+
+- [ ] Confirm supported company and sourcing-link patch fields, duplicate identities, role-change classification/policy, and the minimal allowlisted recovery projection.
+- [ ] Complete endpoint-manifest and typed-client coverage, including stable manufacturer-part retrieval.
+- [ ] Add company, supplier-part, and manufacturer-part stable-ID read and search tools.
+- [ ] Add guarded company, supplier-part, and manufacturer-part update tools.
+- [ ] Add duplicate, role, reference, redaction, ambiguous-result, and read-back tests against the pinned InvenTree API.
+- [ ] Align tool reference, operator recipes, prompts, schema notes, and generated manifests.
+- [ ] Run focused Go, QA, product, and infosec review and resolve or document findings.
+
+### F-S21: Stock Location And Stock Record Administration
+
+- Status: `Future`
+- Issue: [#80](https://github.com/davidvanlaatum/inventree-mcp/issues/80)
+- Depends on: milestone 1 complete, F-S05, product review, QA review, and infosec review
+- Scope: expose exact stock-location and stock-item reads, add guarded stock-location creation and editing, and define a constrained stock-item metadata update surface without bypassing the confirmed quantity, stocktake, status, or receiving workflows. Location or stock-item deletion remains out of scope.
+- Acceptance:
+  - `get_stock_location` and `get_stock_item` expose stable-ID records and the hierarchy, ownership, quantity, status, serial, batch, packaging, and source-order context needed for administration and recovery.
+  - Stock-location create/update validates the optional parent and preserves omitted versus explicit null/false values for the selected nullable and boolean fields. Product review decides whether `owner` and `location_type` are supported; supported references require bounded manifest-backed lookup/get client and tool coverage plus valid/invalid-reference tests, while unsupported fields are omitted from input and refused. Location-type administration itself remains deferred.
+  - Stock-location duplicate policy explicitly decides normalization, case and surrounding-whitespace behavior, root-versus-parent matching, same-name records under another parent, and bounded pagination beyond the first page; self-parenting and descendant-parent cycles are always refused.
+  - Product review explicitly selects the stock-item metadata fields that may be updated. A generic upstream PATCH is not exposed; quantity, count, status, receipt, serialization, installation, and physical location movement are out of scope for F-S21 and remain routed through existing dedicated current-state-bound operational workflows or a separately approved backlog story.
+  - Any approved stock-record metadata update binds confirmation and recovery behavior to current state where the change can affect traceability, availability, or allocation, and reads back the exact record after mutation.
+  - No tool deletes locations or stock items, silently relocates stock, edits quantity/status through generic PATCH, or bypasses serialized-stock and `delete_on_deplete` safeguards.
+  - Exact reads require `inventree.read`; preflighting location create/update requires `inventree.read` and `inventree.write`; any approved stock-record mutation requires `inventree.read`, `inventree.write`, and `inventree.operational`. Product and infosec review explicitly classify location reparenting and structural/external changes and add any higher-impact confirmation or scope requirement before implementation.
+  - Endpoint-manifest entries, typed client methods, mutation classifications, OAuth scopes, tool reference, operator recipes, prompts, and generated manifests are aligned.
+  - Deterministic injected-transport unit coverage exercises post-persist response loss and recovery behavior. Default-on pinned Testcontainers coverage exercises exact reads, root and child location creation, partial location update, the approved duplicate matrix including later-page matches, cycle refusal, valid/invalid approved owner and location-type references, approved stock metadata behavior, operational-boundary enforcement, real recovery identities, and read-back verification.
+
+Tasks:
+
+- [ ] Decide the supported stock-location fields, duplicate normalization/pagination matrix, mutation classification, owner/location-type lookup policy, and narrow non-location stock-item metadata boundary before implementation; create a separate backlog story if physical relocation is required.
+- [ ] Add missing location create/update, any approved bounded owner/location-type read dependencies, and any approved stock-item endpoint-manifest and typed-client methods.
+- [ ] Add stable-ID stock-location and stock-item retrieval tools.
+- [ ] Add guarded stock-location create/update and only the approved constrained stock-record mutation tools.
+- [ ] Add hierarchy, duplicate, reference, serialization, operational-boundary, ambiguous-result, and read-back tests against the pinned InvenTree API.
+- [ ] Align schema notes, tool reference, operator recipes, prompts, and generated manifests.
 - [ ] Run focused Go, QA, product, and infosec review and resolve or document findings.
