@@ -11,6 +11,14 @@ type SearchQuery struct {
 	Offset int
 }
 
+type CategoryQuery struct {
+	Parent     *int
+	TopLevel   *bool
+	PathDetail *bool
+	Limit      int
+	Offset     int
+}
+
 type PartQuery struct {
 	CategoryID int
 	Cascade    *bool
@@ -95,6 +103,21 @@ func (q SearchQuery) values() url.Values {
 	values := url.Values{}
 	if q.Search != "" {
 		values.Set("search", q.Search)
+	}
+	setPagination(values, q.Limit, q.Offset)
+	return values
+}
+
+func (q CategoryQuery) values() url.Values {
+	values := url.Values{}
+	if q.Parent != nil {
+		values.Set("parent", strconv.Itoa(*q.Parent))
+	}
+	if q.TopLevel != nil {
+		values.Set("top_level", strconv.FormatBool(*q.TopLevel))
+	}
+	if q.PathDetail != nil {
+		values.Set("path_detail", strconv.FormatBool(*q.PathDetail))
 	}
 	setPagination(values, q.Limit, q.Offset)
 	return values

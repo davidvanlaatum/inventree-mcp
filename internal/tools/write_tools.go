@@ -244,6 +244,7 @@ func registerWriteTools(server *mcp.Server, deps Dependencies) {
 	addWriteTool(server, deps, SetPartParametersToolName, "Set part parameters", "Creates or updates part parameter values using existing linked templates.", setPartParameters(deps))
 	addWriteTool(server, deps, DeletePartParameterToolName, "Delete part parameter", "Deletes one parameter row by stable ID after confirm:true and verifies removal.", deletePartParameter(deps))
 	registerParameterTemplateTools(server, deps)
+	registerCategoryAdminTools(server, deps)
 	registerCategoryParameterWriteTools(server, deps)
 	registerParameterBulkWriteTools(server, deps)
 	addWriteTool(server, deps, CreateCompanyToolName, "Create company", "Creates a supplier and/or manufacturer company.", createCompany(deps))

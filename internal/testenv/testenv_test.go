@@ -199,6 +199,8 @@ func TestSharedInvenTreeWrapperNilAndClientPaths(t *testing.T) {
 	r.Error(err)
 	_, err = shared.Client(&Account{})
 	r.Error(err)
+	_, err = shared.ClientWithHTTPClient(&Account{}, http.DefaultClient)
+	r.Error(err)
 	_, err = shared.EnsureFixture(ctx, &Account{}, &Run{}, FixtureCategory)
 	r.Error(err)
 
@@ -209,6 +211,18 @@ func TestSharedInvenTreeWrapperNilAndClientPaths(t *testing.T) {
 	account := &Account{Username: accountName, Token: "account-token", Role: AccountAdmin, run: run}
 	shared = &SharedInvenTree{env: &Environment{BaseURL: "http://inventree.test"}}
 	client, err := shared.Client(account)
+	r.NoError(err)
+	r.NotNil(client)
+	client, err = shared.ClientWithHTTPClient(nil, http.DefaultClient)
+	r.Error(err)
+	r.Nil(client)
+	client, err = shared.ClientWithHTTPClient(&Account{Username: accountName}, http.DefaultClient)
+	r.Error(err)
+	r.Nil(client)
+	client, err = shared.ClientWithHTTPClient(account, nil)
+	r.Error(err)
+	r.Nil(client)
+	client, err = shared.ClientWithHTTPClient(account, http.DefaultClient)
 	r.NoError(err)
 	r.NotNil(client)
 }

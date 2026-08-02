@@ -53,10 +53,32 @@ type PartThumb struct {
 }
 
 type Category struct {
-	PK          int    `json:"pk"`
-	Name        string `json:"name"`
-	Description string `json:"description"`
-	Structural  bool   `json:"structural"`
+	PK                    int        `json:"pk"`
+	Name                  string     `json:"name"`
+	Description           string     `json:"description"`
+	DefaultLocation       *int       `json:"default_location"`
+	DefaultKeywords       *string    `json:"default_keywords"`
+	Level                 int        `json:"level"`
+	Parent                *int       `json:"parent"`
+	PartCount             *int       `json:"part_count"`
+	Subcategories         *int       `json:"subcategories"`
+	PathString            string     `json:"pathstring"`
+	Starred               bool       `json:"starred"`
+	Structural            bool       `json:"structural"`
+	Icon                  *string    `json:"icon"`
+	ParentDefaultLocation *int       `json:"parent_default_location"`
+	Path                  []TreePath `json:"path,omitempty"`
+}
+
+type TreePath struct {
+	PK   int    `json:"pk"`
+	Name string `json:"name"`
+}
+
+type CategoryPage struct {
+	Count   int
+	Results []Category
+	HasMore bool
 }
 
 type Company struct {

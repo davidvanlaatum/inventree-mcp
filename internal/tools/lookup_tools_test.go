@@ -76,6 +76,26 @@ func TestGetPartReturnsStructuredNotFoundForMissingRecord(t *testing.T) {
 	a.Equal(StatusNotFound, output.Status)
 }
 
+func TestGetPartCategoryRejectsMismatchedIdentity(t *testing.T) {
+	t.Parallel()
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	fake := &fakeMilestoneLookupClient{partCategory: inventree.Category{PK: 99, Name: "wrong"}}
+
+	_, _, err := getPartCategory(depsForFake(fake))(ctx, &mcp.CallToolRequest{}, IDInput{ID: 10})
+	require.ErrorContains(t, err, "mismatched part-category identity")
+}
+
+func TestGetPartCategorySanitizesUnexpectedUpstreamError(t *testing.T) {
+	t.Parallel()
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	fake := &fakeMilestoneLookupClient{partCategoryErr: &inventree.APIError{StatusCode: http.StatusBadRequest, Kind: inventree.ErrorKindValidation, Detail: "sensitive upstream detail"}}
+
+	_, _, err := getPartCategory(depsForFake(fake))(ctx, &mcp.CallToolRequest{}, IDInput{ID: 10})
+	require.Error(t, err)
+	assert.NotContains(t, err.Error(), "sensitive")
+	assert.Contains(t, err.Error(), "part-category lookup failed")
+}
+
 func TestSearchCompaniesReturnsNotFoundForNoResults(t *testing.T) {
 	t.Parallel()
 	r := require.New(t)
@@ -491,6 +511,8 @@ type fakeMilestoneLookupClient struct {
 	downloadPartImageErr       error
 	getPartErr                 error
 	part                       inventree.Part
+	partCategory               inventree.Category
+	partCategoryErr            error
 	createdPart                bool
 	createdPartParameter       bool
 	createPartParameterCount   int
@@ -555,6 +577,21 @@ func (f *fakeMilestoneLookupClient) GetPart(_ context.Context, id int) (inventre
 func (f *fakeMilestoneLookupClient) SearchPartCategories(_ context.Context, query inventree.SearchQuery) ([]inventree.Category, error) {
 	f.lastSearchPartCategoriesQuery = query
 	return f.categories, nil
+}
+
+func (f *fakeMilestoneLookupClient) GetPartCategory(_ context.Context, id int) (inventree.Category, error) {
+	if f.partCategoryErr != nil {
+		return inventree.Category{}, f.partCategoryErr
+	}
+	if f.partCategory.PK != 0 {
+		return f.partCategory, nil
+	}
+	for _, category := range f.categories {
+		if category.PK == id {
+			return category, nil
+		}
+	}
+	return inventree.Category{PK: id, Name: "category"}, nil
 }
 
 func (f *fakeMilestoneLookupClient) SearchPartParameters(_ context.Context, query inventree.PartParameterQuery) ([]inventree.Parameter, error) {

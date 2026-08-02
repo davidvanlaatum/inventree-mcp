@@ -93,8 +93,22 @@ func TestReadMethodsUseExpectedEndpoints(t *testing.T) {
 				_, err := client.GetPartCategory(ctx, 20)
 				return err
 			},
-			wantPath: "/api/part/category/20/",
-			response: `{"pk":20,"name":"passives"}`,
+			wantPath:  "/api/part/category/20/",
+			wantQuery: url.Values{"path_detail": []string{"true"}},
+			response:  `{"pk":20,"name":"passives"}`,
+		},
+		{
+			name: "search child categories page",
+			call: func(ctx context.Context, client *Client) error {
+				page, err := client.SearchPartCategoriesPage(ctx, CategoryQuery{Parent: dvgoutils.Ptr(20), PathDetail: dvgoutils.Ptr(true), Limit: 100, Offset: 200})
+				if err == nil && !page.HasMore {
+					return errors.New("expected another category page")
+				}
+				return err
+			},
+			wantPath:  "/api/part/category/",
+			wantQuery: url.Values{"parent": []string{"20"}, "path_detail": []string{"true"}, "limit": []string{"100"}, "offset": []string{"200"}},
+			response:  `{"count":400,"next":"https://inventory.example.test/api/part/category/?limit=100&offset=300","previous":null,"results":[{"pk":21,"name":"children"}]}`,
 		},
 		{
 			name: "search companies",

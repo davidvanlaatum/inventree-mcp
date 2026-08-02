@@ -163,6 +163,24 @@ func (s *SharedInvenTree) Client(account *Account) (*inventree.Client, error) {
 	return s.env.Client(account)
 }
 
+// ClientWithHTTPClient creates an account-scoped client with an injected HTTP
+// client for transport failure testing against the shared live environment.
+func (s *SharedInvenTree) ClientWithHTTPClient(account *Account, httpClient *http.Client) (*inventree.Client, error) {
+	if s == nil || s.env == nil {
+		return nil, errors.New("shared InvenTree environment is required")
+	}
+	if account == nil {
+		return nil, errors.New("test account is required")
+	}
+	if account.Token == "" {
+		return nil, fmt.Errorf("test account %q has empty token", account.Username)
+	}
+	if httpClient == nil {
+		return nil, errors.New("injected HTTP client is required")
+	}
+	return s.env.clientWithToken(account.Token, httpClient)
+}
+
 func (e *Environment) Client(account *Account) (*inventree.Client, error) {
 	if e == nil {
 		return nil, errors.New("InvenTree environment is required")

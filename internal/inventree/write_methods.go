@@ -39,6 +39,16 @@ type CompanyCreate struct {
 	IsManufacturer bool   `json:"is_manufacturer,omitempty"`
 }
 
+type CategoryCreate struct {
+	Name            string  `json:"name"`
+	Description     *string `json:"description,omitempty"`
+	DefaultLocation *int    `json:"default_location,omitempty"`
+	DefaultKeywords *string `json:"default_keywords,omitempty"`
+	Parent          *int    `json:"parent,omitempty"`
+	Structural      *bool   `json:"structural,omitempty"`
+	Icon            *string `json:"icon,omitempty"`
+}
+
 type SupplierPartCreate struct {
 	Part             int     `json:"part"`
 	Supplier         int     `json:"supplier"`
@@ -182,6 +192,18 @@ func (c *Client) CreatePart(ctx context.Context, input PartCreate) (Part, error)
 func (c *Client) UpdatePart(ctx context.Context, id int, fields PatchFields) (Part, error) {
 	var out Part
 	err := c.Patch(ctx, fmt.Sprintf("/api/part/%d/", id), fields, &out)
+	return out, err
+}
+
+func (c *Client) CreatePartCategory(ctx context.Context, input CategoryCreate) (Category, error) {
+	var out Category
+	err := c.Post(ctx, "/api/part/category/", input, &out)
+	return out, err
+}
+
+func (c *Client) UpdatePartCategory(ctx context.Context, id int, fields PatchFields) (Category, error) {
+	var out Category
+	err := c.Patch(ctx, fmt.Sprintf("/api/part/category/%d/", id), fields, &out)
 	return out, err
 }
 

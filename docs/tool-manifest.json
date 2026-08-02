@@ -192,6 +192,23 @@
       "http_registration": "registered_with_oauth_scope_guard"
     },
     {
+      "name": "create_part_category",
+      "milestone_status": "milestone_1",
+      "mutation_class": "write",
+      "scopes": [
+        "inventree.read",
+        "inventree.write"
+      ],
+      "annotations": {
+        "read_only": false,
+        "destructive": false,
+        "idempotent": false,
+        "open_world": false
+      },
+      "upload_sources": null,
+      "http_registration": "registered_with_oauth_scope_guard"
+    },
+    {
       "name": "create_purchase_order",
       "milestone_status": "milestone_1",
       "mutation_class": "write",
@@ -378,6 +395,22 @@
     },
     {
       "name": "get_part",
+      "milestone_status": "milestone_1",
+      "mutation_class": "read_only",
+      "scopes": [
+        "inventree.read"
+      ],
+      "annotations": {
+        "read_only": true,
+        "destructive": false,
+        "idempotent": true,
+        "open_world": false
+      },
+      "upload_sources": null,
+      "http_registration": "registered"
+    },
+    {
+      "name": "get_part_category",
       "milestone_status": "milestone_1",
       "mutation_class": "read_only",
       "scopes": [
@@ -869,6 +902,23 @@
       "http_registration": "registered_with_oauth_scope_guard"
     },
     {
+      "name": "update_part_category",
+      "milestone_status": "milestone_1",
+      "mutation_class": "write",
+      "scopes": [
+        "inventree.read",
+        "inventree.write"
+      ],
+      "annotations": {
+        "read_only": false,
+        "destructive": false,
+        "idempotent": true,
+        "open_world": false
+      },
+      "upload_sources": null,
+      "http_registration": "registered_with_oauth_scope_guard"
+    },
+    {
       "name": "update_purchase_order_line",
       "milestone_status": "milestone_1",
       "mutation_class": "write",
@@ -950,6 +1000,11 @@
       "name": "bom_import_review",
       "milestone_status": "future",
       "registered": false
+    },
+    {
+      "name": "category_administration_checklist",
+      "milestone_status": "milestone_1",
+      "registered": true
     },
     {
       "name": "initial_stock_entry_checklist",

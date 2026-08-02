@@ -171,7 +171,7 @@ Bulk attachment delete (`DELETE /api/attachment/`) is schema-confirmed but out o
 
 The initial endpoint manifest covers schema-confirmed paths, methods, operation IDs, selected query filters, request schemas, response schemas, and PATCH support for every milestone client-method dependency in these areas:
 
-- Part search/get/create/update and category search/get. Category create/update administration is deferred to F-S19.
+- Part search/get/create/update plus category search/get/create/PATCH administration delivered by F-S19.
 - Company search/get/create/update and role filters, plus supplier-part and manufacturer-part link search/create/update dependencies for F-S20.
 - Stock location search/get, stock item search/get/create/update, and native add, remove, count, and status-change operations. Location create/update administration and any constrained generic stock-item metadata surface are deferred to F-S21.
 - Parameter values, parameter templates, and category parameter template links.
@@ -180,6 +180,18 @@ The initial endpoint manifest covers schema-confirmed paths, methods, operation 
 
 Future endpoint-specific client methods must use manifest entries rather than ad hoc path strings. Adding a method without a manifest entry or changing `docs/api-schema.yaml` without updating the manifest/provenance should fail the schema checks.
 The manifest is endpoint-level schema coverage, not a complete upload authorization boundary. Attachment `model_type`, accepted file fields, URL sources, and primary-image object rules remain enforced by the attachment/image client and tool tests when those tools are implemented. The manifest records in-scope and deferred attachment model types so those later tests have a machine-readable scope source.
+
+## Verified Part Category Administration Endpoints
+
+- `GET /api/part/category/` supports parent and top-level filters plus `limit` and `offset`; F-S19 scans 100-row pages and fails closed above 1,000 same-parent candidates when proving duplicate identity.
+- `POST /api/part/category/` creates one category from the schema-writable `name`, `description`, `default_location`, `default_keywords`, `parent`, `structural`, and `icon` fields.
+- `GET /api/part/category/{id}/?path_detail=true` retrieves stable identity, parent/path hierarchy, direct part and child counts, structural state, category/default-location metadata, inherited parent default location, keywords, and icon.
+- `PATCH /api/part/category/{id}/` uses `PatchedCategory`; tool inputs preserve omitted fields, explicit empty/false values, and explicit null clearing for nullable parent, default-location, default-keywords, and icon fields.
+- `GET /api/part/` with exact `category` and explicit `cascade=false` establishes the direct-part count used by structural-state safeguards.
+- Category names are trimmed before writing and duplicate comparison uses case-insensitive same-parent identity. Roots compare only with roots; the same name under another parent is allowed. The same policy applies to create, rename, and reparent operations.
+- Parent validation walks stable parent IDs and refuses self-parenting and descendant cycles. Operator-approved reparenting may include direct parts and descendants, but requires explicit confirmation after hierarchy preflight. Reparenting changes the category hierarchy only; the MCP workflow does not separately move or delete parts, children, defaults, or stock.
+- Structural-state changes require explicit confirmation. A non-structural category with directly assigned parts cannot be promoted to structural through this workflow.
+- Category create/update require `inventree.read` and `inventree.write`, are closed-world non-destructive writes, read back the exact stable record, recheck duplicate/hierarchy policy after successful responses, and return read-before-retry recovery guidance for ambiguous mutation results. `update_part_category` is idempotent for absolute fields on one stable ID; category creation remains non-idempotent. These preflight and post-write checks are not atomic with InvenTree mutations, so operators must prevent concurrent category administration across MCP servers, the UI, and direct API clients.
 
 ## Verified Stock Adjustment Endpoints
 

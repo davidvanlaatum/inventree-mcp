@@ -27,6 +27,7 @@ const (
 	SearchPartsToolName                     = "search_parts"
 	GetPartToolName                         = "get_part"
 	SearchPartCategoriesToolName            = "search_part_categories"
+	GetPartCategoryToolName                 = "get_part_category"
 	SearchParameterTemplatesToolName        = "search_parameter_templates"
 	GetPartParametersToolName               = "get_part_parameters"
 	SearchPartParametersToolName            = "search_part_parameters"
@@ -57,6 +58,8 @@ const (
 	GetPurchaseOrderLineToolName            = "get_purchase_order_line"
 	CreatePartToolName                      = "create_part"
 	UpdatePartToolName                      = "update_part"
+	CreatePartCategoryToolName              = "create_part_category"
+	UpdatePartCategoryToolName              = "update_part_category"
 	SetPartParametersToolName               = "set_part_parameters"
 	CreateCompanyToolName                   = "create_company"
 	CreateSupplierPartToolName              = "create_supplier_part"
@@ -105,6 +108,7 @@ var lookupToolNames = []string{
 	SearchPartsToolName,
 	GetPartToolName,
 	SearchPartCategoriesToolName,
+	GetPartCategoryToolName,
 	SearchParameterTemplatesToolName,
 	GetPartParametersToolName,
 	SearchPartParametersToolName,
@@ -129,6 +133,8 @@ var lookupToolNames = []string{
 var writeToolNames = []string{
 	CreatePartToolName,
 	UpdatePartToolName,
+	CreatePartCategoryToolName,
+	UpdatePartCategoryToolName,
 	SetPartParametersToolName,
 	DeletePartParameterToolName,
 	CreateParameterTemplateToolName,
@@ -186,7 +192,7 @@ func init() {
 		scopes := []string{ScopeInventreeWrite}
 		mutationClass := "write"
 		switch name {
-		case CreateParameterTemplateToolName, UpdateParameterTemplateToolName, CreateCategoryParameterDefaultToolName, UpdateCategoryParameterDefaultToolName:
+		case CreateParameterTemplateToolName, UpdateParameterTemplateToolName, CreateCategoryParameterDefaultToolName, UpdateCategoryParameterDefaultToolName, CreatePartCategoryToolName, UpdatePartCategoryToolName:
 			scopes = []string{ScopeInventreeRead, ScopeInventreeWrite}
 		case BulkPropagatePartParametersToolName:
 			scopes = []string{ScopeInventreeRead, ScopeInventreeWrite, ScopeInventreeDestructive}
@@ -224,6 +230,9 @@ func init() {
 			Annotations:     annotations,
 		}
 	}
+	categoryUpdate := ToolAuthorizations[UpdatePartCategoryToolName]
+	categoryUpdate.Annotations.Idempotent = true
+	ToolAuthorizations[UpdatePartCategoryToolName] = categoryUpdate
 	for _, name := range []string{SearchPurchaseOrdersToolName, GetPurchaseOrderToolName, SearchPurchaseOrderLinesToolName, GetPurchaseOrderLineToolName, CreatePurchaseOrderToolName, AddPurchaseOrderLineToolName, UpdatePurchaseOrderLineToolName, CreatePurchaseOrderWorkflowToolName, IssuePurchaseOrderToolName, ReceivePurchaseOrderToolName} {
 		auth := ToolAuthorizations[name]
 		auth.MilestoneStatus = ToolMilestone1
@@ -238,6 +247,7 @@ type PartLookupClient interface {
 
 type CategoryLookupClient interface {
 	SearchPartCategories(context.Context, inventree.SearchQuery) ([]inventree.Category, error)
+	GetPartCategory(context.Context, int) (inventree.Category, error)
 }
 
 type ParameterLookupClient interface {
@@ -373,6 +383,7 @@ func registerLookupTools(server *mcp.Server, deps Dependencies) {
 	addReadOnlyTool(server, deps, SearchPartsToolName, "Search parts", "Searches InvenTree parts.", searchParts(deps))
 	addReadOnlyTool(server, deps, GetPartToolName, "Get part", "Retrieves one InvenTree part by ID.", getPart(deps))
 	addReadOnlyTool(server, deps, SearchPartCategoriesToolName, "Search part categories", "Searches InvenTree part categories.", searchPartCategories(deps))
+	addReadOnlyTool(server, deps, GetPartCategoryToolName, "Get part category", "Retrieves one InvenTree part category with hierarchy and default metadata by stable ID.", getPartCategory(deps))
 	addReadOnlyTool(server, deps, SearchParameterTemplatesToolName, "Search parameter templates", "Searches InvenTree parameter templates.", searchParameterTemplates(deps))
 	addReadOnlyTool(server, deps, GetPartParametersToolName, "Get part parameters", "Lists parameter values for one part.", getPartParameters(deps))
 	addReadOnlyTool(server, deps, SearchPartParametersToolName, "Search part parameters", "Searches parameter values across parts using stable filters.", searchPartParameterValues(deps))
@@ -416,6 +427,23 @@ func searchPartCategories(deps Dependencies) mcp.ToolHandlerFor[SearchInput, Loo
 		func(ctx context.Context, _ *mcp.CallToolRequest, client CategoryLookupClient, input SearchInput) (*mcp.CallToolResult, LookupOutput[inventree.Category], error) {
 			records, err := client.SearchPartCategories(ctx, searchQuery(input))
 			return searchOutput(records, input.Search, "category", "category_id", "Which category should be used?", err)
+		})
+}
+
+func getPartCategory(deps Dependencies) mcp.ToolHandlerFor[IDInput, RecordOutput[inventree.Category]] {
+	return LookupHandler[CategoryLookupClient, IDInput, RecordOutput[inventree.Category]](deps, GetPartCategoryToolName,
+		func(ctx context.Context, _ *mcp.CallToolRequest, client CategoryLookupClient, input IDInput) (*mcp.CallToolResult, RecordOutput[inventree.Category], error) {
+			record, err := client.GetPartCategory(ctx, input.ID)
+			if err != nil {
+				var apiErr *inventree.APIError
+				if !errors.As(err, &apiErr) || apiErr.Kind != inventree.ErrorKindNotFound {
+					return nil, RecordOutput[inventree.Category]{}, errors.New("part-category lookup failed; inspect InvenTree availability and permissions before retrying")
+				}
+			}
+			if err == nil && record.PK != input.ID {
+				return nil, RecordOutput[inventree.Category]{}, errors.New("InvenTree returned a mismatched part-category identity")
+			}
+			return recordOutput(record, err)
 		})
 }
 

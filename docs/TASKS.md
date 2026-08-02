@@ -98,7 +98,7 @@ Before `M1C-S04` is complete, mutating, operational, destructive, and upload too
 | [F-S16](#f-s16-mcp-go-sdk-v17-and-2026-07-28-protocol-adoption) | Adopt MCP Go SDK v1.7 and the MCP 2026-07-28 protocol safely. | Done |
 | [F-S17](#f-s17-native-mcp-elicitation-for-structured-clarifications) | Add native MCP elicitation while preserving structured clarification fallback. | Planned |
 | [F-S18](#f-s18-local-cli-self-update) | Add an explicit local CLI self-update workflow for direct binary installs. | Done |
-| [F-S19](#f-s19-part-category-administration) | Add guarded part-category retrieval, creation, and editing. | Future |
+| [F-S19](#f-s19-part-category-administration) | Add guarded part-category retrieval, creation, and editing. | Done |
 | [F-S20](#f-s20-company-and-sourcing-link-maintenance) | Add exact reads and guarded maintenance for companies and sourcing links. | Future |
 | [F-S21](#f-s21-stock-location-and-stock-record-administration) | Add stock-location administration and constrained stock-record maintenance. | Future |
 
@@ -1423,7 +1423,7 @@ Tasks:
 
 ### F-S19: Part Category Administration
 
-- Status: `Future`
+- Status: `Done`
 - Issue: [#78](https://github.com/davidvanlaatum/inventree-mcp/issues/78)
 - Depends on: milestone 1 complete, product review, QA review, and infosec review
 - Scope: expose stable-ID part-category retrieval plus guarded category creation and PATCH-based editing so catalog setup and recovery do not require direct REST calls. Category deletion remains out of scope until a separate destructive-cleanup policy defines dependency handling for parts, child categories, defaults, and other references.
@@ -1439,12 +1439,18 @@ Tasks:
 
 Tasks:
 
-- [ ] Confirm the category create/update field set, duplicate normalization/pagination matrix, mutation classification, and the policy for reparenting or changing structural state when descendants or assigned parts exist.
-- [ ] Add missing endpoint-manifest entries and typed category create/update client methods.
-- [ ] Expose stable-ID category retrieval plus guarded create/update tools.
-- [ ] Add duplicate, hierarchy, reference, ambiguous-result, and read-back tests against the pinned InvenTree API.
-- [ ] Align schema notes, tool reference, operator recipes, prompts, and generated manifests.
-- [ ] Run focused Go, QA, product, and infosec review and resolve or document findings.
+- [x] Confirm the category create/update field set, duplicate normalization/pagination matrix, mutation classification, and the policy for reparenting or changing structural state when descendants or assigned parts exist.
+- [x] Add missing endpoint-manifest entries and typed category create/update client methods.
+- [x] Expose stable-ID category retrieval plus guarded create/update tools.
+- [x] Add duplicate, hierarchy, reference, ambiguous-result, and read-back tests against the pinned InvenTree API.
+- [x] Align schema notes, tool reference, operator recipes, prompts, and generated manifests.
+- [x] Run focused Go, QA, product, and infosec review and resolve or document findings.
+
+Decision: expose every schema-writable category field; trim and compare names case-insensitively within one exact parent; treat roots separately and allow the same name under another parent; scan at most 1,000 siblings in 100-row pages and fail closed; permit confirmed reparenting with direct parts and/or descendants while refusing cycles; require confirmation for structural changes and refuse promotion while direct parts exist; classify category administration as closed-world non-destructive read/write work.
+
+- Validation: `GOFLAGS=-trimpath go test -race -p=1 ./...`, pinned `TestMilestoneHappyPathToolsAgainstInvenTree/part_category_administration`, focused skipped-Docker package tests, `go vet ./...`, generated-manifest/documentation tests, per-package `go test -p=1 -cover ./...` comparison against the current base, and `git diff --check` passed. Coverage has no package reductions: `internal/tools` remains 81.2%, `internal/testenv` improves from 66.4% to 67.0%, and `internal/inventree` improves from 91.3% to 91.4%.
+- Review: Senior Go Developer, Senior QA / Test Architect, Senior Product Manager, and Senior Infosec Reviewer reviews completed. Findings covered exact typed recovery comparisons, stable response identities, full supplied-field create recovery, normalized legacy names, deterministic and live post-persist response loss, bounded cycle traversal, post-write verification, sanitized errors, and the complete duplicate/reference/hierarchy matrix. Focused reruns found no unresolved actionable findings.
+- Residual risk: category preflight, mutation, and post-write verification are separate upstream REST operations. Another MCP server, the InvenTree UI, or a direct API client can still race same-parent uniqueness or hierarchy state; operators must use single-writer coordination and inspect current stable-ID state after any `partial_failure`. Simple `confirm:true` is intentionally not state-bound, but the confirmed call freshly repeats preflight before writing.
 
 ### F-S20: Company And Sourcing Link Maintenance
 

@@ -368,6 +368,7 @@ Read-only tools:
 - `search_parts`
 - `get_part`
 - `search_part_categories`
+- `get_part_category`
 - `search_companies`
 - `search_manufacturers`
 - `search_suppliers`
@@ -389,6 +390,7 @@ Mutating non-destructive tools:
 - `update_part`
 - `set_part_parameters`
 - `create_part_category`
+- `update_part_category`
 - `create_manufacturer_part`
 - `create_supplier_part`
 - `upsert_part_with_supplier_and_manufacturer`
@@ -450,6 +452,7 @@ These tools help agents find stable IDs before writing data.
 - `search_parts`
 - `get_part`
 - `search_part_categories`
+- `get_part_category`
 - `search_companies`
 - `search_manufacturers`
 - `search_suppliers`
@@ -469,6 +472,7 @@ These tools help agents find stable IDs before writing data.
 - `update_part`
 - `set_part_parameters`
 - `create_part_category`
+- `update_part_category`
 - `create_manufacturer_part`
 - `create_supplier_part`
 - `upsert_part_with_supplier_and_manufacturer`
@@ -479,6 +483,8 @@ Important behaviors:
 - Support variant/template relationships if enabled by the InvenTree instance.
 - Validate units, category, default location, and supplier/manufacturer references before write.
 - `update_part` should use PATCH and serialize only supplied fields.
+- Part-category administration trims names, refuses case-insensitive same-parent duplicates within a fail-closed 1,000-record scan, validates stable parent/default-location IDs, and uses PATCH with explicit null-clearing controls.
+- Category reparenting may include direct parts and descendants only after `confirm:true` hierarchy review; self/descendant cycles are refused. Structural-state changes also require confirmation, and promotion to structural is refused while direct parts exist.
 - Return recommended-but-missing field warnings for conventions such as IPN format, units, revision, default location, purchaseability, assembly flags, templates, and custom parameters when they can be detected.
 - `set_part_parameters` should search `/api/parameter/template/`, `/api/parameter/`, and `/api/part/category/parameters/` first and reuse matching enabled templates where possible. Do not blindly create parameter templates from natural language.
 - If multiple parameter templates could match by name, units, choices, checkbox state, or category association, ask the operator which existing template to use.
@@ -1171,7 +1177,7 @@ The full first beta milestone should include:
 - HTTP OAuth protected resource, authorization-code with PKCE, token, refresh, encrypted envelope support, and per-tool scope enforcement as implementation primitives.
 - Tool mutation metadata for every registered tool.
 - PATCH-based partial update support in the client and first update tools.
-- Part/category tools: `search_parts`, `get_part`, `search_part_categories`, `create_part`, `update_part`, `search_parameter_templates`, `get_part_parameters`, `set_part_parameters`.
+- Part/category tools: `search_parts`, `get_part`, `search_part_categories`, `get_part_category`, `create_part_category`, `update_part_category`, `create_part`, `update_part`, `search_parameter_templates`, `get_part_parameters`, `set_part_parameters`.
 - Company tools: `search_companies`, `search_suppliers`, `search_manufacturers`, `create_company`, `create_supplier_part`, `create_manufacturer_part`.
 - Stock tools: `search_stock_locations`, `search_stock_items`, `create_stock_item`.
 - Attachment/image tools: `list_attachments`, `get_attachment_metadata`, `download_attachment`, `download_part_image`, `upload_attachment`, `upload_attachment_from_url`, `create_link_attachment`, `update_attachment_metadata`, `delete_attachment`, `set_primary_image`.
@@ -1248,3 +1254,4 @@ Milestone README recipes:
 - Latest stable InvenTree is covered only by a non-blocking `inventree/inventree:stable` canary until schema/provenance updates are applied.
 - Destructive operations are allowed behind confirmation and accurate MCP annotations.
 - Tool inputs require API-required fields only, unless additional fields are needed to avoid ambiguous writes.
+- F-S19 category identity is a trimmed case-insensitive name under one exact parent, bounded to 1,000 sibling candidates with fail-closed pagination. Reparenting with any direct-part or descendant content is allowed only after explicit hierarchy confirmation; structural promotion is refused while direct parts exist. Category writes remain non-destructive closed-world operations requiring read and write scopes.

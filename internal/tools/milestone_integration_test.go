@@ -8,15 +8,19 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
+	"errors"
+	"fmt"
 	"image"
 	"image/color"
 	"image/png"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/netip"
 	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -96,6 +100,190 @@ func TestMilestoneHappyPathToolsAgainstInvenTree(t *testing.T) {
 		orders, err := fixture.client.SearchPurchaseOrders(ctx, inventree.PurchaseOrderQuery{Supplier: supplier.ID})
 		r.NoError(err)
 		a.Empty(orders, "purchase preview must not create purchase orders")
+	})
+
+	t.Run("part_category_administration", func(t *testing.T) {
+		r := require.New(t)
+		a := assert.New(t)
+		ctx, _, _ := testhandler.SetupTestHandler(t)
+		fixture := newMilestoneToolFixture(t, shared)
+		location := fixture.ensure(t, testenv.FixtureLocation)
+
+		rootName, err := fixture.run.Name("category-admin-root")
+		r.NoError(err)
+		_, rootOut, err := createPartCategory(fixture.deps())(ctx, &mcp.CallToolRequest{}, CreatePartCategoryInput{Name: rootName, DefaultLocationID: &location.ID, DefaultKeywords: dvgoutils.Ptr("root"), Structural: dvgoutils.Ptr(false)})
+		r.NoError(err)
+		a.Equal(StatusOK, rootOut.Status)
+		r.NotNil(rootOut.Record)
+		root := *rootOut.Record
+		a.Nil(root.Parent)
+		r.NotNil(root.DefaultLocation)
+		a.Equal(location.ID, *root.DefaultLocation)
+		r.NotNil(root.DefaultKeywords)
+		a.Equal("root", *root.DefaultKeywords)
+
+		_, rootDuplicate, err := createPartCategory(fixture.deps())(ctx, &mcp.CallToolRequest{}, CreatePartCategoryInput{Name: "  " + strings.ToUpper(rootName) + "  "})
+		r.NoError(err)
+		a.Equal(StatusClarificationRequired, rootDuplicate.Status)
+
+		otherParentName, err := fixture.run.Name("category-admin-other-parent")
+		r.NoError(err)
+		_, otherParentOut, err := createPartCategory(fixture.deps())(ctx, &mcp.CallToolRequest{}, CreatePartCategoryInput{Name: otherParentName})
+		r.NoError(err)
+		r.NotNil(otherParentOut.Record)
+		otherParent := *otherParentOut.Record
+		_, sameNameOtherParent, err := createPartCategory(fixture.deps())(ctx, &mcp.CallToolRequest{}, CreatePartCategoryInput{Name: rootName, ParentID: &otherParent.PK})
+		r.NoError(err)
+		a.Equal(StatusOK, sameNameOtherParent.Status)
+
+		childName, err := fixture.run.Name("category-admin-child")
+		r.NoError(err)
+		_, childOut, err := createPartCategory(fixture.deps())(ctx, &mcp.CallToolRequest{}, CreatePartCategoryInput{Name: childName, ParentID: &root.PK, Description: dvgoutils.Ptr("child")})
+		r.NoError(err)
+		r.NotNil(childOut.Record)
+		child := *childOut.Record
+		a.Equal(root.PK, *child.Parent)
+
+		_, exact, err := getPartCategory(fixture.deps())(ctx, &mcp.CallToolRequest{}, IDInput{ID: child.PK})
+		r.NoError(err)
+		a.Equal(StatusOK, exact.Status)
+		a.Equal(child.PK, exact.Record.PK)
+		r.NotNil(exact.Record.Parent)
+		a.Equal(root.PK, *exact.Record.Parent)
+		a.Equal("child", exact.Record.Description)
+		a.NotEmpty(exact.Record.PathString)
+		a.NotEmpty(exact.Record.Path)
+		r.NotNil(exact.Record.ParentDefaultLocation)
+		a.Equal(location.ID, *exact.Record.ParentDefaultLocation)
+		r.NotNil(exact.Record.PartCount)
+		r.NotNil(exact.Record.Subcategories)
+
+		_, partial, err := updatePartCategory(fixture.deps())(ctx, &mcp.CallToolRequest{}, UpdatePartCategoryInput{ID: child.PK, Description: dvgoutils.Ptr("updated child"), DefaultKeywords: dvgoutils.Ptr("")})
+		r.NoError(err)
+		a.Equal(StatusOK, partial.Status)
+		a.Equal("updated child", partial.Record.Description)
+		r.NotNil(partial.Record.DefaultKeywords)
+		a.Equal("", *partial.Record.DefaultKeywords)
+
+		descendantName, err := fixture.run.Name("category-admin-descendant")
+		r.NoError(err)
+		_, descendantOut, err := createPartCategory(fixture.deps())(ctx, &mcp.CallToolRequest{}, CreatePartCategoryInput{Name: descendantName, ParentID: &child.PK})
+		r.NoError(err)
+		r.NotNil(descendantOut.Record)
+		descendant := *descendantOut.Record
+		partName, err := fixture.run.Name("category-admin-part")
+		r.NoError(err)
+		_, err = fixture.client.CreatePart(ctx, inventree.PartCreate{Name: partName, Category: &child.PK})
+		r.NoError(err)
+
+		_, needsConfirm, err := updatePartCategory(fixture.deps())(ctx, &mcp.CallToolRequest{}, UpdatePartCategoryInput{ID: child.PK, ParentID: &otherParent.PK})
+		r.NoError(err)
+		a.Equal(StatusClarificationRequired, needsConfirm.Status)
+		r.NotNil(needsConfirm.Hierarchy)
+		a.GreaterOrEqual(needsConfirm.Hierarchy.DirectPartCount, 1)
+		a.GreaterOrEqual(needsConfirm.Hierarchy.DirectChildCount, 1)
+		_, reparented, err := updatePartCategory(fixture.deps())(ctx, &mcp.CallToolRequest{}, UpdatePartCategoryInput{ID: child.PK, ParentID: &otherParent.PK, Confirm: true})
+		r.NoError(err)
+		a.Equal(StatusOK, reparented.Status)
+		a.Equal(otherParent.PK, *reparented.Record.Parent)
+
+		collisionName, err := fixture.run.Name("category-admin-collision")
+		r.NoError(err)
+		_, collisionOut, err := createPartCategory(fixture.deps())(ctx, &mcp.CallToolRequest{}, CreatePartCategoryInput{Name: collisionName, ParentID: &otherParent.PK})
+		r.NoError(err)
+		r.NotNil(collisionOut.Record)
+		_, renameCollision, err := updatePartCategory(fixture.deps())(ctx, &mcp.CallToolRequest{}, UpdatePartCategoryInput{ID: child.PK, Name: &collisionName})
+		r.NoError(err)
+		a.Equal(StatusClarificationRequired, renameCollision.Status)
+
+		moveName, err := fixture.run.Name("category-admin-move-collision")
+		r.NoError(err)
+		_, movingOut, err := createPartCategory(fixture.deps())(ctx, &mcp.CallToolRequest{}, CreatePartCategoryInput{Name: moveName, ParentID: &root.PK})
+		r.NoError(err)
+		r.NotNil(movingOut.Record)
+		_, destinationCollision, err := createPartCategory(fixture.deps())(ctx, &mcp.CallToolRequest{}, CreatePartCategoryInput{Name: moveName, ParentID: &otherParent.PK})
+		r.NoError(err)
+		r.NotNil(destinationCollision.Record)
+		_, reparentCollision, err := updatePartCategory(fixture.deps())(ctx, &mcp.CallToolRequest{}, UpdatePartCategoryInput{ID: movingOut.Record.PK, ParentID: &otherParent.PK, Confirm: true})
+		r.NoError(err)
+		a.Equal(StatusClarificationRequired, reparentCollision.Status)
+
+		_, cycle, err := updatePartCategory(fixture.deps())(ctx, &mcp.CallToolRequest{}, UpdatePartCategoryInput{ID: child.PK, ParentID: &descendant.PK, Confirm: true})
+		r.NoError(err)
+		a.Equal(StatusClarificationRequired, cycle.Status)
+		a.Contains(cycle.Clarification.Reason, "descendant")
+		_, selfParent, err := updatePartCategory(fixture.deps())(ctx, &mcp.CallToolRequest{}, UpdatePartCategoryInput{ID: child.PK, ParentID: &child.PK, Confirm: true})
+		r.NoError(err)
+		a.Equal(StatusClarificationRequired, selfParent.Status)
+		a.Contains(selfParent.Clarification.Reason, "own parent")
+
+		_, structural, err := updatePartCategory(fixture.deps())(ctx, &mcp.CallToolRequest{}, UpdatePartCategoryInput{ID: child.PK, Structural: dvgoutils.Ptr(true), Confirm: true})
+		r.NoError(err)
+		a.Equal(StatusClarificationRequired, structural.Status)
+		a.Contains(structural.Clarification.Reason, "directly assigned parts")
+
+		_, cleared, err := updatePartCategory(fixture.deps())(ctx, &mcp.CallToolRequest{}, UpdatePartCategoryInput{ID: root.PK, ClearDefaultLocation: true, ClearDefaultKeywords: true})
+		r.NoError(err)
+		a.Equal(StatusOK, cleared.Status)
+		a.Nil(cleared.Record.DefaultLocation)
+		a.Nil(cleared.Record.DefaultKeywords)
+
+		_, invalidLocation, err := createPartCategory(fixture.deps())(ctx, &mcp.CallToolRequest{}, CreatePartCategoryInput{Name: rootName, DefaultLocationID: dvgoutils.Ptr(99999999)})
+		r.NoError(err)
+		a.Equal(StatusClarificationRequired, invalidLocation.Status)
+		_, invalidParent, err := createPartCategory(fixture.deps())(ctx, &mcp.CallToolRequest{}, CreatePartCategoryInput{Name: rootName + "-invalid-parent", ParentID: dvgoutils.Ptr(99999999)})
+		r.NoError(err)
+		a.Equal(StatusClarificationRequired, invalidParent.Status)
+		_, invalidUpdateLocation, err := updatePartCategory(fixture.deps())(ctx, &mcp.CallToolRequest{}, UpdatePartCategoryInput{ID: root.PK, DefaultLocationID: dvgoutils.Ptr(99999999)})
+		r.NoError(err)
+		a.Equal(StatusClarificationRequired, invalidUpdateLocation.Status)
+		_, invalidUpdateParent, err := updatePartCategory(fixture.deps())(ctx, &mcp.CallToolRequest{}, UpdatePartCategoryInput{ID: root.PK, ParentID: dvgoutils.Ptr(99999999), Confirm: true})
+		r.NoError(err)
+		a.Equal(StatusClarificationRequired, invalidUpdateParent.Status)
+
+		emptyName, err := fixture.run.Name("category-admin-empty-structural")
+		r.NoError(err)
+		_, emptyOut, err := createPartCategory(fixture.deps())(ctx, &mcp.CallToolRequest{}, CreatePartCategoryInput{Name: emptyName, Structural: dvgoutils.Ptr(false)})
+		r.NoError(err)
+		r.NotNil(emptyOut.Record)
+		_, allowedStructural, err := updatePartCategory(fixture.deps())(ctx, &mcp.CallToolRequest{}, UpdatePartCategoryInput{ID: emptyOut.Record.PK, Structural: dvgoutils.Ptr(true), Confirm: true})
+		r.NoError(err)
+		a.Equal(StatusOK, allowedStructural.Status)
+		a.True(allowedStructural.Record.Structural)
+
+		lostCreateName, err := fixture.run.Name("category-admin-lost-create")
+		r.NoError(err)
+		lostCreateClient, err := shared.ClientWithHTTPClient(fixture.account, &http.Client{Transport: &loseMutationResponseTransport{base: http.DefaultTransport, method: http.MethodPost, path: "/api/part/category/"}})
+		r.NoError(err)
+		_, lostCreate, err := createPartCategory(categoryClientDeps(lostCreateClient))(ctx, &mcp.CallToolRequest{}, CreatePartCategoryInput{Name: lostCreateName, Description: dvgoutils.Ptr("persisted despite lost response")})
+		r.NoError(err)
+		a.Equal(StatusPartialFailure, lostCreate.Status)
+		a.True(lostCreate.Recovered)
+		r.NotNil(lostCreate.Record)
+
+		lostPatchClient, err := shared.ClientWithHTTPClient(fixture.account, &http.Client{Transport: &loseMutationResponseTransport{base: http.DefaultTransport, method: http.MethodPatch, path: fmt.Sprintf("/api/part/category/%d/", lostCreate.Record.PK)}})
+		r.NoError(err)
+		_, lostPatch, err := updatePartCategory(categoryClientDeps(lostPatchClient))(ctx, &mcp.CallToolRequest{}, UpdatePartCategoryInput{ID: lostCreate.Record.PK, Description: dvgoutils.Ptr("patch persisted despite lost response")})
+		r.NoError(err)
+		a.Equal(StatusPartialFailure, lostPatch.Status)
+		a.True(lostPatch.Recovered)
+		a.Equal("patch persisted despite lost response", lostPatch.Record.Description)
+
+		pagedParentName, err := fixture.run.Name("category-admin-paged-parent")
+		r.NoError(err)
+		pagedParent, err := fixture.client.CreatePartCategory(ctx, inventree.CategoryCreate{Name: pagedParentName})
+		r.NoError(err)
+		var lastName string
+		for i := 0; i < MaxLookupLimit+1; i++ {
+			lastName, err = fixture.run.Name(fmt.Sprintf("category-admin-page-%03d", i))
+			r.NoError(err)
+			_, err = fixture.client.CreatePartCategory(ctx, inventree.CategoryCreate{Name: lastName, Parent: &pagedParent.PK})
+			r.NoError(err)
+		}
+		_, laterPageDuplicate, err := createPartCategory(fixture.deps())(ctx, &mcp.CallToolRequest{}, CreatePartCategoryInput{Name: strings.ToUpper(lastName), ParentID: &pagedParent.PK})
+		r.NoError(err)
+		a.Equal(StatusClarificationRequired, laterPageDuplicate.Status)
+		a.Equal("category_id", laterPageDuplicate.Clarification.Retry)
 	})
 
 	t.Run("purchase_order_create_and_retry_happy_path", func(t *testing.T) {
@@ -852,6 +1040,26 @@ type milestoneToolFixture struct {
 type attachmentTarget struct {
 	modelType string
 	modelID   int
+}
+
+type loseMutationResponseTransport struct {
+	base   http.RoundTripper
+	method string
+	path   string
+	lost   bool
+}
+
+func (t *loseMutationResponseTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	response, err := t.base.RoundTrip(req)
+	if err != nil || t.lost || req.Method != t.method || req.URL.Path != t.path {
+		return response, err
+	}
+	t.lost = true
+	if response != nil {
+		_, _ = io.Copy(io.Discard, response.Body)
+		_ = response.Body.Close()
+	}
+	return nil, errors.New("injected response loss after live mutation")
 }
 
 func newMilestoneToolFixture(t *testing.T, shared *testenv.SharedInvenTree) milestoneToolFixture {
