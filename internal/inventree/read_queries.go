@@ -12,9 +12,11 @@ type SearchQuery struct {
 }
 
 type PartParameterQuery struct {
-	PartID int
-	Limit  int
-	Offset int
+	Search     string
+	PartID     int
+	TemplateID int
+	Limit      int
+	Offset     int
 }
 
 type CategoryParameterTemplateQuery struct {
@@ -86,8 +88,14 @@ func (q SearchQuery) values() url.Values {
 
 func (q PartParameterQuery) values() url.Values {
 	values := url.Values{}
+	if q.Search != "" {
+		values.Set("search", q.Search)
+	}
 	if q.PartID != 0 {
 		values.Set("model_id", strconv.Itoa(q.PartID))
+	}
+	if q.TemplateID != 0 {
+		values.Set("template", strconv.Itoa(q.TemplateID))
 	}
 	values.Set("model_type", parameterModelTypePart)
 	setPagination(values, q.Limit, q.Offset)

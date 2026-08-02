@@ -373,6 +373,25 @@ func TestWriteMethodsUseExpectedEndpoints(t *testing.T) {
 	}
 }
 
+func TestDeletePartParameterUsesStableDetailEndpoint(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	client, err := NewClient(Config{
+		BaseURL:    "https://inventory.example.test",
+		Credential: Credential{Scheme: AuthSchemeToken, Token: "secret"},
+		HTTPClient: &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			a.Equal(http.MethodDelete, req.Method)
+			a.Equal("/api/parameter/60/", req.URL.Path)
+			a.Equal("Token secret", req.Header.Get("Authorization"))
+			return jsonResponse(req, http.StatusNoContent, ``), nil
+		})},
+	})
+	r.NoError(err)
+	r.NoError(client.DeletePartParameter(ctx, 60))
+}
+
 func TestAttachmentWriteMethodsUseExpectedEndpoints(t *testing.T) {
 	t.Parallel()
 

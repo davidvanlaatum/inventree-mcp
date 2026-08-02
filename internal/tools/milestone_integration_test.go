@@ -551,6 +551,51 @@ func TestMilestoneHappyPathToolsAgainstInvenTree(t *testing.T) {
 		a.Equal(StatusNoImage, noImage.Status)
 	})
 
+	t.Run("global_parameter_search_and_confirmed_delete", func(t *testing.T) {
+		r := require.New(t)
+		a := assert.New(t)
+		ctx, _, _ := testhandler.SetupTestHandler(t)
+		fixture := newMilestoneToolFixture(t, shared)
+		partFixture := fixture.ensure(t, testenv.FixturePart)
+		part, err := fixture.client.GetPart(ctx, partFixture.ID)
+		r.NoError(err)
+		r.NotNil(part.Category)
+		templateName, err := fixture.run.Name("parameter-search")
+		r.NoError(err)
+		var template inventree.ParameterTemplate
+		r.NoError(fixture.client.Post(ctx, "/api/parameter/template/", map[string]any{
+			"name": templateName, "description": "F-S12 integration template", "units": "ohm", "enabled": true,
+		}, &template))
+		parameter, err := fixture.client.CreatePartParameter(ctx, inventree.NewPartParameter(part.PK, template.PK, "12k"))
+		r.NoError(err)
+		value := "12k"
+
+		_, searched, err := searchPartParameterValues(fixture.deps())(ctx, &mcp.CallToolRequest{}, SearchPartParametersInput{
+			TemplateName: templateName,
+			Value:        &value,
+			CategoryID:   *part.Category,
+		})
+		r.NoError(err)
+		a.Equal(StatusOK, searched.Status)
+		r.Len(searched.Results, 1)
+		a.Equal(parameter.PK, searched.Results[0].ParameterID)
+		a.Equal(part.PK, searched.Results[0].PartID)
+		a.Equal(template.PK, searched.Results[0].TemplateID)
+		a.Equal("12k", searched.Results[0].Value)
+
+		_, confirmation, err := deletePartParameter(fixture.deps())(ctx, &mcp.CallToolRequest{}, DeletePartParameterInput{ParameterID: parameter.PK})
+		r.NoError(err)
+		a.Equal(StatusClarificationRequired, confirmation.Status)
+		_, deleted, err := deletePartParameter(fixture.deps())(ctx, &mcp.CallToolRequest{}, DeletePartParameterInput{ParameterID: parameter.PK, Confirm: true})
+		r.NoError(err)
+		a.Equal(StatusOK, deleted.Status)
+		a.True(deleted.Verified)
+
+		_, afterDelete, err := searchPartParameterValues(fixture.deps())(ctx, &mcp.CallToolRequest{}, SearchPartParametersInput{TemplateID: template.PK, PartID: part.PK})
+		r.NoError(err)
+		a.Equal(StatusNotFound, afterDelete.Status)
+	})
+
 	t.Run("deferred_file_surface_boundaries_return_clarifications", func(t *testing.T) {
 		r := require.New(t)
 		a := assert.New(t)

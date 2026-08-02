@@ -49,6 +49,10 @@ func TestToolReferenceDocumentsLookupFrameworkSchema(t *testing.T) {
 		reflect.TypeOf(IDInput{}),
 		reflect.TypeOf(ObjectLookupInput{}),
 		reflect.TypeOf(PartParametersInput{}),
+		reflect.TypeOf(SearchPartParametersInput{}),
+		reflect.TypeOf(PartParameterSearchResult{}),
+		reflect.TypeOf(DeletePartParameterInput{}),
+		reflect.TypeOf(DeletePartParameterOutput{}),
 		reflect.TypeOf(StockItemsInput{}),
 		reflect.TypeOf(DownloadInput{}),
 		reflect.TypeOf(DownloadOutput{}),
@@ -144,6 +148,9 @@ func TestToolReferenceDocumentsRegisteredWriteTools(t *testing.T) {
 		case DeleteAttachmentToolName:
 			a.Equal("destructive", auth.MutationClass)
 			a.Equal([]string{ScopeInventreeWrite, ScopeInventreeUpload, ScopeInventreeDestructive}, auth.Scopes)
+		case DeletePartParameterToolName:
+			a.Equal("destructive", auth.MutationClass)
+			a.Equal([]string{ScopeInventreeRead, ScopeInventreeWrite, ScopeInventreeDestructive}, auth.Scopes)
 		default:
 			a.Equal("write", auth.MutationClass)
 			a.Equal([]string{ScopeInventreeWrite}, auth.Scopes)

@@ -253,7 +253,18 @@ endpoints:
     path: /api/parameter/
     method: GET
     operation_id: parameter_list
+    required_query:
+      - model_type
+      - model_id
+      - template
+      - search
     response_schema: '#/components/schemas/PaginatedParameterList'
+  - id: get_part_parameter
+    area: parameters
+    path: /api/parameter/{id}/
+    method: GET
+    operation_id: parameter_retrieve
+    response_schema: '#/components/schemas/Parameter'
   - id: create_part_parameter
     area: parameters
     path: /api/parameter/
@@ -270,6 +281,12 @@ endpoints:
     request_schema: '#/components/schemas/PatchedParameter'
     request_content_type: multipart/form-data
     response_schema: '#/components/schemas/Parameter'
+  - id: delete_part_parameter
+    area: parameters
+    path: /api/parameter/{id}/
+    method: DELETE
+    operation_id: parameter_destroy
+    response_status: 204
   - id: search_parameter_templates
     area: parameters
     path: /api/parameter/template/
