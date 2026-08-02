@@ -4,6 +4,23 @@ This file is the source of truth for first-release operator workflows. README sh
 
 Each recipe should preserve omitted fields versus explicit zero/false/empty values, prefer existing InvenTree records, and return a structured clarification instead of guessing when lookup results are ambiguous.
 
+## Local CLI Self-Update
+
+This recipe applies only to a binary installed directly from a GitHub release archive on supported Linux or macOS `amd64`/`arm64` systems. It is a local CLI operation, not an MCP workflow.
+
+1. Confirm the binary did not come from `deb`, `rpm`, `apk`, Homebrew, or another package manager. Package-managed `/usr/bin/inventree-mcp` must be upgraded with the package manager.
+2. Confirm `inventree-mcp version` reports an exact stable `vX.Y.Z` release. Development builds cannot self-update.
+3. Before the first update only, run `inventree-mcp self-update --adopt-direct-install`. This creates an owner-only marker bound to the canonical repository and executable path without contacting GitHub or changing the binary. Never adopt a package-managed or uncertain installation.
+4. Run `inventree-mcp self-update` for the latest stable release, or `inventree-mcp self-update --version vX.Y.Z` for an exact newer stable release.
+5. On success, run `inventree-mcp version` and retain `<installed-path>.previous` until the new binary has completed the operator's normal smoke test.
+6. On refusal, follow the reported package-manager/manual-upgrade guidance. Do not use `sudo` to bypass ownership, directory, symlink, hardlink, marker, platform, or package boundaries.
+
+The updater verifies the canonical GitHub archive against `checksums.txt`, sanitizes the staged version probe, uses a persistent owner-only kernel-locked lock file and durable transaction record, rolls back failed installed probes, and never sends InvenTree/MCP credentials. It deliberately rejects the multi-file `v0.0.1` archive; the next single-binary release is the first valid target.
+
+If the command reports that it recovered an interrupted self-update, that invocation has restored the pre-update executable and exited non-zero without selecting or downloading a release. Run `inventree-mcp version`, inspect the restored version, then rerun the original `self-update` command so release selection uses that restored executable. Cleanup-only records left after a completed install or rollback are removed automatically without changing the current executable.
+
+If the later smoke test requires manual recovery, stop every process using the binary and confirm no updater is running. Verify `<installed-path>.previous` is an owner-controlled regular executable in the same protected directory. Copy it to a newly created owner-only staging file in that directory, run the staging file's `version` command, then atomically rename the staging file over the current executable and re-run `version` before restarting services. Do not perform this recovery on package-managed paths or use privilege elevation to bypass a refusal. See [Local CLI self-update policy](self-update.md) for the detailed trust, transaction, and recovery behavior.
+
 ## First-Release Tool Surface
 
 - STDIO mode registers read-only lookup/download tools, prompt checklists, write workflow tools, attachment/image tools, and the read-only `health_version` tool.

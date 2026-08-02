@@ -240,6 +240,12 @@ The Linux packages install the `inventree-mcp` binary to `/usr/bin`, install `pa
 
 The packaged service is for HTTP mode behind a path-preserving reverse proxy. Production HTTP startup can serve protected streamable HTTP with connector authorization/setup, signed-client token exchange, OAuth envelope validation, request-scoped InvenTree credential recovery, protected-resource metadata, explicit trusted-proxy source resolution, and the full tool surface behind per-tool scope guards. Live packaged deployment and connector validation in F-S10 still gate operator-ready ChatGPT deployment. Packages can be installed for file layout testing, but the systemd service should not be enabled for live connector use until that validation lands. F-S06 adds native systemd lifecycle support through `github.com/coreos/go-systemd/v22/daemon`: the unit uses `Type=notify`, `NotifyAccess=main`, and `WatchdogSec=30s`; the process reports ready after runtime construction and listener binding, derives heartbeat cadence as half the systemd-provided watchdog timeout, and publishes sanitized startup, ready, degraded, stopping, and fatal status text after the managed HTTP lifecycle starts. Configuration and logger initialization failures before that boundary exit non-zero for systemd to record and restart without duplicating transport parsing in an early notification path. A failed heartbeat stops further heartbeats but leaves the HTTP process serving so systemd remains responsible for terminating it at the watchdog deadline and restarting it under `Restart=on-failure`.
 
+## Local CLI Self-Update
+
+F-S18 adds an explicit local `inventree-mcp self-update` command for direct GitHub release-archive installations on Linux and macOS `amd64`/`arm64`. It remains outside MCP registration, server startup, and background operation. The approved initial policy uses latest or exact newer stable releases, rejects prereleases/downgrades/Windows/package-managed paths without mutation or privilege elevation, and trusts canonical GitHub release control plus the published SHA-256 checksum with the shared-trust-root residual risk documented in [self-update.md](self-update.md).
+
+`internal/selfupdate` owns one-time direct-install adoption markers, bounded GitHub release discovery, exact asset selection, credential-isolated HTTP, checksum verification, strict single-executable archive parsing, current-target ownership/link/identity and ancestor checks, kernel-released cross-process locking, isolated staged/installed version probes, atomic replacement, durable transaction recovery, rollback, and the `.previous` recovery binary. The CLI only parses local flags and renders the result. GoReleaser direct-install archives intentionally exclude README/license defaults so future archives contain only the expected executable; packages retain their existing metadata and must be upgraded through their package manager.
+
 ## Project Structure
 
 ```text
@@ -262,6 +268,11 @@ internal/server/
   resources.go
   transport_stdio.go
   transport_http.go
+internal/selfupdate/
+  selfupdate.go
+  http.go
+  archive.go
+  install.go
 internal/oauth/
   metadata.go
   authorize.go

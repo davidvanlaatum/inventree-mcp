@@ -54,6 +54,15 @@ The debug traffic log option also applies to development HTTP mode. HTTP logging
 
 GitHub releases are produced by GoReleaser when a `vX.X.X` tag is pushed. Each release includes checksums, archived binaries for Linux, macOS, and Windows on `amd64` and `arm64`, plus Linux `deb`, `rpm`, and `apk` packages.
 
+Direct release-archive installations on Linux and macOS can update explicitly with:
+
+```sh
+inventree-mcp self-update
+inventree-mcp self-update --version vX.Y.Z
+```
+
+Before the first update, a direct archive installation must be explicitly recorded once with `inventree-mcp self-update --adopt-direct-install`. Adoption performs no network request or update and must be used only after confirming the current binary came from this repository's canonical GitHub release archive. The command supports stable direct-archive binaries on `amd64` and `arm64`; it refuses prereleases, downgrades, Windows, known package paths, missing/unsafe adoption markers, unsafe ownership/link/directory state, and development builds without changing the installed binary. It verifies the canonical GitHub release archive against `checksums.txt`, retains the prior binary as `inventree-mcp.previous`, and never runs automatically or through MCP. Release `v0.0.1` predates the required single-binary archive format, so the next release is the first valid self-update target. See [Local CLI self-update policy](docs/self-update.md) for the trust, manual recovery, and residual-risk details.
+
 Linux packages install:
 
 - `/usr/bin/inventree-mcp`
@@ -74,6 +83,8 @@ INVENTREE_MCP_DEV_INCOMPLETE_OAUTH=true \
 The default HTTP listen address is `127.0.0.1:28686`. The port is intentionally outside common HTTP development ports, below common Linux ephemeral ranges, and loopback-only by default.
 
 The `apk` package installs the same binary, config template, and systemd unit as the `deb` and `rpm` packages. Alpine/OpenRC service management is not implemented yet; use the binary directly or add an operator-specific OpenRC unit outside the package.
+
+Package installations must be upgraded with their package manager. `inventree-mcp self-update` deliberately refuses `/usr/bin/inventree-mcp` and never overwrites package-owned files.
 
 ## Maintainer Release Flow
 
