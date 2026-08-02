@@ -171,10 +171,9 @@ Bulk attachment delete (`DELETE /api/attachment/`) is schema-confirmed but out o
 
 The initial endpoint manifest covers schema-confirmed paths, methods, operation IDs, selected query filters, request schemas, response schemas, and PATCH support for every milestone client-method dependency in these areas:
 
-- Part and category search/create/update.
-- Company search/get/create/update and role filters.
-- Manufacturer part and supplier part link creation.
-- Stock location search, stock item search/create, and native add, remove, count, and status-change operations.
+- Part search/get/create/update and category search/get. Category create/update administration is deferred to F-S19.
+- Company search/get/create/update and role filters, plus supplier-part and manufacturer-part link search/create/update dependencies for F-S20.
+- Stock location search/get, stock item search/get/create/update, and native add, remove, count, and status-change operations. Location create/update administration and any constrained generic stock-item metadata surface are deferred to F-S21.
 - Parameter values, parameter templates, and category parameter template links.
 - Purchase order preview plus F-S03 order/line search, get, create, PATCH, issue, and receive dependencies, including direct supplier and supplier-part retrieval for stable-ID validation.
 - Attachment, link attachment, URL upload, and primary-image update behavior.
