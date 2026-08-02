@@ -69,6 +69,7 @@ When picking up an implementation task from `docs/TASKS.md`:
 - Spike the official MCP Go SDK `auth` and `oauthex` packages before adding parallel OAuth plumbing. Prefer maintained libraries for OAuth authorization-server behavior and keep them behind `internal/oauth` interfaces. Do not hand-roll protocol details such as PKCE validation unless the SDK/library cannot cover them.
 - Resolve ChatGPT Developer Connector redirect URI, client registration, metadata, and local/dev callback behavior from current official OpenAI documentation before implementing HTTP OAuth.
 - Production HTTP mode is expected to sit behind a reverse proxy that terminates HTTPS. Use explicitly configured canonical public HTTPS issuer/resource URLs and trusted-proxy configuration; do not derive OAuth URLs from untrusted `Host` or forwarded headers.
+- Production reverse proxies must preserve configured canonical path prefixes. Require explicit trusted proxy CIDRs, ignore forwarded host/scheme/prefix headers, and use `X-Forwarded-For` only from trusted immediate peers for normalized source-IP rate limiting and request-scoped logging without logging the raw header.
 - Do not publish the internal Go HTTP listener directly in production; expose it only to the trusted reverse proxy or private service network.
 - Define and enforce OAuth scopes for tool classes before handlers run.
 - Treat OAuth scopes as additive and least-privilege; `inventree.write` does not imply upload, operational inventory access, or destructive access.

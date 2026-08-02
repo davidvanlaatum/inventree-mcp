@@ -20,6 +20,7 @@ import (
 
 	"github.com/davidvanlaatum/inventree-mcp/internal/inventree"
 	"github.com/davidvanlaatum/inventree-mcp/internal/platform"
+	"github.com/davidvanlaatum/inventree-mcp/internal/requestctx"
 )
 
 const (
@@ -371,8 +372,12 @@ func (s *AuthorizationServer) allow(req *http.Request) bool {
 	if limiter == nil {
 		return true
 	}
-	host, _, err := net.SplitHostPort(req.RemoteAddr)
-	if err != nil {
+	host := "unknown"
+	if sourceIP, ok := requestctx.SourceIP(req.Context()); ok {
+		host = sourceIP.String()
+	} else if remoteHost, _, err := net.SplitHostPort(req.RemoteAddr); err == nil {
+		host = remoteHost
+	} else if req.RemoteAddr != "" {
 		host = req.RemoteAddr
 	}
 	return limiter.Allow(req.URL.Path + "\x00ip:" + host)
