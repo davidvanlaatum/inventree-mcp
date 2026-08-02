@@ -8,6 +8,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
@@ -19,6 +20,7 @@ import (
 	"github.com/davidvanlaatum/inventree-mcp/internal/inventree"
 	"github.com/davidvanlaatum/inventree-mcp/internal/platform"
 	"github.com/davidvanlaatum/inventree-mcp/internal/server"
+	"github.com/davidvanlaatum/inventree-mcp/internal/systemdnotify"
 	"github.com/davidvanlaatum/inventree-mcp/internal/tools"
 	"github.com/davidvanlaatum/inventree-mcp/internal/upload"
 	"github.com/spf13/afero"
@@ -30,7 +32,10 @@ func main() {
 	os.Exit(runWithContext(ctx, os.Args[1:], os.Stdout, os.Stderr, os.Getenv))
 }
 
-var serverRun = server.Run
+var (
+	serverRun        = server.Run
+	newSystemdNotify = systemdnotify.New
+)
 
 func run(args []string, stdout, stderr io.Writer, getenv config.Env) int {
 	return runWithContext(context.Background(), args, stdout, stderr, getenv)
@@ -86,12 +91,32 @@ func runWithContext(parentCtx context.Context, args []string, stdout, stderr io.
 }
 
 func serve(ctx context.Context, cfg config.Config) error {
-	_ = logging.FromContext(ctx)
+	logger := logging.FromContext(ctx)
+	notifier := newSystemdNotify()
+	managedHTTP := cfg.Transport == config.TransportHTTP
+	if managedHTTP {
+		if err := notifier.Starting(); err != nil {
+			return fmt.Errorf("notify systemd of service startup: %w", err)
+		}
+	}
 	deps, err := dependenciesForConfig(cfg)
 	if err != nil {
+		if managedHTTP {
+			notifyFatal(logger, notifier)
+		}
 		return err
 	}
-	return serverRun(ctx, cfg, deps)
+	err = serverRun(ctx, cfg, deps, notifier)
+	if managedHTTP && err != nil && err != context.Canceled {
+		notifyFatal(logger, notifier)
+	}
+	return err
+}
+
+func notifyFatal(logger *slog.Logger, notifier systemdnotify.Notifier) {
+	if err := notifier.Fatal(); err != nil {
+		logger.Error("failed to notify systemd of fatal service error", logging.Err(err))
+	}
 }
 
 func dependenciesForConfig(cfg config.Config) (tools.Dependencies, error) {

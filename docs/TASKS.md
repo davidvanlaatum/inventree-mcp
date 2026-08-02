@@ -83,7 +83,7 @@ Before `M1C-S04` is complete, mutating, operational, destructive, and upload too
 | [F-S03](#f-s03-purchase-order-write-and-receiving) | Purchase order write and receiving. | Done |
 | [F-S04](#f-s04-build-order-workflows) | Build order workflows. | Future |
 | [F-S05](#f-s05-stocktake-adjustments) | Stocktake adjustments. | Done |
-| [F-S06](#f-s06-systemd-notify-and-watchdog-support) | Native systemd notification support for packaged HTTP deployments. | Future |
+| [F-S06](#f-s06-systemd-notify-and-watchdog-support) | Native systemd notification support for packaged HTTP deployments. | Done |
 | [F-S07](#f-s07-production-http-oauth-startup) | Wire production HTTP startup to OAuth configuration and server dependencies. | Done |
 | [F-S08](#f-s08-chatgpt-connector-oauth-setup-flow) | Implement ChatGPT connector authorization, token, and setup-page flow. | Future |
 | [F-S09](#f-s09-reverse-proxy-canonical-url-enforcement) | Enforce public issuer/resource URLs behind a trusted reverse proxy. | Future |
@@ -1035,28 +1035,45 @@ Tasks:
 
 ### F-S06: Systemd Notify And Watchdog Support
 
-- Status: `Future`
+- Status: `Done`
 - Issue: [#51](https://github.com/davidvanlaatum/inventree-mcp/issues/51)
 - Depends on: F-S07 and product review
+- Progress: added native systemd lifecycle notifications around packaged HTTP startup, listener-bound readiness, half-timeout watchdog heartbeats, degraded-but-serving watchdog failure handling, graceful shutdown, and fatal managed-runtime errors. The packaged unit now uses `Type=notify`, `NotifyAccess=main`, and `WatchdogSec=30s`; configuration and logger initialization failures before the managed lifecycle starts remain non-zero exits handled by systemd.
 - Scope: add native systemd notification support for packaged HTTP deployments.
 - Acceptance:
   - HTTP service startup sends systemd readiness only after the listener is bound, runtime dependencies are initialized, and production startup checks have passed.
   - The process sends watchdog heartbeats at a safe interval when systemd `WatchdogSec` is configured.
-  - The process publishes useful systemd status text for startup, ready, degraded, shutdown, and fatal-error states without logging or exposing secrets.
+  - After the managed HTTP lifecycle starts, the process publishes useful systemd status text for startup, ready, degraded, shutdown, and fatal-error states without logging or exposing secrets; earlier configuration and logger initialization failures exit non-zero for ordinary systemd handling.
   - Packaged systemd unit can safely switch from `Type=simple` to `Type=notify` with `NotifyAccess=main` and an explicit `WatchdogSec`.
   - Tests cover notify readiness ordering, heartbeat cadence, disabled-watchdog behavior, shutdown status, fatal-error status, and non-systemd fallback behavior.
   - README, operator recipes, release packaging docs, and `AGENTS.md` are updated to describe the supported systemd behavior.
 
 Tasks:
 
-- [ ] Select and wrap a maintained Go systemd notification library.
-- [ ] Add injectable notifier/watchdog abstraction for deterministic tests.
-- [ ] Send startup status transitions and final readiness notification.
-- [ ] Send watchdog heartbeats only when systemd watchdog is enabled.
-- [ ] Publish shutdown, degraded, and fatal-error status messages.
-- [ ] Update packaged systemd unit to `Type=notify` after code support lands.
-- [ ] Add unit and integration tests for notify/watchdog behavior.
-- [ ] Update release and operator documentation.
+- [x] Select and wrap a maintained Go systemd notification library.
+- [x] Add injectable notifier/watchdog abstraction for deterministic tests.
+- [x] Send startup status transitions and final readiness notification.
+- [x] Send watchdog heartbeats only when systemd watchdog is enabled.
+- [x] Publish shutdown, degraded, and fatal-error status messages.
+- [x] Update packaged systemd unit to `Type=notify` after code support lands.
+- [x] Add unit and integration tests for notify/watchdog behavior.
+- [x] Update release and operator documentation.
+
+Validation:
+
+- `go test -race ./internal/systemdnotify ./internal/server ./cmd/inventree-mcp ./packaging/systemd ./docs` passed, including real Unix datagram notification, listener-bound readiness, degraded-but-serving watchdog failure, shutdown status, non-systemd fallback, and packaged-unit contract coverage.
+- `INVENTREE_TEST_SKIP_DOCKER=1 GOFLAGS=-trimpath go test -race -count=1 ./...` passed.
+- `GOFLAGS=-trimpath go test -race -p=1 -count=1 ./...` passed with the default-on InvenTree Testcontainers suites.
+- `go generate ./internal/tools` produced no unexpected changes; `golangci-lint run`, `go mod tidy -diff`, `goreleaser check`, and `git diff --check` passed.
+- `goreleaser release --snapshot --clean` passed, and the generated `deb`, `rpm`, and `apk` payloads contained the expected notify/watchdog unit.
+
+Review:
+
+- Senior Go Developer, Senior QA / Test Architect, Senior Product Manager, and Senior Infosec Reviewer reviews completed. Go and QA found that retrying heartbeats after a send failure could prevent systemd-owned termination; the loop now stops after the first failure while HTTP continues serving. QA also requested explicit shutdown-status assertions and real `NOTIFY_SOCKET` integration coverage; both were added. Product required the fatal-status boundary to distinguish managed-lifecycle failures from earlier configuration/logger failures; the operator chose non-zero systemd handling for the earlier boundary and docs now say so. Focused Go, QA, and Product reruns plus Infosec review found no remaining actionable findings. Linked issue #51 was aligned with the clarified acceptance, completed checklist, validation, review, and residual-risk handoff and remains open for merge.
+
+Residual risk:
+
+- Actual systemd-manager startup timeout, watchdog termination/restart, and installed-package operation remain deferred to F-S10 live packaged deployment validation. Notification sends use the maintained library's synchronous Unix-datagram behavior at the trusted systemd boundary. After the first failed heartbeat, the process can continue accepting requests until the 30-second watchdog deadline. Configuration and logger initialization failures before lifecycle initialization do not publish custom status text, but exit non-zero for systemd to record and restart.
 
 ### F-S07: Production HTTP OAuth Startup
 
