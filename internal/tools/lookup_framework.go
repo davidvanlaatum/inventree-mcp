@@ -44,6 +44,7 @@ type ClarificationResponse struct {
 	Reason      string                   `json:"reason"`
 	Candidates  []ClarificationCandidate `json:"candidates"`
 	Retry       string                   `json:"retry"`
+	RetryTool   string                   `json:"retry_tool,omitempty"`
 	HardError   bool                     `json:"hard_error"`
 	RetryValues map[string]any           `json:"retry_values,omitempty"`
 }

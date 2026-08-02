@@ -24,55 +24,59 @@ const (
 	ScopeInventreeOperational = "inventree.operational"
 	ScopeInventreeDestructive = "inventree.destructive"
 
-	SearchPartsToolName                 = "search_parts"
-	GetPartToolName                     = "get_part"
-	SearchPartCategoriesToolName        = "search_part_categories"
-	SearchParameterTemplatesToolName    = "search_parameter_templates"
-	GetPartParametersToolName           = "get_part_parameters"
-	SearchPartParametersToolName        = "search_part_parameters"
-	DeletePartParameterToolName         = "delete_part_parameter"
-	CreateParameterTemplateToolName     = "create_parameter_template"
-	UpdateParameterTemplateToolName     = "update_parameter_template"
-	DeleteParameterTemplateToolName     = "delete_parameter_template"
-	MergeParameterTemplatesToolName     = "merge_parameter_templates"
-	SearchCompaniesToolName             = "search_companies"
-	SearchSuppliersToolName             = "search_suppliers"
-	SearchManufacturersToolName         = "search_manufacturers"
-	SearchStockLocationsToolName        = "search_stock_locations"
-	SearchStockItemsToolName            = "search_stock_items"
-	ListAttachmentsToolName             = "list_attachments"
-	GetAttachmentMetadataToolName       = "get_attachment_metadata"
-	DownloadAttachmentToolName          = "download_attachment"
-	DownloadPartImageToolName           = "download_part_image"
-	PreviewPurchaseOrderToolName        = "preview_purchase_order_with_lines"
-	SearchPurchaseOrdersToolName        = "search_purchase_orders"
-	GetPurchaseOrderToolName            = "get_purchase_order"
-	SearchPurchaseOrderLinesToolName    = "search_purchase_order_lines"
-	GetPurchaseOrderLineToolName        = "get_purchase_order_line"
-	CreatePartToolName                  = "create_part"
-	UpdatePartToolName                  = "update_part"
-	SetPartParametersToolName           = "set_part_parameters"
-	CreateCompanyToolName               = "create_company"
-	CreateSupplierPartToolName          = "create_supplier_part"
-	CreateManufacturerPartToolName      = "create_manufacturer_part"
-	UpsertPartWorkflowToolName          = "upsert_part_with_supplier_and_manufacturer"
-	CreateStockItemToolName             = "create_stock_item"
-	InitialStockWorkflowToolName        = "create_initial_stock_entry"
-	AdjustStockQuantityToolName         = "adjust_stock_quantity"
-	SetStockStatusToolName              = "set_stock_status"
-	StocktakeAdjustmentToolName         = "stocktake_adjustment"
-	CreatePurchaseOrderToolName         = "create_purchase_order"
-	AddPurchaseOrderLineToolName        = "add_purchase_order_line"
-	UpdatePurchaseOrderLineToolName     = "update_purchase_order_line"
-	CreatePurchaseOrderWorkflowToolName = "create_purchase_order_with_lines"
-	IssuePurchaseOrderToolName          = "issue_purchase_order"
-	ReceivePurchaseOrderToolName        = "receive_purchase_order_items"
-	UploadAttachmentToolName            = "upload_attachment"
-	UploadAttachmentFromURLToolName     = "upload_attachment_from_url"
-	CreateLinkAttachmentToolName        = "create_link_attachment"
-	UpdateAttachmentMetadataToolName    = "update_attachment_metadata"
-	DeleteAttachmentToolName            = "delete_attachment"
-	SetPrimaryImageToolName             = "set_primary_image"
+	SearchPartsToolName                     = "search_parts"
+	GetPartToolName                         = "get_part"
+	SearchPartCategoriesToolName            = "search_part_categories"
+	SearchParameterTemplatesToolName        = "search_parameter_templates"
+	GetPartParametersToolName               = "get_part_parameters"
+	SearchPartParametersToolName            = "search_part_parameters"
+	DeletePartParameterToolName             = "delete_part_parameter"
+	CreateParameterTemplateToolName         = "create_parameter_template"
+	UpdateParameterTemplateToolName         = "update_parameter_template"
+	DeleteParameterTemplateToolName         = "delete_parameter_template"
+	MergeParameterTemplatesToolName         = "merge_parameter_templates"
+	SearchCategoryParameterDefaultsToolName = "search_category_parameter_defaults"
+	CreateCategoryParameterDefaultToolName  = "create_category_parameter_default"
+	UpdateCategoryParameterDefaultToolName  = "update_category_parameter_default"
+	DeleteCategoryParameterDefaultToolName  = "delete_category_parameter_default"
+	SearchCompaniesToolName                 = "search_companies"
+	SearchSuppliersToolName                 = "search_suppliers"
+	SearchManufacturersToolName             = "search_manufacturers"
+	SearchStockLocationsToolName            = "search_stock_locations"
+	SearchStockItemsToolName                = "search_stock_items"
+	ListAttachmentsToolName                 = "list_attachments"
+	GetAttachmentMetadataToolName           = "get_attachment_metadata"
+	DownloadAttachmentToolName              = "download_attachment"
+	DownloadPartImageToolName               = "download_part_image"
+	PreviewPurchaseOrderToolName            = "preview_purchase_order_with_lines"
+	SearchPurchaseOrdersToolName            = "search_purchase_orders"
+	GetPurchaseOrderToolName                = "get_purchase_order"
+	SearchPurchaseOrderLinesToolName        = "search_purchase_order_lines"
+	GetPurchaseOrderLineToolName            = "get_purchase_order_line"
+	CreatePartToolName                      = "create_part"
+	UpdatePartToolName                      = "update_part"
+	SetPartParametersToolName               = "set_part_parameters"
+	CreateCompanyToolName                   = "create_company"
+	CreateSupplierPartToolName              = "create_supplier_part"
+	CreateManufacturerPartToolName          = "create_manufacturer_part"
+	UpsertPartWorkflowToolName              = "upsert_part_with_supplier_and_manufacturer"
+	CreateStockItemToolName                 = "create_stock_item"
+	InitialStockWorkflowToolName            = "create_initial_stock_entry"
+	AdjustStockQuantityToolName             = "adjust_stock_quantity"
+	SetStockStatusToolName                  = "set_stock_status"
+	StocktakeAdjustmentToolName             = "stocktake_adjustment"
+	CreatePurchaseOrderToolName             = "create_purchase_order"
+	AddPurchaseOrderLineToolName            = "add_purchase_order_line"
+	UpdatePurchaseOrderLineToolName         = "update_purchase_order_line"
+	CreatePurchaseOrderWorkflowToolName     = "create_purchase_order_with_lines"
+	IssuePurchaseOrderToolName              = "issue_purchase_order"
+	ReceivePurchaseOrderToolName            = "receive_purchase_order_items"
+	UploadAttachmentToolName                = "upload_attachment"
+	UploadAttachmentFromURLToolName         = "upload_attachment_from_url"
+	CreateLinkAttachmentToolName            = "create_link_attachment"
+	UpdateAttachmentMetadataToolName        = "update_attachment_metadata"
+	DeleteAttachmentToolName                = "delete_attachment"
+	SetPrimaryImageToolName                 = "set_primary_image"
 
 	defaultDownloadMaxBytes int64 = 5 * 1024 * 1024
 	maxDownloadMaxBytes     int64 = 25 * 1024 * 1024
@@ -102,6 +106,7 @@ var lookupToolNames = []string{
 	SearchParameterTemplatesToolName,
 	GetPartParametersToolName,
 	SearchPartParametersToolName,
+	SearchCategoryParameterDefaultsToolName,
 	SearchCompaniesToolName,
 	SearchSuppliersToolName,
 	SearchManufacturersToolName,
@@ -127,6 +132,9 @@ var writeToolNames = []string{
 	UpdateParameterTemplateToolName,
 	DeleteParameterTemplateToolName,
 	MergeParameterTemplatesToolName,
+	CreateCategoryParameterDefaultToolName,
+	UpdateCategoryParameterDefaultToolName,
+	DeleteCategoryParameterDefaultToolName,
 	CreateCompanyToolName,
 	CreateSupplierPartToolName,
 	CreateManufacturerPartToolName,
@@ -174,7 +182,7 @@ func init() {
 		scopes := []string{ScopeInventreeWrite}
 		mutationClass := "write"
 		switch name {
-		case CreateParameterTemplateToolName, UpdateParameterTemplateToolName:
+		case CreateParameterTemplateToolName, UpdateParameterTemplateToolName, CreateCategoryParameterDefaultToolName, UpdateCategoryParameterDefaultToolName:
 			scopes = []string{ScopeInventreeRead, ScopeInventreeWrite}
 		case CreateStockItemToolName, InitialStockWorkflowToolName:
 			scopes = []string{ScopeInventreeWrite, ScopeInventreeOperational}
@@ -187,7 +195,7 @@ func init() {
 			mutationClass = "operational"
 		case UploadAttachmentToolName, UploadAttachmentFromURLToolName, CreateLinkAttachmentToolName, UpdateAttachmentMetadataToolName, SetPrimaryImageToolName:
 			scopes = []string{ScopeInventreeWrite, ScopeInventreeUpload}
-		case DeletePartParameterToolName, DeleteParameterTemplateToolName, MergeParameterTemplatesToolName:
+		case DeletePartParameterToolName, DeleteParameterTemplateToolName, MergeParameterTemplatesToolName, DeleteCategoryParameterDefaultToolName:
 			scopes = []string{ScopeInventreeRead, ScopeInventreeWrite, ScopeInventreeDestructive}
 			mutationClass = "destructive"
 		case DeleteAttachmentToolName:
@@ -198,7 +206,7 @@ func init() {
 		if name == UploadAttachmentFromURLToolName {
 			annotations.OpenWorld = true
 		}
-		if name == DeleteAttachmentToolName || name == DeletePartParameterToolName || name == DeleteParameterTemplateToolName || name == MergeParameterTemplatesToolName {
+		if name == DeleteAttachmentToolName || name == DeletePartParameterToolName || name == DeleteParameterTemplateToolName || name == MergeParameterTemplatesToolName || name == DeleteCategoryParameterDefaultToolName {
 			annotations.Destructive = true
 		}
 		ToolAuthorizations[name] = ToolAuthorization{
@@ -361,6 +369,7 @@ func registerLookupTools(server *mcp.Server, deps Dependencies) {
 	addReadOnlyTool(server, deps, SearchParameterTemplatesToolName, "Search parameter templates", "Searches InvenTree parameter templates.", searchParameterTemplates(deps))
 	addReadOnlyTool(server, deps, GetPartParametersToolName, "Get part parameters", "Lists parameter values for one part.", getPartParameters(deps))
 	addReadOnlyTool(server, deps, SearchPartParametersToolName, "Search part parameters", "Searches parameter values across parts using stable filters.", searchPartParameterValues(deps))
+	registerCategoryParameterLookupTools(server, deps)
 	addReadOnlyTool(server, deps, SearchCompaniesToolName, "Search companies", "Searches InvenTree companies.", searchCompanies(deps))
 	addReadOnlyTool(server, deps, SearchSuppliersToolName, "Search suppliers", "Searches companies with the supplier role.", searchSuppliers(deps))
 	addReadOnlyTool(server, deps, SearchManufacturersToolName, "Search manufacturers", "Searches companies with the manufacturer role.", searchManufacturers(deps))

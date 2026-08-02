@@ -26,9 +26,10 @@ type TemplateParameterQuery struct {
 }
 
 type CategoryParameterTemplateQuery struct {
-	CategoryID int
-	Limit      int
-	Offset     int
+	CategoryID  int
+	FetchParent *bool
+	Limit       int
+	Offset      int
 }
 
 type StockItemQuery struct {
@@ -121,6 +122,9 @@ func (q CategoryParameterTemplateQuery) values() url.Values {
 	values := url.Values{}
 	if q.CategoryID != 0 {
 		values.Set("category", strconv.Itoa(q.CategoryID))
+	}
+	if q.FetchParent != nil {
+		values.Set("fetch_parent", strconv.FormatBool(*q.FetchParent))
 	}
 	setPagination(values, q.Limit, q.Offset)
 	return values

@@ -663,6 +663,72 @@ func TestMilestoneHappyPathToolsAgainstInvenTree(t *testing.T) {
 		a.Equal(inventree.ErrorKindNotFound, apiErr.Kind)
 	})
 
+	t.Run("category_parameter_default_admin", func(t *testing.T) {
+		r := require.New(t)
+		a := assert.New(t)
+		ctx, _, _ := testhandler.SetupTestHandler(t)
+		fixture := newMilestoneToolFixture(t, shared)
+		parent := fixture.ensure(t, testenv.FixtureCategory)
+		childName, err := fixture.run.Name("category-default-child")
+		r.NoError(err)
+		var child inventree.Category
+		r.NoError(fixture.client.Post(ctx, "/api/part/category/", map[string]any{"name": childName, "description": "category-default inheritance child", "structural": false, "parent": parent.ID}, &child))
+		r.NotZero(child.PK)
+		templateName, err := fixture.run.Name("category-default-tool")
+		r.NoError(err)
+		template, err := fixture.client.CreateParameterTemplate(ctx, inventree.ParameterTemplateCreate{Name: templateName, Units: "", Description: "category default integration", ModelType: "part.part", Checkbox: false, Choices: "", Enabled: true})
+		r.NoError(err)
+
+		_, parentDefault, err := createCategoryParameterDefault(fixture.deps())(ctx, &mcp.CallToolRequest{}, CreateCategoryParameterDefaultInput{CategoryID: parent.ID, TemplateID: template.PK, DefaultValue: "parent"})
+		r.NoError(err)
+		_, created, err := createCategoryParameterDefault(fixture.deps())(ctx, &mcp.CallToolRequest{}, CreateCategoryParameterDefaultInput{CategoryID: child.PK, TemplateID: template.PK, DefaultValue: "child"})
+		r.NoError(err)
+		a.Equal(StatusOK, created.Status)
+		r.NotNil(created.Record)
+		a.Equal(child.PK, created.Record.CategoryID)
+		a.Equal(template.PK, created.Record.TemplateID)
+
+		_, listed, err := searchCategoryParameterDefaults(fixture.deps())(ctx, &mcp.CallToolRequest{}, SearchCategoryParameterDefaultsInput{CategoryID: child.PK, TemplateID: template.PK})
+		r.NoError(err)
+		a.Equal(StatusOK, listed.Status)
+		r.Len(listed.Records, 1)
+		a.Equal(created.Record.LinkID, listed.Records[0].LinkID)
+		a.False(listed.Records[0].Inherited)
+		a.Equal("child", listed.Records[0].DefaultValue)
+
+		_, effective, err := searchCategoryParameterDefaults(fixture.deps())(ctx, &mcp.CallToolRequest{}, SearchCategoryParameterDefaultsInput{CategoryID: child.PK, TemplateID: template.PK, IncludeParentDefaults: true})
+		r.NoError(err)
+		r.Len(effective.Records, 2)
+		inheritedCount := 0
+		for _, record := range effective.Records {
+			if record.Inherited {
+				inheritedCount++
+				a.Equal(parent.ID, record.CategoryID)
+				a.Equal("parent", record.DefaultValue)
+			} else {
+				a.Equal(child.PK, record.CategoryID)
+				a.Equal("child", record.DefaultValue)
+			}
+		}
+		a.Equal(1, inheritedCount)
+
+		_, updated, err := updateCategoryParameterDefault(fixture.deps())(ctx, &mcp.CallToolRequest{}, UpdateCategoryParameterDefaultInput{LinkID: created.Record.LinkID, DefaultValue: dvgoutils.Ptr("")})
+		r.NoError(err)
+		a.Equal(StatusOK, updated.Status)
+		a.Empty(updated.Record.DefaultValue)
+
+		_, confirmation, err := deleteCategoryParameterDefault(fixture.deps())(ctx, &mcp.CallToolRequest{}, DeleteCategoryParameterDefaultInput{LinkID: created.Record.LinkID})
+		r.NoError(err)
+		a.Equal(StatusClarificationRequired, confirmation.Status)
+		_, deleted, err := deleteCategoryParameterDefault(fixture.deps())(ctx, &mcp.CallToolRequest{}, DeleteCategoryParameterDefaultInput{LinkID: created.Record.LinkID, Confirm: true})
+		r.NoError(err)
+		a.Equal(StatusOK, deleted.Status)
+		a.True(deleted.Verified)
+		_, parentDeleted, err := deleteCategoryParameterDefault(fixture.deps())(ctx, &mcp.CallToolRequest{}, DeleteCategoryParameterDefaultInput{LinkID: parentDefault.Record.LinkID, Confirm: true})
+		r.NoError(err)
+		a.True(parentDeleted.Verified)
+	})
+
 	t.Run("deferred_file_surface_boundaries_return_clarifications", func(t *testing.T) {
 		r := require.New(t)
 		a := assert.New(t)

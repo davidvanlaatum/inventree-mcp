@@ -220,13 +220,16 @@ The manifest is endpoint-level schema coverage, not a complete upload authorizat
 - `GET /api/part/category/parameters/` lists category parameter template links.
 - `POST /api/part/category/parameters/` creates category parameter template links.
 - `PATCH /api/part/category/parameters/{id}/` partially updates category parameter template links.
+- `GET /api/part/category/parameters/{id}/` retrieves one category parameter template link.
+- `DELETE /api/part/category/parameters/{id}/` deletes one category parameter template link.
 
-Template and category-link creation/update endpoints are schema-verified for reference, but they are not milestone-1 tool scope. `set_part_parameters` must use existing templates and category links unless a later task explicitly adds template administration workflows.
+Parameter-template and category-default administration are registered milestone tools. The pinned 1.4.3 category-default representation contains `category`, `template`, and `default_value`; it has no requirement flag. Live 1.4.3 behavior also supports the undocumented `category` and `fetch_parent` list parameters: `fetch_parent` defaults true upstream, so MCP administration sends it explicitly and defaults to exact-category results. `set_part_parameters` continues to use existing templates and category links rather than creating either implicitly.
 
 Parameter guidance:
 
 - The list endpoint exposes schema-backed `model_type`, `model_id`, `template`, `search`, `limit`, and `offset` filters. It does not expose a direct part-category filter; `search_part_parameters` requires at least one narrowing filter, reads bounded 100-row pages, resolves part records, and applies exact category/value filtering before returning deterministic row-ID-ordered pagination. It refuses searches whose complete filtered ordering cannot be established within a 1,000-row scan bound and asks for narrower filters.
 - Search and reuse existing parameter templates before creating new ones.
 - Use category parameter links to understand expected parameters for a category.
+- Use `search_category_parameter_defaults` for exact-category administration; set `include_parent_defaults:true` only when an effective inherited view is required. Mutate the stable direct `link_id` owned by its source category.
 - Ask the operator when multiple templates match by name, units, choices, checkbox state, or category association.
 - Do not create new parameter templates from natural language unless the caller explicitly confirms that a new template is required.

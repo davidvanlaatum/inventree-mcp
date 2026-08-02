@@ -140,7 +140,7 @@ func TestToolReferenceDocumentsRegisteredWriteTools(t *testing.T) {
 		auth, ok := ToolAuthorizations[name]
 		r.True(ok, "missing authorization for %s", name)
 		switch name {
-		case CreateParameterTemplateToolName, UpdateParameterTemplateToolName:
+		case CreateParameterTemplateToolName, UpdateParameterTemplateToolName, CreateCategoryParameterDefaultToolName, UpdateCategoryParameterDefaultToolName:
 			a.Equal("write", auth.MutationClass)
 			a.Equal([]string{ScopeInventreeRead, ScopeInventreeWrite}, auth.Scopes)
 		case CreateStockItemToolName, InitialStockWorkflowToolName:
@@ -158,7 +158,7 @@ func TestToolReferenceDocumentsRegisteredWriteTools(t *testing.T) {
 		case DeleteAttachmentToolName:
 			a.Equal("destructive", auth.MutationClass)
 			a.Equal([]string{ScopeInventreeWrite, ScopeInventreeUpload, ScopeInventreeDestructive}, auth.Scopes)
-		case DeletePartParameterToolName, DeleteParameterTemplateToolName, MergeParameterTemplatesToolName:
+		case DeletePartParameterToolName, DeleteParameterTemplateToolName, MergeParameterTemplatesToolName, DeleteCategoryParameterDefaultToolName:
 			a.Equal("destructive", auth.MutationClass)
 			a.Equal([]string{ScopeInventreeRead, ScopeInventreeWrite, ScopeInventreeDestructive}, auth.Scopes)
 		default:

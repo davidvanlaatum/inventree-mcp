@@ -327,6 +327,34 @@ endpoints:
     method: GET
     operation_id: part_category_parameters_list
     response_schema: '#/components/schemas/PaginatedCategoryParameterTemplateList'
+  - id: get_category_parameter_template
+    area: parameters
+    path: /api/part/category/parameters/{id}/
+    method: GET
+    operation_id: part_category_parameters_retrieve
+    response_schema: '#/components/schemas/CategoryParameterTemplate'
+  - id: create_category_parameter_template
+    area: parameters
+    path: /api/part/category/parameters/
+    method: POST
+    operation_id: part_category_parameters_create
+    request_schema: '#/components/schemas/CategoryParameterTemplate'
+    request_content_type: application/json
+    response_schema: '#/components/schemas/CategoryParameterTemplate'
+  - id: update_category_parameter_template
+    area: parameters
+    path: /api/part/category/parameters/{id}/
+    method: PATCH
+    operation_id: part_category_parameters_partial_update
+    request_schema: '#/components/schemas/PatchedCategoryParameterTemplate'
+    request_content_type: application/json
+    response_schema: '#/components/schemas/CategoryParameterTemplate'
+  - id: delete_category_parameter_template
+    area: parameters
+    path: /api/part/category/parameters/{id}/
+    method: DELETE
+    operation_id: part_category_parameters_destroy
+    response_status: 204
   - id: list_attachments
     area: attachments
     path: /api/attachment/

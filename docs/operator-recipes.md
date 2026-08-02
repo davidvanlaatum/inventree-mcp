@@ -103,9 +103,17 @@ HTTP mode accepts the same debug traffic log option as STDIO. HTTP debug entries
 - Update: call `update_parameter_template` with a stable `template_id` and only the fields that should change. Omitted fields remain unchanged; empty strings and false are explicit replacements. Use `clear_selection_list:true` to write null and never combine it with `selection_list_id`.
 - Delete: call `delete_parameter_template` without confirmation to review the template and reference IDs. Direct deletion is available only when no parameter row or category-default link remains; then repeat with `confirm:true`. The tool never cascades references.
 - Merge: call `merge_parameter_templates` with distinct stable source/target IDs and `dry_run:true`. Optionally provide an exact `value_map`; all unmapped values remain unchanged. Review every planned/skipped row, category-link ID, and residual decision, then submit the unchanged inputs with `confirm:true` and the returned `plan_hash`.
-- Conflict policy: when a part already has source and target rows, neither value is overwritten and the source row remains for explicit manual resolution. Non-part rows are reported with their actual `model_type` and `model_id`. Category-default references include both link and category IDs; until F-S13 supplies MCP mutation tools, remove or migrate those links through the InvenTree UI/API, then obtain a fresh merge plan. Non-conflicting part rows can still move, but the source template is deleted only after a fresh read proves it has zero rows and zero category links.
+- Conflict policy: when a part already has source and target rows, neither value is overwritten and the source row remains for explicit manual resolution. Non-part rows are reported with their actual `model_type` and `model_id`. Category-default references include both link and category IDs; use the category-default tools below to remove or migrate them, then obtain a fresh merge plan. Non-conflicting part rows can still move, but the source template is deleted only after a fresh read proves it has zero rows and zero category links.
 - Recovery: treat confirmed merge/delete as single-writer operations and prevent concurrent template/reference administration. If merge returns `partial_failure`, do not replay the old confirmation: inspect every applied/failed action and current source/target row, discard the old hash, fix any manual decision, and run `dry_run:true` again. The upstream REST sequence is not transactional, so a narrow reference-creation race remains between the final preflight and delete.
 - HTTP note: create/update require `inventree.read` and `inventree.write`; delete/merge additionally require `inventree.destructive`.
+
+## Manage Category Parameter Defaults
+
+- Review: call `search_category_parameter_defaults` with `category_id`. Exact-category links are returned by default. Add `include_parent_defaults:true` only to review the effective set inherited from ancestors; each result reports the requested category, actual source category, `inherited`, stable `link_id`, template identity, and default value.
+- Create: reuse an existing template and call `create_category_parameter_default` with stable `category_id`, `template_id`, and an explicit default (empty is allowed). The tool never creates templates implicitly and refuses a duplicate direct category/template pair.
+- Update: call `update_category_parameter_default` with the direct `link_id` and only fields that should change. An inherited result belongs to its reported source category; updating its link changes that source default for every descendant that inherits it.
+- Delete: call `delete_category_parameter_default` without confirmation to review the direct source link, then retry that same `link_id` with `confirm:true`. Success is reported only after a detail read returns not found.
+- HTTP note: search requires `inventree.read`; create/update require `inventree.read` and `inventree.write`; delete additionally requires `inventree.destructive`.
 
 ## Create Initial Stock
 
@@ -180,13 +188,13 @@ HTTP mode accepts the same debug traffic log option as STDIO. HTTP debug entries
 - Omitted, empty, or whitespace-only receipt packaging uses the supplier-part packaging; provide a non-blank override to change the created stock item's packaging.
 - If receipt execution returns `partial_failure`, do not retry blindly. Read every purchase-order line and call `search_stock_items` with the order's `purchase_order_id`; use the returned source-order fields to determine whether the first mutation succeeded, then prepare a new dry-run plan only for any confirmed remainder.
 - Do not have multiple operators or integrations receive the same purchase-order line concurrently. InvenTree 1.4.3 serializes line updates but can still accept a previously prepared quantity after the outstanding amount changes; this narrow race is an accepted operational limitation.
-- Remaining gaps: category-default administration, bulk parameter propagation/audits, and broader live-order-entry recovery surfaces remain tracked separately in F-S13 through F-S15.
+- Remaining gaps: bulk parameter propagation/audits and broader live-order-entry recovery surfaces remain tracked separately in F-S14 and F-S15.
 - One-shot option: `create_purchase_order` may omit `supplier_reference`, in which case InvenTree still generates the internal reference. Use that lower-level tool only for intentional one-shot creation; recovery after a client or tool interruption is provided by `create_purchase_order_with_lines` and requires a stable supplier reference.
 
 ## Resolve Structured Clarification Prompts
 
 - Required inputs: the stable retry field requested by the prior tool response.
-- Preferred flow: show the exact `question`, candidate IDs/URLs, and retry field to the operator; retry the original tool with the selected stable ID.
+- Preferred flow: show the exact `question`, candidate IDs/URLs, and retry field to the operator. Retry the original tool with the selected stable ID unless `retry_tool` names an explicit destination tool; in that case pass the supplied `retry_values` and selected retry field to that tool.
 - Clarify when: the operator chooses a free-form value that still does not identify a stable record.
 - Expected output: successful retry or a narrower clarification response.
 

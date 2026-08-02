@@ -78,6 +78,12 @@ type ParameterTemplateCreate struct {
 	Enabled       bool   `json:"enabled"`
 }
 
+type CategoryParameterTemplateCreate struct {
+	Category     int    `json:"category"`
+	Template     int    `json:"template"`
+	DefaultValue string `json:"default_value"`
+}
+
 type StockItemCreate struct {
 	Part      int     `json:"part"`
 	Location  int     `json:"location"`
@@ -231,6 +237,26 @@ func (c *Client) UpdateParameterTemplate(ctx context.Context, id int, fields Pat
 
 func (c *Client) DeleteParameterTemplate(ctx context.Context, id int) error {
 	req, err := c.NewRequest(ctx, http.MethodDelete, fmt.Sprintf("/api/parameter/template/%d/", id), nil, nil)
+	if err != nil {
+		return err
+	}
+	return c.DoJSON(req, nil)
+}
+
+func (c *Client) CreateCategoryParameterTemplate(ctx context.Context, input CategoryParameterTemplateCreate) (CategoryParameterTemplate, error) {
+	var out CategoryParameterTemplate
+	err := c.Post(ctx, "/api/part/category/parameters/", input, &out)
+	return out, err
+}
+
+func (c *Client) UpdateCategoryParameterTemplate(ctx context.Context, id int, fields PatchFields) (CategoryParameterTemplate, error) {
+	var out CategoryParameterTemplate
+	err := c.Patch(ctx, fmt.Sprintf("/api/part/category/parameters/%d/", id), fields, &out)
+	return out, err
+}
+
+func (c *Client) DeleteCategoryParameterTemplate(ctx context.Context, id int) error {
+	req, err := c.NewRequest(ctx, http.MethodDelete, fmt.Sprintf("/api/part/category/parameters/%d/", id), nil, nil)
 	if err != nil {
 		return err
 	}

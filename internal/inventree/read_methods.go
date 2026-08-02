@@ -183,6 +183,12 @@ func (c *Client) SearchCategoryParameterTemplatesPage(ctx context.Context, query
 	return listPage[CategoryParameterTemplate](ctx, c, "/api/part/category/parameters/", query.values())
 }
 
+func (c *Client) GetCategoryParameterTemplate(ctx context.Context, id int) (CategoryParameterTemplate, error) {
+	var out CategoryParameterTemplate
+	err := c.get(ctx, fmt.Sprintf("/api/part/category/parameters/%d/", id), &out)
+	return out, err
+}
+
 func (c *Client) ListAttachments(ctx context.Context, query AttachmentQuery) ([]Attachment, error) {
 	return listAll[Attachment](ctx, c, "/api/attachment/", query.values())
 }
