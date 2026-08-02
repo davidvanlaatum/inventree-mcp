@@ -97,7 +97,7 @@ Before `M1C-S04` is complete, mutating, operational, destructive, and upload too
 | [F-S15](#f-s15-live-order-entry-tool-hardening) | Close gaps found during live order-entry use of the MCP tools. | Future |
 | [F-S16](#f-s16-mcp-go-sdk-v17-and-2026-07-28-protocol-adoption) | Adopt MCP Go SDK v1.7 and the MCP 2026-07-28 protocol safely. | Done |
 | [F-S17](#f-s17-native-mcp-elicitation-for-structured-clarifications) | Add native MCP elicitation while preserving structured clarification fallback. | Planned |
-| [F-S18](#f-s18-local-cli-self-update) | Add an explicit local CLI self-update workflow for direct binary installs. | Future |
+| [F-S18](#f-s18-local-cli-self-update) | Add an explicit local CLI self-update workflow for direct binary installs. | Done |
 | [F-S19](#f-s19-part-category-administration) | Add guarded part-category retrieval, creation, and editing. | Future |
 | [F-S20](#f-s20-company-and-sourcing-link-maintenance) | Add exact reads and guarded maintenance for companies and sourcing links. | Future |
 | [F-S21](#f-s21-stock-location-and-stock-record-administration) | Add stock-location administration and constrained stock-record maintenance. | Future |
@@ -1387,7 +1387,7 @@ Tasks:
 
 ### F-S18: Local CLI Self-Update
 
-- Status: `Future`
+- Status: `Done`
 - Issue: [#64](https://github.com/davidvanlaatum/inventree-mcp/issues/64)
 - Depends on: M0-S04 and product, Go, QA, and infosec review of the update policy
 - Scope: add an explicit local `inventree-mcp self-update` command for supported direct binary/archive installations. The command must remain a local CLI operation: it is not an MCP tool, is never callable through STDIO or HTTP MCP sessions, does not run automatically in the background, and does not let the server replace itself in response to a remote request. Package-managed installations must defer to their package manager instead of overwriting managed files.
@@ -1408,14 +1408,18 @@ Tasks:
 
 Tasks:
 
-- [ ] Decide and document the supported direct-install and platform matrix, version-selection policy, release trust root and signature/attestation policy, residual supply-chain risk, and package-manager boundary.
-- [ ] Evaluate maintained Go self-update libraries against the release archive and checksum layout.
-- [ ] Add the local-only `self-update` CLI command and injectable release/download/filesystem/process seams.
-- [ ] Add verified artifact selection, bounded download, safe extraction, staged and installed version checks, atomic replacement, cross-process locking with stale-lock recovery, and rollback.
-- [ ] Add package-managed install refusal and actionable manual-update guidance.
-- [ ] Add deterministic unit and platform-appropriate integration tests without invoking live updates against the developer's installed binary.
-- [ ] Update release, packaging, README, operator, CLI help, and agent guidance.
-- [ ] Run focused Go, QA, product, and infosec review and resolve or document findings.
+- [x] Decide and document the supported direct-install and platform matrix, version-selection policy, release trust root and signature/attestation policy, residual supply-chain risk, and package-manager boundary.
+- [x] Evaluate maintained Go self-update libraries against the release archive and checksum layout.
+- [x] Add the local-only `self-update` CLI command and injectable release/download/filesystem/process seams.
+- [x] Add verified artifact selection, bounded download, safe extraction, staged and installed version checks, atomic replacement, cross-process locking with killed-process recovery, and rollback.
+- [x] Add package-managed install refusal and actionable manual-update guidance.
+- [x] Add deterministic unit and platform-appropriate integration tests without invoking live updates against the developer's installed binary.
+- [x] Update release, packaging, README, operator, CLI help, and agent guidance.
+- [x] Run focused Go, QA, product, and infosec review and resolve or document findings.
+
+- Validation: `go generate ./internal/tools`; `go mod tidy -diff`; `go test -race -p=1 ./...`; `go test -race -cover ./internal/selfupdate ./cmd/inventree-mcp`; `go vet ./internal/selfupdate ./cmd/inventree-mcp`; `golangci-lint run ./...`; `goreleaser check`; `goreleaser release --snapshot --clean`; Windows `amd64` updater test compilation; Linux `arm64` CLI build; release-archive and package-layout assertions; and `git diff --check` passed. Focused coverage is 78.0% for the new `internal/selfupdate` package and 90.5% for `cmd/inventree-mcp`, versus 87.9% for the CLI package on the current base. Every supported Linux/macOS direct archive contains exactly one `inventree-mcp` entry, while snapshot `deb` and `apk` packages retain `/usr/bin/inventree-mcp`.
+- Review: Senior Go Developer, Senior QA / Test Architect, Senior Product Manager, and Senior Infosec Reviewer panels completed. Findings covered exact release-asset binding, Linux fixture portability, direct-install provenance, privileged and ancestor-path refusal, process-group timeouts, cross-process lock races, exhaustive no-mutation evidence, restartable transaction publication/rollback/cleanup states, ambiguous committed-record durability, operator rerun guidance after interrupted recovery, and manual `.previous` recovery. Code, tests, release configuration, task contracts, and operator docs were updated; final focused reruns found no actionable findings.
+- Residual risk: release archives and `checksums.txt` share canonical GitHub repository/release control as one trust root, so checksum verification does not protect against compromise of that root. The adjacent adoption marker records the local operator's direct-archive assertion rather than independently proving provenance. Staged artifact execution uses a credential-free bounded process environment and process group, not an operating-system sandbox against an artifact accepted from a compromised trust root. Kernel advisory locking coordinates cooperating updater processes but does not defend against the same local owner intentionally modifying files outside the updater. Windows, package-managed installs, prereleases, downgrades, and automatic rollback remain unsupported by policy.
 
 ### F-S19: Part Category Administration
 

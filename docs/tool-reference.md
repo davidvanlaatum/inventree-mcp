@@ -2,6 +2,8 @@
 
 This file is the operator-facing and agent-facing reference for registered MCP tools. Keep it aligned with the checked tool authorization manifest in `docs/tool-manifest.json`, `docs/endpoint-manifest.yaml`, and the registered Go structs.
 
+`inventree-mcp self-update` is deliberately absent from this reference and the generated tool manifest. It is a local CLI command only and is never callable through an MCP STDIO or HTTP session; see [Local CLI self-update policy](self-update.md).
+
 ## Checked Tool Manifest
 
 `docs/tool-manifest.json` is generated from `internal/tools.ToolAuthorizations` and `internal/tools.PromptManifest` with:

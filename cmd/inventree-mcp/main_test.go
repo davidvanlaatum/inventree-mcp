@@ -12,6 +12,7 @@ import (
 	"github.com/davidvanlaatum/inventree-mcp/internal/config"
 	"github.com/davidvanlaatum/inventree-mcp/internal/inventree"
 	"github.com/davidvanlaatum/inventree-mcp/internal/platform"
+	"github.com/davidvanlaatum/inventree-mcp/internal/selfupdate"
 	"github.com/davidvanlaatum/inventree-mcp/internal/systemdnotify"
 	"github.com/davidvanlaatum/inventree-mcp/internal/tools"
 	"github.com/stretchr/testify/assert"
@@ -28,7 +29,7 @@ func TestRunRequiresServeCommand(t *testing.T) {
 
 	r.Equal(2, code)
 	r.Empty(stdout.String())
-	r.Equal("usage: inventree-mcp <serve|version> [flags]\n", stderr.String())
+	r.Equal("usage: inventree-mcp <serve|self-update|version> [flags]\n", stderr.String())
 }
 
 func TestRunServeReportsConfigErrors(t *testing.T) {
@@ -139,11 +140,135 @@ func TestRunVersionReportsBuildVersion(t *testing.T) {
 
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
-	code := run([]string{"version"}, &stdout, &stderr, mapEnv(nil))
+	code := run([]string{"version"}, &stdout, &stderr, func(key string) string {
+		a.Fail("version command accessed configuration", key)
+		return "secret"
+	})
 
 	r.Equal(0, code)
 	a.Equal("version: dev\ncommit: unknown\ndate: unknown\n", stdout.String())
 	a.Empty(stderr.String())
+}
+
+func TestRunSelfUpdateReportsNoOpAndPassesTargetAndToken(t *testing.T) {
+	r := require.New(t)
+	a := assert.New(t)
+
+	original := runSelfUpdate
+	t.Cleanup(func() { runSelfUpdate = original })
+	runSelfUpdate = func(_ context.Context, current string, options selfupdate.Options) (selfupdate.Result, error) {
+		a.Equal("dev", current)
+		a.Equal("v1.2.3", options.TargetVersion)
+		a.Equal("secret-token", options.GitHubToken)
+		a.False(options.AdoptDirectInstall)
+		return selfupdate.Result{PreviousVersion: "v1.2.3", Version: "v1.2.3"}, nil
+	}
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := run([]string{"self-update", "--version", "v1.2.3"}, &stdout, &stderr, mapEnv(map[string]string{"GITHUB_TOKEN": "secret-token"}))
+
+	r.Equal(0, code)
+	a.Equal("inventree-mcp is already at v1.2.3\n", stdout.String())
+	a.Empty(stderr.String())
+}
+
+func TestRunSelfUpdateAdoptsDirectInstall(t *testing.T) {
+	r := require.New(t)
+	a := assert.New(t)
+	original := runSelfUpdate
+	t.Cleanup(func() { runSelfUpdate = original })
+	runSelfUpdate = func(_ context.Context, current string, options selfupdate.Options) (selfupdate.Result, error) {
+		a.Equal("dev", current)
+		a.True(options.AdoptDirectInstall)
+		return selfupdate.Result{Version: "v1.2.3", Adopted: true}, nil
+	}
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := run([]string{"self-update", "--adopt-direct-install"}, &stdout, &stderr, mapEnv(nil))
+
+	r.Equal(0, code)
+	a.Contains(stdout.String(), "recorded this v1.2.3 binary")
+	a.Empty(stderr.String())
+}
+
+func TestRunSelfUpdateReportsSuccess(t *testing.T) {
+	r := require.New(t)
+	a := assert.New(t)
+
+	original := runSelfUpdate
+	t.Cleanup(func() { runSelfUpdate = original })
+	runSelfUpdate = func(context.Context, string, selfupdate.Options) (selfupdate.Result, error) {
+		return selfupdate.Result{PreviousVersion: "v1.2.2", Version: "v1.2.3", BackupPath: "/safe/inventree-mcp.previous", Updated: true}, nil
+	}
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := run([]string{"self-update"}, &stdout, &stderr, mapEnv(nil))
+
+	r.Equal(0, code)
+	a.Equal("updated inventree-mcp from v1.2.2 to v1.2.3\nprevious binary: /safe/inventree-mcp.previous\n", stdout.String())
+	a.Empty(stderr.String())
+}
+
+func TestRunSelfUpdateDoesNotLeakGitHubTokenOnFailure(t *testing.T) {
+	r := require.New(t)
+	a := assert.New(t)
+
+	original := runSelfUpdate
+	t.Cleanup(func() { runSelfUpdate = original })
+	runSelfUpdate = func(context.Context, string, selfupdate.Options) (selfupdate.Result, error) {
+		return selfupdate.Result{}, errors.New("release lookup failed")
+	}
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := run([]string{"self-update"}, &stdout, &stderr, mapEnv(map[string]string{"GITHUB_TOKEN": "secret-token"}))
+
+	r.Equal(2, code)
+	a.Empty(stdout.String())
+	a.Contains(stderr.String(), "release lookup failed")
+	a.NotContains(stderr.String(), "secret-token")
+}
+
+func TestRunSelfUpdateHelp(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := run([]string{"self-update", "--help"}, &stdout, &stderr, mapEnv(nil))
+
+	r.Equal(0, code)
+	a.Contains(stdout.String(), "Usage of self-update:")
+	a.Contains(stdout.String(), "-version string")
+	a.Empty(stderr.String())
+}
+
+func TestRunSelfUpdateRejectsInvalidArguments(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name string
+		args []string
+		want string
+	}{
+		{name: "unknown flag", args: []string{"self-update", "--unknown"}, want: "flag provided but not defined"},
+		{name: "positional argument", args: []string{"self-update", "v1.2.3"}, want: "self-update accepts flags only"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			r := require.New(t)
+			a := assert.New(t)
+			var stdout bytes.Buffer
+			var stderr bytes.Buffer
+
+			code := run(test.args, &stdout, &stderr, mapEnv(nil))
+
+			r.Equal(2, code)
+			a.Empty(stdout.String())
+			a.Contains(stderr.String(), test.want)
+		})
+	}
 }
 
 func TestRunServeStdioDoesNotWriteStdout(t *testing.T) {

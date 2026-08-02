@@ -19,6 +19,7 @@ import (
 	"github.com/davidvanlaatum/inventree-mcp/internal/config"
 	"github.com/davidvanlaatum/inventree-mcp/internal/inventree"
 	"github.com/davidvanlaatum/inventree-mcp/internal/platform"
+	localupdate "github.com/davidvanlaatum/inventree-mcp/internal/selfupdate"
 	"github.com/davidvanlaatum/inventree-mcp/internal/server"
 	"github.com/davidvanlaatum/inventree-mcp/internal/systemdnotify"
 	"github.com/davidvanlaatum/inventree-mcp/internal/tools"
@@ -36,6 +37,9 @@ var (
 	serverRun         = server.Run
 	newSystemdNotify  = systemdnotify.New
 	buildDependencies = dependenciesForConfig
+	runSelfUpdate     = func(ctx context.Context, current string, options localupdate.Options) (localupdate.Result, error) {
+		return localupdate.New(localupdate.Dependencies{}).Run(ctx, current, options)
+	}
 )
 
 func run(args []string, stdout, stderr io.Writer, getenv config.Env) int {
@@ -44,7 +48,7 @@ func run(args []string, stdout, stderr io.Writer, getenv config.Env) int {
 
 func runWithContext(parentCtx context.Context, args []string, stdout, stderr io.Writer, getenv config.Env) int {
 	if len(args) == 0 {
-		writeLine(stderr, "usage: inventree-mcp <serve|version> [flags]")
+		writeLine(stderr, "usage: inventree-mcp <serve|self-update|version> [flags]")
 		return 2
 	}
 
@@ -82,8 +86,47 @@ func runWithContext(parentCtx context.Context, args []string, stdout, stderr io.
 			return 2
 		}
 		return 0
+	case "self-update":
+		var flagOutput bytes.Buffer
+		flags := flag.NewFlagSet("self-update", flag.ContinueOnError)
+		flags.SetOutput(&flagOutput)
+		targetVersion := flags.String("version", "", "install an exact stable vX.Y.Z release instead of latest")
+		adoptDirectInstall := flags.Bool("adopt-direct-install", false, "record this binary as a direct canonical GitHub archive installation")
+		if err := flags.Parse(args[1:]); err != nil {
+			if errors.Is(err, flag.ErrHelp) {
+				_, _ = io.Copy(stdout, &flagOutput)
+				return 0
+			}
+			_, _ = io.Copy(stderr, &flagOutput)
+			writeLine(stderr, "inventree-mcp: %v", err)
+			return 2
+		}
+		if flags.NArg() != 0 {
+			writeLine(stderr, "inventree-mcp: self-update accepts flags only")
+			return 2
+		}
+		result, err := runSelfUpdate(parentCtx, buildinfo.Version, localupdate.Options{
+			TargetVersion:      *targetVersion,
+			GitHubToken:        getenv("GITHUB_TOKEN"),
+			AdoptDirectInstall: *adoptDirectInstall,
+		})
+		if err != nil {
+			writeLine(stderr, "inventree-mcp: self-update failed: %v", err)
+			return 2
+		}
+		if !result.Updated {
+			if result.Adopted {
+				writeLine(stdout, "recorded this %s binary as a direct canonical GitHub archive installation", result.Version)
+				return 0
+			}
+			writeLine(stdout, "inventree-mcp is already at %s", result.Version)
+			return 0
+		}
+		writeLine(stdout, "updated inventree-mcp from %s to %s", result.PreviousVersion, result.Version)
+		writeLine(stdout, "previous binary: %s", result.BackupPath)
+		return 0
 	case "help", "-h", "--help":
-		writeLine(stdout, "usage: inventree-mcp <serve|version> [flags]")
+		writeLine(stdout, "usage: inventree-mcp <serve|self-update|version> [flags]")
 		return 0
 	default:
 		writeLine(stderr, "inventree-mcp: unknown command %q", args[0])

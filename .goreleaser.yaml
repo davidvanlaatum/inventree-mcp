@@ -32,6 +32,8 @@ builds:
 
 archives:
   - formats: [tar.gz]
+    files:
+      - none*
     name_template: >-
       {{ .ProjectName }}_
       {{- title .Os }}_
