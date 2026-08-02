@@ -8,8 +8,10 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -866,6 +868,246 @@ func TestProductionHTTPMuxProtectsMCPAndPublishesResourceMetadata(t *testing.T) 
 	a.NotContains(rawUpstreamRecorder.Body.String(), tools.CreatePartToolName)
 }
 
+func TestProductionHTTPMuxPreservesCanonicalPrefixAndIgnoresForwardedURLHeaders(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	redirectURI := "https://chatgpt.com/connector/oauth/callback_123"
+	var clientID string
+	metadataServer := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		if req.URL.Path != "/client" {
+			http.NotFound(w, req)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(oauth.ClientMetadata{
+			ClientID:                          clientID,
+			RedirectURIs:                      []string{redirectURI},
+			TokenEndpointAuthMethodsSupported: []string{"private_key_jwt"},
+			JWKSURI:                           "https://" + req.Host + "/jwks",
+		})
+	}))
+	defer metadataServer.Close()
+	clientID = metadataServer.URL + "/client"
+	cfg := config.Config{
+		Transport:            config.TransportHTTP,
+		Environment:          config.EnvironmentProduction,
+		Path:                 "/connectors/inventree/mcp",
+		OAuthIssuerURL:       "https://public.example.test/connectors/inventree",
+		OAuthResourceURL:     "https://public.example.test/connectors/inventree/mcp",
+		OAuthClientIDs:       []string{clientID},
+		TrustedProxyCIDRs:    []string{"10.0.0.0/8"},
+		OAuthAccessLifetime:  oauth.DefaultAccessTokenLifetime,
+		OAuthRefreshLifetime: oauth.DefaultRefreshTokenLifetime,
+		OAuthSessionLifetime: oauth.DefaultSessionLifetime,
+		OAuthKeyring: oauth.KeyringConfig{Keys: []oauth.KeyConfig{{
+			ID:             "current",
+			MaterialBase64: "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY",
+			State:          oauth.KeyStateActive,
+		}}},
+	}
+	handler, err := httpMuxWithOptions(ctx, cfg, New(tools.Dependencies{}), nil, httpMuxOptions{metadataClient: metadataServer.Client()})
+	r.NoError(err)
+	request := func(target string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodGet, target, nil)
+		req.RemoteAddr = "10.0.0.10:1234"
+		req.Host = "internal.service:28686"
+		req.Header.Set("X-Forwarded-For", "203.0.113.20")
+		req.Header.Set("X-Forwarded-Host", "attacker.example")
+		req.Header.Set("X-Forwarded-Proto", "http")
+		req.Header.Set("X-Forwarded-Prefix", "/attacker")
+		recorder := httptest.NewRecorder()
+		handler.ServeHTTP(recorder, req)
+		return recorder
+	}
+
+	resourceMetadata := request("/.well-known/oauth-protected-resource/connectors/inventree/mcp")
+	r.Equal(http.StatusOK, resourceMetadata.Code)
+	a.Contains(resourceMetadata.Body.String(), cfg.OAuthResourceURL)
+	a.Contains(resourceMetadata.Body.String(), cfg.OAuthIssuerURL)
+	a.NotContains(resourceMetadata.Body.String(), "internal.service")
+	a.NotContains(resourceMetadata.Body.String(), "attacker")
+
+	authorizationMetadata := request("/.well-known/oauth-authorization-server/connectors/inventree")
+	r.Equal(http.StatusOK, authorizationMetadata.Code)
+	a.Contains(authorizationMetadata.Body.String(), `"authorization_endpoint":"https://public.example.test/connectors/inventree/authorize"`)
+	a.Contains(authorizationMetadata.Body.String(), `"token_endpoint":"https://public.example.test/connectors/inventree/token"`)
+	a.NotContains(authorizationMetadata.Body.String(), "internal.service")
+	a.NotContains(authorizationMetadata.Body.String(), "attacker")
+
+	protected := request(cfg.Path)
+	r.Equal(http.StatusUnauthorized, protected.Code)
+	a.Contains(protected.Header().Get("WWW-Authenticate"), `resource_metadata="https://public.example.test/.well-known/oauth-protected-resource/connectors/inventree/mcp"`)
+	a.NotContains(protected.Header().Get("WWW-Authenticate"), "internal.service")
+	a.NotContains(protected.Header().Get("WWW-Authenticate"), "attacker")
+
+	unprefixed := request("/mcp")
+	r.Equal(http.StatusNotFound, unprefixed.Code)
+
+	authorizePath := "/connectors/inventree/authorize"
+	authorizeQuery := url.Values{
+		"response_type":         {"code"},
+		"client_id":             {clientID},
+		"redirect_uri":          {redirectURI},
+		"state":                 {"chatgpt-state"},
+		"resource":              {cfg.OAuthResourceURL},
+		"scope":                 {tools.ScopeInventreeRead},
+		"code_challenge":        {strings.Repeat("a", 43)},
+		"code_challenge_method": {"S256"},
+	}
+	setup := request(authorizePath + "?" + authorizeQuery.Encode())
+	r.Equal(http.StatusOK, setup.Code)
+	a.Contains(setup.Body.String(), `action="/connectors/inventree/authorize"`)
+	a.NotContains(setup.Body.String(), "internal.service")
+	a.NotContains(setup.Body.String(), "attacker")
+	r.Len(setup.Result().Cookies(), 1)
+	a.Equal(authorizePath, setup.Result().Cookies()[0].Path)
+
+	hiddenValue := func(name string) string {
+		match := regexp.MustCompile(`name="` + regexp.QuoteMeta(name) + `" value="([^"]+)"`).FindStringSubmatch(setup.Body.String())
+		r.Len(match, 2)
+		return match[1]
+	}
+	cancelForm := url.Values{
+		"setup_state": {hiddenValue("setup_state")},
+		"client_id":   {clientID},
+		"csrf":        {hiddenValue("csrf")},
+		"cancel":      {"true"},
+	}
+	cancelReq := httptest.NewRequest(http.MethodPost, authorizePath, strings.NewReader(cancelForm.Encode()))
+	cancelReq.RemoteAddr = "10.0.0.10:1234"
+	cancelReq.Host = "internal.service:28686"
+	cancelReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	cancelReq.Header.Set("X-Forwarded-For", "203.0.113.20")
+	cancelReq.Header.Set("X-Forwarded-Host", "attacker.example")
+	cancelReq.Header.Set("X-Forwarded-Proto", "http")
+	cancelReq.Header.Set("X-Forwarded-Prefix", "/attacker")
+	for _, cookie := range setup.Result().Cookies() {
+		cancelReq.AddCookie(cookie)
+	}
+	cancelled := httptest.NewRecorder()
+	handler.ServeHTTP(cancelled, cancelReq)
+	r.Equal(http.StatusFound, cancelled.Code)
+	location, err := url.Parse(cancelled.Header().Get("Location"))
+	r.NoError(err)
+	a.Equal("chatgpt.com", location.Host)
+	a.Equal("access_denied", location.Query().Get("error"))
+	a.Equal("chatgpt-state", location.Query().Get("state"))
+	a.NotContains(location.String(), "internal.service")
+	a.NotContains(location.String(), "attacker")
+
+	tokenErrorReq := httptest.NewRequest(http.MethodPost, "/connectors/inventree/token", strings.NewReader(url.Values{
+		"grant_type": {"authorization_code"}, "client_id": {clientID}, "resource": {cfg.OAuthResourceURL},
+	}.Encode()))
+	tokenErrorReq.RemoteAddr = "198.51.100.10:1234"
+	tokenErrorReq.Host = "internal.service:28686"
+	tokenErrorReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	tokenErrorReq.Header.Set("X-Forwarded-Host", "attacker.example")
+	tokenErrorReq.Header.Set("X-Forwarded-Proto", "http")
+	tokenErrorReq.Header.Set("X-Forwarded-Prefix", "/attacker")
+	tokenError := httptest.NewRecorder()
+	handler.ServeHTTP(tokenError, tokenErrorReq)
+	r.Equal(http.StatusUnauthorized, tokenError.Code)
+	a.Equal("{\"error\":\"invalid_client\"}\n", tokenError.Body.String())
+	a.NotContains(tokenError.Body.String(), "internal.service")
+	a.NotContains(tokenError.Body.String(), "attacker")
+
+	keyring, err := cfg.OAuthKeyring.Keyring()
+	r.NoError(err)
+	codec := oauth.EnvelopeCodec{Keyring: keyring}
+	sealAccessToken := func(audience string) string {
+		token, sealErr := codec.Seal(ctx, oauth.AssociatedData{
+			Issuer: cfg.OAuthIssuerURL, Audience: audience, ClientID: clientID, Type: oauth.TokenTypeAccess,
+		}, oauth.TokenClaims{
+			Type: oauth.TokenTypeAccess, Issuer: cfg.OAuthIssuerURL, Audience: audience, Subject: "operator-1", ClientID: clientID,
+			Scopes: []string{tools.ScopeInventreeRead}, IssuedAt: time.Now(), ExpiresAt: time.Now().Add(time.Hour), SessionExpiresAt: time.Now().Add(2 * time.Hour),
+			Credential: oauth.Credential{Scheme: inventree.AuthSchemeToken, Token: "secret-inventree-token"},
+		})
+		r.NoError(sealErr)
+		return token
+	}
+	validToken := sealAccessToken(cfg.OAuthResourceURL)
+	validMCP := postMCPAtPathWithBearer(t, handler, cfg.Path, validToken, `{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}`)
+	r.Equal(http.StatusOK, validMCP.Code)
+	wrongAudienceToken := sealAccessToken("https://public.example.test/connectors/other/mcp")
+	wrongAudience := postMCPAtPathWithBearer(t, handler, cfg.Path, wrongAudienceToken, `{"jsonrpc":"2.0","id":3,"method":"tools/list","params":{}}`)
+	r.Equal(http.StatusUnauthorized, wrongAudience.Code)
+}
+
+func TestProductionHTTPMuxRejectsCanonicalRouteCollision(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	cfg := config.Config{
+		Transport:        config.TransportHTTP,
+		Environment:      config.EnvironmentProduction,
+		Path:             "/authorize",
+		OAuthIssuerURL:   "https://public.example.test",
+		OAuthResourceURL: "https://public.example.test/authorize",
+		OAuthKeyring: oauth.KeyringConfig{Keys: []oauth.KeyConfig{{
+			ID:             "current",
+			MaterialBase64: "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY",
+			State:          oauth.KeyStateActive,
+		}}},
+	}
+
+	_, err := HTTPMux(ctx, cfg, New(tools.Dependencies{}))
+	r.ErrorContains(err, `production HTTP canonical paths collide at "/authorize"`)
+}
+
+func TestProductionHTTPMuxRateLimitsByTrustedResolvedSourceIP(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	cfg := config.Config{
+		Transport:            config.TransportHTTP,
+		Environment:          config.EnvironmentProduction,
+		Path:                 "/mcp",
+		OAuthIssuerURL:       "https://public.example.test",
+		OAuthResourceURL:     "https://public.example.test/mcp",
+		OAuthClientIDs:       []string{"https://chatgpt.com/client-metadata"},
+		TrustedProxyCIDRs:    []string{"10.0.0.0/8"},
+		OAuthAccessLifetime:  oauth.DefaultAccessTokenLifetime,
+		OAuthRefreshLifetime: oauth.DefaultRefreshTokenLifetime,
+		OAuthSessionLifetime: oauth.DefaultSessionLifetime,
+		OAuthKeyring: oauth.KeyringConfig{Keys: []oauth.KeyConfig{{
+			ID:             "current",
+			MaterialBase64: "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY",
+			State:          oauth.KeyStateActive,
+		}}},
+	}
+	fixedNow := time.Date(2026, 8, 2, 5, 0, 0, 0, time.UTC)
+	handler, err := httpMuxWithOptions(ctx, cfg, New(tools.Dependencies{}), nil, httpMuxOptions{
+		now:                    func() time.Time { return fixedNow },
+		authorizationRateLimit: 1,
+	})
+	r.NoError(err)
+	request := func(remoteAddress string, forwardedFor string) int {
+		req := httptest.NewRequest(http.MethodGet, "/authorize", nil)
+		req.RemoteAddr = remoteAddress
+		if forwardedFor != "" {
+			req.Header.Set("X-Forwarded-For", forwardedFor)
+		}
+		recorder := httptest.NewRecorder()
+		handler.ServeHTTP(recorder, req)
+		return recorder.Code
+	}
+
+	r.Equal(http.StatusBadRequest, request("10.0.0.10:1234", "203.0.113.10"))
+	r.Equal(http.StatusTooManyRequests, request("10.0.0.10:1234", "203.0.113.10"))
+	r.Equal(http.StatusBadRequest, request("10.0.0.10:1234", "203.0.113.11"))
+
+	r.Equal(http.StatusBadRequest, request("198.51.100.10:1234", "203.0.113.12"))
+	r.Equal(http.StatusTooManyRequests, request("198.51.100.10:1234", "203.0.113.13"))
+
+	r.Equal(http.StatusBadRequest, request("10.0.0.20:1234", "malformed, 203.0.113.14"))
+	r.Equal(http.StatusBadRequest, request("10.0.0.20:1234", "malformed, 203.0.113.15"))
+	r.Equal(http.StatusTooManyRequests, request("10.0.0.20:1234", "different-malformed-value, 203.0.113.15"))
+}
+
 func TestProductionHTTPAuthenticatesBeforeDebugTrafficCapture(t *testing.T) {
 	t.Parallel()
 	r := require.New(t)
@@ -1079,8 +1321,13 @@ func postMCP(t *testing.T, handler http.Handler, body string) *httptest.Response
 
 func postMCPWithBearer(t *testing.T, handler http.Handler, token string, body string) *httptest.ResponseRecorder {
 	t.Helper()
+	return postMCPAtPathWithBearer(t, handler, "/mcp", token, body)
+}
 
-	req := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(body))
+func postMCPAtPathWithBearer(t *testing.T, handler http.Handler, path string, token string, body string) *httptest.ResponseRecorder {
+	t.Helper()
+
+	req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(body))
 	req.Header.Set("Accept", "application/json, text/event-stream")
 	req.Header.Set("Authorization", "Bearer "+token)
 	req.Header.Set("Content-Type", "application/json")

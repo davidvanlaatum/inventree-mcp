@@ -9,6 +9,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
 	"math/big"
 	"net/http"
 	"net/http/httptest"
@@ -56,8 +57,11 @@ func TestHTTPOAuthFlowAgainstInvenTreeContainer(t *testing.T) {
 	r.NoError(err)
 
 	_, keyringConfig := testOAuthCodec(t)
-	issuer := "https://mcp.example.test"
+	issuer := "https://mcp.example.test/connectors/inventree"
 	audience := issuer + "/mcp"
+	mcpPath := "/connectors/inventree/mcp"
+	authorizeEndpointPath := "/connectors/inventree/authorize"
+	tokenEndpointPath := "/connectors/inventree/token"
 	redirectURI := "https://chatgpt.com/connector/oauth/callback_123"
 	clientKey, err := rsa.GenerateKey(rand.Reader, 2048)
 	r.NoError(err)
@@ -92,30 +96,37 @@ func TestHTTPOAuthFlowAgainstInvenTreeContainer(t *testing.T) {
 	httpConfig := config.Config{
 		Transport:              config.TransportHTTP,
 		Environment:            config.EnvironmentProduction,
-		Path:                   "/mcp",
+		Path:                   mcpPath,
 		InvenTreeURL:           shared.Environment().BaseURL,
 		MCPMaxRequestBodyBytes: config.DefaultMCPMaxRequestBodyBytes,
 		OAuthIssuerURL:         issuer,
 		OAuthResourceURL:       audience,
 		OAuthKeyring:           keyringConfig,
 		OAuthClientIDs:         []string{metadataURL},
+		TrustedProxyCIDRs:      []string{"10.0.0.0/8"},
 	}
 	deps.ResourceMetadataURL = httpConfig.OAuthProtectedResourceMetadataURL()
 	protected, err := httpMuxWithMetadataClient(ctx, httpConfig, New(deps), nil, metadataServer.Client())
 	r.NoError(err)
-	authorizePath := "/authorize?" + url.Values{
+	authorizePath := authorizeEndpointPath + "?" + url.Values{
 		"response_type": {"code"}, "client_id": {metadataURL}, "redirect_uri": {redirectURI}, "state": {"integration-state"},
 		"resource": {audience}, "scope": {tools.ScopeInventreeRead}, "code_challenge": {oauth.PKCEChallengeS256(pkceVerifier)}, "code_challenge_method": {"S256"},
 	}.Encode()
 	setupPage := httptest.NewRecorder()
-	protected.ServeHTTP(setupPage, httptest.NewRequest(http.MethodGet, authorizePath, nil))
+	setupPageRequest := oauthIntegrationProxyRequest(http.MethodGet, authorizePath, nil)
+	protected.ServeHTTP(setupPage, setupPageRequest)
 	r.Equal(http.StatusOK, setupPage.Code)
+	a.Contains(setupPage.Body.String(), `action="`+authorizeEndpointPath+`"`)
+	a.NotContains(setupPage.Body.String(), "internal.service")
+	a.NotContains(setupPage.Body.String(), "attacker")
+	r.Len(setupPage.Result().Cookies(), 1)
+	a.Equal(authorizeEndpointPath, setupPage.Result().Cookies()[0].Path)
 	setupForm := url.Values{
 		"setup_state": {oauthIntegrationHiddenValue(t, setupPage.Body.String(), "setup_state")},
 		"client_id":   {metadataURL}, "csrf": {oauthIntegrationHiddenValue(t, setupPage.Body.String(), "csrf")},
 		"credential_scheme": {"Token"}, "credential": {account.Token},
 	}
-	setupRequest := httptest.NewRequest(http.MethodPost, "/authorize", strings.NewReader(setupForm.Encode()))
+	setupRequest := oauthIntegrationProxyRequest(http.MethodPost, authorizeEndpointPath, strings.NewReader(setupForm.Encode()))
 	setupRequest.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	for _, cookie := range setupPage.Result().Cookies() {
 		setupRequest.AddCookie(cookie)
@@ -125,13 +136,23 @@ func TestHTTPOAuthFlowAgainstInvenTreeContainer(t *testing.T) {
 	r.Equal(http.StatusFound, setupResult.Code)
 	callback, err := url.Parse(setupResult.Header().Get("Location"))
 	r.NoError(err)
+	a.Equal("chatgpt.com", callback.Host)
 	a.Equal("integration-state", callback.Query().Get("state"))
+	a.NotContains(callback.String(), "internal.service")
+	a.NotContains(callback.String(), "attacker")
 	code := callback.Query().Get("code")
 	r.NotEmpty(code)
 
 	tokenEndpoint := issuer + "/token"
+	wrongTarget := oauthIntegrationPostForm(protected, tokenEndpointPath, url.Values{
+		"grant_type": {"authorization_code"}, "client_id": {metadataURL}, "client_assertion_type": {oauth.ClientAssertionTypeJWTBearer},
+		"client_assertion": {oauthIntegrationAssertion(t, clientKey, metadataURL, tokenEndpoint, "integration-wrong-target")},
+		"code":             {code}, "redirect_uri": {redirectURI}, "code_verifier": {pkceVerifier}, "resource": {issuer + "/other"},
+	})
+	r.Equal(http.StatusBadRequest, wrongTarget.Code)
+	a.Equal("{\"error\":\"invalid_target\"}\n", wrongTarget.Body.String())
 	assertion := oauthIntegrationAssertion(t, clientKey, metadataURL, tokenEndpoint, "integration-code")
-	tokenResult := oauthIntegrationPostForm(protected, "/token", url.Values{
+	tokenResult := oauthIntegrationPostForm(protected, tokenEndpointPath, url.Values{
 		"grant_type": {"authorization_code"}, "client_id": {metadataURL}, "client_assertion_type": {oauth.ClientAssertionTypeJWTBearer}, "client_assertion": {assertion},
 		"code": {code}, "redirect_uri": {redirectURI}, "code_verifier": {pkceVerifier}, "resource": {audience},
 	})
@@ -142,11 +163,13 @@ func TestHTTPOAuthFlowAgainstInvenTreeContainer(t *testing.T) {
 		CredentialSource string `json:"credential_source"`
 	}
 	r.NoError(json.Unmarshal(tokenResult.Body.Bytes(), &pair))
+	a.NotContains(tokenResult.Body.String(), "internal.service")
+	a.NotContains(tokenResult.Body.String(), "attacker")
 	r.NotEmpty(pair.AccessToken)
 	r.NotEmpty(pair.RefreshToken)
 	a.Equal(oauth.CredentialSourceDedicated, pair.CredentialSource)
 
-	refreshResult := oauthIntegrationPostForm(protected, "/token", url.Values{
+	refreshResult := oauthIntegrationPostForm(protected, tokenEndpointPath, url.Values{
 		"grant_type": {"refresh_token"}, "client_id": {metadataURL}, "client_assertion_type": {oauth.ClientAssertionTypeJWTBearer},
 		"client_assertion": {oauthIntegrationAssertion(t, clientKey, metadataURL, tokenEndpoint, "integration-refresh")},
 		"refresh_token":    {pair.RefreshToken}, "resource": {audience},
@@ -162,13 +185,13 @@ func TestHTTPOAuthFlowAgainstInvenTreeContainer(t *testing.T) {
 	r.NotEmpty(refreshedPair.RefreshToken)
 	a.Equal(oauth.CredentialSourceDedicated, refreshedPair.CredentialSource)
 
-	recorder := postMCPWithBearer(t, protected, refreshedPair.AccessToken, `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"search_parts","arguments":{"search":"`+part.Name+`"}}}`)
+	recorder := oauthIntegrationPostMCP(protected, mcpPath, refreshedPair.AccessToken, `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"search_parts","arguments":{"search":"`+part.Name+`"}}}`)
 	r.Equal(http.StatusOK, recorder.Code)
 	body := recorder.Body.String()
 	a.Contains(body, `"status":"ok"`)
 	a.Contains(body, part.Name)
 
-	rawUpstreamRecorder := postMCPWithBearer(t, protected, account.Token, `{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"search_parts","arguments":{"search":"`+part.Name+`"}}}`)
+	rawUpstreamRecorder := oauthIntegrationPostMCP(protected, mcpPath, account.Token, `{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"search_parts","arguments":{"search":"`+part.Name+`"}}}`)
 	r.Equal(http.StatusUnauthorized, rawUpstreamRecorder.Code)
 	a.NotContains(rawUpstreamRecorder.Body.String(), part.Name)
 }
@@ -198,11 +221,32 @@ func oauthIntegrationAssertion(t *testing.T, key *rsa.PrivateKey, clientID strin
 }
 
 func oauthIntegrationPostForm(handler http.Handler, path string, form url.Values) *httptest.ResponseRecorder {
-	req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(form.Encode()))
+	req := oauthIntegrationProxyRequest(http.MethodPost, path, strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	recorder := httptest.NewRecorder()
 	handler.ServeHTTP(recorder, req)
 	return recorder
+}
+
+func oauthIntegrationPostMCP(handler http.Handler, path string, token string, body string) *httptest.ResponseRecorder {
+	req := oauthIntegrationProxyRequest(http.MethodPost, path, strings.NewReader(body))
+	req.Header.Set("Accept", "application/json, text/event-stream")
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Content-Type", "application/json")
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, req)
+	return recorder
+}
+
+func oauthIntegrationProxyRequest(method string, path string, body io.Reader) *http.Request {
+	req := httptest.NewRequest(method, path, body)
+	req.RemoteAddr = "10.0.0.10:1234"
+	req.Host = "internal.service:28686"
+	req.Header.Set("X-Forwarded-For", "203.0.113.20")
+	req.Header.Set("X-Forwarded-Host", "attacker.example")
+	req.Header.Set("X-Forwarded-Proto", "http")
+	req.Header.Set("X-Forwarded-Prefix", "/attacker")
+	return req
 }
 
 func testOAuthCodec(t *testing.T) (oauth.EnvelopeCodec, oauth.KeyringConfig) {
