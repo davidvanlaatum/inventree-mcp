@@ -13,6 +13,7 @@ import (
 	"math/big"
 	"net/http"
 	"net/http/httptest"
+	"net/netip"
 	"net/url"
 	"regexp"
 	"strings"
@@ -21,6 +22,7 @@ import (
 
 	"github.com/davidvanlaatum/dvgoutils/logging/testhandler"
 	"github.com/davidvanlaatum/inventree-mcp/internal/inventree"
+	"github.com/davidvanlaatum/inventree-mcp/internal/requestctx"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -582,6 +584,23 @@ func TestRequestRateLimiterBoundsAttemptsAndWindow(t *testing.T) {
 	a.False(bounded.Allow("at-capacity"))
 	now = now.Add(time.Minute)
 	a.True(bounded.Allow("after-expiry"))
+}
+
+func TestAuthorizationServerRateLimitsByResolvedSourceIP(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+
+	fixedNow := time.Date(2026, 8, 2, 5, 0, 0, 0, time.UTC)
+	server := AuthorizationServer{RateLimiter: NewRequestRateLimiter(1, time.Minute, func() time.Time { return fixedNow })}
+	requestFor := func(source string) *http.Request {
+		req := httptest.NewRequest(http.MethodGet, "/authorize", nil)
+		address := netip.MustParseAddr(source)
+		return req.WithContext(requestctx.WithSourceIP(req.Context(), address))
+	}
+
+	r.True(server.allow(requestFor("203.0.113.10")))
+	r.False(server.allow(requestFor("203.0.113.10")))
+	r.True(server.allow(requestFor("203.0.113.11")))
 }
 
 func TestInvenTreeCredentialBrokerValidatesAndCreatesDedicatedToken(t *testing.T) {

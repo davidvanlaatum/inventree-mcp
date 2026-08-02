@@ -15,6 +15,7 @@ import (
 	"github.com/davidvanlaatum/inventree-mcp/internal/buildinfo"
 	"github.com/davidvanlaatum/inventree-mcp/internal/config"
 	"github.com/davidvanlaatum/inventree-mcp/internal/oauth"
+	"github.com/davidvanlaatum/inventree-mcp/internal/requestctx"
 	"github.com/davidvanlaatum/inventree-mcp/internal/systemdnotify"
 	"github.com/davidvanlaatum/inventree-mcp/internal/tools"
 	"github.com/modelcontextprotocol/go-sdk/auth"
@@ -166,9 +167,26 @@ func httpMux(ctx context.Context, cfg config.Config, srv *mcp.Server, traffic *t
 }
 
 func httpMuxWithMetadataClient(ctx context.Context, cfg config.Config, srv *mcp.Server, traffic *trafficLog, metadataClient *http.Client) (http.Handler, error) {
+	return httpMuxWithOptions(ctx, cfg, srv, traffic, httpMuxOptions{metadataClient: metadataClient})
+}
+
+type httpMuxOptions struct {
+	metadataClient         *http.Client
+	now                    func() time.Time
+	authorizationRateLimit int
+}
+
+func httpMuxWithOptions(ctx context.Context, cfg config.Config, srv *mcp.Server, traffic *trafficLog, options httpMuxOptions) (http.Handler, error) {
+	sourceResolver, err := newSourceIPResolver(cfg.TrustedProxyCIDRs)
+	if err != nil {
+		return nil, err
+	}
 	handler := HTTPHandler(ctx, srv, cfg.MCPMaxRequestBodyBytes)
 	mux := http.NewServeMux()
 	if cfg.Transport == config.TransportHTTP && cfg.Environment == config.EnvironmentProduction {
+		if err := cfg.ValidateProductionRoutePaths(); err != nil {
+			return nil, err
+		}
 		keyring, err := cfg.OAuthKeyring.Keyring()
 		if err != nil {
 			return nil, err
@@ -195,8 +213,13 @@ func httpMuxWithMetadataClient(ctx context.Context, cfg config.Config, srv *mcp.
 			ResourceTOSURI:                "",
 			DPOPSigningAlgValuesSupported: nil,
 		}))
+		metadataClient := options.metadataClient
 		if metadataClient == nil {
 			metadataClient = &http.Client{Timeout: oauth.DefaultClientMetadataTimeout}
+		}
+		now := options.now
+		if now == nil {
+			now = time.Now
 		}
 		metadataFetcher := oauth.ClientMetadataFetcher{
 			HTTPClient:       metadataClient,
@@ -210,7 +233,7 @@ func httpMuxWithMetadataClient(ctx context.Context, cfg config.Config, srv *mcp.
 		oauthService := oauth.Service{
 			Codec:           oauth.EnvelopeCodec{Keyring: keyring},
 			MetadataFetcher: metadataFetcher,
-			CodeStore:       oauth.NewCodeStore(1024, time.Now),
+			CodeStore:       oauth.NewCodeStore(1024, now),
 			CredentialValidator: oauth.CredentialValidatorFunc(func(ctx context.Context, credential oauth.Credential) error {
 				_, err := broker.ValidateCredential(ctx, credential)
 				return err
@@ -228,9 +251,9 @@ func httpMuxWithMetadataClient(ctx context.Context, cfg config.Config, srv *mcp.
 			CredentialBroker: broker,
 			AssertionVerifier: oauth.PrivateKeyJWTVerifier{
 				HTTPClient:  metadataClient,
-				ReplayStore: oauth.NewAssertionReplayStore(4096, time.Now),
+				ReplayStore: oauth.NewAssertionReplayStore(4096, now),
 			},
-			RateLimiter: oauth.NewRequestRateLimiter(10, time.Minute, time.Now),
+			RateLimiter: oauth.NewRequestRateLimiter(options.authorizationRateLimit, time.Minute, now),
 		}
 		if err := authorizationServer.Register(mux); err != nil {
 			return nil, err
@@ -239,7 +262,7 @@ func httpMuxWithMetadataClient(ctx context.Context, cfg config.Config, srv *mcp.
 		handler = traffic.middleware(string(config.TransportHTTP), cfg.MCPMaxRequestBodyBytes, handler)
 	}
 	mux.Handle(cfg.Path, handler)
-	return mux, nil
+	return sourceIPMiddleware(logging.FromContext(ctx), sourceResolver, mux), nil
 }
 
 func HTTPHandler(ctx context.Context, srv *mcp.Server, maxRequestBodyBytes int64) http.Handler {
@@ -253,7 +276,11 @@ func HTTPHandler(ctx context.Context, srv *mcp.Server, maxRequestBodyBytes int64
 	})
 
 	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-		requestCtx := logging.WithLogger(req.Context(), logging.FromContext(ctx))
+		logger := logging.FromContext(ctx)
+		if _, ok := requestctx.SourceIP(req.Context()); ok {
+			logger = logging.FromContext(req.Context())
+		}
+		requestCtx := logging.WithLogger(req.Context(), logger)
 		requestCtx = WithTransportLogger(requestCtx, string(config.TransportHTTP))
 		requestCtx = logging.WithLogger(requestCtx, logging.FromContext(requestCtx).With(
 			slog.String("method", req.Method),

@@ -6,8 +6,10 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"net/netip"
 	"net/url"
 	"os"
+	"path"
 	"strings"
 	"time"
 
@@ -34,6 +36,7 @@ const (
 	EnvOAuthResourceURL       = "INVENTREE_MCP_OAUTH_RESOURCE_URL"
 	EnvOAuthKeys              = "INVENTREE_MCP_OAUTH_KEYS"
 	EnvOAuthClientIDs         = "INVENTREE_MCP_OAUTH_CLIENT_IDS"
+	EnvTrustedProxyCIDRs      = "INVENTREE_MCP_TRUSTED_PROXY_CIDRS"
 	EnvOAuthAccessLifetime    = "INVENTREE_MCP_OAUTH_ACCESS_LIFETIME"
 	EnvOAuthRefreshLifetime   = "INVENTREE_MCP_OAUTH_REFRESH_LIFETIME"
 	EnvOAuthSessionLifetime   = "INVENTREE_MCP_OAUTH_SESSION_LIFETIME"
@@ -85,6 +88,7 @@ type Config struct {
 	OAuthResourceURL       string
 	OAuthKeyring           oauth.KeyringConfig
 	OAuthClientIDs         []string
+	TrustedProxyCIDRs      []string
 	OAuthAccessLifetime    time.Duration
 	OAuthRefreshLifetime   time.Duration
 	OAuthSessionLifetime   time.Duration
@@ -123,6 +127,7 @@ func ParseServeWithEnv(args []string, getenv Env, output io.Writer) (Config, err
 		OAuthResourceURL:    getenv(EnvOAuthResourceURL),
 		OAuthKeyring:        oauth.KeyringConfig{Keys: keyListEnv(getenv, EnvOAuthKeys)},
 		OAuthClientIDs:      commaListEnv(getenv, EnvOAuthClientIDs),
+		TrustedProxyCIDRs:   commaListEnv(getenv, EnvTrustedProxyCIDRs),
 		OAuthAccessLifetime: durationDefault(getenv, EnvOAuthAccessLifetime, oauth.DefaultAccessTokenLifetime),
 		OAuthRefreshLifetime: durationDefault(
 			getenv,
@@ -160,6 +165,13 @@ func ParseServeWithEnv(args []string, getenv Env, output io.Writer) (Config, err
 		value = strings.TrimSpace(value)
 		if value != "" {
 			cfg.OAuthClientIDs = append(cfg.OAuthClientIDs, value)
+		}
+		return nil
+	})
+	fs.Func("trusted-proxy-cidr", flagHelp("trusted reverse-proxy CIDR; repeatable", EnvTrustedProxyCIDRs), func(value string) error {
+		value = strings.TrimSpace(value)
+		if value != "" {
+			cfg.TrustedProxyCIDRs = append(cfg.TrustedProxyCIDRs, value)
 		}
 		return nil
 	})
@@ -243,6 +255,8 @@ func (c Config) Validate() error {
 		}
 		if c.Path == "" || !strings.HasPrefix(c.Path, "/") {
 			validationErrors = append(validationErrors, errors.New("HTTP path must start with /"))
+		} else if path.Clean(c.Path) != c.Path || (c.Path != "/" && strings.HasSuffix(c.Path, "/")) {
+			validationErrors = append(validationErrors, errors.New("HTTP path must be a canonical path without a trailing slash"))
 		}
 		if c.Listen == "" {
 			validationErrors = append(validationErrors, errors.New("HTTP listen address is required"))
@@ -260,6 +274,13 @@ func (c Config) Validate() error {
 			validationErrors = append(validationErrors, errors.New("development HTTP mode requires --dev-incomplete-oauth until OAuth setup wiring is available"))
 		}
 	}
+	for _, rawCIDR := range c.TrustedProxyCIDRs {
+		if prefix, err := netip.ParsePrefix(rawCIDR); err != nil {
+			validationErrors = append(validationErrors, fmt.Errorf("trusted proxy CIDR %q is invalid", rawCIDR))
+		} else if prefix.Bits() == 0 {
+			validationErrors = append(validationErrors, fmt.Errorf("trusted proxy CIDR %q must not trust every address", rawCIDR))
+		}
+	}
 
 	return errors.Join(validationErrors...)
 }
@@ -271,11 +292,19 @@ func (c Config) validateProductionHTTP() []error {
 	}
 	if err := validateHTTPSURL(c.OAuthIssuerURL, "OAuth issuer URL"); err != nil {
 		validationErrors = append(validationErrors, err)
+	} else if parsed, err := url.Parse(c.OAuthIssuerURL); err == nil && !canonicalOptionalURLPath(parsed) {
+		validationErrors = append(validationErrors, errors.New("OAuth issuer URL path must be canonical and must not end with /"))
 	}
 	if err := validateHTTPSURL(c.OAuthResourceURL, "OAuth resource URL"); err != nil {
 		validationErrors = append(validationErrors, err)
-	} else if parsed, err := url.Parse(c.OAuthResourceURL); err == nil && strings.HasSuffix(parsed.Path, "/") {
-		validationErrors = append(validationErrors, errors.New("OAuth resource URL must not end with /"))
+	} else if parsed, err := url.Parse(c.OAuthResourceURL); err == nil && !canonicalRequiredURLPath(parsed) {
+		validationErrors = append(validationErrors, errors.New("OAuth resource URL path must be canonical and must not end with /"))
+	} else if parsed, err := url.Parse(c.OAuthResourceURL); err == nil && parsed.Path != c.Path {
+		validationErrors = append(validationErrors, errors.New("OAuth resource URL path must exactly match the HTTP path for path-preserving proxy routing"))
+	}
+	validationErrors = append(validationErrors, c.validateProductionRoutePaths()...)
+	if len(c.TrustedProxyCIDRs) == 0 {
+		validationErrors = append(validationErrors, errors.New("at least one trusted proxy CIDR is required for production HTTP"))
 	}
 	if len(c.OAuthClientIDs) == 0 {
 		validationErrors = append(validationErrors, errors.New("at least one OAuth client ID is required for production HTTP"))
@@ -304,6 +333,47 @@ func (c Config) validateProductionHTTP() []error {
 		validationErrors = append(validationErrors, errors.New("OAuth refresh token lifetime must not exceed session lifetime"))
 	}
 	return validationErrors
+}
+
+func (c Config) validateProductionRoutePaths() []error {
+	issuer, issuerErr := url.Parse(c.OAuthIssuerURL)
+	resourceMetadata, metadataErr := url.Parse(c.OAuthProtectedResourceMetadataURL())
+	if issuerErr != nil || metadataErr != nil || issuer.Host == "" || resourceMetadata.Path == "" {
+		return nil
+	}
+	issuerBase := strings.TrimSuffix(issuer.Path, "/")
+	routes := []string{
+		c.Path,
+		resourceMetadata.Path,
+		"/.well-known/oauth-authorization-server" + issuerBase,
+		issuerBase + "/authorize",
+		issuerBase + "/token",
+	}
+	seen := make(map[string]struct{}, len(routes))
+	for _, route := range routes {
+		if _, exists := seen[route]; exists {
+			return []error{fmt.Errorf("production HTTP canonical paths collide at %q", route)}
+		}
+		seen[route] = struct{}{}
+	}
+	return nil
+}
+
+// ValidateProductionRoutePaths rejects canonical route collisions before the
+// HTTP mux registers OAuth and MCP handlers.
+func (c Config) ValidateProductionRoutePaths() error {
+	return errors.Join(c.validateProductionRoutePaths()...)
+}
+
+func canonicalOptionalURLPath(parsed *url.URL) bool {
+	if parsed.RawPath != "" {
+		return false
+	}
+	return parsed.Path == "" || (parsed.Path != "/" && path.Clean(parsed.Path) == parsed.Path && !strings.HasSuffix(parsed.Path, "/"))
+}
+
+func canonicalRequiredURLPath(parsed *url.URL) bool {
+	return parsed.RawPath == "" && parsed.Path != "" && parsed.Path != "/" && path.Clean(parsed.Path) == parsed.Path && !strings.HasSuffix(parsed.Path, "/")
 }
 
 func (c Config) OAuthProtectedResourceMetadataURL() string {

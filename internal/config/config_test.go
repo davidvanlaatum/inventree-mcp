@@ -238,6 +238,7 @@ func TestParseServeRejectsProductionHTTPBeforeOAuth(t *testing.T) {
 	a.Contains(err.Error(), "production mode rejects InvenTree TLS skip verify")
 	a.Contains(err.Error(), "OAuth issuer URL is required")
 	a.Contains(err.Error(), "OAuth resource URL is required")
+	a.Contains(err.Error(), "at least one trusted proxy CIDR is required")
 	a.Contains(err.Error(), "at least one OAuth client ID is required")
 	a.Contains(err.Error(), "OAuth keyring requires at least one key")
 }
@@ -251,10 +252,12 @@ func TestParseServeAllowsProductionHTTPWithOAuthConfig(t *testing.T) {
 		"--transport", "http",
 		"--inventree-url", "https://inventory.example.test",
 		"--oauth-client-id", "https://chatgpt.com/client-metadata/b",
+		"--trusted-proxy-cidr", "192.0.2.0/24",
 	}, mapEnv(map[string]string{
 		EnvOAuthIssuerURL:       "https://auth.example.test",
 		EnvOAuthResourceURL:     "https://mcp.example.test/mcp",
 		EnvOAuthClientIDs:       "https://chatgpt.com/client-metadata/a",
+		EnvTrustedProxyCIDRs:    "127.0.0.1/32,10.0.0.0/8",
 		EnvOAuthKeys:            "current:active:MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY,next:decrypt_only:MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY",
 		EnvOAuthAccessLifetime:  "10m",
 		EnvOAuthRefreshLifetime: "24h",
@@ -266,6 +269,7 @@ func TestParseServeAllowsProductionHTTPWithOAuthConfig(t *testing.T) {
 	a.Equal(EnvironmentProduction, cfg.Environment)
 	a.Equal("https://mcp.example.test/.well-known/oauth-protected-resource/mcp", cfg.OAuthProtectedResourceMetadataURL())
 	a.Equal([]string{"https://chatgpt.com/client-metadata/a", "https://chatgpt.com/client-metadata/b"}, cfg.OAuthClientIDs)
+	a.Equal([]string{"127.0.0.1/32", "10.0.0.0/8", "192.0.2.0/24"}, cfg.TrustedProxyCIDRs)
 	a.Len(cfg.OAuthKeyring.Keys, 2)
 	a.Equal(10*time.Minute, cfg.OAuthAccessLifetime)
 	a.Equal(24*time.Hour, cfg.OAuthRefreshLifetime)
@@ -285,7 +289,88 @@ func TestParseServeRejectsTrailingSlashOAuthResourceURL(t *testing.T) {
 	}, mapEnv(map[string]string{
 		EnvOAuthKeys: "current:active:MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY",
 	}), nil)
-	r.ErrorContains(err, "OAuth resource URL must not end with /")
+	r.ErrorContains(err, "OAuth resource URL path must be canonical and must not end with /")
+}
+
+func TestParseServeSupportsPathPreservingProxyPrefix(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+
+	cfg, err := ParseServeWithEnv([]string{
+		"--transport", "http",
+		"--path", "/connectors/inventree/mcp",
+		"--inventree-url", "https://inventory.example.test",
+		"--oauth-issuer-url", "https://mcp.example.test/connectors/inventree",
+		"--oauth-resource-url", "https://mcp.example.test/connectors/inventree/mcp",
+		"--oauth-client-id", "https://chatgpt.com/client-metadata",
+		"--trusted-proxy-cidr", "192.0.2.0/24",
+	}, mapEnv(map[string]string{
+		EnvOAuthKeys: "current:active:MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY",
+	}), nil)
+	r.NoError(err)
+	a.Equal("/connectors/inventree/mcp", cfg.Path)
+	a.Equal("https://mcp.example.test/.well-known/oauth-protected-resource/connectors/inventree/mcp", cfg.OAuthProtectedResourceMetadataURL())
+}
+
+func TestParseServeRejectsPrefixStrippingAndInvalidTrustedProxyConfig(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+
+	_, err := ParseServeWithEnv([]string{
+		"--transport", "http",
+		"--path", "/mcp",
+		"--inventree-url", "https://inventory.example.test",
+		"--oauth-issuer-url", "https://mcp.example.test/connectors/inventree",
+		"--oauth-resource-url", "https://mcp.example.test/connectors/inventree/mcp",
+		"--oauth-client-id", "https://chatgpt.com/client-metadata",
+		"--trusted-proxy-cidr", "not-a-cidr",
+	}, mapEnv(map[string]string{
+		EnvOAuthKeys: "current:active:MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY",
+	}), nil)
+	r.Error(err)
+	a.Contains(err.Error(), "OAuth resource URL path must exactly match the HTTP path")
+	a.Contains(err.Error(), `trusted proxy CIDR "not-a-cidr" is invalid`)
+}
+
+func TestParseServeRejectsCanonicalRouteCollision(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+
+	_, err := ParseServeWithEnv([]string{
+		"--transport", "http",
+		"--path", "/authorize",
+		"--inventree-url", "https://inventory.example.test",
+		"--oauth-issuer-url", "https://mcp.example.test",
+		"--oauth-resource-url", "https://mcp.example.test/authorize",
+		"--oauth-client-id", "https://chatgpt.com/client-metadata",
+		"--trusted-proxy-cidr", "192.0.2.0/24",
+	}, mapEnv(map[string]string{
+		EnvOAuthKeys: "current:active:MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY",
+	}), nil)
+	r.ErrorContains(err, `production HTTP canonical paths collide at "/authorize"`)
+}
+
+func TestParseServeRejectsTrustAllProxyCIDRs(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+
+	_, err := ParseServeWithEnv([]string{
+		"--transport", "http",
+		"--inventree-url", "https://inventory.example.test",
+		"--oauth-issuer-url", "https://mcp.example.test",
+		"--oauth-resource-url", "https://mcp.example.test/mcp",
+		"--oauth-client-id", "https://chatgpt.com/client-metadata",
+		"--trusted-proxy-cidr", "0.0.0.0/0",
+		"--trusted-proxy-cidr", "::/0",
+	}, mapEnv(map[string]string{
+		EnvOAuthKeys: "current:active:MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY",
+	}), nil)
+	r.Error(err)
+	a.Contains(err.Error(), `trusted proxy CIDR "0.0.0.0/0" must not trust every address`)
+	a.Contains(err.Error(), `trusted proxy CIDR "::/0" must not trust every address`)
 }
 
 func TestParseServeRejectsInvalidProductionOAuthConfig(t *testing.T) {
@@ -465,6 +550,7 @@ func TestParseServeHelpMentionsEnvVars(t *testing.T) {
 		EnvOAuthIssuerURL,
 		EnvOAuthResourceURL,
 		EnvOAuthClientIDs,
+		EnvTrustedProxyCIDRs,
 		EnvOAuthAccessLifetime,
 		EnvOAuthRefreshLifetime,
 		EnvOAuthSessionLifetime,
