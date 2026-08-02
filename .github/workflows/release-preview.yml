@@ -2,15 +2,6 @@ name: Release Preview
 
 on:
   pull_request:
-    paths:
-      - ".github/workflows/release-preview.yml"
-      - ".github/workflows/release.yml"
-      - ".goreleaser.yaml"
-      - "cmd/**"
-      - "internal/**"
-      - "packaging/**"
-      - "go.mod"
-      - "go.sum"
 
 permissions:
   contents: read
