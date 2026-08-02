@@ -115,6 +115,15 @@ HTTP mode accepts the same debug traffic log option as STDIO. HTTP debug entries
 - Delete: call `delete_category_parameter_default` without confirmation to review the direct source link, then retry that same `link_id` with `confirm:true`. Success is reported only after a detail read returns not found.
 - HTTP note: search requires `inventree.read`; create/update require `inventree.read` and `inventree.write`; delete additionally requires `inventree.destructive`.
 
+## Audit Or Bulk-Propagate Part Parameters
+
+- Audit: call `audit_parameter_consistency` without filters only when the combined upstream requests and returned records fit its 1,000-unit safety budget. Narrow by one existing `template_id` or exact `category_id` for larger inventories. A template filter includes same-normalized-name peers; a category filter selects exact-category parts and direct links before row scanning. Review duplicate normalized names, incompatible units/choices/checkbox/selection-list/model-type definitions, duplicate rows or defaults, overloaded same-name fields, unlinked parameter usage, and non-empty category-default mismatches. The audit never writes or performs cleanup.
+- Select propagation scope: choose one enabled unrestricted or `part.part` template, an explicit value (including explicit empty), and exactly one selector: at most 100 stable `part_ids`, or one `category_id`. Category selection is exact unless `include_subcategories:true` is explicit.
+- Safety policy: the tool never creates templates or category links and never deletes parameter rows. Missing values are planned for creation. Equal existing values are skipped. Differing values are reported as `manual_required` unless `overwrite_existing:true`; duplicate rows always require manual resolution.
+- Execute: call `bulk_propagate_part_parameters` with `dry_run:true` and review every ordered action. Preserve the template, value, selector, descendant, and overwrite fields; set `dry_run:false` or omit it, then add `confirm:true` and the returned `plan_hash` within five minutes from the same principal. A newer matching dry run supersedes the prior token, and tokens are single-use and process-local.
+- Verification and recovery: treat execution as a single-writer operation. Every action's reviewed before-state is checked again immediately before mutation, and every applied create/update is read back. Execution stops after the first drift, write, identity, or verification failure and marks remaining planned actions as manually required. Do not replay the old plan; search current rows by stable part/template IDs, resolve any ambiguous result, and prepare a fresh dry run only for the remainder. InvenTree does not expose an atomic compare-and-set across the final check and write, so a narrow concurrent-administrator race remains.
+- HTTP note: audit requires `inventree.read`; propagation is conservatively classified as destructive because `overwrite_existing:true` can replace data, so it requires `inventree.read`, `inventree.write`, and `inventree.destructive` even for create-only plans.
+
 ## Create Initial Stock
 
 - Required inputs: part ID, stock location ID, quantity, status when required by local convention.
@@ -188,7 +197,7 @@ HTTP mode accepts the same debug traffic log option as STDIO. HTTP debug entries
 - Omitted, empty, or whitespace-only receipt packaging uses the supplier-part packaging; provide a non-blank override to change the created stock item's packaging.
 - If receipt execution returns `partial_failure`, do not retry blindly. Read every purchase-order line and call `search_stock_items` with the order's `purchase_order_id`; use the returned source-order fields to determine whether the first mutation succeeded, then prepare a new dry-run plan only for any confirmed remainder.
 - Do not have multiple operators or integrations receive the same purchase-order line concurrently. InvenTree 1.4.3 serializes line updates but can still accept a previously prepared quantity after the outstanding amount changes; this narrow race is an accepted operational limitation.
-- Remaining gaps: bulk parameter propagation/audits and broader live-order-entry recovery surfaces remain tracked separately in F-S14 and F-S15.
+- Remaining gap: broader live-order-entry recovery surfaces remain tracked separately in F-S15.
 - One-shot option: `create_purchase_order` may omit `supplier_reference`, in which case InvenTree still generates the internal reference. Use that lower-level tool only for intentional one-shot creation; recovery after a client or tool interruption is provided by `create_purchase_order_with_lines` and requires a stable supplier reference.
 
 ## Resolve Structured Clarification Prompts

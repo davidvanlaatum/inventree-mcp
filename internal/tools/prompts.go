@@ -17,6 +17,7 @@ const (
 	PurchasePreviewChecklistPromptName      = "purchase_preview_checklist"
 	ReceivePurchaseOrderChecklistPromptName = "receive_purchase_order_checklist"
 	StocktakeReviewPromptName               = "stocktake_review"
+	ParameterConsistencyReviewPromptName    = "parameter_consistency_review"
 )
 
 type PromptManifestEntry struct {
@@ -53,6 +54,21 @@ var PromptManifest = []PromptManifestEntry{
 - Manage category defaults with stable direct link IDs. Search exact-category defaults by default; use include_parent_defaults:true only to review inherited values, and update or delete an inherited link through its reported source category.
 - Use merge_parameter_templates with dry_run:true before consolidating duplicates. Never overwrite a part that already has both source and target rows; resolve reported conflicts and category-default links explicitly.
 - Retry set_part_parameters only with stable part_id, template_id or parameter_id, and an explicit value shape.`,
+	},
+	{
+		Name:        ParameterConsistencyReviewPromptName,
+		Title:       "Parameter consistency review",
+		Description: "Checklist for bounded read-only parameter audits and confirmed single-template propagation.",
+		Status:      PromptMilestone1,
+		Checklist: `Use this checklist before auditing or bulk-propagating part parameters:
+- Run audit_parameter_consistency without filters only when the combined upstream request-and-record workload fits the 1,000-unit scan budget; otherwise narrow by template_id or exact category_id.
+- Review duplicate template names, incompatible units or choices, duplicate rows, overloaded same-name fields, unlinked usage, and category-default mismatches. The audit never writes or cleans up records.
+- For propagation, choose one existing enabled part-compatible template_id, one explicit value, and exactly one selector: at most 100 stable part_ids or one category_id. Category selection is exact unless include_subcategories:true.
+- Return structured clarification instead of guessing when template, value, part, category, descendant scope, overwrite intent, or current-state confirmation is missing or ambiguous.
+- Templates and category links are never created implicitly, and parameter rows are never deleted. Existing differing values remain manual decisions unless overwrite_existing:true is explicit.
+- Call bulk_propagate_part_parameters with dry_run:true and review every planned, skipped, and manual_required action. To execute, preserve the business fields, set dry_run:false or omit it, and add confirm:true plus the returned plan_hash within five minutes from the same principal.
+- Propagation is conservatively destructive because overwrite_existing:true can replace values, so HTTP mode requires inventree.destructive as well as read and write scopes. Treat execution as single-writer work: every action is rechecked immediately before mutation, but the upstream API offers no atomic compare-and-set across that last check and write.
+- A newer matching dry run supersedes the older token. Any inventory change, restart, expired or reused token, or write/read-back failure requires current-state inspection and a fresh dry run; never replay the old plan.`,
 	},
 	{
 		Name:        AttachmentImageChecklistPromptName,

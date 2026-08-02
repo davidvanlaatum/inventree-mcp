@@ -11,6 +11,13 @@ type SearchQuery struct {
 	Offset int
 }
 
+type PartQuery struct {
+	CategoryID int
+	Cascade    *bool
+	Limit      int
+	Offset     int
+}
+
 type PartParameterQuery struct {
 	Search     string
 	PartID     int
@@ -88,6 +95,18 @@ func (q SearchQuery) values() url.Values {
 	values := url.Values{}
 	if q.Search != "" {
 		values.Set("search", q.Search)
+	}
+	setPagination(values, q.Limit, q.Offset)
+	return values
+}
+
+func (q PartQuery) values() url.Values {
+	values := url.Values{}
+	if q.CategoryID != 0 {
+		values.Set("category", strconv.Itoa(q.CategoryID))
+	}
+	if q.Cascade != nil {
+		values.Set("cascade", strconv.FormatBool(*q.Cascade))
 	}
 	setPagination(values, q.Limit, q.Offset)
 	return values

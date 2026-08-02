@@ -93,7 +93,7 @@ Before `M1C-S04` is complete, mutating, operational, destructive, and upload too
 | [F-S11](#f-s11-parameter-template-administration) | Administer parameter templates and safe template merges. | Done |
 | [F-S12](#f-s12-global-parameter-value-search-and-delete) | Search parameter values across inventory and delete individual rows safely. | Done |
 | [F-S13](#f-s13-category-parameter-defaults) | Manage category parameter defaults using existing templates. | Done |
-| [F-S14](#f-s14-bulk-parameter-propagation-and-audit-workflows) | Add dry-run bulk parameter propagation and consistency audits. | Future |
+| [F-S14](#f-s14-bulk-parameter-propagation-and-audit-workflows) | Add dry-run bulk parameter propagation and consistency audits. | Done |
 | [F-S15](#f-s15-live-order-entry-tool-hardening) | Close gaps found during live order-entry use of the MCP tools. | Future |
 | [F-S16](#f-s16-mcp-go-sdk-v17-and-2026-07-28-protocol-adoption) | Adopt MCP Go SDK v1.7 and the MCP 2026-07-28 protocol safely. | Done |
 | [F-S17](#f-s17-native-mcp-elicitation-for-structured-clarifications) | Add native MCP elicitation while preserving structured clarification fallback. | Planned |
@@ -1274,9 +1274,13 @@ Tasks:
 
 ### F-S14: Bulk Parameter Propagation And Audit Workflows
 
-- Status: `Future`
+- Status: `Done`
 - Issue: [#59](https://github.com/davidvanlaatum/inventree-mcp/issues/59)
 - Depends on: F-S11, F-S12, F-S13, product review, QA review, and infosec review
+- Progress: implemented on `codex/f-s14-bulk-parameter-workflows`. The operator approved explicit single-template value propagation, exact-category matching by default with opt-in descendants, create-missing behavior by default with explicit overwrite, no implicit template/category-link creation or deletion, a 100-part plan bound, and principal-bound five-minute single-use confirmation plans.
+- Validation: `go test -short -count=1 ./...` passed; `golangci-lint run ./...` reported 0 issues; `go test -v -count=1 ./internal/inventree ./internal/tools` passed against pinned `inventree/inventree:1.4.3`, including exact-category/descendant selection, dry-run no-change, confirmed create/update, read-back, and audit behavior; `git diff --check` passed. Short-test package coverage is `91.3%` for `internal/inventree` versus `91.3%` on `origin/main`, and `81.2%` for `internal/tools` versus `80.9%` on `origin/main`.
+- Review: Senior Go Developer, Senior QA / Test Architect, Senior Product Manager, and Senior Infosec Reviewer reviews completed. Initial findings covered ineffective category/template narrowing, hidden same-name peers, propagation-only limits applied to audits, multiplicative scans, missing explicit cascade behavior, update-ID substitution, incomplete drift and verification boundaries, destructive-scope classification, raw upstream error disclosure, value length, ambiguous dry-run execution wording, and inconsistent budget/destructive documentation. Fixes apply both filters server-side, share a 1,000-unit request-and-record audit budget, cache category linkage, send explicit cascade values, preserve stable IDs, revalidate before every action, sanitize output and logs, require destructive scope, enforce the 500-character bound, and add focused unit plus pinned Testcontainers regressions. Final focused reruns from all four roles found no actionable findings.
+- Residual risk: confirmation plans are process-local and expire after five minutes, so restarts require a fresh dry run. InvenTree does not expose atomic compare-and-set across the final per-action state check and write; operators must prevent concurrent parameter administration during confirmed execution, and any partial failure requires current-state inspection plus a fresh plan. Audits fail closed when the selected scope exceeds the shared 1,000-unit upstream request-and-record budget; a combined category/template scope has no finer slice in this tool.
 - Scope: add safe bulk operator workflows for parameter propagation across matched parts and consistency audits that identify duplicate or overlapping templates and overloaded fields.
 - Acceptance:
   - Bulk propagation supports `dry_run:true`, explicit part/category/template filters, duplicate detection, row-level planned actions, and operator confirmation before writes.
@@ -1287,11 +1291,11 @@ Tasks:
 
 Tasks:
 
-- [ ] Define bounded filter and confirmation policy for bulk propagation.
-- [ ] Implement parameter consistency audit read-only workflow.
-- [ ] Implement dry-run bulk propagation planner.
-- [ ] Implement confirmed bulk propagation executor with read-back verification.
-- [ ] Update operator recipes and prompts for parameter audit and bulk propagation review.
+- [x] Define bounded filter and confirmation policy for bulk propagation.
+- [x] Implement parameter consistency audit read-only workflow.
+- [x] Implement dry-run bulk propagation planner.
+- [x] Implement confirmed bulk propagation executor with read-back verification.
+- [x] Update operator recipes and prompts for parameter audit and bulk propagation review.
 
 ### F-S15: Live Order Entry Tool Hardening
 

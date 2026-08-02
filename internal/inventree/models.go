@@ -42,6 +42,12 @@ type Part struct {
 	Image           *string `json:"image"`
 }
 
+type PartPage struct {
+	Count   int
+	Results []Part
+	HasMore bool
+}
+
 type PartThumb struct {
 	Image string `json:"image"`
 }

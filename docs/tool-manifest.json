@@ -40,6 +40,40 @@
       "http_registration": "registered_with_oauth_scope_guard"
     },
     {
+      "name": "audit_parameter_consistency",
+      "milestone_status": "milestone_1",
+      "mutation_class": "read_only",
+      "scopes": [
+        "inventree.read"
+      ],
+      "annotations": {
+        "read_only": true,
+        "destructive": false,
+        "idempotent": true,
+        "open_world": false
+      },
+      "upload_sources": null,
+      "http_registration": "registered"
+    },
+    {
+      "name": "bulk_propagate_part_parameters",
+      "milestone_status": "milestone_1",
+      "mutation_class": "destructive",
+      "scopes": [
+        "inventree.read",
+        "inventree.write",
+        "inventree.destructive"
+      ],
+      "annotations": {
+        "read_only": false,
+        "destructive": true,
+        "idempotent": false,
+        "open_world": false
+      },
+      "upload_sources": null,
+      "http_registration": "registered_with_oauth_scope_guard"
+    },
+    {
       "name": "create_category_parameter_default",
       "milestone_status": "milestone_1",
       "mutation_class": "write",
@@ -924,6 +958,11 @@
     },
     {
       "name": "new_part_entry_checklist",
+      "milestone_status": "milestone_1",
+      "registered": true
+    },
+    {
+      "name": "parameter_consistency_review",
       "milestone_status": "milestone_1",
       "registered": true
     },

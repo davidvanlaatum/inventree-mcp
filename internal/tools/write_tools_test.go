@@ -423,6 +423,10 @@ func TestWriteToolAuthorizationsUseWriteScope(t *testing.T) {
 			a.Equal("write", auth.MutationClass)
 			a.Equal([]string{ScopeInventreeRead, ScopeInventreeWrite}, auth.Scopes)
 			a.Equal(WriteAnnotations, auth.Annotations)
+		case BulkPropagatePartParametersToolName:
+			a.Equal("destructive", auth.MutationClass)
+			a.Equal([]string{ScopeInventreeRead, ScopeInventreeWrite, ScopeInventreeDestructive}, auth.Scopes)
+			a.True(auth.Annotations.Destructive)
 		case CreateStockItemToolName, InitialStockWorkflowToolName:
 			a.Equal("operational", auth.MutationClass)
 			a.Equal([]string{ScopeInventreeWrite, ScopeInventreeOperational}, auth.Scopes)

@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/davidvanlaatum/dvgoutils"
 	"github.com/davidvanlaatum/dvgoutils/logging/testhandler"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -53,6 +54,19 @@ func TestReadMethodsUseExpectedEndpoints(t *testing.T) {
 			wantPath:  "/api/part/",
 			wantQuery: url.Values{"search": []string{"resistor"}, "limit": []string{"7"}, "offset": []string{"3"}},
 			response:  `{"count":1,"next":null,"previous":null,"results":[{"pk":10,"name":"resistor"}]}`,
+		},
+		{
+			name: "search parts page by category",
+			call: func(ctx context.Context, client *Client) error {
+				page, err := client.SearchPartsPage(ctx, PartQuery{CategoryID: 20, Cascade: dvgoutils.Ptr(true), Limit: 101, Offset: 2})
+				if err == nil && !page.HasMore {
+					return errors.New("expected another part page")
+				}
+				return err
+			},
+			wantPath:  "/api/part/",
+			wantQuery: url.Values{"category": []string{"20"}, "cascade": []string{"true"}, "limit": []string{"101"}, "offset": []string{"2"}},
+			response:  `{"count":200,"next":"https://inventory.example.test/api/part/?limit=101&offset=103","previous":null,"results":[{"pk":10,"name":"resistor","category":20}]}`,
 		},
 		{
 			name: "get part",
@@ -200,6 +214,19 @@ func TestReadMethodsUseExpectedEndpoints(t *testing.T) {
 			wantPath:  "/api/parameter/template/",
 			wantQuery: url.Values{"search": []string{"Resistance"}},
 			response:  `{"count":1,"next":null,"previous":null,"results":[{"pk":70,"name":"Resistance","units":"ohm","choices":"10k,22k"}]}`,
+		},
+		{
+			name: "search parameter template page",
+			call: func(ctx context.Context, client *Client) error {
+				page, err := client.SearchParameterTemplatesPage(ctx, SearchQuery{Limit: 100, Offset: 100})
+				if err == nil && page.Next == nil {
+					return errors.New("expected another template page")
+				}
+				return err
+			},
+			wantPath:  "/api/parameter/template/",
+			wantQuery: url.Values{"limit": []string{"100"}, "offset": []string{"100"}},
+			response:  `{"count":201,"next":"https://inventory.example.test/api/parameter/template/?limit=100&offset=200","previous":null,"results":[{"pk":70,"name":"Resistance"}]}`,
 		},
 		{
 			name: "get parameter template",
