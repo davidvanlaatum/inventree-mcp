@@ -729,6 +729,92 @@ func TestMilestoneHappyPathToolsAgainstInvenTree(t *testing.T) {
 		a.True(parentDeleted.Verified)
 	})
 
+	t.Run("bulk_parameter_propagation_and_audit", func(t *testing.T) {
+		r := require.New(t)
+		a := assert.New(t)
+		ctx, _, _ := testhandler.SetupTestHandler(t)
+		fixture := newMilestoneToolFixture(t, shared)
+		category := fixture.ensure(t, testenv.FixtureCategory)
+		first := fixture.createPart(t, "bulk-parameter-first")
+		second := fixture.createPart(t, "bulk-parameter-second")
+		templateName, err := fixture.run.Name("bulk-parameter-template")
+		r.NoError(err)
+		template, err := fixture.client.CreateParameterTemplate(ctx, inventree.ParameterTemplateCreate{Name: templateName, Units: "", Description: "bulk propagation integration", ModelType: "part.part", Enabled: true})
+		r.NoError(err)
+		link, err := fixture.client.CreateCategoryParameterTemplate(ctx, inventree.CategoryParameterTemplateCreate{Category: category.ID, Template: template.PK, DefaultValue: "category-default"})
+		r.NoError(err)
+		existing, err := fixture.client.CreatePartParameter(ctx, inventree.NewPartParameter(first.PK, template.PK, "before"))
+		r.NoError(err)
+		value := "propagated"
+		childName, err := fixture.run.Name("bulk-parameter-child-category")
+		r.NoError(err)
+		var childCategory inventree.Category
+		r.NoError(fixture.client.Post(ctx, "/api/part/category/", map[string]any{"name": childName, "description": "bulk propagation descendant fixture", "parent": category.ID, "structural": false}, &childCategory))
+		r.NotZero(childCategory.PK)
+		location := fixture.ensure(t, testenv.FixtureLocation)
+		childPartName, err := fixture.run.Name("bulk-parameter-child-part")
+		r.NoError(err)
+		childPart, err := fixture.client.CreatePart(ctx, inventree.PartCreate{Name: childPartName, Category: dvgoutils.Ptr(childCategory.PK), DefaultLocation: dvgoutils.Ptr(location.ID), Active: dvgoutils.Ptr(true), Component: dvgoutils.Ptr(true)})
+		r.NoError(err)
+		childRowsBefore, err := fixture.client.SearchPartParameters(ctx, inventree.PartParameterQuery{PartID: childPart.PK, TemplateID: template.PK})
+		r.NoError(err)
+
+		_, exactCategory, err := bulkPropagatePartParameters(fixture.deps())(ctx, &mcp.CallToolRequest{}, BulkPropagatePartParametersInput{DryRun: true, TemplateID: template.PK, Value: &value, CategoryID: category.ID})
+		r.NoError(err)
+		r.Len(exactCategory.Plan.Actions, 2)
+		a.Equal([]int{first.PK, second.PK}, exactCategory.Plan.PartIDs)
+		_, descendantCategory, err := bulkPropagatePartParameters(fixture.deps())(ctx, &mcp.CallToolRequest{}, BulkPropagatePartParametersInput{DryRun: true, TemplateID: template.PK, Value: &value, CategoryID: category.ID, IncludeSubcategories: true})
+		r.NoError(err)
+		r.Len(descendantCategory.Plan.Actions, 3)
+		a.Contains(descendantCategory.Plan.PartIDs, childPart.PK)
+		childRows, err := fixture.client.SearchPartParameters(ctx, inventree.PartParameterQuery{PartID: childPart.PK, TemplateID: template.PK})
+		r.NoError(err)
+		a.Equal(childRowsBefore, childRows, "category selector dry runs must not change rows")
+
+		input := BulkPropagatePartParametersInput{DryRun: true, TemplateID: template.PK, Value: &value, PartIDs: []int{second.PK, first.PK}, OverwriteExisting: true}
+
+		_, plan, err := bulkPropagatePartParameters(fixture.deps())(ctx, &mcp.CallToolRequest{}, input)
+		r.NoError(err)
+		a.Equal(StatusOK, plan.Status)
+		r.NotEmpty(plan.PlanHash)
+		r.Len(plan.Plan.Actions, 2)
+		a.Equal("update", plan.Plan.Actions[0].Action)
+		a.Equal("create", plan.Plan.Actions[1].Action)
+
+		input.DryRun = false
+		input.Confirm = true
+		input.PlanHash = plan.PlanHash
+		_, executed, err := bulkPropagatePartParameters(fixture.deps())(ctx, &mcp.CallToolRequest{}, input)
+		r.NoError(err)
+		a.Equal(StatusOK, executed.Status)
+		a.Equal(2, executed.Applied)
+		a.Zero(executed.Failed)
+		updated, err := fixture.client.GetPartParameter(ctx, existing.PK)
+		r.NoError(err)
+		a.Equal(value, updated.Data)
+		secondRows, err := fixture.client.SearchPartParameters(ctx, inventree.PartParameterQuery{PartID: second.PK, TemplateID: template.PK})
+		r.NoError(err)
+		r.Len(secondRows, 1)
+		a.Equal(value, secondRows[0].Data)
+
+		_, audit, err := auditParameterConsistency(fixture.deps())(ctx, &mcp.CallToolRequest{}, AuditParameterConsistencyInput{TemplateID: template.PK, CategoryID: category.ID})
+		r.NoError(err)
+		a.Equal(StatusOK, audit.Status)
+		a.Equal(2, audit.RowsRead)
+		mismatches := 0
+		for _, finding := range audit.Findings {
+			if finding.Kind == "category_default_mismatch" {
+				mismatches++
+			}
+		}
+		a.Equal(2, mismatches)
+
+		r.NoError(fixture.client.DeletePartParameter(ctx, existing.PK))
+		r.NoError(fixture.client.DeletePartParameter(ctx, secondRows[0].PK))
+		r.NoError(fixture.client.DeleteCategoryParameterTemplate(ctx, link.PK))
+		r.NoError(fixture.client.DeleteParameterTemplate(ctx, template.PK))
+	})
+
 	t.Run("deferred_file_surface_boundaries_return_clarifications", func(t *testing.T) {
 		r := require.New(t)
 		a := assert.New(t)
@@ -755,11 +841,12 @@ func TestMilestoneHappyPathToolsAgainstInvenTree(t *testing.T) {
 }
 
 type milestoneToolFixture struct {
-	shared         *testenv.SharedInvenTree
-	run            *testenv.Run
-	account        *testenv.Account
-	client         *inventree.Client
-	stockPlanStore *stockPlanStore
+	shared             *testenv.SharedInvenTree
+	run                *testenv.Run
+	account            *testenv.Account
+	client             *inventree.Client
+	stockPlanStore     *stockPlanStore
+	parameterPlanStore *parameterPlanStore
 }
 
 type attachmentTarget struct {
@@ -780,11 +867,12 @@ func newMilestoneToolFixture(t *testing.T, shared *testenv.SharedInvenTree) mile
 	r.NoError(err)
 
 	return milestoneToolFixture{
-		shared:         shared,
-		run:            run,
-		account:        account,
-		client:         client,
-		stockPlanStore: newStockPlanStore(time.Now, randomStockPlanToken),
+		shared:             shared,
+		run:                run,
+		account:            account,
+		client:             client,
+		stockPlanStore:     newStockPlanStore(time.Now, randomStockPlanToken),
+		parameterPlanStore: newParameterPlanStore(time.Now, randomStockPlanToken),
 	}
 }
 
@@ -793,9 +881,10 @@ func (f milestoneToolFixture) deps() Dependencies {
 		ClientFromContext: func(context.Context) (any, error) {
 			return f.client, nil
 		},
-		UploadMode:     upload.ModeStdio,
-		UploadMaxBytes: upload.DefaultMaxBytes,
-		stockPlanStore: f.stockPlanStore,
+		UploadMode:         upload.ModeStdio,
+		UploadMaxBytes:     upload.DefaultMaxBytes,
+		stockPlanStore:     f.stockPlanStore,
+		parameterPlanStore: f.parameterPlanStore,
 	}
 }
 

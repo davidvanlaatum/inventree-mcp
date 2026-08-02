@@ -39,6 +39,8 @@ const (
 	CreateCategoryParameterDefaultToolName  = "create_category_parameter_default"
 	UpdateCategoryParameterDefaultToolName  = "update_category_parameter_default"
 	DeleteCategoryParameterDefaultToolName  = "delete_category_parameter_default"
+	AuditParameterConsistencyToolName       = "audit_parameter_consistency"
+	BulkPropagatePartParametersToolName     = "bulk_propagate_part_parameters"
 	SearchCompaniesToolName                 = "search_companies"
 	SearchSuppliersToolName                 = "search_suppliers"
 	SearchManufacturersToolName             = "search_manufacturers"
@@ -107,6 +109,7 @@ var lookupToolNames = []string{
 	GetPartParametersToolName,
 	SearchPartParametersToolName,
 	SearchCategoryParameterDefaultsToolName,
+	AuditParameterConsistencyToolName,
 	SearchCompaniesToolName,
 	SearchSuppliersToolName,
 	SearchManufacturersToolName,
@@ -135,6 +138,7 @@ var writeToolNames = []string{
 	CreateCategoryParameterDefaultToolName,
 	UpdateCategoryParameterDefaultToolName,
 	DeleteCategoryParameterDefaultToolName,
+	BulkPropagatePartParametersToolName,
 	CreateCompanyToolName,
 	CreateSupplierPartToolName,
 	CreateManufacturerPartToolName,
@@ -184,6 +188,9 @@ func init() {
 		switch name {
 		case CreateParameterTemplateToolName, UpdateParameterTemplateToolName, CreateCategoryParameterDefaultToolName, UpdateCategoryParameterDefaultToolName:
 			scopes = []string{ScopeInventreeRead, ScopeInventreeWrite}
+		case BulkPropagatePartParametersToolName:
+			scopes = []string{ScopeInventreeRead, ScopeInventreeWrite, ScopeInventreeDestructive}
+			mutationClass = "destructive"
 		case CreateStockItemToolName, InitialStockWorkflowToolName:
 			scopes = []string{ScopeInventreeWrite, ScopeInventreeOperational}
 			mutationClass = "operational"
@@ -206,7 +213,7 @@ func init() {
 		if name == UploadAttachmentFromURLToolName {
 			annotations.OpenWorld = true
 		}
-		if name == DeleteAttachmentToolName || name == DeletePartParameterToolName || name == DeleteParameterTemplateToolName || name == MergeParameterTemplatesToolName || name == DeleteCategoryParameterDefaultToolName {
+		if name == DeleteAttachmentToolName || name == DeletePartParameterToolName || name == DeleteParameterTemplateToolName || name == MergeParameterTemplatesToolName || name == DeleteCategoryParameterDefaultToolName || name == BulkPropagatePartParametersToolName {
 			annotations.Destructive = true
 		}
 		ToolAuthorizations[name] = ToolAuthorization{
@@ -370,6 +377,7 @@ func registerLookupTools(server *mcp.Server, deps Dependencies) {
 	addReadOnlyTool(server, deps, GetPartParametersToolName, "Get part parameters", "Lists parameter values for one part.", getPartParameters(deps))
 	addReadOnlyTool(server, deps, SearchPartParametersToolName, "Search part parameters", "Searches parameter values across parts using stable filters.", searchPartParameterValues(deps))
 	registerCategoryParameterLookupTools(server, deps)
+	registerParameterBulkLookupTools(server, deps)
 	addReadOnlyTool(server, deps, SearchCompaniesToolName, "Search companies", "Searches InvenTree companies.", searchCompanies(deps))
 	addReadOnlyTool(server, deps, SearchSuppliersToolName, "Search suppliers", "Searches companies with the supplier role.", searchSuppliers(deps))
 	addReadOnlyTool(server, deps, SearchManufacturersToolName, "Search manufacturers", "Searches companies with the manufacturer role.", searchManufacturers(deps))

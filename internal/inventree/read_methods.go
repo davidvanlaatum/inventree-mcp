@@ -75,6 +75,11 @@ func (c *Client) SearchParts(ctx context.Context, query SearchQuery) ([]Part, er
 	return listAll[Part](ctx, c, "/api/part/", query.values())
 }
 
+func (c *Client) SearchPartsPage(ctx context.Context, query PartQuery) (PartPage, error) {
+	page, err := listPage[Part](ctx, c, "/api/part/", query.values())
+	return PartPage{Count: page.Count, Results: page.Results, HasMore: page.Next != nil && *page.Next != ""}, err
+}
+
 func (c *Client) GetPart(ctx context.Context, id int) (Part, error) {
 	var out Part
 	err := c.get(ctx, fmt.Sprintf("/api/part/%d/", id), &out)
@@ -151,6 +156,10 @@ func (c *Client) GetPartParameter(ctx context.Context, id int) (Parameter, error
 
 func (c *Client) SearchParameterTemplates(ctx context.Context, query SearchQuery) ([]ParameterTemplate, error) {
 	return listAll[ParameterTemplate](ctx, c, "/api/parameter/template/", query.values())
+}
+
+func (c *Client) SearchParameterTemplatesPage(ctx context.Context, query SearchQuery) (Page[ParameterTemplate], error) {
+	return listPage[ParameterTemplate](ctx, c, "/api/parameter/template/", query.values())
 }
 
 func (c *Client) GetParameterTemplate(ctx context.Context, id int) (ParameterTemplate, error) {
