@@ -392,6 +392,54 @@ func TestDeletePartParameterUsesStableDetailEndpoint(t *testing.T) {
 	r.NoError(client.DeletePartParameter(ctx, 60))
 }
 
+func TestDeletePartParameterReportsRequestAndResponseErrors(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name      string
+		ctx       func(t *testing.T) context.Context
+		response  func(*http.Request) (*http.Response, error)
+		wantError string
+	}{
+		{
+			name: "request construction",
+			ctx: func(t *testing.T) context.Context {
+				return nil
+			},
+			response: func(req *http.Request) (*http.Response, error) {
+				return jsonResponse(req, http.StatusNoContent, ``), nil
+			},
+			wantError: "nil Context",
+		},
+		{
+			name: "API response",
+			response: func(req *http.Request) (*http.Response, error) {
+				return jsonResponse(req, http.StatusConflict, `{"detail":"parameter is in use"}`), nil
+			},
+			wantError: "parameter is in use",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			r := require.New(t)
+			ctx, _, _ := testhandler.SetupTestHandler(t)
+			if tt.ctx != nil {
+				ctx = tt.ctx(t)
+			}
+			client, err := NewClient(Config{
+				BaseURL:    "https://inventory.example.test",
+				Credential: Credential{Scheme: AuthSchemeToken, Token: "secret"},
+				HTTPClient: &http.Client{Transport: roundTripFunc(tt.response)},
+			})
+			r.NoError(err)
+
+			r.ErrorContains(client.DeletePartParameter(ctx, 60), tt.wantError)
+		})
+	}
+}
+
 func TestAttachmentWriteMethodsUseExpectedEndpoints(t *testing.T) {
 	t.Parallel()
 

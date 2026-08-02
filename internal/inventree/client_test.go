@@ -1,6 +1,7 @@
 package inventree
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
@@ -393,6 +394,88 @@ func TestListAllRejectsInvalidInputs(t *testing.T) {
 
 	_, err = ListAll[struct{}](ctx, client, "/api/part/", nil)
 	r.Error(err)
+}
+
+func TestListPageHandlesResponseShapesAndErrors(t *testing.T) {
+	t.Parallel()
+
+	type part struct {
+		PK int `json:"pk"`
+	}
+
+	t.Run("nil client", func(t *testing.T) {
+		t.Parallel()
+		r := require.New(t)
+		ctx, _, _ := testhandler.SetupTestHandler(t)
+
+		_, err := listPage[part](ctx, nil, "/api/part/", nil)
+		r.ErrorContains(err, "client is required")
+	})
+
+	tests := []struct {
+		name      string
+		ctx       func(t *testing.T) context.Context
+		transport roundTripFunc
+		want      Page[part]
+		wantError string
+	}{
+		{
+			name: "request construction",
+			ctx: func(t *testing.T) context.Context {
+				return nil
+			},
+			transport: func(req *http.Request) (*http.Response, error) {
+				return jsonResponse(req, http.StatusOK, `[]`), nil
+			},
+			wantError: "nil Context",
+		},
+		{
+			name: "transport",
+			transport: func(_ *http.Request) (*http.Response, error) {
+				return nil, errors.New("transport failed")
+			},
+			wantError: "transport failed",
+		},
+		{
+			name: "invalid response shape",
+			transport: func(req *http.Request) (*http.Response, error) {
+				return jsonResponse(req, http.StatusOK, `"not-a-page-or-array"`), nil
+			},
+			wantError: "cannot unmarshal string",
+		},
+		{
+			name: "unpaginated array",
+			transport: func(req *http.Request) (*http.Response, error) {
+				return jsonResponse(req, http.StatusOK, `[{"pk":1},{"pk":2}]`), nil
+			},
+			want: Page[part]{Count: 2, Results: []part{{PK: 1}, {PK: 2}}},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			r := require.New(t)
+			ctx, _, _ := testhandler.SetupTestHandler(t)
+			if tt.ctx != nil {
+				ctx = tt.ctx(t)
+			}
+			client, err := NewClient(Config{
+				BaseURL:    "https://inventory.example.test",
+				Credential: Credential{Scheme: AuthSchemeToken, Token: "secret"},
+				HTTPClient: &http.Client{Transport: tt.transport},
+			})
+			r.NoError(err)
+
+			got, err := listPage[part](ctx, client, "/api/part/", nil)
+			if tt.wantError != "" {
+				r.ErrorContains(err, tt.wantError)
+				return
+			}
+			r.NoError(err)
+			r.Equal(tt.want, got)
+		})
+	}
 }
 
 func TestPatchFieldsPreserveOmittedAndExplicitZeroValues(t *testing.T) {
