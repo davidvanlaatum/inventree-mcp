@@ -137,6 +137,36 @@ func TestClientMetadataFetcherRejectsUnconfiguredSameOriginPathWithoutFetch(t *t
 	r.Zero(requests)
 }
 
+func TestClientMetadataValidationRejectsUnsupportedSecurityShapes(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	clientID := "https://client.example.test/metadata"
+	valid := ClientMetadata{
+		RedirectURIs:            []string{"https://chatgpt.com/connector/oauth/callback_123"},
+		TokenEndpointAuthMethod: "private_key_jwt",
+		JWKSURI:                 "https://client.example.test/jwks",
+	}
+
+	tests := []struct {
+		name     string
+		metadata ClientMetadata
+	}{
+		{name: "missing private key jwt", metadata: ClientMetadata{JWKSURI: valid.JWKSURI}},
+		{name: "missing jwks", metadata: ClientMetadata{TokenEndpointAuthMethod: "private_key_jwt"}},
+		{name: "cross origin jwks", metadata: ClientMetadata{TokenEndpointAuthMethod: "private_key_jwt", JWKSURI: "https://other.example.test/jwks"}},
+		{name: "unsupported response type", metadata: ClientMetadata{TokenEndpointAuthMethod: "private_key_jwt", JWKSURI: valid.JWKSURI, ResponseTypes: []string{"token"}}},
+		{name: "unsupported grant type", metadata: ClientMetadata{TokenEndpointAuthMethod: "private_key_jwt", JWKSURI: valid.JWKSURI, GrantTypes: []string{"client_credentials"}}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			require.New(t).ErrorIs(validateMetadataShape(tt.metadata, clientID, ""), ErrInvalidClientMetadata)
+		})
+	}
+
+	r.NoError(validateMetadataShape(valid, clientID, valid.RedirectURIs[0]))
+}
+
 func TestClientMetadataFetcherRejectsOversizeTimeoutAndUnsafeRedirects(t *testing.T) {
 	t.Run("bounded read", func(t *testing.T) {
 		t.Parallel()

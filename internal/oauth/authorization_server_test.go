@@ -3,6 +3,8 @@ package oauth
 import (
 	"bytes"
 	"context"
+	"crypto/ecdsa"
+	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/rsa"
 	"encoding/base64"
@@ -57,6 +59,63 @@ func TestPrivateKeyJWTVerifierValidatesJWKSClaimsAndReplay(t *testing.T) {
 	r.ErrorIs(verifier.Verify(ctx, clientID, metadata, ClientAssertionTypeJWTBearer, wrongAudience), ErrInvalidClientAssertion)
 	missingType := signedClientAssertion(t, key, "key-1", clientID, verifier.TokenEndpoint, "assertion-3", now)
 	r.ErrorIs(verifier.Verify(ctx, clientID, metadata, "", missingType), ErrInvalidClientAssertion)
+}
+
+func TestPrivateKeyJWTVerifierAcceptsSupportedPS256AndES256(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	rsaKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	r.NoError(err)
+	ecKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	r.NoError(err)
+	now := time.Date(2026, 8, 2, 3, 0, 0, 0, time.UTC)
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		switch req.URL.Path {
+		case "/ps256":
+			_ = json.NewEncoder(w).Encode(testRSAJWKS(&rsaKey.PublicKey, "ps-key", "PS256"))
+		case "/es256":
+			_ = json.NewEncoder(w).Encode(testECJWKS(&ecKey.PublicKey, "es-key"))
+		default:
+			http.NotFound(w, req)
+		}
+	}))
+	defer server.Close()
+	clientID := server.URL + "/client"
+	tokenEndpoint := "https://mcp.example.test/token"
+
+	tests := []struct {
+		name   string
+		path   string
+		kid    string
+		method jwt.SigningMethod
+		key    any
+	}{
+		{name: "PS256", path: "/ps256", kid: "ps-key", method: jwt.SigningMethodPS256, key: rsaKey},
+		{name: "ES256", path: "/es256", kid: "es-key", method: jwt.SigningMethodES256, key: ecKey},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx, _, _ := testhandler.SetupTestHandler(t)
+			claims := jwt.RegisteredClaims{
+				Issuer: clientID, Subject: clientID, Audience: jwt.ClaimStrings{tokenEndpoint}, ID: "assertion-" + tt.name,
+				IssuedAt: jwt.NewNumericDate(now), ExpiresAt: jwt.NewNumericDate(now.Add(time.Minute)),
+			}
+			token := jwt.NewWithClaims(tt.method, claims)
+			token.Header["kid"] = tt.kid
+			signed, signErr := token.SignedString(tt.key)
+			require.NoError(t, signErr)
+			verifier := PrivateKeyJWTVerifier{
+				HTTPClient: server.Client(), TokenEndpoint: tokenEndpoint,
+				ReplayStore: NewAssertionReplayStore(8, func() time.Time { return now }), Clock: fakeClock{now: now},
+			}
+			keys, fetchErr := verifier.fetchKeys(ctx, clientID, server.URL+tt.path)
+			require.NoError(t, fetchErr)
+			require.Len(t, keys, 1)
+			_, keyErr := keys[0].publicKey()
+			require.NoError(t, keyErr)
+			require.NoError(t, verifier.Verify(ctx, clientID, ClientMetadata{JWKSURI: server.URL + tt.path}, ClientAssertionTypeJWTBearer, signed))
+		})
+	}
 }
 
 func TestPrivateKeyJWTVerifierRejectsInvalidClaimsKeysAndAlgorithms(t *testing.T) {
@@ -593,10 +652,21 @@ func signedClientAssertion(t *testing.T, key *rsa.PrivateKey, kid string, client
 }
 
 func testJWKS(key *rsa.PublicKey, kid string) map[string]any {
+	return testRSAJWKS(key, kid, "RS256")
+}
+
+func testRSAJWKS(key *rsa.PublicKey, kid string, algorithm string) map[string]any {
 	e := big.NewInt(int64(key.E)).Bytes()
 	return map[string]any{"keys": []map[string]any{{
-		"kty": "RSA", "use": "sig", "alg": "RS256", "kid": kid,
+		"kty": "RSA", "use": "sig", "alg": algorithm, "kid": kid,
 		"n": base64.RawURLEncoding.EncodeToString(key.N.Bytes()), "e": base64.RawURLEncoding.EncodeToString(e),
+	}}}
+}
+
+func testECJWKS(key *ecdsa.PublicKey, kid string) map[string]any {
+	return map[string]any{"keys": []map[string]any{{
+		"kty": "EC", "use": "sig", "alg": "ES256", "kid": kid, "crv": "P-256",
+		"x": base64.RawURLEncoding.EncodeToString(key.X.Bytes()), "y": base64.RawURLEncoding.EncodeToString(key.Y.Bytes()),
 	}}}
 }
 
