@@ -169,7 +169,8 @@ func TestStdioServerListsOnlyMilestonePrompts(t *testing.T) {
 		tools.ParameterReuseChecklistPromptName: {
 			"structured clarification",
 			"stable template_id",
-			"Do not create new parameter templates",
+			"Use create_parameter_template only",
+			"merge_parameter_templates with dry_run:true",
 		},
 		tools.AttachmentImageChecklistPromptName: {
 			"structured clarification",

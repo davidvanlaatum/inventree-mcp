@@ -49,7 +49,8 @@ var PromptManifest = []PromptManifestEntry{
 - Search existing parameter templates and read the part's current parameters first.
 - Prefer templates already linked to the part category; show global or unlinked matches as context only.
 - Return structured clarification and ask the operator to choose a stable template_id when same-name templates differ by unit, choices, checkbox behavior, or category link.
-- Do not create new parameter templates or category links unless a later tool explicitly supports that workflow.
+- Reuse an existing template whenever it is suitable. Use create_parameter_template only when the operator supplies every explicit template field and the collision preflight finds no same-name template.
+- Use merge_parameter_templates with dry_run:true before consolidating duplicates. Never overwrite a part that already has both source and target rows; resolve reported conflicts and category-default links explicitly.
 - Retry set_part_parameters only with stable part_id, template_id or parameter_id, and an explicit value shape.`,
 	},
 	{

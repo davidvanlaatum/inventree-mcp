@@ -67,6 +67,17 @@ type ParameterCreate struct {
 	Data      string `json:"data"`
 }
 
+type ParameterTemplateCreate struct {
+	Name          string `json:"name"`
+	Units         string `json:"units"`
+	Description   string `json:"description"`
+	ModelType     string `json:"model_type"`
+	Checkbox      bool   `json:"checkbox"`
+	Choices       string `json:"choices"`
+	SelectionList *int   `json:"selectionlist,omitempty"`
+	Enabled       bool   `json:"enabled"`
+}
+
 type StockItemCreate struct {
 	Part      int     `json:"part"`
 	Location  int     `json:"location"`
@@ -200,6 +211,26 @@ func (c *Client) UpdatePartParameter(ctx context.Context, id int, fields PatchFi
 
 func (c *Client) DeletePartParameter(ctx context.Context, id int) error {
 	req, err := c.NewRequest(ctx, http.MethodDelete, fmt.Sprintf("/api/parameter/%d/", id), nil, nil)
+	if err != nil {
+		return err
+	}
+	return c.DoJSON(req, nil)
+}
+
+func (c *Client) CreateParameterTemplate(ctx context.Context, input ParameterTemplateCreate) (ParameterTemplate, error) {
+	var out ParameterTemplate
+	err := c.Post(ctx, "/api/parameter/template/", input, &out)
+	return out, err
+}
+
+func (c *Client) UpdateParameterTemplate(ctx context.Context, id int, fields PatchFields) (ParameterTemplate, error) {
+	var out ParameterTemplate
+	err := c.Patch(ctx, fmt.Sprintf("/api/parameter/template/%d/", id), fields, &out)
+	return out, err
+}
+
+func (c *Client) DeleteParameterTemplate(ctx context.Context, id int) error {
+	req, err := c.NewRequest(ctx, http.MethodDelete, fmt.Sprintf("/api/parameter/template/%d/", id), nil, nil)
 	if err != nil {
 		return err
 	}

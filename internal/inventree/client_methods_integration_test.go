@@ -378,6 +378,31 @@ func TestClientMethodsAgainstInvenTree(t *testing.T) {
 		r.Equal(inventree.ErrorKindNotFound, apiErr.Kind)
 	})
 
+	t.Run("parameter_template_administration", func(t *testing.T) {
+		r := require.New(t)
+		ctx, _, _ := testhandler.SetupTestHandler(t)
+		fixture := newClientMethodFixture(t, shared)
+		name, err := fixture.run.Name("template-admin")
+		r.NoError(err)
+		created, err := fixture.client.CreateParameterTemplate(ctx, inventree.ParameterTemplateCreate{
+			Name: name, Units: "ohm", Description: "integration template", ModelType: "part.part", Checkbox: false, Choices: "10k,22k", Enabled: true,
+		})
+		r.NoError(err)
+		r.NotZero(created.PK)
+		updated, err := fixture.client.UpdateParameterTemplate(ctx, created.PK, inventree.PatchFields{"description": inventree.Set("updated integration template"), "choices": inventree.Set("")})
+		r.NoError(err)
+		r.Equal("updated integration template", updated.Description)
+		r.Empty(updated.Choices)
+		page, err := fixture.client.SearchTemplateParametersPage(ctx, inventree.TemplateParameterQuery{TemplateID: created.PK, Limit: 100})
+		r.NoError(err)
+		r.Empty(page.Results)
+		r.NoError(fixture.client.DeleteParameterTemplate(ctx, created.PK))
+		_, err = fixture.client.GetParameterTemplate(ctx, created.PK)
+		var apiErr *inventree.APIError
+		r.ErrorAs(err, &apiErr)
+		r.Equal(inventree.ErrorKindNotFound, apiErr.Kind)
+	})
+
 	t.Run("attachment", func(t *testing.T) {
 		r := require.New(t)
 		ctx, _, _ := testhandler.SetupTestHandler(t)

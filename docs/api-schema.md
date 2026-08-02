@@ -56,6 +56,18 @@ HTTP MCP connector auth mapping:
 - STDIO mode may use configured `Token` or `Bearer` upstream credentials directly.
 - HTTP mode should not pass raw InvenTree `Authorization` headers through unchanged. The MCP server should validate its own OAuth access-token envelope, recover the sealed upstream credential, and then call InvenTree using `Authorization: Token ...` or `Authorization: Bearer ...`.
 
+## Verified Parameter Template Endpoints
+
+- `GET /api/parameter/template/` searches parameter templates.
+- `POST /api/parameter/template/` creates a template from the `ParameterTemplate` schema.
+- `GET /api/parameter/template/{id}/` reads one template.
+- `PATCH /api/parameter/template/{id}/` preserves omitted fields through `PatchedParameterTemplate`, including explicit empty/false values and explicit null selection-list removal.
+- `DELETE /api/parameter/template/{id}/` deletes one template only after tool-layer reference preflight.
+- `GET /api/parameter/` with exact `template` scans template references across model types. Template administration bounds this scan to 1,000 rows and fails closed above that limit.
+- `GET /api/part/category/parameters/` supplies category-default reference preflight. Because the pinned API does not filter this endpoint by template, F-S11 scans at most 1,000 links, fails closed if completeness cannot be established, and leaves mutation to the category-default administration story.
+
+The tool layer refuses direct deletion while any parameter row or category-default link remains. Template merge migrates only non-conflicting `part.part` rows, preserves unmapped values, normalizes only explicit `value_map` entries, and refreshes both reference sets immediately before deleting an empty source. These REST operations are not atomic; operators must prevent concurrent template/reference administration because a narrow reference-creation race remains between final preflight and delete.
+
 ## Verified Attachment Endpoints
 
 - `GET /api/attachment/` lists attachments.

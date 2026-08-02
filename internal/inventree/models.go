@@ -102,12 +102,15 @@ type PartParameterPage struct {
 }
 
 type ParameterTemplate struct {
-	PK       int     `json:"pk"`
-	Name     string  `json:"name"`
-	Units    *string `json:"units"`
-	Choices  string  `json:"choices"`
-	Checkbox bool    `json:"checkbox"`
-	Enabled  bool    `json:"enabled"`
+	PK            int     `json:"pk"`
+	Name          string  `json:"name"`
+	Units         *string `json:"units"`
+	Description   string  `json:"description"`
+	ModelType     *string `json:"model_type"`
+	Choices       string  `json:"choices"`
+	Checkbox      bool    `json:"checkbox"`
+	SelectionList *int    `json:"selectionlist"`
+	Enabled       bool    `json:"enabled"`
 }
 
 type CategoryParameterTemplate struct {

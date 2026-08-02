@@ -53,6 +53,13 @@ func TestToolReferenceDocumentsLookupFrameworkSchema(t *testing.T) {
 		reflect.TypeOf(PartParameterSearchResult{}),
 		reflect.TypeOf(DeletePartParameterInput{}),
 		reflect.TypeOf(DeletePartParameterOutput{}),
+		reflect.TypeOf(CreateParameterTemplateInput{}),
+		reflect.TypeOf(UpdateParameterTemplateInput{}),
+		reflect.TypeOf(DeleteParameterTemplateInput{}),
+		reflect.TypeOf(ParameterTemplateOutput{}),
+		reflect.TypeOf(MergeParameterTemplatesInput{}),
+		reflect.TypeOf(MergeParameterTemplatesOutput{}),
+		reflect.TypeOf(ParameterTemplateMergeAction{}),
 		reflect.TypeOf(StockItemsInput{}),
 		reflect.TypeOf(DownloadInput{}),
 		reflect.TypeOf(DownloadOutput{}),
@@ -133,6 +140,9 @@ func TestToolReferenceDocumentsRegisteredWriteTools(t *testing.T) {
 		auth, ok := ToolAuthorizations[name]
 		r.True(ok, "missing authorization for %s", name)
 		switch name {
+		case CreateParameterTemplateToolName, UpdateParameterTemplateToolName:
+			a.Equal("write", auth.MutationClass)
+			a.Equal([]string{ScopeInventreeRead, ScopeInventreeWrite}, auth.Scopes)
 		case CreateStockItemToolName, InitialStockWorkflowToolName:
 			a.Equal("operational", auth.MutationClass)
 			a.Equal([]string{ScopeInventreeWrite, ScopeInventreeOperational}, auth.Scopes)
@@ -148,7 +158,7 @@ func TestToolReferenceDocumentsRegisteredWriteTools(t *testing.T) {
 		case DeleteAttachmentToolName:
 			a.Equal("destructive", auth.MutationClass)
 			a.Equal([]string{ScopeInventreeWrite, ScopeInventreeUpload, ScopeInventreeDestructive}, auth.Scopes)
-		case DeletePartParameterToolName:
+		case DeletePartParameterToolName, DeleteParameterTemplateToolName, MergeParameterTemplatesToolName:
 			a.Equal("destructive", auth.MutationClass)
 			a.Equal([]string{ScopeInventreeRead, ScopeInventreeWrite, ScopeInventreeDestructive}, auth.Scopes)
 		default:

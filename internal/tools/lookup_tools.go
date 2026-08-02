@@ -31,6 +31,10 @@ const (
 	GetPartParametersToolName           = "get_part_parameters"
 	SearchPartParametersToolName        = "search_part_parameters"
 	DeletePartParameterToolName         = "delete_part_parameter"
+	CreateParameterTemplateToolName     = "create_parameter_template"
+	UpdateParameterTemplateToolName     = "update_parameter_template"
+	DeleteParameterTemplateToolName     = "delete_parameter_template"
+	MergeParameterTemplatesToolName     = "merge_parameter_templates"
 	SearchCompaniesToolName             = "search_companies"
 	SearchSuppliersToolName             = "search_suppliers"
 	SearchManufacturersToolName         = "search_manufacturers"
@@ -119,6 +123,10 @@ var writeToolNames = []string{
 	UpdatePartToolName,
 	SetPartParametersToolName,
 	DeletePartParameterToolName,
+	CreateParameterTemplateToolName,
+	UpdateParameterTemplateToolName,
+	DeleteParameterTemplateToolName,
+	MergeParameterTemplatesToolName,
 	CreateCompanyToolName,
 	CreateSupplierPartToolName,
 	CreateManufacturerPartToolName,
@@ -166,6 +174,8 @@ func init() {
 		scopes := []string{ScopeInventreeWrite}
 		mutationClass := "write"
 		switch name {
+		case CreateParameterTemplateToolName, UpdateParameterTemplateToolName:
+			scopes = []string{ScopeInventreeRead, ScopeInventreeWrite}
 		case CreateStockItemToolName, InitialStockWorkflowToolName:
 			scopes = []string{ScopeInventreeWrite, ScopeInventreeOperational}
 			mutationClass = "operational"
@@ -177,7 +187,7 @@ func init() {
 			mutationClass = "operational"
 		case UploadAttachmentToolName, UploadAttachmentFromURLToolName, CreateLinkAttachmentToolName, UpdateAttachmentMetadataToolName, SetPrimaryImageToolName:
 			scopes = []string{ScopeInventreeWrite, ScopeInventreeUpload}
-		case DeletePartParameterToolName:
+		case DeletePartParameterToolName, DeleteParameterTemplateToolName, MergeParameterTemplatesToolName:
 			scopes = []string{ScopeInventreeRead, ScopeInventreeWrite, ScopeInventreeDestructive}
 			mutationClass = "destructive"
 		case DeleteAttachmentToolName:
@@ -188,7 +198,7 @@ func init() {
 		if name == UploadAttachmentFromURLToolName {
 			annotations.OpenWorld = true
 		}
-		if name == DeleteAttachmentToolName || name == DeletePartParameterToolName {
+		if name == DeleteAttachmentToolName || name == DeletePartParameterToolName || name == DeleteParameterTemplateToolName || name == MergeParameterTemplatesToolName {
 			annotations.Destructive = true
 		}
 		ToolAuthorizations[name] = ToolAuthorization{
