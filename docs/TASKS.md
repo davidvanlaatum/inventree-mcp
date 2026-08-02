@@ -1064,6 +1064,7 @@ Tasks:
 Validation:
 
 - `go test -race ./internal/systemdnotify ./internal/server ./cmd/inventree-mcp ./packaging/systemd ./docs` passed, including real Unix datagram notification, listener-bound readiness, degraded-but-serving watchdog failure, shutdown status, non-systemd fallback, and packaged-unit contract coverage.
+- `go test -coverprofile=/tmp/inventree-mcp-cmd-coverage.out ./cmd/inventree-mcp` reported 87.9% statement coverage after adding managed dependency-initialization and fatal-notification failure regressions; `serve` and `notifyFatal` each report 100%.
 - `INVENTREE_TEST_SKIP_DOCKER=1 GOFLAGS=-trimpath go test -race -count=1 ./...` passed.
 - `GOFLAGS=-trimpath go test -race -p=1 -count=1 ./...` passed with the default-on InvenTree Testcontainers suites.
 - `go generate ./internal/tools` produced no unexpected changes; `golangci-lint run`, `go mod tidy -diff`, `goreleaser check`, and `git diff --check` passed.
@@ -1071,7 +1072,7 @@ Validation:
 
 Review:
 
-- Senior Go Developer, Senior QA / Test Architect, Senior Product Manager, and Senior Infosec Reviewer reviews completed. Go and QA found that retrying heartbeats after a send failure could prevent systemd-owned termination; the loop now stops after the first failure while HTTP continues serving. QA also requested explicit shutdown-status assertions and real `NOTIFY_SOCKET` integration coverage; both were added. Product required the fatal-status boundary to distinguish managed-lifecycle failures from earlier configuration/logger failures; the operator chose non-zero systemd handling for the earlier boundary and docs now say so. Focused Go, QA, and Product reruns plus Infosec review found no remaining actionable findings. Linked issue #51 was aligned with the clarified acceptance, completed checklist, validation, review, and residual-risk handoff and remains open for merge.
+- Senior Go Developer, Senior QA / Test Architect, Senior Product Manager, and Senior Infosec Reviewer reviews completed. Go and QA found that retrying heartbeats after a send failure could prevent systemd-owned termination; the loop now stops after the first failure while HTTP continues serving. QA also requested explicit shutdown-status assertions and real `NOTIFY_SOCKET` integration coverage; both were added. Product required the fatal-status boundary to distinguish managed-lifecycle failures from earlier configuration/logger failures; the operator chose non-zero systemd handling for the earlier boundary and docs now say so. A coverage follow-up added regressions for managed dependency-initialization failure and fatal-status delivery failure; focused Go and QA reruns found no issues with the injection seam, error preservation, logging, or global restoration. Focused Go, QA, and Product reruns plus Infosec review found no remaining actionable findings. Linked issue #51 was aligned with the clarified acceptance, completed checklist, validation, review, and residual-risk handoff and remains open for merge.
 
 Residual risk:
 

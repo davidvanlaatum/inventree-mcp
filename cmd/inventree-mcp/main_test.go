@@ -345,6 +345,74 @@ func TestServeFailsWhenSystemdStartupStatusCannotBeSent(t *testing.T) {
 	r.Equal([]string{"starting"}, notifier.events)
 }
 
+func TestServePublishesFatalStatusWhenManagedDependenciesFail(t *testing.T) {
+	r := require.New(t)
+	a := assert.New(t)
+
+	originalServerRun := serverRun
+	originalNewSystemdNotify := newSystemdNotify
+	originalBuildDependencies := buildDependencies
+	t.Cleanup(func() {
+		serverRun = originalServerRun
+		newSystemdNotify = originalNewSystemdNotify
+		buildDependencies = originalBuildDependencies
+	})
+
+	notifier := &recordingNotifier{}
+	newSystemdNotify = func() systemdnotify.Notifier {
+		return notifier
+	}
+	wantErr := errors.New("dependencies failed")
+	buildDependencies = func(config.Config) (tools.Dependencies, error) {
+		return tools.Dependencies{}, wantErr
+	}
+	serverRun = func(context.Context, config.Config, tools.Dependencies, systemdnotify.Notifier) error {
+		r.Fail("server started after managed dependency initialization failed")
+		return nil
+	}
+	ctx := loggingTestContext(t)
+
+	err := serve(ctx, config.Config{Transport: config.TransportHTTP})
+
+	r.ErrorIs(err, wantErr)
+	a.Equal([]string{"starting", "fatal"}, notifier.events)
+}
+
+func TestServeLogsFatalNotificationFailureWithoutReplacingServerError(t *testing.T) {
+	r := require.New(t)
+	a := assert.New(t)
+
+	originalServerRun := serverRun
+	originalNewSystemdNotify := newSystemdNotify
+	t.Cleanup(func() {
+		serverRun = originalServerRun
+		newSystemdNotify = originalNewSystemdNotify
+	})
+
+	notifyErr := errors.New("fatal notification failed")
+	notifier := &recordingNotifier{fatalErr: notifyErr}
+	newSystemdNotify = func() systemdnotify.Notifier {
+		return notifier
+	}
+	serveErr := errors.New("serve failed")
+	serverRun = func(context.Context, config.Config, tools.Dependencies, systemdnotify.Notifier) error {
+		return serveErr
+	}
+	var stderr bytes.Buffer
+	ctx, err := platform.NewRootContext(t.Context(), platform.LoggerConfig{Output: &stderr})
+	r.NoError(err)
+
+	err = serve(ctx, config.Config{
+		Transport:   config.TransportHTTP,
+		Environment: config.EnvironmentDevelopment,
+	})
+
+	r.ErrorIs(err, serveErr)
+	a.Contains(stderr.String(), "failed to notify systemd of fatal service error")
+	a.Contains(stderr.String(), notifyErr.Error())
+	a.Equal([]string{"starting", "fatal"}, notifier.events)
+}
+
 func loggingTestContext(t *testing.T) context.Context {
 	t.Helper()
 	var stderr bytes.Buffer
@@ -356,6 +424,7 @@ func loggingTestContext(t *testing.T) context.Context {
 type recordingNotifier struct {
 	events      []string
 	startingErr error
+	fatalErr    error
 }
 
 func (n *recordingNotifier) Starting() error {
@@ -382,7 +451,7 @@ func (n *recordingNotifier) Stopping() error {
 
 func (n *recordingNotifier) Fatal() error {
 	n.events = append(n.events, "fatal")
-	return nil
+	return n.fatalErr
 }
 
 func mapEnv(values map[string]string) config.Env {

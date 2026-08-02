@@ -33,8 +33,9 @@ func main() {
 }
 
 var (
-	serverRun        = server.Run
-	newSystemdNotify = systemdnotify.New
+	serverRun         = server.Run
+	newSystemdNotify  = systemdnotify.New
+	buildDependencies = dependenciesForConfig
 )
 
 func run(args []string, stdout, stderr io.Writer, getenv config.Env) int {
@@ -99,7 +100,7 @@ func serve(ctx context.Context, cfg config.Config) error {
 			return fmt.Errorf("notify systemd of service startup: %w", err)
 		}
 	}
-	deps, err := dependenciesForConfig(cfg)
+	deps, err := buildDependencies(cfg)
 	if err != nil {
 		if managedHTTP {
 			notifyFatal(logger, notifier)
