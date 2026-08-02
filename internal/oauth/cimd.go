@@ -49,10 +49,11 @@ func (f ClientMetadataFetcher) FetchAndValidate(ctx context.Context, clientID st
 }
 
 func (f ClientMetadataFetcher) Fetch(ctx context.Context, clientID string) (ClientMetadata, error) {
-	if len(f.AllowedClientIDs) > 0 && !slices.Contains(f.AllowedClientIDs, clientID) {
+	configuredClientID, ok := exactConfiguredClientID(clientID, f.AllowedClientIDs)
+	if !ok {
 		return ClientMetadata{}, fmt.Errorf("%w: client_id is not configured", ErrInvalidClientMetadata)
 	}
-	metadataURL, err := validateClientIDURL(clientID, f.AllowedOrigins)
+	metadataURL, err := validateClientIDURL(configuredClientID, f.AllowedOrigins)
 	if err != nil {
 		return ClientMetadata{}, err
 	}
@@ -104,6 +105,15 @@ func (f ClientMetadataFetcher) Fetch(ctx context.Context, clientID string) (Clie
 		return ClientMetadata{}, err
 	}
 	return metadata, nil
+}
+
+func exactConfiguredClientID(requested string, configured []string) (string, bool) {
+	for _, candidate := range configured {
+		if candidate == requested {
+			return candidate, true
+		}
+	}
+	return "", false
 }
 
 func validateClientIDURL(raw string, allowedOrigins []string) (*url.URL, error) {

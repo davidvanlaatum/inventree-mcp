@@ -61,8 +61,9 @@ func TestClientMetadataFetcherValidatesCIMDAndRedirect(t *testing.T) {
 		client.Jar = jar
 
 		fetcher := ClientMetadataFetcher{
-			HTTPClient:     client,
-			AllowedOrigins: []string{server.URL},
+			HTTPClient:       client,
+			AllowedOrigins:   []string{server.URL},
+			AllowedClientIDs: []string{metadataPath},
 		}
 		metadata, err := fetcher.FetchAndValidate(ctx, metadataPath, redirectURI)
 		r.NoError(err)
@@ -96,6 +97,11 @@ func TestClientMetadataFetcherValidatesCIMDAndRedirect(t *testing.T) {
 		fetcher := ClientMetadataFetcher{
 			HTTPClient:     server.Client(),
 			AllowedOrigins: []string{server.URL},
+			AllowedClientIDs: []string{
+				server.URL + "/metadata?case=wrong_redirect",
+				server.URL + "/metadata?case=mismatch",
+				server.URL + "/metadata?case=fetch_failure",
+			},
 		}
 
 		_, err := fetcher.FetchAndValidate(ctx, "http://chatgpt.com/metadata", redirectURI)
@@ -111,6 +117,26 @@ func TestClientMetadataFetcherValidatesCIMDAndRedirect(t *testing.T) {
 	})
 }
 
+func TestClientMetadataFetcherRejectsUnconfiguredSameOriginPathWithoutFetch(t *testing.T) {
+	t.Parallel()
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	r := require.New(t)
+	requests := 0
+	server := httptest.NewTLSServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		requests++
+	}))
+	defer server.Close()
+
+	fetcher := ClientMetadataFetcher{
+		HTTPClient:       server.Client(),
+		AllowedOrigins:   []string{server.URL},
+		AllowedClientIDs: []string{server.URL + "/client"},
+	}
+	_, err := fetcher.Fetch(ctx, server.URL+"/other")
+	r.ErrorIs(err, ErrInvalidClientMetadata)
+	r.Zero(requests)
+}
+
 func TestClientMetadataFetcherRejectsOversizeTimeoutAndUnsafeRedirects(t *testing.T) {
 	t.Run("bounded read", func(t *testing.T) {
 		t.Parallel()
@@ -121,9 +147,10 @@ func TestClientMetadataFetcherRejectsOversizeTimeoutAndUnsafeRedirects(t *testin
 		}))
 		defer server.Close()
 		_, err := (ClientMetadataFetcher{
-			HTTPClient:     server.Client(),
-			AllowedOrigins: []string{server.URL},
-			MaxBytes:       8,
+			HTTPClient:       server.Client(),
+			AllowedOrigins:   []string{server.URL},
+			AllowedClientIDs: []string{server.URL + "/metadata"},
+			MaxBytes:         8,
 		}).FetchAndValidate(ctx, server.URL+"/metadata", "https://chatgpt.com/connector/oauth/callback_123")
 		r.ErrorIs(err, ErrInvalidClientMetadata)
 	})
@@ -138,9 +165,10 @@ func TestClientMetadataFetcherRejectsOversizeTimeoutAndUnsafeRedirects(t *testin
 		}))
 		defer server.Close()
 		_, err := (ClientMetadataFetcher{
-			HTTPClient:     server.Client(),
-			AllowedOrigins: []string{server.URL},
-			Timeout:        time.Nanosecond,
+			HTTPClient:       server.Client(),
+			AllowedOrigins:   []string{server.URL},
+			AllowedClientIDs: []string{server.URL + "/metadata"},
+			Timeout:          time.Nanosecond,
 		}).FetchAndValidate(ctx, server.URL+"/metadata", "https://chatgpt.com/connector/oauth/callback_123")
 		r.ErrorIs(err, ErrInvalidClientMetadata)
 	})
@@ -161,7 +189,11 @@ func TestClientMetadataFetcherRejectsOversizeTimeoutAndUnsafeRedirects(t *testin
 			http.Redirect(w, req, other.URL+"/metadata", http.StatusFound)
 		}))
 		defer server.Close()
-		fetcher := ClientMetadataFetcher{HTTPClient: server.Client(), AllowedOrigins: []string{server.URL}}
+		fetcher := ClientMetadataFetcher{
+			HTTPClient:       server.Client(),
+			AllowedOrigins:   []string{server.URL},
+			AllowedClientIDs: []string{server.URL + "/metadata", server.URL + "/metadata?to=http"},
+		}
 		_, err := fetcher.FetchAndValidate(ctx, server.URL+"/metadata", "https://chatgpt.com/connector/oauth/callback_123")
 		r.ErrorIs(err, ErrInvalidClientMetadata)
 		_, err = fetcher.FetchAndValidate(ctx, server.URL+"/metadata?to=http", "https://chatgpt.com/connector/oauth/callback_123")
@@ -438,8 +470,9 @@ func TestServiceIssuesOneTimeCodeAndDefaultTokenLifetimes(t *testing.T) {
 	service := Service{
 		Codec: codec,
 		MetadataFetcher: ClientMetadataFetcher{
-			HTTPClient:     server.Client(),
-			AllowedOrigins: []string{server.URL},
+			HTTPClient:       server.Client(),
+			AllowedOrigins:   []string{server.URL},
+			AllowedClientIDs: []string{metadataURL},
 		},
 		CodeStore:   NewCodeStore(8, clock.Now),
 		Clock:       clock,
@@ -507,8 +540,9 @@ func TestServiceRejectsWrongPKCEVerifier(t *testing.T) {
 	service := Service{
 		Codec: testCodec(t),
 		MetadataFetcher: ClientMetadataFetcher{
-			HTTPClient:     server.Client(),
-			AllowedOrigins: []string{server.URL},
+			HTTPClient:       server.Client(),
+			AllowedOrigins:   []string{server.URL},
+			AllowedClientIDs: []string{metadataURL},
 		},
 		CodeStore:   NewCodeStore(8, clock.Now),
 		Clock:       clock,
@@ -559,38 +593,45 @@ func TestServiceIssueAuthorizationCodeRejectsBadMetadataBeforeStoringCode(t *tes
 	metadataURL = server.URL + "/metadata"
 
 	cases := []struct {
-		name           string
-		clientID       string
-		allowedOrigins []string
+		name             string
+		clientID         string
+		allowedOrigins   []string
+		allowedClientIDs []string
 	}{
 		{
-			name:           "bad client id",
-			clientID:       "not-a-url",
-			allowedOrigins: []string{server.URL},
+			name:             "bad client id",
+			clientID:         "not-a-url",
+			allowedOrigins:   []string{server.URL},
+			allowedClientIDs: []string{"not-a-url"},
 		},
 		{
-			name:           "non HTTPS client id",
-			clientID:       "http://chatgpt.com/client-metadata",
-			allowedOrigins: []string{server.URL},
+			name:             "non HTTPS client id",
+			clientID:         "http://chatgpt.com/client-metadata",
+			allowedOrigins:   []string{server.URL},
+			allowedClientIDs: []string{"http://chatgpt.com/client-metadata"},
 		},
 		{
-			name:     "missing allowed origins",
-			clientID: metadataURL,
+			name:             "missing allowed origins",
+			clientID:         metadataURL,
+			allowedClientIDs: []string{metadataURL},
 		},
 		{
-			name:           "wrong redirect",
-			clientID:       metadataURL + "?case=wrong_redirect",
-			allowedOrigins: []string{server.URL},
+			name:             "wrong redirect",
+			clientID:         metadataURL + "?case=wrong_redirect",
+			allowedOrigins:   []string{server.URL},
+			allowedClientIDs: []string{metadataURL + "?case=wrong_redirect"},
 		},
 		{
-			name:           "metadata mismatch",
-			clientID:       metadataURL + "?case=mismatch",
-			allowedOrigins: []string{server.URL},
+			name:             "metadata mismatch",
+			clientID:         metadataURL + "?case=mismatch",
+			allowedOrigins:   []string{server.URL},
+			allowedClientIDs: []string{metadataURL + "?case=mismatch"},
 		},
 		{
-			name:           "metadata fetch failure",
-			clientID:       metadataURL + "?case=fetch_failure",
-			allowedOrigins: []string{server.URL},
+			name:             "metadata fetch failure",
+			clientID:         metadataURL + "?case=fetch_failure",
+			allowedOrigins:   []string{server.URL},
+			allowedClientIDs: []string{metadataURL + "?case=fetch_failure"},
 		},
 	}
 	for _, tc := range cases {
@@ -603,8 +644,9 @@ func TestServiceIssueAuthorizationCodeRejectsBadMetadataBeforeStoringCode(t *tes
 			service := Service{
 				Codec: testCodec(t),
 				MetadataFetcher: ClientMetadataFetcher{
-					HTTPClient:     server.Client(),
-					AllowedOrigins: tc.allowedOrigins,
+					HTTPClient:       server.Client(),
+					AllowedOrigins:   tc.allowedOrigins,
+					AllowedClientIDs: tc.allowedClientIDs,
 				},
 				CodeStore:   store,
 				Clock:       clock,

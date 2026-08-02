@@ -204,7 +204,7 @@ func TestAuthorizationServerPrivateKeyJWTSetupCodeAndRefreshFlow(t *testing.T) {
 	broker := &fakeCredentialBroker{subject: "inventree-user:7:operator", dedicated: Credential{Scheme: inventree.AuthSchemeToken, Token: "dedicated-secret"}}
 	service := Service{
 		Codec:           codec,
-		MetadataFetcher: ClientMetadataFetcher{HTTPClient: clientServer.Client(), AllowedOrigins: []string{clientServer.URL}},
+		MetadataFetcher: ClientMetadataFetcher{HTTPClient: clientServer.Client(), AllowedOrigins: []string{clientServer.URL}, AllowedClientIDs: []string{clientID}},
 		CodeStore:       NewCodeStore(8, time.Now),
 		CredentialValidator: CredentialValidatorFunc(func(_ context.Context, credential Credential) error {
 			if credential.Token != "dedicated-secret" {
@@ -330,7 +330,7 @@ func TestAuthorizationServerRequiresExplicitSuppliedCredentialFallback(t *testin
 	defer clientServer.Close()
 	clientID = clientServer.URL + "/client"
 	broker := &fakeCredentialBroker{subject: "inventree-user:7:operator", createErr: ErrDedicatedTokenUnavailable}
-	service := Service{Codec: testCodec(t), MetadataFetcher: ClientMetadataFetcher{HTTPClient: clientServer.Client(), AllowedOrigins: []string{clientServer.URL}}, CodeStore: NewCodeStore(8, time.Now)}
+	service := Service{Codec: testCodec(t), MetadataFetcher: ClientMetadataFetcher{HTTPClient: clientServer.Client(), AllowedOrigins: []string{clientServer.URL}, AllowedClientIDs: []string{clientID}}, CodeStore: NewCodeStore(8, time.Now)}
 	authServer := &AuthorizationServer{Issuer: "https://mcp.example.test", Resource: "https://mcp.example.test/mcp", Scopes: []string{"inventree.read"}, Service: service, MetadataFetcher: service.MetadataFetcher, CredentialBroker: broker}
 	mux := http.NewServeMux()
 	r.NoError(authServer.Register(mux))
@@ -374,7 +374,7 @@ func TestAuthorizationServerCancellationReturnsAccessDeniedWithoutUsingCredentia
 	defer clientServer.Close()
 	clientID = clientServer.URL + "/client"
 	broker := &fakeCredentialBroker{}
-	service := Service{Codec: testCodec(t), MetadataFetcher: ClientMetadataFetcher{HTTPClient: clientServer.Client(), AllowedOrigins: []string{clientServer.URL}}, CodeStore: NewCodeStore(8, time.Now)}
+	service := Service{Codec: testCodec(t), MetadataFetcher: ClientMetadataFetcher{HTTPClient: clientServer.Client(), AllowedOrigins: []string{clientServer.URL}, AllowedClientIDs: []string{clientID}}, CodeStore: NewCodeStore(8, time.Now)}
 	authServer := &AuthorizationServer{Issuer: "https://mcp.example.test", Resource: "https://mcp.example.test/mcp", Scopes: []string{"inventree.read"}, Service: service, MetadataFetcher: service.MetadataFetcher, CredentialBroker: broker}
 	mux := http.NewServeMux()
 	r.NoError(authServer.Register(mux))
@@ -421,7 +421,7 @@ func TestAuthorizationServerEnforcesSetupRequestSecurityExpiryTimeoutAndRateLimi
 	now := time.Date(2026, 8, 2, 3, 0, 0, 0, time.UTC)
 	clock := &fakeClock{now: now}
 	broker := &fakeCredentialBroker{subject: "inventree-user:7:operator", dedicated: Credential{Scheme: inventree.AuthSchemeToken, Token: "dedicated"}}
-	service := Service{Codec: testCodec(t), Clock: clock, MetadataFetcher: ClientMetadataFetcher{HTTPClient: clientServer.Client(), AllowedOrigins: []string{clientServer.URL}}, CodeStore: NewCodeStore(8, clock.Now)}
+	service := Service{Codec: testCodec(t), Clock: clock, MetadataFetcher: ClientMetadataFetcher{HTTPClient: clientServer.Client(), AllowedOrigins: []string{clientServer.URL}, AllowedClientIDs: []string{clientID}}, CodeStore: NewCodeStore(8, clock.Now)}
 	authServer := &AuthorizationServer{
 		Issuer: "https://mcp.example.test", Resource: "https://mcp.example.test/mcp", Scopes: []string{"inventree.read"},
 		Service: service, MetadataFetcher: service.MetadataFetcher, CredentialBroker: broker, Clock: clock, SetupTimeout: time.Millisecond,
