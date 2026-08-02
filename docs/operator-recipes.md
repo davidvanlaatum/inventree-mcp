@@ -98,6 +98,18 @@ HTTP mode accepts the same debug traffic log option as STDIO. HTTP debug entries
 - Expected output: `status`, `actions`, stable selected or created part, supplier, manufacturer, supplier-part, and manufacturer-part records when available, plus `omitted_recommended_fields` for missing recommended values. In `dry_run` responses, planned creates are represented by `actions` because stable IDs do not exist until the write runs. If a required stable ID, currency, supported company role, SKU, or duplicate decision is missing, the tool returns structured clarification.
 - HTTP note: write tools require OAuth authorization mode and the `inventree.write` scope before handler dispatch.
 
+## Create Or Administer A Part Category
+
+- Required inputs: a stable category ID for reads/updates, or an explicit nonblank name for creation. Parent and default-location choices use stable IDs only.
+- Preferred lookup order: call `search_part_categories`, then `get_part_category` for the intended category and any proposed parent. Review path, parent, direct part count, child count, structural state, default location, inherited parent default location, keywords, and icon before writing.
+- Duplicate identity: surrounding name whitespace is removed and names compare case-insensitively under one exact parent. Roots match roots only; the same name under another parent is allowed. Create, rename, and reparent preflight 100-row pages up to a 1,000-category fail-closed bound.
+- Create: call `create_part_category` with optional description, parent, default location, default keywords, structural flag, and icon. Explicit false and empty values are preserved.
+- Update: call `update_part_category` with only intended PATCH fields. Use `clear_parent`, `clear_default_location`, `clear_default_keywords`, or `clear_icon` for explicit null values; each clear flag is mutually exclusive with its replacement value.
+- Reparenting: self-parenting and descendant cycles are refused. Reparenting may include categories that contain direct parts or child categories, but the first call returns current/target hierarchy context and requires a retry with `confirm:true`. No part, child, parameter-default, or stock record is separately moved or deleted.
+- Structural state: every actual change requires `confirm:true`. Promotion from non-structural to structural is refused while parts are directly assigned; resolve those parts through an explicit separate workflow first.
+- Recovery: create and update read back the exact stable record and recheck duplicate/hierarchy policy after a successful response. A lost mutation response returns `partial_failure`, any uniquely recovered category ID, and a read-before-retry plan. Do not replay creation or PATCH until `get_part_category` confirms current state. Treat category administration as a single-writer workflow: InvenTree provides no atomic same-parent uniqueness or hierarchy compare-and-set, so another UI/API/server writer can still race between preflight, mutation, and verification.
+- HTTP note: exact reads require `inventree.read`; creation and updates require both `inventree.read` and `inventree.write`. Category administration is closed-world and non-destructive; it does not require operational or destructive scope.
+
 ## Add Or Update Part Parameters
 
 - Required inputs: part ID, requested parameter names/values, units where relevant.

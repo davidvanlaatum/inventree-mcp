@@ -82,6 +82,22 @@ endpoints:
     method: GET
     operation_id: part_category_retrieve
     response_schema: '#/components/schemas/Category'
+  - id: create_part_category
+    area: categories
+    path: /api/part/category/
+    method: POST
+    operation_id: part_category_create
+    request_schema: '#/components/schemas/Category'
+    request_content_type: application/json
+    response_schema: '#/components/schemas/Category'
+  - id: update_part_category
+    area: categories
+    path: /api/part/category/{id}/
+    method: PATCH
+    operation_id: part_category_partial_update
+    request_schema: '#/components/schemas/PatchedCategory'
+    request_content_type: application/json
+    response_schema: '#/components/schemas/Category'
   - id: search_companies
     area: companies
     path: /api/company/

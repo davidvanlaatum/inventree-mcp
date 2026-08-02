@@ -18,6 +18,7 @@ const (
 	ReceivePurchaseOrderChecklistPromptName = "receive_purchase_order_checklist"
 	StocktakeReviewPromptName               = "stocktake_review"
 	ParameterConsistencyReviewPromptName    = "parameter_consistency_review"
+	CategoryAdministrationPromptName        = "category_administration_checklist"
 )
 
 type PromptManifestEntry struct {
@@ -29,6 +30,22 @@ type PromptManifestEntry struct {
 }
 
 var PromptManifest = []PromptManifestEntry{
+	{
+		Name:        CategoryAdministrationPromptName,
+		Title:       "Part category administration checklist",
+		Description: "Checklist for exact category reads and guarded category creation, editing, reparenting, and structural-state changes.",
+		Status:      PromptMilestone1,
+		Checklist: `Use this checklist before creating or changing a part category:
+- Search categories first, then use get_part_category for exact hierarchy, defaults, direct part count, and child context.
+- Category identity is the trimmed case-insensitive name under one exact parent. Root categories match roots only; the same name under another parent is allowed.
+- Create and update preflight at most 1,000 same-parent categories in 100-row pages and fail closed when a complete duplicate decision cannot be made.
+- Return structured clarification instead of guessing when category identity, references, hierarchy intent, structural intent, or confirmation is missing or unsafe.
+- Supply only stable parent_id and default_location_id references. Use clear_parent, clear_default_location, clear_default_keywords, or clear_icon for explicit null PATCH values.
+- Never delete categories or implicitly move parts, children, parameter defaults, or stock.
+- Reparenting may include categories with direct parts or descendants, but requires confirm:true after reviewing current and target hierarchy context. Self-parenting and descendant cycles are always refused.
+- Any structural-state change requires confirm:true. Changing structural from false to true is refused while parts are directly assigned.
+- If a create or update returns partial_failure, use the returned stable ID and recovery plan, read current state, and do not retry blindly.`,
+	},
 	{
 		Name:        NewPartEntryChecklistPromptName,
 		Title:       "New part entry checklist",

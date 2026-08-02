@@ -68,6 +68,40 @@ func TestWriteMethodsUseExpectedEndpoints(t *testing.T) {
 			},
 		},
 		{
+			name: "create part category preserves explicit fields",
+			call: func(ctx context.Context, client *Client) error {
+				_, err := client.CreatePartCategory(ctx, CategoryCreate{Name: "Passives", Parent: dvgoutils.Ptr(20), DefaultLocation: dvgoutils.Ptr(40), DefaultKeywords: dvgoutils.Ptr(""), Structural: dvgoutils.Ptr(false), Icon: dvgoutils.Ptr("")})
+				return err
+			},
+			method:   http.MethodPost,
+			path:     "/api/part/category/",
+			response: `{"pk":21,"name":"Passives","parent":20,"default_location":40,"structural":false}`,
+			assert: func(a *assert.Assertions, body map[string]any) {
+				a.Equal(float64(20), body["parent"])
+				a.Equal(float64(40), body["default_location"])
+				a.Equal("", body["default_keywords"])
+				a.Equal(false, body["structural"])
+				a.Equal("", body["icon"])
+			},
+		},
+		{
+			name: "update part category preserves explicit null false and empty",
+			call: func(ctx context.Context, client *Client) error {
+				_, err := client.UpdatePartCategory(ctx, 21, PatchFields{"parent": Null(), "default_location": Null(), "default_keywords": Set(""), "structural": Set(false), "icon": Null()})
+				return err
+			},
+			method:   http.MethodPatch,
+			path:     "/api/part/category/21/",
+			response: `{"pk":21,"name":"Passives","parent":null,"default_location":null,"structural":false}`,
+			assert: func(a *assert.Assertions, body map[string]any) {
+				a.Nil(body["parent"])
+				a.Nil(body["default_location"])
+				a.Equal("", body["default_keywords"])
+				a.Equal(false, body["structural"])
+				a.Nil(body["icon"])
+			},
+		},
+		{
 			name: "create company omits customer role",
 			call: func(ctx context.Context, client *Client) error {
 				_, err := client.CreateCompany(ctx, CompanyCreate{

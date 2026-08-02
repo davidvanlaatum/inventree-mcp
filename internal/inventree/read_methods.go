@@ -90,9 +90,17 @@ func (c *Client) SearchPartCategories(ctx context.Context, query SearchQuery) ([
 	return listAll[Category](ctx, c, "/api/part/category/", query.values())
 }
 
+func (c *Client) SearchPartCategoriesPage(ctx context.Context, query CategoryQuery) (CategoryPage, error) {
+	page, err := listPage[Category](ctx, c, "/api/part/category/", query.values())
+	return CategoryPage{Count: page.Count, Results: page.Results, HasMore: page.Next != nil && *page.Next != ""}, err
+}
+
 func (c *Client) GetPartCategory(ctx context.Context, id int) (Category, error) {
 	var out Category
-	err := c.get(ctx, fmt.Sprintf("/api/part/category/%d/", id), &out)
+	req, err := c.NewRequest(ctx, http.MethodGet, fmt.Sprintf("/api/part/category/%d/", id), url.Values{"path_detail": []string{"true"}}, nil)
+	if err == nil {
+		err = c.DoJSON(req, &out)
+	}
 	return out, err
 }
 
