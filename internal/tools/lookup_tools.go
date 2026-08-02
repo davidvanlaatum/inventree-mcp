@@ -29,6 +29,8 @@ const (
 	SearchPartCategoriesToolName        = "search_part_categories"
 	SearchParameterTemplatesToolName    = "search_parameter_templates"
 	GetPartParametersToolName           = "get_part_parameters"
+	SearchPartParametersToolName        = "search_part_parameters"
+	DeletePartParameterToolName         = "delete_part_parameter"
 	SearchCompaniesToolName             = "search_companies"
 	SearchSuppliersToolName             = "search_suppliers"
 	SearchManufacturersToolName         = "search_manufacturers"
@@ -95,6 +97,7 @@ var lookupToolNames = []string{
 	SearchPartCategoriesToolName,
 	SearchParameterTemplatesToolName,
 	GetPartParametersToolName,
+	SearchPartParametersToolName,
 	SearchCompaniesToolName,
 	SearchSuppliersToolName,
 	SearchManufacturersToolName,
@@ -115,6 +118,7 @@ var writeToolNames = []string{
 	CreatePartToolName,
 	UpdatePartToolName,
 	SetPartParametersToolName,
+	DeletePartParameterToolName,
 	CreateCompanyToolName,
 	CreateSupplierPartToolName,
 	CreateManufacturerPartToolName,
@@ -173,6 +177,9 @@ func init() {
 			mutationClass = "operational"
 		case UploadAttachmentToolName, UploadAttachmentFromURLToolName, CreateLinkAttachmentToolName, UpdateAttachmentMetadataToolName, SetPrimaryImageToolName:
 			scopes = []string{ScopeInventreeWrite, ScopeInventreeUpload}
+		case DeletePartParameterToolName:
+			scopes = []string{ScopeInventreeRead, ScopeInventreeWrite, ScopeInventreeDestructive}
+			mutationClass = "destructive"
 		case DeleteAttachmentToolName:
 			scopes = []string{ScopeInventreeWrite, ScopeInventreeUpload, ScopeInventreeDestructive}
 			mutationClass = "destructive"
@@ -181,7 +188,7 @@ func init() {
 		if name == UploadAttachmentFromURLToolName {
 			annotations.OpenWorld = true
 		}
-		if name == DeleteAttachmentToolName {
+		if name == DeleteAttachmentToolName || name == DeletePartParameterToolName {
 			annotations.Destructive = true
 		}
 		ToolAuthorizations[name] = ToolAuthorization{
@@ -343,6 +350,7 @@ func registerLookupTools(server *mcp.Server, deps Dependencies) {
 	addReadOnlyTool(server, deps, SearchPartCategoriesToolName, "Search part categories", "Searches InvenTree part categories.", searchPartCategories(deps))
 	addReadOnlyTool(server, deps, SearchParameterTemplatesToolName, "Search parameter templates", "Searches InvenTree parameter templates.", searchParameterTemplates(deps))
 	addReadOnlyTool(server, deps, GetPartParametersToolName, "Get part parameters", "Lists parameter values for one part.", getPartParameters(deps))
+	addReadOnlyTool(server, deps, SearchPartParametersToolName, "Search part parameters", "Searches parameter values across parts using stable filters.", searchPartParameterValues(deps))
 	addReadOnlyTool(server, deps, SearchCompaniesToolName, "Search companies", "Searches InvenTree companies.", searchCompanies(deps))
 	addReadOnlyTool(server, deps, SearchSuppliersToolName, "Search suppliers", "Searches companies with the supplier role.", searchSuppliers(deps))
 	addReadOnlyTool(server, deps, SearchManufacturersToolName, "Search manufacturers", "Searches companies with the manufacturer role.", searchManufacturers(deps))

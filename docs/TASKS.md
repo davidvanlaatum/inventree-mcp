@@ -3,6 +3,7 @@
 This backlog turns [PLAN.md](PLAN.md) into executable work. Status values are:
 
 - `Done`: acceptance criteria met, validation/review recorded, and committed; when a task-status update is part of the current change, `Done` means ready for the same commit.
+- `Active`: implementation has started on a named branch; the linked issue carries matching active progress context and is assigned when repository permissions allow it.
 - `Ready`: actionable with current information.
 - `Blocked`: needs an explicit decision, external verification, or prerequisite task.
 - `Planned`: valid work, but should wait for dependencies.
@@ -10,7 +11,7 @@ This backlog turns [PLAN.md](PLAN.md) into executable work. Status values are:
 
 Each story should be completed with tests, documentation updates, and reviewer follow-up. Code, behavior, task-status, operator workflow, or public documentation-contract changes require subagent review from the applicable roles in [reviewers.md](reviewers.md). Use the full Go, QA, product, and infosec panel when acceptance criteria touch auth, upload, Testcontainers, tool-surface behavior, or milestone completion. Manual-only review is reserved for typo-only or formatting-only documentation edits and must say why subagent review was not required.
 
-When selecting the next story, update the Codex thread title to include the story ID and short title. If the active story changes, update the thread title again before continuing.
+When selecting the next story, update the Codex thread title to include the story ID and short title. If the active story changes, update the thread title again before continuing. When implementation starts, set both task status surfaces to `Active`; for a linked issue, also set its status context to `Active`, assign it to the operator when permitted, and record the branch plus concise progress context without closing the issue.
 
 Local test commands do not need `-v` by default. Use verbose local test output when diagnosing failures, checking expected logs, or recording evidence that depends on test logs. CI, release, and other pipeline test commands should always run Go tests with `-v` so successful pipeline logs retain integration-test and container-output evidence.
 
@@ -89,7 +90,7 @@ Before `M1C-S04` is complete, mutating, operational, destructive, and upload too
 | [F-S09](#f-s09-reverse-proxy-canonical-url-enforcement) | Enforce public issuer/resource URLs behind a trusted reverse proxy. | Future |
 | [F-S10](#f-s10-packaged-http-deployment-and-live-connector-validation) | Validate packaged HTTP deployment and live ChatGPT connector setup. | Future |
 | [F-S11](#f-s11-parameter-template-administration) | Administer parameter templates and safe template merges. | Future |
-| [F-S12](#f-s12-global-parameter-value-search-and-delete) | Search parameter values across inventory and delete individual rows safely. | Future |
+| [F-S12](#f-s12-global-parameter-value-search-and-delete) | Search parameter values across inventory and delete individual rows safely. | Done |
 | [F-S13](#f-s13-category-parameter-defaults) | Manage category parameter defaults using existing templates. | Future |
 | [F-S14](#f-s14-bulk-parameter-propagation-and-audit-workflows) | Add dry-run bulk parameter propagation and consistency audits. | Future |
 | [F-S15](#f-s15-live-order-entry-tool-hardening) | Close gaps found during live order-entry use of the MCP tools. | Future |
@@ -1210,10 +1211,13 @@ Tasks:
 
 ### F-S12: Global Parameter Value Search And Delete
 
-- Status: `Future`
+- Status: `Done`
 - Issue: [#57](https://github.com/davidvanlaatum/inventree-mcp/issues/57)
 - Depends on: milestone 1 complete, product review, and infosec review
 - Scope: expose cross-inventory `/api/parameter/` reads and guarded deletion of individual part parameter rows beyond the current part-scoped `get_part_parameters` tool.
+- Validation: `go generate ./internal/tools` refreshed the checked tool manifest; `go test -tags no_integration_tests ./internal/inventree ./internal/tools ./internal/schema ./docs` passed; `GOFLAGS=-trimpath go test -race ./internal/inventree -run '^TestClientMethodsAgainstInvenTree$/parameter$' -count=1` passed against the pinned InvenTree Testcontainers stack; `GOFLAGS=-trimpath go test -race ./internal/tools -run '^TestMilestoneHappyPathToolsAgainstInvenTree$/global_parameter_search_and_confirmed_delete$' -count=1` passed against the pinned stack; `GOFLAGS=-trimpath go test -race -p=1 ./...` passed with all default-on Docker suites; `golangci-lint run` reported 0 issues; `GOFLAGS=-trimpath go mod tidy -diff` and `git diff --check` passed. Coverage follow-up `go test -tags no_integration_tests -coverprofile=/tmp/inventree-fs12-followup.cov ./internal/inventree` reported 90.8% package coverage, with `listPage` and `DeletePartParameter` each at 100%; the matching race-enabled package test and focused lint passed.
+- Review: Senior Go Developer, Senior QA / Test Architect, Senior Product Manager, and Senior Infosec Reviewer reviews completed. Initial findings identified unbounded full-table/N+1 search, unchecked offset allocation, unstable cross-page row ordering, incomplete pagination/part-filter and destructive-failure tests, missing stable-ID verification, raw non-part refusal, and issue-workflow/doc inconsistencies. Fixes require a narrowing filter, scan complete 100-row pages only up to a 1,000-row fail-closed bound, reject oversized result windows before arithmetic/allocation, sort the complete bounded candidate set by row ID, validate row/part/template identities before deletion, return structured non-part clarification, and cover cross-page ordering plus delete/read-back failures. Focused Go, QA, product, and infosec reruns found no unresolved actionable findings. The package-coverage follow-up received focused Senior Go and Senior QA reruns; both found no actionable findings and confirmed the added cases exercise genuine production error and response-shape paths without concurrency or false-positive concerns.
+- Residual risk: deletion confirmation is bound to one stable parameter-row ID rather than a snapshot token. The confirm call re-reads and validates the current row immediately before deletion and returns that deleted snapshot, but a concurrent value edit between the operator's preview and confirmed call can change the value that is removed. Searches that still match more than 1,000 upstream rows fail with clarification and require narrower filters.
 - Acceptance:
   - Search supports sensible schema-backed filters, including template ID or unambiguous template name, value, category, part, and pagination where the InvenTree API supports them.
   - Results include stable part, category, template, value, and parameter-row IDs needed for review and retry.
@@ -1223,11 +1227,11 @@ Tasks:
 
 Tasks:
 
-- [ ] Define global parameter search filters from `docs/api-schema.yaml` and live API behavior.
-- [ ] Add typed client query support for cross-inventory parameter values.
-- [ ] Implement `search_part_parameters` or equivalent global parameter-value lookup.
-- [ ] Implement confirmed single-row parameter delete with read-back verification.
-- [ ] Update tool reference and operator recipes for cross-inventory parameter review.
+- [x] Define global parameter search filters from `docs/api-schema.yaml` and live API behavior.
+- [x] Add typed client query support for cross-inventory parameter values.
+- [x] Implement `search_part_parameters` or equivalent global parameter-value lookup.
+- [x] Implement confirmed single-row parameter delete with read-back verification.
+- [x] Update tool reference and operator recipes for cross-inventory parameter review.
 
 ### F-S13: Category Parameter Defaults
 
