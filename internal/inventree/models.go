@@ -155,6 +155,22 @@ type ManufacturerPart struct {
 	Description  string `json:"description"`
 }
 
+// CurrentUser is the stable identity subset returned by /api/user/me/ and
+// needed to bind connector OAuth tokens to an InvenTree account.
+type CurrentUser struct {
+	PK       int    `json:"pk"`
+	Username string `json:"username"`
+	Email    string `json:"email"`
+}
+
+// UserToken is the one-time secret response returned when InvenTree creates
+// or rotates a named current-user API token.
+type UserToken struct {
+	Token  string `json:"token"`
+	Name   string `json:"name"`
+	Expiry string `json:"expiry"`
+}
+
 type PurchaseOrder struct {
 	PK                int     `json:"pk"`
 	Reference         string  `json:"reference"`

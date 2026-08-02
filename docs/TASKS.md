@@ -5,6 +5,7 @@ This backlog turns [PLAN.md](PLAN.md) into executable work. Status values are:
 - `Done`: acceptance criteria met, validation/review recorded, and committed; when a task-status update is part of the current change, `Done` means ready for the same commit.
 - `Active`: implementation has started on a named branch; the linked issue carries matching active progress context and is assigned when repository permissions allow it.
 - `Ready`: actionable with current information.
+- `Active`: implementation is in progress on an assigned story.
 - `Blocked`: needs an explicit decision, external verification, or prerequisite task.
 - `Planned`: valid work, but should wait for dependencies.
 - `Future`: outside the first beta milestone.
@@ -86,7 +87,7 @@ Before `M1C-S04` is complete, mutating, operational, destructive, and upload too
 | [F-S05](#f-s05-stocktake-adjustments) | Stocktake adjustments. | Done |
 | [F-S06](#f-s06-systemd-notify-and-watchdog-support) | Native systemd notification support for packaged HTTP deployments. | Done |
 | [F-S07](#f-s07-production-http-oauth-startup) | Wire production HTTP startup to OAuth configuration and server dependencies. | Done |
-| [F-S08](#f-s08-chatgpt-connector-oauth-setup-flow) | Implement ChatGPT connector authorization, token, and setup-page flow. | Future |
+| [F-S08](#f-s08-chatgpt-connector-oauth-setup-flow) | Implement ChatGPT connector authorization, token, and setup-page flow. | Done |
 | [F-S09](#f-s09-reverse-proxy-canonical-url-enforcement) | Enforce public issuer/resource URLs behind a trusted reverse proxy. | Future |
 | [F-S10](#f-s10-packaged-http-deployment-and-live-connector-validation) | Validate packaged HTTP deployment and live ChatGPT connector setup. | Future |
 | [F-S11](#f-s11-parameter-template-administration) | Administer parameter templates and safe template merges. | Future |
@@ -485,7 +486,7 @@ Tasks:
 - Scope: enforce per-tool OAuth scopes and request-scoped InvenTree credentials.
 - Validation: `go test ./internal/oauth ./internal/config ./internal/tools ./internal/server` passed; `INVENTREE_TEST_SKIP_DOCKER=1 go test ./...` passed; `git diff --check` passed.
 - Review: Senior Go Developer, Senior QA / Test Architect, Senior Product Manager, and Senior Infosec Reviewer reviews run. Initial Go review found request-scoped credentials were not wired into a concrete tool dependency path and that the Go SDK lacks a top-level `securitySchemes` field; fixed with `OAuthClientFromContext`, request-scoped credential propagation tests, decoded descriptor metadata tests, and explicit SDK residual-risk docs. Initial QA review requested concurrent credential isolation, multi-scope denial, and per-tool descriptor metadata coverage; fixed and rerun, with a final isolation-test refinement tying each bearer token to its own upstream authorization-derived response. Initial product review requested clearer operator-facing wording that full HTTP tool registration is internal server-construction capability until CLI/setup/deployment wiring exists and stale config messages are refreshed; fixed and rerun. Initial infosec review found the credential carrier redacted JSON but not formatting/logging paths; fixed with `String`, `GoString`, `slog.LogValuer`, and JSON/fmt/slog tests. Focused Go, QA, product, and infosec reruns found no remaining actionable findings.
-- Residual risk: the current Go MCP SDK `mcp.Tool` type has no first-class top-level `securitySchemes` field, so scoped tools publish `securitySchemes` and `openai/securitySchemes` through descriptor `_meta` mirrors until SDK support or custom descriptor serialization is added. The earlier production-startup gate was superseded by F-S07. Connector authorization/setup wiring, the remaining canonical URL and trusted-proxy enforcement for those routes, and full deployment validation remain gated follow-up work; development HTTP still exposes only its limited read-only surface.
+- Residual risk: the current Go MCP SDK `mcp.Tool` type has no first-class top-level `securitySchemes` field, so scoped tools publish `securitySchemes` and `openai/securitySchemes` through descriptor `_meta` mirrors until SDK support or custom descriptor serialization is added. The earlier production-startup gate was superseded by F-S07 and connector setup by F-S08. Remaining canonical URL/trusted-proxy enforcement and full deployment validation remain gated follow-up work; development HTTP still exposes only its limited read-only surface.
 - Acceptance:
   - Global bearer auth only authenticates and populates context.
   - Tool-specific guard checks manifest before handler dispatch.
@@ -924,7 +925,7 @@ Review:
 
 Residual risk:
 
-- The production HTTP CLI startup risk recorded by this milestone was superseded by F-S07's protected-resource startup implementation. Connector authorization/setup wiring, the remaining canonical URL and trusted-proxy enforcement for those routes, packaged-service validation, and live ChatGPT connector deployment remain accepted follow-up risk. Milestone 1 beta readiness covers the STDIO operator workflows, registered development HTTP surface, and implemented/tested OAuth and scope primitives, not an end-to-end production ChatGPT connector deployment.
+- The production HTTP CLI startup risk recorded by this milestone was superseded by F-S07's protected-resource startup implementation and F-S08's connector setup flow. Remaining canonical URL/trusted-proxy enforcement, packaged-service validation, and live ChatGPT connector deployment remain accepted follow-up risk. Milestone 1 beta readiness covers the STDIO operator workflows, registered development HTTP surface, and implemented/tested OAuth and scope primitives, not an end-to-end production ChatGPT connector deployment.
 
 ## Future Backlog
 
@@ -1087,7 +1088,7 @@ Residual risk:
 - Scope: replace the current development-only HTTP gate with production HTTP startup that constructs OAuth services, keyrings, protected-resource middleware, scoped tool dependencies, and HTTP routes from explicit configuration.
 - Validation: `go test ./internal/config ./internal/oauth ./internal/server ./cmd/inventree-mcp ./docs` passed; `go generate ./internal/tools` produced no drift; `go test -race -p=1 ./...` passed, including the default-on InvenTree Testcontainers suites; `golangci-lint run` reported 0 issues; `goreleaser check` validated `.goreleaser.yaml`; `git diff --check` passed.
 - Review: Senior Go Developer, Senior QA / Test Architect, Senior Product Manager, and Senior Infosec Reviewer reviews completed on the reconciled SDK `v1.7.0` implementation. Findings covered malformed CLI key disclosure, real production-mux Testcontainers coverage, subtest-local contexts/assertions, path-specific RFC 9728 discovery, bounded signal-driven graceful shutdown and error reporting, production upstream HTTPS, required token subject/issued-at/session claims, authentication before debug body capture, environment-only envelope keys and lifecycle/package guidance, and stale F-S09/milestone/deployment boundaries. Code, tests, task contracts, and operator docs were updated. Focused reruns by all four roles found no remaining actionable findings. This final validation/review evidence update changes only task metadata and did not require another reviewer rerun.
-- Residual risk: production HTTP can validate existing sealed access-token envelopes and protect `/mcp`, but live ChatGPT connector setup still waits for F-S08 authorization/setup endpoints, F-S09's remaining canonical URL and trusted-proxy enforcement for those routes, and F-S10 packaged deployment validation. Stateless refresh envelopes remain replayable until expiry or absolute session expiry as documented by M1C-S03, and the opt-in debug traffic log remains sensitive operator-controlled output.
+- Residual risk: production HTTP can validate sealed access-token envelopes and protect `/mcp`; F-S08 now supplies connector authorization/setup. Live production use still waits for F-S09's remaining canonical URL/trusted-proxy enforcement and F-S10 packaged deployment validation. Stateless refresh envelopes remain replayable until expiry or absolute session expiry as documented by M1C-S03, and the opt-in debug traffic log remains sensitive operator-controlled output.
 - Acceptance:
   - Production HTTP `serve --transport http` starts only when all required OAuth issuer, resource, key, lifetime, client metadata, and InvenTree base URL settings are valid.
   - Raw InvenTree credentials remain rejected as HTTP runtime credentials outside the setup flow.
@@ -1110,12 +1111,13 @@ Tasks:
 
 ### F-S08: ChatGPT Connector OAuth Setup Flow
 
-- Status: `Future`
+- Status: `Done`
 - Issue: [#53](https://github.com/davidvanlaatum/inventree-mcp/issues/53)
 - Depends on: F-S07, current official OpenAI connector documentation verification, product review, and infosec review
+- Progress: current OpenAI connector auth guidance was refreshed on 2026-08-02. The operator selected CIMD `private_key_jwt` over public-client `none` and asked not to rotate existing InvenTree API keys. Implementation validates signed client assertions against the metadata document's same-origin JWKS, rejects assertion replay, seals one-time setup/code state, and creates a uniquely named dedicated InvenTree connector token with explicit supplied-token fallback.
 - Scope: implement the operator-facing OAuth authorization flow for ChatGPT connector setup, including authorization, setup credential collection, authorization-code issuance, token exchange, refresh, and credential-source metadata.
 - Acceptance:
-  - Authorization requests validate client metadata, redirect URI, PKCE `S256`, `resource`, requested scopes, state, and supported public-client token endpoint auth method.
+  - Authorization requests validate client metadata, redirect URI, PKCE `S256`, `resource`, requested scopes, state, and CIMD `private_key_jwt` token-endpoint client authentication against the client metadata JWKS.
   - Setup pages collect supported InvenTree credentials without persisting raw credentials in browser state or logs.
   - Submitted credentials are validated against the configured InvenTree instance before any authorization code is issued.
   - The setup flow attempts to create or seal a dedicated connector token where the InvenTree API and operator permissions allow it.
@@ -1128,14 +1130,17 @@ Tasks:
 
 Tasks:
 
-- [ ] Refresh and cite current official OpenAI connector OAuth requirements before implementation.
-- [ ] Add authorization endpoint request validation and state handling.
-- [ ] Add secure setup-page rendering and form handling.
-- [ ] Add InvenTree credential validation and connector-token creation or fallback decision handling.
-- [ ] Add one-time authorization-code issuance bound to setup state.
-- [ ] Add token endpoint support for authorization-code and refresh-token grants.
-- [ ] Add setup, authorization, token, security-header, timeout, rate-limit, and redaction tests.
-- [ ] Update ChatGPT connector setup documentation and operator recipes.
+- [x] Refresh and cite current official OpenAI connector OAuth requirements before implementation.
+- [x] Add authorization endpoint request validation and state handling.
+- [x] Add secure setup-page rendering and form handling.
+- [x] Add InvenTree credential validation and connector-token creation or fallback decision handling.
+- [x] Add one-time authorization-code issuance bound to setup state.
+- [x] Add token endpoint support for authorization-code and refresh-token grants.
+- [x] Add setup, authorization, token, security-header, timeout, rate-limit, and redaction tests.
+- [x] Update ChatGPT connector setup documentation and operator recipes.
+- Validation: `go generate ./internal/tools`; `go mod tidy -diff`; `git diff --check`; `INVENTREE_TEST_SKIP_DOCKER=1 go test -race -count=1 ./...`; `go test -count=1 ./...`; `golangci-lint run`; `go test -race ./internal/inventree -run '^TestClientMethodsAgainstInvenTree$/current_user_and_connector_token$' -count=1 -v`; and `go test -race ./internal/server -run '^TestHTTPOAuthFlowAgainstInvenTreeContainer$' -count=1 -v` passed. The live InvenTree `1.4.3` checks prove two uniquely named connector tokens and the submitted credential remain usable, and the production mux completes authorization, dedicated-token creation, `private_key_jwt` code exchange, refresh, and a scoped MCP call with the refreshed access token. The CodeQL SSRF follow-up additionally passed `go test -race ./internal/oauth ./internal/server`, the Docker-skipped full race suite, `go mod tidy -diff`, `golangci-lint run`, and `git diff --check`; its regression test proves an unconfigured same-origin client metadata path is rejected without an HTTP fetch. The branch-wide coverage follow-up passed the focused OAuth/InvenTree race tests and the Docker-skipped full race suite; focused package coverage measured 83.4% for OAuth and 90.1% for InvenTree after adding current-user/token, CIMD security-shape, PS256, and ES256 coverage.
+- Review: required Senior Go Developer, Senior QA / Test Architect, Senior Product Manager, and Senior Infosec Reviewer panels completed. Initial findings covered limiter/state exhaustion, fixed-name token rotation, missing setup disclosure, endpoint/JWT negative coverage, production-mux integration depth, slow body reads, process-local replay wording, library-fit evidence, and issue alignment. Fixes added bounded cleanup and authorization limiting, unique setup-specific token names, informed consent/cancel behavior, deterministic clock/timeouts, comprehensive endpoint/assertion tests, full live HTTP integration, a documented MCP SDK/Fosite fit refresh, and aligned operator/issue guidance. Focused reruns after the fixes and after the final refreshed-token/non-rotation integration assertions found no unresolved actionable findings. A final focused Go, QA, product, and infosec rerun found no actionable findings in the exact configured-client-ID URL enforcement added for CodeQL. The branch-wide coverage review found subtests using their parent assertion object and missing valid PS256/ES256 verifier cases; both were fixed, and focused Go, QA, product, and infosec reruns found no remaining actionable findings.
+- Residual risk: client-assertion replay protection is bounded and process-local, so restart or multi-replica deployments require shared external replay state for equivalent protection. Refresh envelopes remain stateless and replayable until expiry or absolute session expiry. Unique dedicated `inventree-mcp-chatgpt-*` tokens preserve submitted and earlier keys but can remain unused after abandoned, expired, or retired authorizations; operators must revoke them in InvenTree because the database-free server does not retain token IDs for automatic cleanup. Canonical routing/trusted-proxy enforcement and live packaged connector deployment remain F-S09/F-S10 work.
 
 ### F-S09: Reverse-Proxy Canonical URL Enforcement
 

@@ -38,12 +38,13 @@ func TestClientMetadataFetcherValidatesCIMDAndRedirect(t *testing.T) {
 				http.Redirect(w, req, metadataPath+"/redirected", http.StatusTemporaryRedirect)
 			case "/metadata/redirected":
 				_ = json.NewEncoder(w).Encode(map[string]any{
-					"client_id":                  metadataPath,
-					"redirect_uris":              []string{redirectURI},
-					"token_endpoint_auth_method": "none",
-					"grant_types":                []string{"authorization_code"},
-					"response_types":             []string{"code"},
-					"future_extension":           "allowed",
+					"client_id":                             metadataPath,
+					"redirect_uris":                         []string{redirectURI},
+					"token_endpoint_auth_methods_supported": []string{"private_key_jwt"},
+					"jwks_uri":                              metadataPath + "/jwks",
+					"grant_types":                           []string{"authorization_code"},
+					"response_types":                        []string{"code"},
+					"future_extension":                      "allowed",
 				})
 			default:
 				http.NotFound(w, req)
@@ -60,8 +61,9 @@ func TestClientMetadataFetcherValidatesCIMDAndRedirect(t *testing.T) {
 		client.Jar = jar
 
 		fetcher := ClientMetadataFetcher{
-			HTTPClient:     client,
-			AllowedOrigins: []string{server.URL},
+			HTTPClient:       client,
+			AllowedOrigins:   []string{server.URL},
+			AllowedClientIDs: []string{metadataPath},
 		}
 		metadata, err := fetcher.FetchAndValidate(ctx, metadataPath, redirectURI)
 		r.NoError(err)
@@ -77,14 +79,15 @@ func TestClientMetadataFetcherValidatesCIMDAndRedirect(t *testing.T) {
 			switch req.URL.Query().Get("case") {
 			case "wrong_redirect":
 				_ = json.NewEncoder(w).Encode(ClientMetadata{
-					RedirectURIs:            []string{"https://chatgpt.com/connector/oauth/other"},
-					TokenEndpointAuthMethod: "none",
+					RedirectURIs:                      []string{"https://chatgpt.com/connector/oauth/other"},
+					TokenEndpointAuthMethodsSupported: []string{"private_key_jwt"},
+					JWKSURI:                           clientServerURL(req) + "/jwks",
 				})
 			case "mismatch":
 				_ = json.NewEncoder(w).Encode(ClientMetadata{
-					ClientID:                "https://chatgpt.com/.well-known/client-metadata",
-					RedirectURIs:            []string{redirectURI},
-					TokenEndpointAuthMethod: "none",
+					ClientID:                          "https://chatgpt.com/.well-known/client-metadata",
+					RedirectURIs:                      []string{redirectURI},
+					TokenEndpointAuthMethodsSupported: []string{"private_key_jwt"},
 				})
 			default:
 				http.Error(w, "no metadata", http.StatusBadGateway)
@@ -94,6 +97,11 @@ func TestClientMetadataFetcherValidatesCIMDAndRedirect(t *testing.T) {
 		fetcher := ClientMetadataFetcher{
 			HTTPClient:     server.Client(),
 			AllowedOrigins: []string{server.URL},
+			AllowedClientIDs: []string{
+				server.URL + "/metadata?case=wrong_redirect",
+				server.URL + "/metadata?case=mismatch",
+				server.URL + "/metadata?case=fetch_failure",
+			},
 		}
 
 		_, err := fetcher.FetchAndValidate(ctx, "http://chatgpt.com/metadata", redirectURI)
@@ -109,6 +117,56 @@ func TestClientMetadataFetcherValidatesCIMDAndRedirect(t *testing.T) {
 	})
 }
 
+func TestClientMetadataFetcherRejectsUnconfiguredSameOriginPathWithoutFetch(t *testing.T) {
+	t.Parallel()
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	r := require.New(t)
+	requests := 0
+	server := httptest.NewTLSServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		requests++
+	}))
+	defer server.Close()
+
+	fetcher := ClientMetadataFetcher{
+		HTTPClient:       server.Client(),
+		AllowedOrigins:   []string{server.URL},
+		AllowedClientIDs: []string{server.URL + "/client"},
+	}
+	_, err := fetcher.Fetch(ctx, server.URL+"/other")
+	r.ErrorIs(err, ErrInvalidClientMetadata)
+	r.Zero(requests)
+}
+
+func TestClientMetadataValidationRejectsUnsupportedSecurityShapes(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	clientID := "https://client.example.test/metadata"
+	valid := ClientMetadata{
+		RedirectURIs:            []string{"https://chatgpt.com/connector/oauth/callback_123"},
+		TokenEndpointAuthMethod: "private_key_jwt",
+		JWKSURI:                 "https://client.example.test/jwks",
+	}
+
+	tests := []struct {
+		name     string
+		metadata ClientMetadata
+	}{
+		{name: "missing private key jwt", metadata: ClientMetadata{JWKSURI: valid.JWKSURI}},
+		{name: "missing jwks", metadata: ClientMetadata{TokenEndpointAuthMethod: "private_key_jwt"}},
+		{name: "cross origin jwks", metadata: ClientMetadata{TokenEndpointAuthMethod: "private_key_jwt", JWKSURI: "https://other.example.test/jwks"}},
+		{name: "unsupported response type", metadata: ClientMetadata{TokenEndpointAuthMethod: "private_key_jwt", JWKSURI: valid.JWKSURI, ResponseTypes: []string{"token"}}},
+		{name: "unsupported grant type", metadata: ClientMetadata{TokenEndpointAuthMethod: "private_key_jwt", JWKSURI: valid.JWKSURI, GrantTypes: []string{"client_credentials"}}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			require.New(t).ErrorIs(validateMetadataShape(tt.metadata, clientID, ""), ErrInvalidClientMetadata)
+		})
+	}
+
+	r.NoError(validateMetadataShape(valid, clientID, valid.RedirectURIs[0]))
+}
+
 func TestClientMetadataFetcherRejectsOversizeTimeoutAndUnsafeRedirects(t *testing.T) {
 	t.Run("bounded read", func(t *testing.T) {
 		t.Parallel()
@@ -119,9 +177,10 @@ func TestClientMetadataFetcherRejectsOversizeTimeoutAndUnsafeRedirects(t *testin
 		}))
 		defer server.Close()
 		_, err := (ClientMetadataFetcher{
-			HTTPClient:     server.Client(),
-			AllowedOrigins: []string{server.URL},
-			MaxBytes:       8,
+			HTTPClient:       server.Client(),
+			AllowedOrigins:   []string{server.URL},
+			AllowedClientIDs: []string{server.URL + "/metadata"},
+			MaxBytes:         8,
 		}).FetchAndValidate(ctx, server.URL+"/metadata", "https://chatgpt.com/connector/oauth/callback_123")
 		r.ErrorIs(err, ErrInvalidClientMetadata)
 	})
@@ -136,9 +195,10 @@ func TestClientMetadataFetcherRejectsOversizeTimeoutAndUnsafeRedirects(t *testin
 		}))
 		defer server.Close()
 		_, err := (ClientMetadataFetcher{
-			HTTPClient:     server.Client(),
-			AllowedOrigins: []string{server.URL},
-			Timeout:        time.Nanosecond,
+			HTTPClient:       server.Client(),
+			AllowedOrigins:   []string{server.URL},
+			AllowedClientIDs: []string{server.URL + "/metadata"},
+			Timeout:          time.Nanosecond,
 		}).FetchAndValidate(ctx, server.URL+"/metadata", "https://chatgpt.com/connector/oauth/callback_123")
 		r.ErrorIs(err, ErrInvalidClientMetadata)
 	})
@@ -159,7 +219,11 @@ func TestClientMetadataFetcherRejectsOversizeTimeoutAndUnsafeRedirects(t *testin
 			http.Redirect(w, req, other.URL+"/metadata", http.StatusFound)
 		}))
 		defer server.Close()
-		fetcher := ClientMetadataFetcher{HTTPClient: server.Client(), AllowedOrigins: []string{server.URL}}
+		fetcher := ClientMetadataFetcher{
+			HTTPClient:       server.Client(),
+			AllowedOrigins:   []string{server.URL},
+			AllowedClientIDs: []string{server.URL + "/metadata", server.URL + "/metadata?to=http"},
+		}
 		_, err := fetcher.FetchAndValidate(ctx, server.URL+"/metadata", "https://chatgpt.com/connector/oauth/callback_123")
 		r.ErrorIs(err, ErrInvalidClientMetadata)
 		_, err = fetcher.FetchAndValidate(ctx, server.URL+"/metadata?to=http", "https://chatgpt.com/connector/oauth/callback_123")
@@ -424,9 +488,10 @@ func TestServiceIssuesOneTimeCodeAndDefaultTokenLifetimes(t *testing.T) {
 	var metadataURL string
 	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_ = json.NewEncoder(w).Encode(ClientMetadata{
-			ClientID:                metadataURL,
-			RedirectURIs:            []string{redirectURI},
-			TokenEndpointAuthMethod: "none",
+			ClientID:                          metadataURL,
+			RedirectURIs:                      []string{redirectURI},
+			TokenEndpointAuthMethodsSupported: []string{"private_key_jwt"},
+			JWKSURI:                           metadataURL + "/jwks",
 		})
 	}))
 	defer server.Close()
@@ -435,8 +500,9 @@ func TestServiceIssuesOneTimeCodeAndDefaultTokenLifetimes(t *testing.T) {
 	service := Service{
 		Codec: codec,
 		MetadataFetcher: ClientMetadataFetcher{
-			HTTPClient:     server.Client(),
-			AllowedOrigins: []string{server.URL},
+			HTTPClient:       server.Client(),
+			AllowedOrigins:   []string{server.URL},
+			AllowedClientIDs: []string{metadataURL},
 		},
 		CodeStore:   NewCodeStore(8, clock.Now),
 		Clock:       clock,
@@ -493,9 +559,10 @@ func TestServiceRejectsWrongPKCEVerifier(t *testing.T) {
 	var metadataURL string
 	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_ = json.NewEncoder(w).Encode(ClientMetadata{
-			ClientID:                metadataURL,
-			RedirectURIs:            []string{redirectURI},
-			TokenEndpointAuthMethod: "none",
+			ClientID:                          metadataURL,
+			RedirectURIs:                      []string{redirectURI},
+			TokenEndpointAuthMethodsSupported: []string{"private_key_jwt"},
+			JWKSURI:                           metadataURL + "/jwks",
 		})
 	}))
 	defer server.Close()
@@ -503,8 +570,9 @@ func TestServiceRejectsWrongPKCEVerifier(t *testing.T) {
 	service := Service{
 		Codec: testCodec(t),
 		MetadataFetcher: ClientMetadataFetcher{
-			HTTPClient:     server.Client(),
-			AllowedOrigins: []string{server.URL},
+			HTTPClient:       server.Client(),
+			AllowedOrigins:   []string{server.URL},
+			AllowedClientIDs: []string{metadataURL},
 		},
 		CodeStore:   NewCodeStore(8, clock.Now),
 		Clock:       clock,
@@ -535,15 +603,17 @@ func TestServiceIssueAuthorizationCodeRejectsBadMetadataBeforeStoringCode(t *tes
 		switch req.URL.Query().Get("case") {
 		case "wrong_redirect":
 			_ = json.NewEncoder(w).Encode(ClientMetadata{
-				ClientID:                metadataURL + "?case=wrong_redirect",
-				RedirectURIs:            []string{"https://chatgpt.com/connector/oauth/other"},
-				TokenEndpointAuthMethod: "none",
+				ClientID:                          metadataURL + "?case=wrong_redirect",
+				RedirectURIs:                      []string{"https://chatgpt.com/connector/oauth/other"},
+				TokenEndpointAuthMethodsSupported: []string{"private_key_jwt"},
+				JWKSURI:                           metadataURL + "/jwks",
 			})
 		case "mismatch":
 			_ = json.NewEncoder(w).Encode(ClientMetadata{
-				ClientID:                "https://chatgpt.com/.well-known/client-metadata",
-				RedirectURIs:            []string{redirectURI},
-				TokenEndpointAuthMethod: "none",
+				ClientID:                          "https://chatgpt.com/.well-known/client-metadata",
+				RedirectURIs:                      []string{redirectURI},
+				TokenEndpointAuthMethodsSupported: []string{"private_key_jwt"},
+				JWKSURI:                           metadataURL + "/jwks",
 			})
 		default:
 			http.Error(w, "metadata unavailable", http.StatusBadGateway)
@@ -553,38 +623,45 @@ func TestServiceIssueAuthorizationCodeRejectsBadMetadataBeforeStoringCode(t *tes
 	metadataURL = server.URL + "/metadata"
 
 	cases := []struct {
-		name           string
-		clientID       string
-		allowedOrigins []string
+		name             string
+		clientID         string
+		allowedOrigins   []string
+		allowedClientIDs []string
 	}{
 		{
-			name:           "bad client id",
-			clientID:       "not-a-url",
-			allowedOrigins: []string{server.URL},
+			name:             "bad client id",
+			clientID:         "not-a-url",
+			allowedOrigins:   []string{server.URL},
+			allowedClientIDs: []string{"not-a-url"},
 		},
 		{
-			name:           "non HTTPS client id",
-			clientID:       "http://chatgpt.com/client-metadata",
-			allowedOrigins: []string{server.URL},
+			name:             "non HTTPS client id",
+			clientID:         "http://chatgpt.com/client-metadata",
+			allowedOrigins:   []string{server.URL},
+			allowedClientIDs: []string{"http://chatgpt.com/client-metadata"},
 		},
 		{
-			name:     "missing allowed origins",
-			clientID: metadataURL,
+			name:             "missing allowed origins",
+			clientID:         metadataURL,
+			allowedClientIDs: []string{metadataURL},
 		},
 		{
-			name:           "wrong redirect",
-			clientID:       metadataURL + "?case=wrong_redirect",
-			allowedOrigins: []string{server.URL},
+			name:             "wrong redirect",
+			clientID:         metadataURL + "?case=wrong_redirect",
+			allowedOrigins:   []string{server.URL},
+			allowedClientIDs: []string{metadataURL + "?case=wrong_redirect"},
 		},
 		{
-			name:           "metadata mismatch",
-			clientID:       metadataURL + "?case=mismatch",
-			allowedOrigins: []string{server.URL},
+			name:             "metadata mismatch",
+			clientID:         metadataURL + "?case=mismatch",
+			allowedOrigins:   []string{server.URL},
+			allowedClientIDs: []string{metadataURL + "?case=mismatch"},
 		},
 		{
-			name:           "metadata fetch failure",
-			clientID:       metadataURL + "?case=fetch_failure",
-			allowedOrigins: []string{server.URL},
+			name:             "metadata fetch failure",
+			clientID:         metadataURL + "?case=fetch_failure",
+			allowedOrigins:   []string{server.URL},
+			allowedClientIDs: []string{metadataURL + "?case=fetch_failure"},
 		},
 	}
 	for _, tc := range cases {
@@ -597,8 +674,9 @@ func TestServiceIssueAuthorizationCodeRejectsBadMetadataBeforeStoringCode(t *tes
 			service := Service{
 				Codec: testCodec(t),
 				MetadataFetcher: ClientMetadataFetcher{
-					HTTPClient:     server.Client(),
-					AllowedOrigins: tc.allowedOrigins,
+					HTTPClient:       server.Client(),
+					AllowedOrigins:   tc.allowedOrigins,
+					AllowedClientIDs: tc.allowedClientIDs,
 				},
 				CodeStore:   store,
 				Clock:       clock,

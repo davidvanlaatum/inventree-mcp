@@ -40,6 +40,59 @@ func TestClientMethodsAgainstInvenTree(t *testing.T) {
 		return shared.Close(context.WithoutCancel(ctx))
 	}))
 
+	t.Run("current_user_and_connector_token", func(t *testing.T) {
+		r := require.New(t)
+		ctx, _, _ := testhandler.SetupTestHandler(t)
+		fixture := newClientMethodFixture(t, shared)
+		user, err := fixture.client.GetCurrentUser(ctx)
+		r.NoError(err)
+		r.NotZero(user.PK)
+		r.Equal(fixture.account.Username, user.Username)
+
+		tokenName, err := fixture.run.Name("connector-token")
+		r.NoError(err)
+		token, err := fixture.client.CreateCurrentUserToken(ctx, tokenName)
+		r.NoError(err)
+		r.NotEmpty(token.Token)
+		r.Equal(tokenName, token.Name)
+		dedicatedClient, err := inventree.NewClient(inventree.Config{
+			BaseURL: shared.Environment().BaseURL,
+			Credential: inventree.Credential{
+				Scheme: inventree.AuthSchemeToken,
+				Token:  token.Token,
+			},
+		})
+		r.NoError(err)
+		dedicatedUser, err := dedicatedClient.GetCurrentUser(ctx)
+		r.NoError(err)
+		r.Equal(user.PK, dedicatedUser.PK)
+
+		secondTokenName, err := fixture.run.Name("connector-token-second")
+		r.NoError(err)
+		secondToken, err := fixture.client.CreateCurrentUserToken(ctx, secondTokenName)
+		r.NoError(err)
+		r.NotEmpty(secondToken.Token)
+		r.NotEqual(token.Token, secondToken.Token)
+		secondDedicatedClient, err := inventree.NewClient(inventree.Config{
+			BaseURL: shared.Environment().BaseURL,
+			Credential: inventree.Credential{
+				Scheme: inventree.AuthSchemeToken,
+				Token:  secondToken.Token,
+			},
+		})
+		r.NoError(err)
+		secondDedicatedUser, err := secondDedicatedClient.GetCurrentUser(ctx)
+		r.NoError(err)
+		r.Equal(user.PK, secondDedicatedUser.PK)
+
+		firstStillUsable, err := dedicatedClient.GetCurrentUser(ctx)
+		r.NoError(err)
+		r.Equal(user.PK, firstStillUsable.PK)
+		suppliedStillUsable, err := fixture.client.GetCurrentUser(ctx)
+		r.NoError(err)
+		r.Equal(user.PK, suppliedStillUsable.PK)
+	})
+
 	t.Run("part_category", func(t *testing.T) {
 		r := require.New(t)
 		ctx, _, _ := testhandler.SetupTestHandler(t)

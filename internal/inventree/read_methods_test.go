@@ -26,6 +26,25 @@ func TestReadMethodsUseExpectedEndpoints(t *testing.T) {
 		response  string
 	}{
 		{
+			name: "get current user",
+			call: func(ctx context.Context, client *Client) error {
+				_, err := client.GetCurrentUser(ctx)
+				return err
+			},
+			wantPath: "/api/user/me/",
+			response: `{"pk":7,"username":"operator","email":"operator@example.test"}`,
+		},
+		{
+			name: "create current user token",
+			call: func(ctx context.Context, client *Client) error {
+				_, err := client.CreateCurrentUserToken(ctx, " connector-token ")
+				return err
+			},
+			wantPath:  "/api/user/me/token/",
+			wantQuery: url.Values{"name": []string{"connector-token"}},
+			response:  `{"token":"new-secret","name":"connector-token"}`,
+		},
+		{
 			name: "search parts",
 			call: func(ctx context.Context, client *Client) error {
 				_, err := client.SearchParts(ctx, SearchQuery{Search: "resistor", Limit: 7, Offset: 3})
@@ -314,6 +333,26 @@ func TestReadMethodsUseExpectedEndpoints(t *testing.T) {
 			r.NoError(tt.call(ctx, client))
 		})
 	}
+}
+
+func TestCreateCurrentUserTokenRejectsInvalidResponses(t *testing.T) {
+	t.Parallel()
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	r := require.New(t)
+
+	client, err := NewClient(Config{
+		BaseURL:    "https://inventory.example.test",
+		Credential: Credential{Scheme: AuthSchemeToken, Token: "secret"},
+		HTTPClient: &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			return jsonResponse(req, http.StatusOK, `{"name":"connector-token"}`), nil
+		})},
+	})
+	r.NoError(err)
+
+	_, err = client.CreateCurrentUserToken(ctx, "  ")
+	r.EqualError(err, "current-user token name is required")
+	_, err = client.CreateCurrentUserToken(ctx, "connector-token")
+	r.EqualError(err, "InvenTree did not return the newly created token secret")
 }
 
 func TestDownloadAttachmentFetchesOnlyMetadataURLWithBounds(t *testing.T) {

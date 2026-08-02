@@ -16,6 +16,9 @@ const (
 	DefaultRefreshTokenLifetime = 30 * 24 * time.Hour
 	DefaultSessionLifetime      = 90 * 24 * time.Hour
 	DefaultCodeLifetime         = 5 * time.Minute
+
+	CredentialSourceDedicated = "dedicated_token"
+	CredentialSourceSupplied  = "supplied_token"
 )
 
 var (
@@ -44,6 +47,7 @@ type TokenClaims struct {
 	ExpiresAt        time.Time  `json:"exp"`
 	SessionExpiresAt time.Time  `json:"session_exp,omitempty"`
 	Credential       Credential `json:"credential"`
+	CredentialSource string     `json:"credential_source,omitempty"`
 }
 
 func (c TokenClaims) validateForUse(now time.Time, expectedType string, aad AssociatedData) error {
@@ -85,6 +89,7 @@ type AuthorizationCodeClaims struct {
 	IssuedAt            time.Time  `json:"iat"`
 	ExpiresAt           time.Time  `json:"exp"`
 	Credential          Credential `json:"credential"`
+	CredentialSource    string     `json:"credential_source,omitempty"`
 }
 
 func (c AuthorizationCodeClaims) validateForUse(now time.Time, aad AssociatedData, redirectURI string, pkceVerifier string) error {
