@@ -88,12 +88,68 @@ func TestSearchCategoryParameterTemplatesPageUsesBoundedPagination(t *testing.T)
 	client, err := NewClient(Config{BaseURL: "https://inventory.example.test", Credential: Credential{Scheme: AuthSchemeToken, Token: "secret"}, HTTPClient: &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
 		a.Equal("100", req.URL.Query().Get("limit"))
 		a.Equal("200", req.URL.Query().Get("offset"))
+		a.Equal("20", req.URL.Query().Get("category"))
+		a.Equal("false", req.URL.Query().Get("fetch_parent"))
 		return jsonResponse(req, http.StatusOK, `{"count":301,"next":"https://inventory.example.test/api/part/category/parameters/?limit=100&offset=300","previous":null,"results":[{"pk":80,"category":20,"template":70}]}`), nil
 	})}})
 	r.NoError(err)
-	page, err := client.SearchCategoryParameterTemplatesPage(ctx, CategoryParameterTemplateQuery{Limit: 100, Offset: 200})
+	fetchParent := false
+	page, err := client.SearchCategoryParameterTemplatesPage(ctx, CategoryParameterTemplateQuery{CategoryID: 20, FetchParent: &fetchParent, Limit: 100, Offset: 200})
 	r.NoError(err)
 	r.Len(page.Results, 1)
 	a.Equal(80, page.Results[0].PK)
 	r.NotNil(page.Next)
+}
+
+func TestCategoryParameterTemplateMethodsUseSchemaEndpoints(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name       string
+		method     string
+		path       string
+		status     int
+		response   string
+		call       func(context.Context, *Client) error
+		assertBody func(*assert.Assertions, map[string]any)
+	}{
+		{name: "get", method: http.MethodGet, path: "/api/part/category/parameters/80/", status: http.StatusOK, response: `{"pk":80,"category":20,"template":70,"default_value":"10k"}`, call: func(ctx context.Context, client *Client) error {
+			_, err := client.GetCategoryParameterTemplate(ctx, 80)
+			return err
+		}},
+		{name: "create", method: http.MethodPost, path: "/api/part/category/parameters/", status: http.StatusCreated, response: `{"pk":80,"category":20,"template":70,"default_value":"10k"}`, call: func(ctx context.Context, client *Client) error {
+			_, err := client.CreateCategoryParameterTemplate(ctx, CategoryParameterTemplateCreate{Category: 20, Template: 70, DefaultValue: "10k"})
+			return err
+		}, assertBody: func(a *assert.Assertions, body map[string]any) {
+			a.Equal(float64(20), body["category"])
+			a.Equal(float64(70), body["template"])
+			a.Equal("10k", body["default_value"])
+		}},
+		{name: "update", method: http.MethodPatch, path: "/api/part/category/parameters/80/", status: http.StatusOK, response: `{"pk":80,"category":20,"template":70,"default_value":"22k"}`, call: func(ctx context.Context, client *Client) error {
+			_, err := client.UpdateCategoryParameterTemplate(ctx, 80, PatchFields{"default_value": Set("")})
+			return err
+		}, assertBody: func(a *assert.Assertions, body map[string]any) { a.Equal("", body["default_value"]) }},
+		{name: "delete", method: http.MethodDelete, path: "/api/part/category/parameters/80/", status: http.StatusNoContent, call: func(ctx context.Context, client *Client) error {
+			return client.DeleteCategoryParameterTemplate(ctx, 80)
+		}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			r := require.New(t)
+			a := assert.New(t)
+			ctx, _, _ := testhandler.SetupTestHandler(t)
+			client, err := NewClient(Config{BaseURL: "https://inventory.example.test", Credential: Credential{Scheme: AuthSchemeToken, Token: "secret"}, HTTPClient: &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+				a.Equal(tt.method, req.Method)
+				a.Equal(tt.path, req.URL.Path)
+				if tt.assertBody != nil {
+					var body map[string]any
+					r.NoError(json.NewDecoder(req.Body).Decode(&body))
+					tt.assertBody(a, body)
+				}
+				return jsonResponse(req, tt.status, tt.response), nil
+			})}})
+			r.NoError(err)
+			r.NoError(tt.call(ctx, client))
+		})
+	}
 }

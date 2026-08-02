@@ -40,6 +40,23 @@
       "http_registration": "registered_with_oauth_scope_guard"
     },
     {
+      "name": "create_category_parameter_default",
+      "milestone_status": "milestone_1",
+      "mutation_class": "write",
+      "scopes": [
+        "inventree.read",
+        "inventree.write"
+      ],
+      "annotations": {
+        "read_only": false,
+        "destructive": false,
+        "idempotent": false,
+        "open_world": false
+      },
+      "upload_sources": null,
+      "http_registration": "registered_with_oauth_scope_guard"
+    },
+    {
       "name": "create_company",
       "milestone_status": "milestone_1",
       "mutation_class": "write",
@@ -212,6 +229,24 @@
       "scopes": [
         "inventree.write",
         "inventree.upload",
+        "inventree.destructive"
+      ],
+      "annotations": {
+        "read_only": false,
+        "destructive": true,
+        "idempotent": false,
+        "open_world": false
+      },
+      "upload_sources": null,
+      "http_registration": "registered_with_oauth_scope_guard"
+    },
+    {
+      "name": "delete_category_parameter_default",
+      "milestone_status": "milestone_1",
+      "mutation_class": "destructive",
+      "scopes": [
+        "inventree.read",
+        "inventree.write",
         "inventree.destructive"
       ],
       "annotations": {
@@ -470,6 +505,22 @@
       "http_registration": "registered_with_oauth_scope_guard"
     },
     {
+      "name": "search_category_parameter_defaults",
+      "milestone_status": "milestone_1",
+      "mutation_class": "read_only",
+      "scopes": [
+        "inventree.read"
+      ],
+      "annotations": {
+        "read_only": true,
+        "destructive": false,
+        "idempotent": true,
+        "open_world": false
+      },
+      "upload_sources": null,
+      "http_registration": "registered"
+    },
+    {
       "name": "search_companies",
       "milestone_status": "milestone_1",
       "mutation_class": "read_only",
@@ -723,6 +774,23 @@
       "scopes": [
         "inventree.write",
         "inventree.upload"
+      ],
+      "annotations": {
+        "read_only": false,
+        "destructive": false,
+        "idempotent": false,
+        "open_world": false
+      },
+      "upload_sources": null,
+      "http_registration": "registered_with_oauth_scope_guard"
+    },
+    {
+      "name": "update_category_parameter_default",
+      "milestone_status": "milestone_1",
+      "mutation_class": "write",
+      "scopes": [
+        "inventree.read",
+        "inventree.write"
       ],
       "annotations": {
         "read_only": false,

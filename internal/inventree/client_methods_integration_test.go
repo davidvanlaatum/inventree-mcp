@@ -403,6 +403,34 @@ func TestClientMethodsAgainstInvenTree(t *testing.T) {
 		r.Equal(inventree.ErrorKindNotFound, apiErr.Kind)
 	})
 
+	t.Run("category_parameter_default_administration", func(t *testing.T) {
+		r := require.New(t)
+		ctx, _, _ := testhandler.SetupTestHandler(t)
+		fixture := newClientMethodFixture(t, shared)
+		category := fixture.ensure(t, testenv.FixtureCategory)
+		template := createParameterTemplate(t, fixture.client, fixture.run, "category-default-admin", "", "")
+		created, err := fixture.client.CreateCategoryParameterTemplate(ctx, inventree.CategoryParameterTemplateCreate{Category: category.ID, Template: template.PK, DefaultValue: "initial"})
+		r.NoError(err)
+		r.NotZero(created.PK)
+		r.Equal("initial", created.DefaultValue)
+
+		got, err := fixture.client.GetCategoryParameterTemplate(ctx, created.PK)
+		r.NoError(err)
+		r.Equal(created.PK, got.PK)
+		page, err := fixture.client.SearchCategoryParameterTemplatesPage(ctx, inventree.CategoryParameterTemplateQuery{CategoryID: category.ID, FetchParent: dvgoutils.Ptr(false), Limit: 100})
+		r.NoError(err)
+		r.Contains(page.Results, got)
+
+		updated, err := fixture.client.UpdateCategoryParameterTemplate(ctx, created.PK, inventree.PatchFields{"default_value": inventree.Set("")})
+		r.NoError(err)
+		r.Empty(updated.DefaultValue)
+		r.NoError(fixture.client.DeleteCategoryParameterTemplate(ctx, created.PK))
+		_, err = fixture.client.GetCategoryParameterTemplate(ctx, created.PK)
+		var apiErr *inventree.APIError
+		r.ErrorAs(err, &apiErr)
+		r.Equal(inventree.ErrorKindNotFound, apiErr.Kind)
+	})
+
 	t.Run("attachment", func(t *testing.T) {
 		r := require.New(t)
 		ctx, _, _ := testhandler.SetupTestHandler(t)

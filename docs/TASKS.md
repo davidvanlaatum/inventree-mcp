@@ -92,7 +92,7 @@ Before `M1C-S04` is complete, mutating, operational, destructive, and upload too
 | [F-S10](#f-s10-packaged-http-deployment-and-live-connector-validation) | Validate packaged HTTP deployment and live ChatGPT connector setup. | Future |
 | [F-S11](#f-s11-parameter-template-administration) | Administer parameter templates and safe template merges. | Done |
 | [F-S12](#f-s12-global-parameter-value-search-and-delete) | Search parameter values across inventory and delete individual rows safely. | Done |
-| [F-S13](#f-s13-category-parameter-defaults) | Manage category parameter defaults using existing templates. | Future |
+| [F-S13](#f-s13-category-parameter-defaults) | Manage category parameter defaults using existing templates. | Done |
 | [F-S14](#f-s14-bulk-parameter-propagation-and-audit-workflows) | Add dry-run bulk parameter propagation and consistency audits. | Future |
 | [F-S15](#f-s15-live-order-entry-tool-hardening) | Close gaps found during live order-entry use of the MCP tools. | Future |
 | [F-S16](#f-s16-mcp-go-sdk-v17-and-2026-07-28-protocol-adoption) | Adopt MCP Go SDK v1.7 and the MCP 2026-07-28 protocol safely. | Done |
@@ -1247,24 +1247,30 @@ Tasks:
 
 ### F-S13: Category Parameter Defaults
 
-- Status: `Future`
+- Status: `Done`
 - Issue: [#58](https://github.com/davidvanlaatum/inventree-mcp/issues/58)
 - Depends on: milestone 1 complete, product review, and infosec review
-- Scope: manage `/api/part/category/parameters/` category parameter defaults using existing parameter templates by default.
+- Progress: completed on `codex/f-s13-category-parameter-defaults`. The operator approved exact-category administration by default, optional inherited-default viewing, stable direct-link mutations, and removal of the unsupported requirement-metadata claim for the pinned InvenTree 1.4.3 API.
+- Scope: manage `/api/part/category/parameters/` category parameter defaults using existing parameter templates by default. Exact-category links are the default administrative view; operators may explicitly include ancestor defaults for an effective inherited view, while mutations target only stable direct-link IDs.
 - Acceptance:
-  - List/search tools show category parameter defaults with stable category IDs, template IDs, requirement/default metadata, and pagination.
+  - List/search tools show category parameter defaults with stable link, category, and template IDs, default-value metadata, direct-versus-inherited source context, and pagination.
+  - Exact-category administration is the default; callers may explicitly include ancestor defaults when reviewing the effective inherited set.
   - Create/update/delete tools require existing templates; they do not create templates implicitly from category-default requests.
-  - Duplicate category/template links are detected before writes, and destructive deletes require `confirm:true` plus read-back verification.
+  - Duplicate category/template links are detected before writes, mutations target stable direct-link IDs, and destructive deletes require `confirm:true` plus read-back verification.
   - Tool outputs clarify when the operator must choose an existing template, category, or duplicate-resolution path.
   - Unit and Testcontainers integration coverage exercise list, create, update, and confirmed delete before the story is marked `Done`.
 
 Tasks:
 
-- [ ] Define category-default list/search filters from schema and live API behavior.
-- [ ] Add typed client methods for category parameter default list/create/update/delete.
-- [ ] Implement list/search category parameter defaults.
-- [ ] Implement existing-template-only create/update/delete with duplicate and confirmation guardrails.
-- [ ] Update tool reference, operator recipes, and parameter reuse prompt guidance.
+- [x] Define category-default list/search filters from schema and live API behavior.
+- [x] Add typed client methods for category parameter default list/create/update/delete.
+- [x] Implement list/search category parameter defaults.
+- [x] Implement existing-template-only create/update/delete with duplicate and confirmation guardrails.
+- [x] Update tool reference, operator recipes, and parameter reuse prompt guidance.
+
+- Validation: `go test -short ./...`, `golangci-lint run ./...`, and `git diff --check` pass. Default-on `go test -v ./internal/inventree ./internal/tools` passes against `inventree/inventree:1.4.3`, including exported client CRUD, exact child-category listing, explicit parent inheritance with the same template linked at both levels, partial update, confirmed delete, and not-found read-back. Short-test package coverage is non-regressing: `internal/tools` is 80.3% versus 79.9% on base `c3ee847`; all other package percentages are unchanged.
+- Review: Senior Go Developer, Senior QA / Test Architect, Senior Product Manager, and Senior Infosec Reviewer reviews run. Initial findings requested embedded-detail reuse/caching, stable link/detail/mutation identity checks, actionable missing-ID and bounded-scan clarification, honest cross-tool duplicate retry semantics, request/page bounds, exact-view source validation, live parent/child inheritance coverage, delete verification failure tests, and stale operator/auth prose cleanup. All were addressed. Focused reruns after the behavior, tests, docs, and final `retry_tool` contract changes found no remaining actionable findings.
+- Residual risk: category-default duplicate preflight and writes are not transactional, so a narrow concurrent-administration race remains; InvenTree's unique category/template constraint is authoritative. The inherited review view intentionally returns both direct and ancestor links with source context rather than collapsing same-template precedence. Filtered scans fail closed beyond 1,000 links or 11 pages.
 
 ### F-S14: Bulk Parameter Propagation And Audit Workflows
 

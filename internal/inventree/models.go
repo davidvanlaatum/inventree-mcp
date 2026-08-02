@@ -114,10 +114,12 @@ type ParameterTemplate struct {
 }
 
 type CategoryParameterTemplate struct {
-	PK           int    `json:"pk"`
-	Category     int    `json:"category"`
-	Template     int    `json:"template"`
-	DefaultValue string `json:"default_value"`
+	PK             int                `json:"pk"`
+	Category       int                `json:"category"`
+	CategoryDetail *Category          `json:"category_detail"`
+	Template       int                `json:"template"`
+	TemplateDetail *ParameterTemplate `json:"template_detail"`
+	DefaultValue   string             `json:"default_value"`
 }
 
 type Attachment struct {
