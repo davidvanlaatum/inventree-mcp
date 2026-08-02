@@ -271,7 +271,7 @@ func TestRunRejectsHTTPWriteToolsBeforeOAuthScopeEnforcement(t *testing.T) {
 	a := assert.New(t)
 	ctx, _, _ := testhandler.SetupTestHandler(t)
 
-	err := Run(ctx, config.Config{Transport: config.TransportHTTP}, tools.Dependencies{EnableWriteTools: true})
+	err := Run(ctx, config.Config{Transport: config.TransportHTTP}, tools.Dependencies{EnableWriteTools: true}, &serverRecordingNotifier{})
 
 	r.Error(err)
 	a.Contains(err.Error(), "HTTP transport cannot register write tools without per-tool OAuth scope enforcement")
@@ -912,9 +912,10 @@ func TestHTTPServerCancellationGracefullyDrainsActiveRequests(t *testing.T) {
 
 	listener, err := net.Listen("tcp", cfg.Listen)
 	r.NoError(err)
+	notifier := &serverRecordingNotifier{}
 	serveErr := make(chan error, 1)
 	go func() {
-		serveErr <- serveHTTP(rootCtx, httpServer, listener)
+		serveErr <- serveHTTP(rootCtx, httpServer, listener, notifier)
 	}()
 	requestErr := make(chan error, 1)
 	go func() {
@@ -952,6 +953,103 @@ func TestHTTPServerCancellationGracefullyDrainsActiveRequests(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		r.Fail("HTTP client request did not complete after server cancellation")
 	}
+	a.Equal(int32(1), notifier.stoppingCalls.Load())
+}
+
+func TestServeHTTPContinuesAfterWatchdogFailureUntilSystemdTerminatesIt(t *testing.T) {
+	r := require.New(t)
+	a := assert.New(t)
+
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	r.NoError(err)
+	defer func() {
+		_ = listener.Close()
+	}()
+	httpServer := newHTTPServer(ctx, config.Config{Listen: listener.Addr().String()}, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	degraded := make(chan struct{}, 1)
+	notifier := &serverRecordingNotifier{
+		watchdogFailure: errors.New("heartbeat failed"),
+		degraded:        degraded,
+	}
+	serveErr := make(chan error, 1)
+	go func() {
+		serveErr <- serveHTTP(ctx, httpServer, listener, notifier)
+	}()
+
+	select {
+	case <-degraded:
+	case <-time.After(time.Second):
+		r.Fail("watchdog failure did not publish degraded status")
+	}
+	response, err := (&http.Client{Timeout: time.Second}).Get("http://" + listener.Addr().String()) //nolint:noctx // Process survival after a watchdog failure is under test.
+	r.NoError(err)
+	r.NoError(response.Body.Close())
+	a.Equal(http.StatusNoContent, response.StatusCode)
+	select {
+	case err := <-serveErr:
+		r.Fail("watchdog failure stopped the HTTP service", "error: %v", err)
+	default:
+	}
+
+	cancel()
+	select {
+	case err := <-serveErr:
+		r.ErrorIs(err, context.Canceled)
+	case <-time.After(time.Second):
+		r.Fail("HTTP service did not stop after cancellation")
+	}
+}
+
+func TestServeHTTPFailsBeforeServingWhenReadyNotificationFails(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	r.NoError(err)
+	defer func() {
+		_ = listener.Close()
+	}()
+	wantErr := errors.New("ready failed")
+	notifier := &serverRecordingNotifier{readyErr: wantErr}
+	httpServer := newHTTPServer(ctx, config.Config{Listen: listener.Addr().String()}, http.NotFoundHandler())
+
+	err = serveHTTP(ctx, httpServer, listener, notifier)
+
+	r.ErrorIs(err, wantErr)
+	a.False(notifier.watchdogStarted.Load())
+}
+
+func TestRunHTTPDoesNotNotifyReadyWhenListenerBindFails(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	r.NoError(err)
+	defer func() {
+		_ = listener.Close()
+	}()
+	notifier := &serverRecordingNotifier{}
+	cfg := config.Config{
+		Transport:              config.TransportHTTP,
+		Environment:            config.EnvironmentDevelopment,
+		Listen:                 listener.Addr().String(),
+		Path:                   "/mcp",
+		MCPMaxRequestBodyBytes: config.DefaultMCPMaxRequestBodyBytes,
+	}
+
+	err = RunHTTP(ctx, cfg, New(tools.Dependencies{}), nil, notifier)
+
+	r.Error(err)
+	a.Zero(notifier.readyCalls.Load())
 }
 
 func postMCP(t *testing.T, handler http.Handler, body string) *httptest.ResponseRecorder {
@@ -1311,6 +1409,40 @@ func TestOpenTrafficLogRejectsUnsafeExistingFiles(t *testing.T) {
 type errReadCloser struct {
 	err error
 }
+
+type serverRecordingNotifier struct {
+	readyErr        error
+	watchdogFailure error
+	degraded        chan<- struct{}
+	readyCalls      atomic.Int32
+	watchdogStarted atomic.Bool
+	stoppingCalls   atomic.Int32
+}
+
+func (*serverRecordingNotifier) Starting() error { return nil }
+func (n *serverRecordingNotifier) Ready() error {
+	n.readyCalls.Add(1)
+	return n.readyErr
+}
+func (n *serverRecordingNotifier) RunWatchdog(ctx context.Context, onFailure func(error)) {
+	n.watchdogStarted.Store(true)
+	if n.watchdogFailure != nil {
+		onFailure(n.watchdogFailure)
+		return
+	}
+	<-ctx.Done()
+}
+func (n *serverRecordingNotifier) Degraded() error {
+	if n.degraded != nil {
+		n.degraded <- struct{}{}
+	}
+	return nil
+}
+func (n *serverRecordingNotifier) Stopping() error {
+	n.stoppingCalls.Add(1)
+	return nil
+}
+func (*serverRecordingNotifier) Fatal() error { return nil }
 
 type bearerRoundTripper struct {
 	base  http.RoundTripper

@@ -15,6 +15,7 @@ import (
 	"github.com/davidvanlaatum/inventree-mcp/internal/buildinfo"
 	"github.com/davidvanlaatum/inventree-mcp/internal/config"
 	"github.com/davidvanlaatum/inventree-mcp/internal/oauth"
+	"github.com/davidvanlaatum/inventree-mcp/internal/systemdnotify"
 	"github.com/davidvanlaatum/inventree-mcp/internal/tools"
 	"github.com/modelcontextprotocol/go-sdk/auth"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -36,7 +37,7 @@ func New(deps tools.Dependencies) *mcp.Server {
 	return srv
 }
 
-func Run(ctx context.Context, cfg config.Config, deps tools.Dependencies) error {
+func Run(ctx context.Context, cfg config.Config, deps tools.Dependencies, notifier systemdnotify.Notifier) error {
 	if cfg.Transport == config.TransportHTTP && deps.EnableWriteTools && deps.AuthorizationMode != tools.AuthorizationModeOAuth {
 		return errors.New("HTTP transport cannot register write tools without per-tool OAuth scope enforcement")
 	}
@@ -57,7 +58,7 @@ func Run(ctx context.Context, cfg config.Config, deps tools.Dependencies) error 
 	case config.TransportStdio:
 		return RunStdio(ctx, srv, traffic)
 	case config.TransportHTTP:
-		return RunHTTP(ctx, cfg, srv, traffic)
+		return RunHTTP(ctx, cfg, srv, traffic, notifier)
 	default:
 		return cfg.Validate()
 	}
@@ -72,7 +73,7 @@ func RunStdio(ctx context.Context, srv *mcp.Server, traffic *trafficLog) error {
 	return srv.Run(ctx, transport)
 }
 
-func RunHTTP(ctx context.Context, cfg config.Config, srv *mcp.Server, traffic *trafficLog) error {
+func RunHTTP(ctx context.Context, cfg config.Config, srv *mcp.Server, traffic *trafficLog, notifier systemdnotify.Notifier) error {
 	handler, err := httpMux(ctx, cfg, srv, traffic)
 	if err != nil {
 		return err
@@ -82,7 +83,10 @@ func RunHTTP(ctx context.Context, cfg config.Config, srv *mcp.Server, traffic *t
 	if err != nil {
 		return err
 	}
-	return serveHTTP(ctx, httpServer, listener)
+	defer func() {
+		_ = listener.Close()
+	}()
+	return serveHTTP(ctx, httpServer, listener, notifier)
 }
 
 func newHTTPServer(ctx context.Context, cfg config.Config, handler http.Handler) *http.Server {
@@ -96,7 +100,28 @@ func newHTTPServer(ctx context.Context, cfg config.Config, handler http.Handler)
 	}
 }
 
-func serveHTTP(ctx context.Context, httpServer *http.Server, listener net.Listener) error {
+func serveHTTP(ctx context.Context, httpServer *http.Server, listener net.Listener, notifier systemdnotify.Notifier) error {
+	if err := notifier.Ready(); err != nil {
+		return fmt.Errorf("notify systemd that HTTP service is ready: %w", err)
+	}
+
+	watchdogCtx, stopWatchdog := context.WithCancel(context.WithoutCancel(ctx))
+	watchdogDone := make(chan struct{})
+	go func() {
+		defer close(watchdogDone)
+		notifier.RunWatchdog(watchdogCtx, func(err error) {
+			logger := logging.FromContext(ctx)
+			logger.Error("systemd watchdog notification failed; continuing until systemd terminates the service", logging.Err(err))
+			if notifyErr := notifier.Degraded(); notifyErr != nil {
+				logger.Error("failed to publish degraded systemd status", logging.Err(notifyErr))
+			}
+		})
+	}()
+	defer func() {
+		stopWatchdog()
+		<-watchdogDone
+	}()
+
 	errCh := make(chan error, 1)
 	go func() {
 		errCh <- httpServer.Serve(listener)
@@ -109,6 +134,9 @@ func serveHTTP(ctx context.Context, httpServer *http.Server, listener net.Listen
 		}
 		return err
 	case <-ctx.Done():
+		if err := notifier.Stopping(); err != nil {
+			logging.FromContext(ctx).Error("failed to notify systemd that service is stopping", logging.Err(err))
+		}
 		shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), defaultHTTPShutdownTimeout)
 		defer cancel()
 		shutdownErr := httpServer.Shutdown(shutdownCtx)

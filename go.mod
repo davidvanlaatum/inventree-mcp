@@ -3,6 +3,7 @@ module github.com/davidvanlaatum/inventree-mcp
 go 1.25.0
 
 require (
+	github.com/coreos/go-systemd/v22 v22.7.0
 	github.com/davidvanlaatum/dvgoutils v0.0.0-20260704011248-9d2ce1ecf3de
 	github.com/moby/moby/api v1.55.0
 	github.com/modelcontextprotocol/go-sdk v1.7.0
