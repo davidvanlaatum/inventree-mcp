@@ -79,9 +79,9 @@ Before `M1C-S04` is complete, mutating, operational, destructive, and upload too
 | [M1I-S01](#m1i-s01-operator-docs-finalization) | Finalize README, operator recipes, and generated tool reference alignment. | Done |
 | [M1I-S02](#m1i-s02-final-review-panel) | Run final Go, QA, product, and infosec review panel. | Done |
 | [F-S01](#f-s01-evaluate-docker-compose-testcontainers-stack) | Evaluate Docker Compose-based Testcontainers stack. | Done |
-| [F-S02](#f-s02-bom-import-workflow) | BOM import workflow. | Future |
+| [F-S02](#f-s02-bom-import-workflow) | BOM import workflow. | Blocked |
 | [F-S03](#f-s03-purchase-order-write-and-receiving) | Purchase order write and receiving. | Done |
-| [F-S04](#f-s04-build-order-workflows) | Build order workflows. | Future |
+| [F-S04](#f-s04-build-order-workflows) | Build order workflows. | Blocked |
 | [F-S05](#f-s05-stocktake-adjustments) | Stocktake adjustments. | Done |
 | [F-S06](#f-s06-systemd-notify-and-watchdog-support) | Native systemd notification support for packaged HTTP deployments. | Done |
 | [F-S07](#f-s07-production-http-oauth-startup) | Wire production HTTP startup to OAuth configuration and server dependencies. | Done |
@@ -951,9 +951,10 @@ Tasks:
 
 ### F-S02: BOM Import Workflow
 
-- Status: `Future`
+- Status: `Blocked`
 - Issue: [#47](https://github.com/davidvanlaatum/inventree-mcp/issues/47)
 - Depends on: milestone 1 complete and product review
+- Blocker: operator placed this unused feature on hold. Do not select or implement F-S02 until every other backlog story except F-S02 and F-S04 is `Done`; then revisit both held stories.
 
 Tasks:
 
@@ -994,9 +995,10 @@ Tasks:
 
 ### F-S04: Build Order Workflows
 
-- Status: `Future`
+- Status: `Blocked`
 - Issue: [#49](https://github.com/davidvanlaatum/inventree-mcp/issues/49)
 - Depends on: milestone 1 complete and product review
+- Blocker: operator placed this unused feature on hold. Do not select or implement F-S04 until every other backlog story except F-S02 and F-S04 is `Done`; then revisit both held stories.
 
 Tasks:
 
