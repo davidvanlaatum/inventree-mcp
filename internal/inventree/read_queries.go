@@ -19,6 +19,12 @@ type PartParameterQuery struct {
 	Offset     int
 }
 
+type TemplateParameterQuery struct {
+	TemplateID int
+	Limit      int
+	Offset     int
+}
+
 type CategoryParameterTemplateQuery struct {
 	CategoryID int
 	Limit      int
@@ -98,6 +104,15 @@ func (q PartParameterQuery) values() url.Values {
 		values.Set("template", strconv.Itoa(q.TemplateID))
 	}
 	values.Set("model_type", parameterModelTypePart)
+	setPagination(values, q.Limit, q.Offset)
+	return values
+}
+
+func (q TemplateParameterQuery) values() url.Values {
+	values := url.Values{}
+	if q.TemplateID != 0 {
+		values.Set("template", strconv.Itoa(q.TemplateID))
+	}
 	setPagination(values, q.Limit, q.Offset)
 	return values
 }

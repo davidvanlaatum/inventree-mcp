@@ -596,6 +596,73 @@ func TestMilestoneHappyPathToolsAgainstInvenTree(t *testing.T) {
 		a.Equal(StatusNotFound, afterDelete.Status)
 	})
 
+	t.Run("parameter_template_admin_and_confirmed_merge", func(t *testing.T) {
+		r := require.New(t)
+		a := assert.New(t)
+		ctx, _, _ := testhandler.SetupTestHandler(t)
+		fixture := newMilestoneToolFixture(t, shared)
+		part := fixture.ensure(t, testenv.FixturePart)
+		sourceName, err := fixture.run.Name("template-source")
+		r.NoError(err)
+		targetName, err := fixture.run.Name("template-target")
+		r.NoError(err)
+		units, description, modelType, choices, checkbox, enabled := "ohm", "merge integration", "part.part", "", false, true
+		_, sourceOutput, err := createParameterTemplate(fixture.deps())(ctx, &mcp.CallToolRequest{}, CreateParameterTemplateInput{
+			Name: sourceName, Units: &units, Description: &description, ModelType: &modelType, Choices: &choices, Checkbox: &checkbox, Enabled: &enabled,
+		})
+		r.NoError(err)
+		r.NotNil(sourceOutput.Record)
+		_, targetOutput, err := createParameterTemplate(fixture.deps())(ctx, &mcp.CallToolRequest{}, CreateParameterTemplateInput{
+			Name: targetName, Units: &units, Description: &description, ModelType: &modelType, Choices: &choices, Checkbox: &checkbox, Enabled: &enabled,
+		})
+		r.NoError(err)
+		r.NotNil(targetOutput.Record)
+		updatedDescription := "explicit update integration"
+		_, updatedOutput, err := updateParameterTemplate(fixture.deps())(ctx, &mcp.CallToolRequest{}, UpdateParameterTemplateInput{
+			TemplateID: sourceOutput.Record.PK, Description: &updatedDescription, Checkbox: &checkbox,
+		})
+		r.NoError(err)
+		r.NotNil(updatedOutput.Record)
+		a.Equal(sourceName, updatedOutput.Record.Name, "omitted name must remain unchanged")
+		r.NotNil(updatedOutput.Record.Units)
+		a.Equal("ohm", *updatedOutput.Record.Units, "omitted units must remain unchanged")
+		a.Equal(updatedDescription, updatedOutput.Record.Description)
+		a.False(updatedOutput.Record.Checkbox, "explicit false must be preserved")
+		parameter, err := fixture.client.CreatePartParameter(ctx, inventree.NewPartParameter(part.ID, sourceOutput.Record.PK, "10 ohm"))
+		r.NoError(err)
+		_, blockedDelete, err := deleteParameterTemplate(fixture.deps())(ctx, &mcp.CallToolRequest{}, DeleteParameterTemplateInput{TemplateID: sourceOutput.Record.PK, Confirm: true})
+		r.NoError(err)
+		a.Equal(StatusClarificationRequired, blockedDelete.Status)
+		a.Equal([]int{parameter.PK}, blockedDelete.References.ParameterIDs)
+		preservedTemplate, err := fixture.client.GetParameterTemplate(ctx, sourceOutput.Record.PK)
+		r.NoError(err)
+		a.Equal(sourceOutput.Record.PK, preservedTemplate.PK)
+		preservedParameter, err := fixture.client.GetPartParameter(ctx, parameter.PK)
+		r.NoError(err)
+		a.Equal(sourceOutput.Record.PK, preservedParameter.Template)
+		input := MergeParameterTemplatesInput{SourceTemplateID: sourceOutput.Record.PK, TargetTemplateID: targetOutput.Record.PK, ValueMap: map[string]string{"10 ohm": "12 ohm"}, DryRun: true}
+		_, plan, err := mergeParameterTemplates(fixture.deps())(ctx, &mcp.CallToolRequest{}, input)
+		r.NoError(err)
+		r.NotEmpty(plan.PlanHash)
+		r.Len(plan.Actions, 1)
+		input.DryRun = false
+		input.Confirm = true
+		input.PlanHash = plan.PlanHash
+		_, merged, err := mergeParameterTemplates(fixture.deps())(ctx, &mcp.CallToolRequest{}, input)
+		r.NoError(err)
+		a.Equal(StatusOK, merged.Status)
+		a.True(merged.SourceDeleted)
+		a.True(merged.ReadbackVerified)
+		readback, err := fixture.client.GetPartParameter(ctx, parameter.PK)
+		r.NoError(err)
+		a.Equal(targetOutput.Record.PK, readback.Template)
+		a.Equal("12 ohm", readback.Data)
+		_, err = fixture.client.GetParameterTemplate(ctx, sourceOutput.Record.PK)
+		var apiErr *inventree.APIError
+		r.ErrorAs(err, &apiErr)
+		a.Equal(inventree.ErrorKindNotFound, apiErr.Kind)
+	})
+
 	t.Run("deferred_file_surface_boundaries_return_clarifications", func(t *testing.T) {
 		r := require.New(t)
 		a := assert.New(t)

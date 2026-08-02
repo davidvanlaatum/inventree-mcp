@@ -138,6 +138,11 @@ func (c *Client) SearchPartParametersPage(ctx context.Context, query PartParamet
 	return PartParameterPage{Count: page.Count, Results: page.Results, HasMore: page.Next != nil && *page.Next != ""}, err
 }
 
+func (c *Client) SearchTemplateParametersPage(ctx context.Context, query TemplateParameterQuery) (PartParameterPage, error) {
+	page, err := listPage[Parameter](ctx, c, "/api/parameter/", query.values())
+	return PartParameterPage{Count: page.Count, Results: page.Results, HasMore: page.Next != nil && *page.Next != ""}, err
+}
+
 func (c *Client) GetPartParameter(ctx context.Context, id int) (Parameter, error) {
 	var out Parameter
 	err := c.get(ctx, fmt.Sprintf("/api/parameter/%d/", id), &out)
@@ -172,6 +177,10 @@ func (c *Client) SearchCategoryParameterTemplates(ctx context.Context, query Cat
 		}
 	}
 	return filtered, nil
+}
+
+func (c *Client) SearchCategoryParameterTemplatesPage(ctx context.Context, query CategoryParameterTemplateQuery) (Page[CategoryParameterTemplate], error) {
+	return listPage[CategoryParameterTemplate](ctx, c, "/api/part/category/parameters/", query.values())
 }
 
 func (c *Client) ListAttachments(ctx context.Context, query AttachmentQuery) ([]Attachment, error) {

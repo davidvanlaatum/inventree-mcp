@@ -90,7 +90,7 @@ Before `M1C-S04` is complete, mutating, operational, destructive, and upload too
 | [F-S08](#f-s08-chatgpt-connector-oauth-setup-flow) | Implement ChatGPT connector authorization, token, and setup-page flow. | Done |
 | [F-S09](#f-s09-reverse-proxy-canonical-url-enforcement) | Enforce public issuer/resource URLs behind a trusted reverse proxy. | Future |
 | [F-S10](#f-s10-packaged-http-deployment-and-live-connector-validation) | Validate packaged HTTP deployment and live ChatGPT connector setup. | Future |
-| [F-S11](#f-s11-parameter-template-administration) | Administer parameter templates and safe template merges. | Future |
+| [F-S11](#f-s11-parameter-template-administration) | Administer parameter templates and safe template merges. | Done |
 | [F-S12](#f-s12-global-parameter-value-search-and-delete) | Search parameter values across inventory and delete individual rows safely. | Done |
 | [F-S13](#f-s13-category-parameter-defaults) | Manage category parameter defaults using existing templates. | Future |
 | [F-S14](#f-s14-bulk-parameter-propagation-and-audit-workflows) | Add dry-run bulk parameter propagation and consistency audits. | Future |
@@ -1193,10 +1193,13 @@ Tasks:
 
 ### F-S11: Parameter Template Administration
 
-- Status: `Future`
+- Status: `Done`
 - Issue: [#56](https://github.com/davidvanlaatum/inventree-mcp/issues/56)
 - Depends on: milestone 1 complete, product review, and infosec review
 - Scope: administer `/api/parameter/template/` records and provide a guarded template-merge workflow for consolidating duplicate or overlapping templates.
+- Validation: `go generate ./internal/tools` refreshed the checked tool manifest; `go test -tags no_integration_tests -cover ./internal/inventree ./internal/tools ./internal/server ./internal/schema ./docs` passed with `internal/inventree` at 91.1% and `internal/tools` at 79.9%; the matching current base-branch package comparison was 91.0% and 78.4%, with all other packages unchanged; `go test -race ./internal/inventree -run '^TestClientMethodsAgainstInvenTree$/parameter_template_administration$' -count=1 -v` and `go test -race ./internal/tools -run '^TestMilestoneHappyPathToolsAgainstInvenTree$/parameter_template_admin_and_confirmed_merge$' -count=1 -v` passed against the pinned InvenTree Testcontainers stack; `go test -race -p=1 ./...` passed with every default-on Docker suite; `golangci-lint run ./...` reported 0 issues; `go mod tidy -diff` and `git diff --check` passed.
+- Review: Senior Go Developer, Senior QA / Test Architect, Senior Product Manager, and Senior Infosec Reviewer reviews completed. Initial findings identified stale and unbounded category-link preflight, misleading non-part `part_id` output, incomplete live guardrail/partial-failure coverage, insufficient category-link cleanup context, missing non-atomic recovery guidance and model-type values, a read-scope oracle in create/update preflight, and raw upstream update-error disclosure. Fixes add bounded 1,000-link pagination, fresh row/link checks immediately before cleanup, structured model/category identities, live update/delete guardrails, stale-state/fault/read-back/delete tests, explicit supported model types, read+write scopes, sanitized failure reasons, and single-writer fresh-plan recovery guidance. Focused Go, QA, product, and infosec reruns found no unresolved actionable findings.
+- Residual risk: merge and delete use non-transactional upstream REST calls. A narrow race remains if another UI/API/server writer creates a reference between the final preflight and template deletion; operators must prevent concurrent template/reference administration, and any partial failure requires inspection plus a fresh dry-run plan rather than replaying the old hash. Parameter and global category-link completeness checks fail closed above 1,000 scanned rows.
 - Acceptance:
   - Create/update tools require explicit template fields, preserve omitted versus explicit values, and refuse ambiguous same-name/unit/choices collisions without operator clarification.
   - Delete requires `confirm:true`, preflight checks for existing parameter rows and category-default links, and refusal unless the operator has chosen an allowed cleanup path.
@@ -1207,12 +1210,12 @@ Tasks:
 
 Tasks:
 
-- [ ] Define parameter-template create/update/delete input contracts and clarification behavior.
-- [ ] Add schema-manifest entries and typed client methods for template create/update/delete where missing.
-- [ ] Implement template create/update tools.
-- [ ] Implement guarded template delete with preflight and confirmation.
-- [ ] Implement dry-run template merge planning, row migration, normalization, read-back verification, and confirmed cleanup.
-- [ ] Update tool reference, operator recipes, and prompts for template administration workflows.
+- [x] Define parameter-template create/update/delete input contracts and clarification behavior.
+- [x] Add schema-manifest entries and typed client methods for template create/update/delete where missing.
+- [x] Implement template create/update tools.
+- [x] Implement guarded template delete with preflight and confirmation.
+- [x] Implement dry-run template merge planning, row migration, normalization, read-back verification, and confirmed cleanup.
+- [x] Update tool reference, operator recipes, and prompts for template administration workflows.
 
 ### F-S12: Global Parameter Value Search And Delete
 

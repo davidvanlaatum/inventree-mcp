@@ -299,6 +299,28 @@ endpoints:
     method: GET
     operation_id: parameter_template_retrieve
     response_schema: '#/components/schemas/ParameterTemplate'
+  - id: create_parameter_template
+    area: parameters
+    path: /api/parameter/template/
+    method: POST
+    operation_id: parameter_template_create
+    request_schema: '#/components/schemas/ParameterTemplate'
+    request_content_type: application/json
+    response_schema: '#/components/schemas/ParameterTemplate'
+  - id: update_parameter_template
+    area: parameters
+    path: /api/parameter/template/{id}/
+    method: PATCH
+    operation_id: parameter_template_partial_update
+    request_schema: '#/components/schemas/PatchedParameterTemplate'
+    request_content_type: application/json
+    response_schema: '#/components/schemas/ParameterTemplate'
+  - id: delete_parameter_template
+    area: parameters
+    path: /api/parameter/template/{id}/
+    method: DELETE
+    operation_id: parameter_template_destroy
+    response_status: 204
   - id: search_category_parameter_templates
     area: parameters
     path: /api/part/category/parameters/
