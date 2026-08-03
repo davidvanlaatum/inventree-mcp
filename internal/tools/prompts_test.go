@@ -58,6 +58,9 @@ func TestMilestonePromptsPreferClarificationDryRunAndStableIDs(t *testing.T) {
 	}
 
 	a.Contains(strings.ToLower(promptManifestByName()[NewPartEntryChecklistPromptName].Checklist), "dry_run:true")
+	a.Contains(strings.ToLower(promptManifestByName()[NewPartEntryChecklistPromptName].Checklist), "mpn is optional")
+	a.Contains(strings.ToLower(promptManifestByName()[NewPartEntryChecklistPromptName].Checklist), "never invent a fallback")
+	a.Contains(strings.ToLower(promptManifestByName()[NewPartEntryChecklistPromptName].Checklist), "remaining_actions")
 	a.Contains(strings.ToLower(promptManifestByName()[InitialStockEntryChecklistPromptName].Checklist), "dry_run:true")
 	a.Contains(strings.ToLower(promptManifestByName()[PurchasePreviewChecklistPromptName].Checklist), "no-write")
 	a.Contains(strings.ToLower(promptManifestByName()[StocktakeReviewPromptName].Checklist), "plan_hash")

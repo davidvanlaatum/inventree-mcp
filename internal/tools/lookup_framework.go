@@ -67,14 +67,18 @@ func LookupHandler[Client, In, Out any](deps Dependencies, toolName string, hand
 		rawClient, err := deps.Client(ctx)
 		if err != nil {
 			var zero Out
-			return nil, zero, err
+			return nil, zero, safeToolError(err)
 		}
 		client, ok := rawClient.(Client)
 		if !ok {
 			var zero Out
 			return nil, zero, fmt.Errorf("%w: client does not implement required interface for %s", ErrLookupClientUnavailable, toolName)
 		}
-		return handler(ctx, req, client, input)
+		result, output, err := handler(ctx, req, client, input)
+		if err != nil {
+			return result, output, safeToolError(err)
+		}
+		return result, output, nil
 	}
 }
 

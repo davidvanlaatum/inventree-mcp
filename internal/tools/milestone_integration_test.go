@@ -917,6 +917,118 @@ func TestMilestoneHappyPathToolsAgainstInvenTree(t *testing.T) {
 		}
 	})
 
+	t.Run("live_order_entry_without_mpn_is_recoverable", func(t *testing.T) {
+		r := require.New(t)
+		a := assert.New(t)
+		ctx, _, _ := testhandler.SetupTestHandler(t)
+		fixture := newMilestoneToolFixture(t, shared)
+		category := fixture.ensure(t, testenv.FixtureCategory)
+		supplier := fixture.ensure(t, testenv.FixtureSupplier)
+		manufacturer := fixture.ensure(t, testenv.FixtureManufacturer)
+		partName, err := fixture.run.Name("order-entry-part")
+		r.NoError(err)
+		sku, err := fixture.run.Name("order-entry-sku")
+		r.NoError(err)
+
+		_, partPlan, err := upsertPartWorkflow(fixture.deps())(ctx, &mcp.CallToolRequest{}, UpsertPartWorkflowInput{
+			DryRun:         true,
+			Name:           partName,
+			CategoryID:     category.ID,
+			SupplierID:     supplier.ID,
+			SupplierSKU:    sku,
+			ManufacturerID: manufacturer.ID,
+			MPN:            dvgoutils.Ptr("  \t "),
+		})
+		r.NoError(err)
+		a.Equal(StatusOK, partPlan.Status)
+		a.True(partPlan.DryRun)
+
+		_, created, err := upsertPartWorkflow(fixture.deps())(ctx, &mcp.CallToolRequest{}, UpsertPartWorkflowInput{
+			Name:           partName,
+			CategoryID:     category.ID,
+			SupplierID:     supplier.ID,
+			SupplierSKU:    sku,
+			ManufacturerID: manufacturer.ID,
+			MPN:            dvgoutils.Ptr("  \t "),
+		})
+		r.NoError(err)
+		a.Equal(StatusOK, created.Status, "workflow output: %#v", created)
+		r.NotNil(created.Part)
+		a.Nil(created.ManufacturerPart)
+		r.NotNil(created.SupplierPart)
+
+		_, parts, err := searchParts(fixture.deps())(ctx, &mcp.CallToolRequest{}, SearchInput{Search: partName, Limit: MaxLookupLimit})
+		r.NoError(err)
+		a.Equal(StatusOK, parts.Status)
+		partIDs := make([]int, 0, len(parts.Results))
+		for _, part := range parts.Results {
+			partIDs = append(partIDs, part.PK)
+		}
+		a.Contains(partIDs, created.Part.PK)
+
+		_, manufacturerParts, err := searchManufacturerPartsAdmin(fixture.deps())(ctx, &mcp.CallToolRequest{}, ManufacturerPartSearchInput{PartID: created.Part.PK, ManufacturerID: manufacturer.ID})
+		r.NoError(err)
+		a.Equal(StatusOK, manufacturerParts.Status)
+		a.Empty(manufacturerParts.Results)
+
+		_, rejectedManufacturerPart, err := createManufacturerPart(fixture.deps())(ctx, &mcp.CallToolRequest{}, CreateManufacturerPartInput{
+			PartID:         created.Part.PK,
+			ManufacturerID: manufacturer.ID,
+		})
+		r.NoError(err)
+		a.Equal(StatusValidationFailed, rejectedManufacturerPart.Status)
+		r.NotNil(rejectedManufacturerPart.Validation)
+		a.Equal([]ValidationFieldError{{Field: "MPN", Messages: []string{"This field may not be blank."}}}, rejectedManufacturerPart.Validation.Fields)
+
+		_, supplierParts, err := searchSupplierPartsAdmin(fixture.deps())(ctx, &mcp.CallToolRequest{}, SupplierPartSearchInput{PartID: created.Part.PK, SupplierID: supplier.ID, SKU: sku})
+		r.NoError(err)
+		a.Equal(StatusOK, supplierParts.Status)
+		r.Len(supplierParts.Results, 1)
+		a.Equal(created.SupplierPart.PK, supplierParts.Results[0].ID)
+
+		supplierReference, err := fixture.run.Name("ebay-order")
+		r.NoError(err)
+		unitPrice := 1.25
+		orderInput := PurchaseOrderWorkflowInput{
+			DryRun:            true,
+			SupplierID:        supplier.ID,
+			SupplierReference: supplierReference,
+			Description:       dvgoutils.Ptr("sanitized live order-entry regression"),
+			Lines: []PurchaseOrderWorkflowLine{{
+				SupplierPartID: created.SupplierPart.PK,
+				Quantity:       1,
+				UnitPrice:      &unitPrice,
+				Currency:       "AUD",
+			}},
+		}
+		_, orderPlan, err := createPurchaseOrderWithLines(fixture.deps())(ctx, &mcp.CallToolRequest{}, orderInput)
+		r.NoError(err)
+		a.Equal(StatusOK, orderPlan.Status)
+		a.True(orderPlan.DryRun)
+
+		orderInput.DryRun = false
+		_, order, err := createPurchaseOrderWithLines(fixture.deps())(ctx, &mcp.CallToolRequest{}, orderInput)
+		r.NoError(err)
+		a.Equal(StatusOK, order.Status)
+		r.NotNil(order.PurchaseOrder)
+		r.Len(order.Lines, 1)
+
+		_, orders, err := searchPurchaseOrders(fixture.deps())(ctx, &mcp.CallToolRequest{}, PurchaseOrderSearchInput{Search: supplierReference, SupplierID: supplier.ID, Limit: MaxLookupLimit})
+		r.NoError(err)
+		a.Equal(StatusOK, orders.Status)
+		orderIDs := make([]int, 0, len(orders.Results))
+		for _, purchaseOrder := range orders.Results {
+			orderIDs = append(orderIDs, purchaseOrder.PK)
+		}
+		a.Contains(orderIDs, order.PurchaseOrder.PK)
+
+		_, lines, err := searchPurchaseOrderLines(fixture.deps())(ctx, &mcp.CallToolRequest{}, PurchaseOrderLineSearchInput{OrderID: order.PurchaseOrder.PK, SupplierPartID: created.SupplierPart.PK, Limit: MaxLookupLimit})
+		r.NoError(err)
+		a.Equal(StatusOK, lines.Status)
+		r.Len(lines.Results, 1)
+		a.Equal(order.Lines[0].PK, lines.Results[0].PK)
+	})
+
 	t.Run("delete_attachment_missing_confirm_returns_structured_clarification_through_mcp", func(t *testing.T) {
 		r := require.New(t)
 		a := assert.New(t)

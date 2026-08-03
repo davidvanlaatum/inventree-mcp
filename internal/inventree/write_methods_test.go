@@ -179,6 +179,21 @@ func TestWriteMethodsUseExpectedEndpoints(t *testing.T) {
 			},
 		},
 		{
+			name: "create manufacturer part without MPN omits field",
+			call: func(ctx context.Context, client *Client) error {
+				_, err := client.CreateManufacturerPart(ctx, ManufacturerPartCreate{Part: 10, Manufacturer: 31})
+				return err
+			},
+			method:   http.MethodPost,
+			path:     "/api/company/part/manufacturer/",
+			response: `{"pk":51,"part":10,"manufacturer":31,"MPN":null}`,
+			assert: func(a *assert.Assertions, body map[string]any) {
+				a.Equal(float64(10), body["part"])
+				a.Equal(float64(31), body["manufacturer"])
+				a.NotContains(body, "MPN")
+			},
+		},
+		{
 			name: "update manufacturer part preserves null",
 			call: func(ctx context.Context, client *Client) error {
 				_, err := client.UpdateManufacturerPart(ctx, 50, PatchFields{"MPN": Null(), "link": Null()})

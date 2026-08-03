@@ -71,11 +71,12 @@ var PromptManifest = []PromptManifestEntry{
 - Search for existing parts, categories, suppliers, manufacturers, supplier parts, and manufacturer parts before writing.
 - Ask for stable IDs when search results are ambiguous; retry with part_id, category_id, supplier_id, manufacturer_id, supplier_part_id, or manufacturer_part_id.
 - Use get_company, get_supplier_part, and get_manufacturer_part before stable-ID maintenance. Use the bounded sourcing searches for duplicate and recovery review.
-- Supplier-part duplicate identity is normalized supplier plus SKU; manufacturer-part duplicate identity is normalized manufacturer plus MPN. Never guess through a collision.
+- Supplier-part duplicate identity is normalized supplier plus SKU. MPN is optional for order entry: omit null, blank, or whitespace-only input and never invent a fallback. The combined workflow reuses one exact part/manufacturer link, clarifies multiple links, or skips link creation when none exists while continuing the supplier-part path. Pinned InvenTree rejects direct manufacturer-part creation without an MPN. Never guess through a collision.
 - Company updates never change the customer role (is_customer), contact, tax, tag, or image state; exact reads may report is_customer. Removing a supplier/manufacturer role requires confirmation and is refused while corresponding links exist.
 - Use explicit clear flags for nullable company and sourcing-link fields. Recovery projections intentionally omit notes and redact external links.
 - Do not invent categories, units, supplier SKUs, manufacturer part numbers, compliance status, or revision data.
 - Prefer upsert_part_with_supplier_and_manufacturer with dry_run:true before any write.
+- If the workflow reports validation_failed or partial_failure, preserve returned stable IDs and completed actions, inspect the named records, and continue only the reported remaining_actions after current-state verification.
 - Treat omitted recommended fields separately from API-required fields and return a structured clarification when required values are missing.`,
 	},
 	{
