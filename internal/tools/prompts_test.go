@@ -49,7 +49,11 @@ func TestMilestonePromptsPreferClarificationDryRunAndStableIDs(t *testing.T) {
 		text := strings.ToLower(entry.Checklist)
 		a.Contains(text, "stable", entry.Name)
 		a.Contains(text, "clarification", entry.Name)
-		a.NotContains(text, "customer", entry.Name)
+		if entry.Name == NewPartEntryChecklistPromptName {
+			a.Contains(text, "never change the customer role (is_customer)", entry.Name)
+		} else {
+			a.NotContains(text, "customer", entry.Name)
+		}
 		a.NotContains(text, "sales", entry.Name)
 	}
 

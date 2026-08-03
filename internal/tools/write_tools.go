@@ -250,6 +250,7 @@ func registerWriteTools(server *mcp.Server, deps Dependencies) {
 	addWriteTool(server, deps, CreateCompanyToolName, "Create company", "Creates a supplier and/or manufacturer company.", createCompany(deps))
 	addWriteTool(server, deps, CreateSupplierPartToolName, "Create supplier part", "Creates a supplier-part link for existing records.", createSupplierPart(deps))
 	addWriteTool(server, deps, CreateManufacturerPartToolName, "Create manufacturer part", "Creates a manufacturer-part link for existing records.", createManufacturerPart(deps))
+	registerCompanyAdminWriteTools(server, deps)
 	addWriteTool(server, deps, UpsertPartWorkflowToolName, "Upsert part with supplier and manufacturer", "Plans or performs a safe part upsert with supplier and manufacturer links.", upsertPartWorkflow(deps))
 	addWriteTool(server, deps, CreateStockItemToolName, "Create stock item", "Creates initial stock after checking for duplicate stock at the same part and location.", createStockItem(deps))
 	addWriteTool(server, deps, InitialStockWorkflowToolName, "Create initial stock entry", "Plans or creates initial stock after resolving the part, location, and duplicate guard.", initialStockWorkflow(deps))

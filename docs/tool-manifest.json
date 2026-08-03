@@ -394,6 +394,38 @@
       "http_registration": "registered"
     },
     {
+      "name": "get_company",
+      "milestone_status": "milestone_1",
+      "mutation_class": "read_only",
+      "scopes": [
+        "inventree.read"
+      ],
+      "annotations": {
+        "read_only": true,
+        "destructive": false,
+        "idempotent": true,
+        "open_world": false
+      },
+      "upload_sources": null,
+      "http_registration": "registered"
+    },
+    {
+      "name": "get_manufacturer_part",
+      "milestone_status": "milestone_1",
+      "mutation_class": "read_only",
+      "scopes": [
+        "inventree.read"
+      ],
+      "annotations": {
+        "read_only": true,
+        "destructive": false,
+        "idempotent": true,
+        "open_world": false
+      },
+      "upload_sources": null,
+      "http_registration": "registered"
+    },
+    {
       "name": "get_part",
       "milestone_status": "milestone_1",
       "mutation_class": "read_only",
@@ -459,6 +491,22 @@
     },
     {
       "name": "get_purchase_order_line",
+      "milestone_status": "milestone_1",
+      "mutation_class": "read_only",
+      "scopes": [
+        "inventree.read"
+      ],
+      "annotations": {
+        "read_only": true,
+        "destructive": false,
+        "idempotent": true,
+        "open_world": false
+      },
+      "upload_sources": null,
+      "http_registration": "registered"
+    },
+    {
+      "name": "get_supplier_part",
       "milestone_status": "milestone_1",
       "mutation_class": "read_only",
       "scopes": [
@@ -589,6 +637,22 @@
     },
     {
       "name": "search_companies",
+      "milestone_status": "milestone_1",
+      "mutation_class": "read_only",
+      "scopes": [
+        "inventree.read"
+      ],
+      "annotations": {
+        "read_only": true,
+        "destructive": false,
+        "idempotent": true,
+        "open_world": false
+      },
+      "upload_sources": null,
+      "http_registration": "registered"
+    },
+    {
+      "name": "search_manufacturer_parts",
       "milestone_status": "milestone_1",
       "mutation_class": "read_only",
       "scopes": [
@@ -748,6 +812,22 @@
       "http_registration": "registered"
     },
     {
+      "name": "search_supplier_parts",
+      "milestone_status": "milestone_1",
+      "mutation_class": "read_only",
+      "scopes": [
+        "inventree.read"
+      ],
+      "annotations": {
+        "read_only": true,
+        "destructive": false,
+        "idempotent": true,
+        "open_world": false
+      },
+      "upload_sources": null,
+      "http_registration": "registered"
+    },
+    {
       "name": "search_suppliers",
       "milestone_status": "milestone_1",
       "mutation_class": "read_only",
@@ -869,6 +949,40 @@
       "http_registration": "registered_with_oauth_scope_guard"
     },
     {
+      "name": "update_company",
+      "milestone_status": "milestone_1",
+      "mutation_class": "write",
+      "scopes": [
+        "inventree.read",
+        "inventree.write"
+      ],
+      "annotations": {
+        "read_only": false,
+        "destructive": false,
+        "idempotent": true,
+        "open_world": false
+      },
+      "upload_sources": null,
+      "http_registration": "registered_with_oauth_scope_guard"
+    },
+    {
+      "name": "update_manufacturer_part",
+      "milestone_status": "milestone_1",
+      "mutation_class": "write",
+      "scopes": [
+        "inventree.read",
+        "inventree.write"
+      ],
+      "annotations": {
+        "read_only": false,
+        "destructive": false,
+        "idempotent": true,
+        "open_world": false
+      },
+      "upload_sources": null,
+      "http_registration": "registered_with_oauth_scope_guard"
+    },
+    {
       "name": "update_parameter_template",
       "milestone_status": "milestone_1",
       "mutation_class": "write",
@@ -929,6 +1043,23 @@
         "read_only": false,
         "destructive": false,
         "idempotent": false,
+        "open_world": false
+      },
+      "upload_sources": null,
+      "http_registration": "registered_with_oauth_scope_guard"
+    },
+    {
+      "name": "update_supplier_part",
+      "milestone_status": "milestone_1",
+      "mutation_class": "write",
+      "scopes": [
+        "inventree.read",
+        "inventree.write"
+      ],
+      "annotations": {
+        "read_only": false,
+        "destructive": false,
+        "idempotent": true,
         "open_world": false
       },
       "upload_sources": null,

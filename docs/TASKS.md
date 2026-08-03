@@ -99,7 +99,7 @@ Before `M1C-S04` is complete, mutating, operational, destructive, and upload too
 | [F-S17](#f-s17-native-mcp-elicitation-for-structured-clarifications) | Add native MCP elicitation while preserving structured clarification fallback. | Planned |
 | [F-S18](#f-s18-local-cli-self-update) | Add an explicit local CLI self-update workflow for direct binary installs. | Done |
 | [F-S19](#f-s19-part-category-administration) | Add guarded part-category retrieval, creation, and editing. | Done |
-| [F-S20](#f-s20-company-and-sourcing-link-maintenance) | Add exact reads and guarded maintenance for companies and sourcing links. | Future |
+| [F-S20](#f-s20-company-and-sourcing-link-maintenance) | Add exact reads and guarded maintenance for companies and sourcing links. | Done |
 | [F-S21](#f-s21-stock-location-and-stock-record-administration) | Add stock-location administration and constrained stock-record maintenance. | Future |
 
 ## Milestone 0: Repository And Planning
@@ -1454,9 +1454,10 @@ Decision: expose every schema-writable category field; trim and compare names ca
 
 ### F-S20: Company And Sourcing Link Maintenance
 
-- Status: `Future`
+- Status: `Done`
 - Issue: [#79](https://github.com/davidvanlaatum/inventree-mcp/issues/79)
 - Depends on: milestone 1 complete, product review, QA review, and infosec review
+- Progress: implementation completed on `codex/f-s20-company-sourcing-maintenance`; publication and merge tracking continue in the linked issue and implementing pull request.
 - Scope: expose exact reads and guarded partial updates for companies, supplier-part links, and manufacturer-part links, plus the missing sourcing-link search tools needed for duplicate checks and recovery. Deletion and customer/sales workflows remain out of scope.
 - Acceptance:
   - Stable-ID reads are available for companies, supplier parts, and manufacturer parts, and search tools expose schema-backed supplier/manufacturer/part/SKU/MPN filters with bounded pagination and deterministic results.
@@ -1470,13 +1471,19 @@ Decision: expose every schema-writable category field; trim and compare names ca
 
 Tasks:
 
-- [ ] Confirm supported company and sourcing-link patch fields, duplicate identities, role-change classification/policy, and the minimal allowlisted recovery projection.
-- [ ] Complete endpoint-manifest and typed-client coverage, including stable manufacturer-part retrieval.
-- [ ] Add company, supplier-part, and manufacturer-part stable-ID read and search tools.
-- [ ] Add guarded company, supplier-part, and manufacturer-part update tools.
-- [ ] Add duplicate, role, reference, redaction, ambiguous-result, and read-back tests against the pinned InvenTree API.
-- [ ] Align tool reference, operator recipes, prompts, schema notes, and generated manifests.
-- [ ] Run focused Go, QA, product, and infosec review and resolve or document findings.
+- [x] Confirm supported company and sourcing-link patch fields, duplicate identities, role-change classification/policy, and the minimal allowlisted recovery projection.
+- [x] Complete endpoint-manifest and typed-client coverage, including stable manufacturer-part retrieval.
+- [x] Add company, supplier-part, and manufacturer-part stable-ID read and search tools.
+- [x] Add guarded company, supplier-part, and manufacturer-part update tools.
+- [x] Add duplicate, role, reference, redaction, ambiguous-result, and read-back tests against the pinned InvenTree API.
+- [x] Align tool reference, operator recipes, prompts, schema notes, and generated manifests.
+- [x] Run focused Go, QA, product, and infosec review and resolve or document findings.
+
+Decision: company updates may edit name, description, website, currency, active, supplier/manufacturer roles, and notes. Customer-role, contact, tax, tag, and image mutation remain out of scope; exact reads may report customer-role state. Company tags were dropped after pinned live validation showed that the company detail schema and stable GET response do not expose them, so replacement could not be verified or safely recovered. Adding a supplier/manufacturer role is an ordinary guarded update. Removing one requires `confirm:true` and is refused while corresponding sourcing links exist. Supplier-part updates cover identity, description, link, active/primary, manufacturer-part association, packaging, pack quantity, and short note; manufacturer-part updates cover identity, MPN, description, and link. Availability, barcode, long notes, and tags on sourcing links remain out of scope. Duplicate identity is normalized exact supplier plus SKU or manufacturer plus MPN matching. Recovery and error output is allowlisted to stable identity and role/state fields with redacted links; it never exposes notes, contact, tax, or raw upstream bodies.
+
+- Validation: `go generate ./internal/tools` refreshed the checked tool manifest; `go test -tags no_integration_tests -cover ./internal/inventree ./internal/tools` passed with `internal/inventree` at 91.6% and `internal/tools` at 81.3%, above the current base at 91.4% and 81.2%; `go test -race ./internal/inventree -run '^TestClientMethodsAgainstInvenTree$' -count=1` and `go test -race ./internal/tools -run '^TestMilestoneHappyPathToolsAgainstInvenTree$/company_and_sourcing_link_administration$' -count=1` passed against the pinned InvenTree Testcontainers stack; `GOFLAGS=-trimpath go test -race -p=1 ./...` passed with every default-on Docker suite; `go vet ./...`, `golangci-lint run ./...`, `go mod tidy -diff`, and `git diff --check` passed. The unrelated-process-sensitive self-update regression was stabilized by giving ordinary subprocess cases a five-second setup bound while retaining its independent 50 ms timeout and three-second wall-clock assertion; focused repeated race coverage and the full suite passed.
+- Review: Senior Go Developer, Senior QA / Test Architect, Senior Product Manager, and Senior Infosec Reviewer reviews completed. Findings covered sanitized minimal recovery, nullable exact comparisons, bounded deterministic snapshots, duplicate candidates, reference and reverse-link integrity, post-write race detection, complete pinned-live coverage, exact supplier filtering, company-tag verification, and explicit customer-role wording. Company tags were removed from the contract after the operator decision; exact supplier filtering and all recovery, integrity, prompt, and test findings were addressed. Focused Go, QA, and product reruns found no remaining actionable findings, and the final infosec review found no actionable findings.
+- Residual risk: preflight, PATCH, and post-write verification remain separate upstream REST operations, so another MCP server, the InvenTree UI, or a direct API client can still race duplicate or relationship state. Detected post-write divergence returns `partial_failure` with minimal stable-ID state; operators must use single-writer coordination and inspect the current record before retrying. Completeness-sensitive duplicate and dependency scans fail closed above the documented 1,000-row bound. Company tags remain intentionally unsupported because the pinned stable schema and detail response cannot verify or recover their replacement state.
 
 ### F-S21: Stock Location And Stock Record Administration
 

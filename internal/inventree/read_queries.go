@@ -65,15 +65,25 @@ type AttachmentQuery struct {
 }
 
 type SupplierPartQuery struct {
-	Part     int
-	Supplier int
-	SKU      string
+	Search           string
+	Part             int
+	Company          int
+	Supplier         int
+	SKU              string
+	ManufacturerPart int
+	Ordering         string
+	Limit            int
+	Offset           int
 }
 
 type ManufacturerPartQuery struct {
+	Search       string
 	Part         int
 	Manufacturer int
 	MPN          string
+	Ordering     string
+	Limit        int
+	Offset       int
 }
 
 type PurchaseOrderQuery struct {
@@ -196,9 +206,12 @@ func (q AttachmentQuery) values() url.Values {
 }
 
 func (q SupplierPartQuery) values() url.Values {
-	values := url.Values{}
+	values := SearchQuery{Search: q.Search, Limit: q.Limit, Offset: q.Offset}.values()
 	if q.Part != 0 {
 		values.Set("part", strconv.Itoa(q.Part))
+	}
+	if q.Company != 0 {
+		values.Set("company", strconv.Itoa(q.Company))
 	}
 	if q.Supplier != 0 {
 		values.Set("supplier", strconv.Itoa(q.Supplier))
@@ -206,11 +219,17 @@ func (q SupplierPartQuery) values() url.Values {
 	if q.SKU != "" {
 		values.Set("SKU", q.SKU)
 	}
+	if q.ManufacturerPart != 0 {
+		values.Set("manufacturer_part", strconv.Itoa(q.ManufacturerPart))
+	}
+	if q.Ordering != "" {
+		values.Set("ordering", q.Ordering)
+	}
 	return values
 }
 
 func (q ManufacturerPartQuery) values() url.Values {
-	values := url.Values{}
+	values := SearchQuery{Search: q.Search, Limit: q.Limit, Offset: q.Offset}.values()
 	if q.Part != 0 {
 		values.Set("part", strconv.Itoa(q.Part))
 	}
@@ -219,6 +238,9 @@ func (q ManufacturerPartQuery) values() url.Values {
 	}
 	if q.MPN != "" {
 		values.Set("MPN", q.MPN)
+	}
+	if q.Ordering != "" {
+		values.Set("ordering", q.Ordering)
 	}
 	return values
 }

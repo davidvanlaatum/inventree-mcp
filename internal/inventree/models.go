@@ -188,6 +188,55 @@ type ManufacturerPart struct {
 	Description  string `json:"description"`
 }
 
+type CompanyDetail struct {
+	Company
+	Website string  `json:"website"`
+	Notes   *string `json:"notes"`
+}
+
+type SupplierPartDetail struct {
+	PK                 int     `json:"pk"`
+	Part               int     `json:"part"`
+	Supplier           int     `json:"supplier"`
+	SKU                string  `json:"SKU"`
+	Description        *string `json:"description"`
+	Active             bool    `json:"active"`
+	Primary            bool    `json:"primary"`
+	Packaging          *string `json:"packaging"`
+	PackQuantityNative float64 `json:"pack_quantity_native"`
+	Link               *string `json:"link"`
+	ManufacturerPart   *int    `json:"manufacturer_part"`
+	PackQuantity       string  `json:"pack_quantity"`
+	Note               *string `json:"note"`
+}
+
+type ManufacturerPartDetail struct {
+	PK           int     `json:"pk"`
+	Part         int     `json:"part"`
+	Manufacturer int     `json:"manufacturer"`
+	MPN          *string `json:"MPN"`
+	Description  *string `json:"description"`
+	Link         *string `json:"link"`
+}
+
+type CompanyPage struct {
+	Count   int
+	Results []CompanyDetail
+	HasMore bool
+}
+
+type SupplierPartPage struct {
+	Count   int
+	Results []SupplierPartDetail
+	HasMore bool
+}
+
+type ManufacturerPartPage struct {
+	Count   int
+	Results []ManufacturerPartDetail
+	HasMore bool
+}
+
 // CurrentUser is the stable identity subset returned by /api/user/me/ and
 // needed to bind connector OAuth tokens to an InvenTree account.
 type CurrentUser struct {

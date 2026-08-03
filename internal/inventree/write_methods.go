@@ -213,15 +213,33 @@ func (c *Client) CreateCompany(ctx context.Context, input CompanyCreate) (Compan
 	return out, err
 }
 
+func (c *Client) UpdateCompany(ctx context.Context, id int, fields PatchFields) (CompanyDetail, error) {
+	var out CompanyDetail
+	err := c.Patch(ctx, fmt.Sprintf("/api/company/%d/", id), fields, &out)
+	return out, err
+}
+
 func (c *Client) CreateSupplierPart(ctx context.Context, input SupplierPartCreate) (SupplierPart, error) {
 	var out SupplierPart
 	err := c.Post(ctx, "/api/company/part/", input, &out)
 	return out, err
 }
 
+func (c *Client) UpdateSupplierPart(ctx context.Context, id int, fields PatchFields) (SupplierPartDetail, error) {
+	var out SupplierPartDetail
+	err := c.Patch(ctx, fmt.Sprintf("/api/company/part/%d/", id), fields, &out)
+	return out, err
+}
+
 func (c *Client) CreateManufacturerPart(ctx context.Context, input ManufacturerPartCreate) (ManufacturerPart, error) {
 	var out ManufacturerPart
 	err := c.Post(ctx, "/api/company/part/manufacturer/", input, &out)
+	return out, err
+}
+
+func (c *Client) UpdateManufacturerPart(ctx context.Context, id int, fields PatchFields) (ManufacturerPartDetail, error) {
+	var out ManufacturerPartDetail
+	err := c.Patch(ctx, fmt.Sprintf("/api/company/part/manufacturer/%d/", id), fields, &out)
 	return out, err
 }
 

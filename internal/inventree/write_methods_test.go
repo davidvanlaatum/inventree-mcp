@@ -123,6 +123,18 @@ func TestWriteMethodsUseExpectedEndpoints(t *testing.T) {
 			},
 		},
 		{
+			name: "update company preserves null notes and false",
+			call: func(ctx context.Context, client *Client) error {
+				_, err := client.UpdateCompany(ctx, 30, PatchFields{"notes": Null(), "active": Set(false)})
+				return err
+			},
+			method: http.MethodPatch, path: "/api/company/30/", response: `{"pk":30,"notes":null,"active":false}`,
+			assert: func(a *assert.Assertions, body map[string]any) {
+				a.Nil(body["notes"])
+				a.Equal(false, body["active"])
+			},
+		},
+		{
 			name: "create supplier part",
 			call: func(ctx context.Context, client *Client) error {
 				_, err := client.CreateSupplierPart(ctx, SupplierPartCreate{Part: 10, Supplier: 30, SKU: "SKU-1", Active: dvgoutils.Ptr(false)})
@@ -139,6 +151,19 @@ func TestWriteMethodsUseExpectedEndpoints(t *testing.T) {
 			},
 		},
 		{
+			name: "update supplier part preserves null and false",
+			call: func(ctx context.Context, client *Client) error {
+				_, err := client.UpdateSupplierPart(ctx, 40, PatchFields{"link": Null(), "primary": Set(false), "pack_quantity": Set("0")})
+				return err
+			},
+			method: http.MethodPatch, path: "/api/company/part/40/", response: `{"pk":40,"part":10,"supplier":30,"SKU":"SKU-1"}`,
+			assert: func(a *assert.Assertions, body map[string]any) {
+				a.Nil(body["link"])
+				a.Equal(false, body["primary"])
+				a.Equal("0", body["pack_quantity"])
+			},
+		},
+		{
 			name: "create manufacturer part",
 			call: func(ctx context.Context, client *Client) error {
 				_, err := client.CreateManufacturerPart(ctx, ManufacturerPartCreate{Part: 10, Manufacturer: 31, MPN: dvgoutils.Ptr("MPN-1")})
@@ -152,6 +177,15 @@ func TestWriteMethodsUseExpectedEndpoints(t *testing.T) {
 				a.Equal(float64(31), body["manufacturer"])
 				a.Equal("MPN-1", body["MPN"])
 			},
+		},
+		{
+			name: "update manufacturer part preserves null",
+			call: func(ctx context.Context, client *Client) error {
+				_, err := client.UpdateManufacturerPart(ctx, 50, PatchFields{"MPN": Null(), "link": Null()})
+				return err
+			},
+			method: http.MethodPatch, path: "/api/company/part/manufacturer/50/", response: `{"pk":50,"part":10,"manufacturer":31,"MPN":null}`,
+			assert: func(a *assert.Assertions, body map[string]any) { a.Nil(body["MPN"]); a.Nil(body["link"]) },
 		},
 		{
 			name: "create part parameter preserves explicit empty",

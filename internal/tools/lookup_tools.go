@@ -45,6 +45,11 @@ const (
 	SearchCompaniesToolName                 = "search_companies"
 	SearchSuppliersToolName                 = "search_suppliers"
 	SearchManufacturersToolName             = "search_manufacturers"
+	GetCompanyToolName                      = "get_company"
+	SearchSupplierPartsToolName             = "search_supplier_parts"
+	GetSupplierPartToolName                 = "get_supplier_part"
+	SearchManufacturerPartsToolName         = "search_manufacturer_parts"
+	GetManufacturerPartToolName             = "get_manufacturer_part"
 	SearchStockLocationsToolName            = "search_stock_locations"
 	SearchStockItemsToolName                = "search_stock_items"
 	ListAttachmentsToolName                 = "list_attachments"
@@ -64,6 +69,9 @@ const (
 	CreateCompanyToolName                   = "create_company"
 	CreateSupplierPartToolName              = "create_supplier_part"
 	CreateManufacturerPartToolName          = "create_manufacturer_part"
+	UpdateCompanyToolName                   = "update_company"
+	UpdateSupplierPartToolName              = "update_supplier_part"
+	UpdateManufacturerPartToolName          = "update_manufacturer_part"
 	UpsertPartWorkflowToolName              = "upsert_part_with_supplier_and_manufacturer"
 	CreateStockItemToolName                 = "create_stock_item"
 	InitialStockWorkflowToolName            = "create_initial_stock_entry"
@@ -117,6 +125,11 @@ var lookupToolNames = []string{
 	SearchCompaniesToolName,
 	SearchSuppliersToolName,
 	SearchManufacturersToolName,
+	GetCompanyToolName,
+	SearchSupplierPartsToolName,
+	GetSupplierPartToolName,
+	SearchManufacturerPartsToolName,
+	GetManufacturerPartToolName,
 	SearchStockLocationsToolName,
 	SearchStockItemsToolName,
 	ListAttachmentsToolName,
@@ -148,6 +161,9 @@ var writeToolNames = []string{
 	CreateCompanyToolName,
 	CreateSupplierPartToolName,
 	CreateManufacturerPartToolName,
+	UpdateCompanyToolName,
+	UpdateSupplierPartToolName,
+	UpdateManufacturerPartToolName,
 	UpsertPartWorkflowToolName,
 	CreateStockItemToolName,
 	InitialStockWorkflowToolName,
@@ -192,7 +208,7 @@ func init() {
 		scopes := []string{ScopeInventreeWrite}
 		mutationClass := "write"
 		switch name {
-		case CreateParameterTemplateToolName, UpdateParameterTemplateToolName, CreateCategoryParameterDefaultToolName, UpdateCategoryParameterDefaultToolName, CreatePartCategoryToolName, UpdatePartCategoryToolName:
+		case CreateParameterTemplateToolName, UpdateParameterTemplateToolName, CreateCategoryParameterDefaultToolName, UpdateCategoryParameterDefaultToolName, CreatePartCategoryToolName, UpdatePartCategoryToolName, UpdateCompanyToolName, UpdateSupplierPartToolName, UpdateManufacturerPartToolName:
 			scopes = []string{ScopeInventreeRead, ScopeInventreeWrite}
 		case BulkPropagatePartParametersToolName:
 			scopes = []string{ScopeInventreeRead, ScopeInventreeWrite, ScopeInventreeDestructive}
@@ -233,6 +249,11 @@ func init() {
 	categoryUpdate := ToolAuthorizations[UpdatePartCategoryToolName]
 	categoryUpdate.Annotations.Idempotent = true
 	ToolAuthorizations[UpdatePartCategoryToolName] = categoryUpdate
+	for _, name := range []string{UpdateCompanyToolName, UpdateSupplierPartToolName, UpdateManufacturerPartToolName} {
+		auth := ToolAuthorizations[name]
+		auth.Annotations.Idempotent = true
+		ToolAuthorizations[name] = auth
+	}
 	for _, name := range []string{SearchPurchaseOrdersToolName, GetPurchaseOrderToolName, SearchPurchaseOrderLinesToolName, GetPurchaseOrderLineToolName, CreatePurchaseOrderToolName, AddPurchaseOrderLineToolName, UpdatePurchaseOrderLineToolName, CreatePurchaseOrderWorkflowToolName, IssuePurchaseOrderToolName, ReceivePurchaseOrderToolName} {
 		auth := ToolAuthorizations[name]
 		auth.MilestoneStatus = ToolMilestone1
@@ -392,6 +413,7 @@ func registerLookupTools(server *mcp.Server, deps Dependencies) {
 	addReadOnlyTool(server, deps, SearchCompaniesToolName, "Search companies", "Searches InvenTree companies.", searchCompanies(deps))
 	addReadOnlyTool(server, deps, SearchSuppliersToolName, "Search suppliers", "Searches companies with the supplier role.", searchSuppliers(deps))
 	addReadOnlyTool(server, deps, SearchManufacturersToolName, "Search manufacturers", "Searches companies with the manufacturer role.", searchManufacturers(deps))
+	registerCompanyAdminLookupTools(server, deps)
 	addReadOnlyTool(server, deps, SearchStockLocationsToolName, "Search stock locations", "Searches InvenTree stock locations.", searchStockLocations(deps))
 	addReadOnlyTool(server, deps, SearchStockItemsToolName, "Search stock items", "Searches InvenTree stock items.", searchStockItems(deps))
 	addReadOnlyTool(server, deps, ListAttachmentsToolName, "List attachments", "Lists attachment metadata for an in-scope InvenTree object.", listAttachments(deps))
