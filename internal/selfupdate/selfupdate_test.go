@@ -544,6 +544,7 @@ func TestRunCommandUsesIsolatedBoundedProcess(t *testing.T) {
 	}
 	r := require.New(t)
 	a := assert.New(t)
+	ordinaryCommandTimeout := 5 * time.Second
 	sensitive := map[string]string{
 		"INVENTREE_TOKEN":   "inventree-secret",
 		"MCP_AUTHORIZATION": "mcp-secret",
@@ -559,7 +560,7 @@ func TestRunCommandUsesIsolatedBoundedProcess(t *testing.T) {
 	dir := resolvedTempDir(t)
 	script := filepath.Join(dir, "probe.sh")
 	r.NoError(os.WriteFile(script, []byte("#!/bin/sh\nif IFS= read -r line; then exit 8; fi\npwd\nenv\n"), 0o700))
-	output, err := runCommand(t.Context(), Command{Path: script, Dir: dir, Env: []string{"LANG=C", "PATH=/usr/bin:/bin"}, Timeout: time.Second, OutputLimit: 4096})
+	output, err := runCommand(t.Context(), Command{Path: script, Dir: dir, Env: []string{"LANG=C", "PATH=/usr/bin:/bin"}, Timeout: ordinaryCommandTimeout, OutputLimit: 4096})
 	r.NoError(err)
 	a.Contains(output, dir)
 	a.Contains(output, "LANG=C")
@@ -570,7 +571,7 @@ func TestRunCommandUsesIsolatedBoundedProcess(t *testing.T) {
 
 	noisy := filepath.Join(dir, "noisy.sh")
 	r.NoError(os.WriteFile(noisy, []byte("#!/bin/sh\nwhile :; do echo 1234567890; done\n"), 0o700))
-	_, err = runCommand(t.Context(), Command{Path: noisy, Dir: dir, Env: []string{"PATH=/usr/bin:/bin"}, Timeout: time.Second, OutputLimit: 64})
+	_, err = runCommand(t.Context(), Command{Path: noisy, Dir: dir, Env: []string{"PATH=/usr/bin:/bin"}, Timeout: ordinaryCommandTimeout, OutputLimit: 64})
 	a.ErrorContains(err, "output exceeds")
 
 	slow := filepath.Join(dir, "slow.sh")

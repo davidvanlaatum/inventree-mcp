@@ -150,6 +150,26 @@ func TestReadMethodsUseExpectedEndpoints(t *testing.T) {
 			response: `{"pk":30,"name":"acme","is_supplier":true}`,
 		},
 		{
+			name: "search company detail page",
+			call: func(ctx context.Context, client *Client) error {
+				page, err := client.SearchCompaniesPage(ctx, SearchQuery{Search: "acme", Limit: 10, Offset: 2})
+				if err == nil && len(page.Results) != 1 {
+					return errors.New("expected one company detail")
+				}
+				return err
+			},
+			wantPath: "/api/company/", wantQuery: url.Values{"search": []string{"acme"}, "limit": []string{"10"}, "offset": []string{"2"}},
+			response: `{"count":1,"next":null,"previous":null,"results":[{"pk":30,"name":"acme","notes":"private"}]}`,
+		},
+		{
+			name: "get company detail",
+			call: func(ctx context.Context, client *Client) error {
+				_, err := client.GetCompanyDetail(ctx, 30)
+				return err
+			},
+			wantPath: "/api/company/30/", response: `{"pk":30,"name":"acme","notes":"private"}`,
+		},
+		{
 			name: "search stock locations",
 			call: func(ctx context.Context, client *Client) error {
 				_, err := client.SearchStockLocations(ctx, SearchQuery{Search: "bin"})
@@ -300,6 +320,23 @@ func TestReadMethodsUseExpectedEndpoints(t *testing.T) {
 			response: `{"pk":100,"part":10,"supplier":30,"SKU":"abc"}`,
 		},
 		{
+			name: "search supplier part detail page",
+			call: func(ctx context.Context, client *Client) error {
+				_, err := client.SearchSupplierPartsPage(ctx, SupplierPartQuery{Search: "abc", Part: 10, Company: 30, SKU: "abc", ManufacturerPart: 110, Ordering: "SKU", Limit: 5, Offset: 2})
+				return err
+			},
+			wantPath: "/api/company/part/", wantQuery: url.Values{"search": []string{"abc"}, "part": []string{"10"}, "company": []string{"30"}, "SKU": []string{"abc"}, "manufacturer_part": []string{"110"}, "ordering": []string{"SKU"}, "limit": []string{"5"}, "offset": []string{"2"}},
+			response: `{"count":1,"next":null,"previous":null,"results":[{"pk":100,"part":10,"supplier":30,"SKU":"abc","note":"private"}]}`,
+		},
+		{
+			name: "get supplier part detail",
+			call: func(ctx context.Context, client *Client) error {
+				_, err := client.GetSupplierPartDetail(ctx, 100)
+				return err
+			},
+			wantPath: "/api/company/part/100/", response: `{"pk":100,"part":10,"supplier":30,"SKU":"abc","note":"private"}`,
+		},
+		{
 			name: "search manufacturer parts",
 			call: func(ctx context.Context, client *Client) error {
 				_, err := client.SearchManufacturerParts(ctx, ManufacturerPartQuery{Part: 10, Manufacturer: 31, MPN: "mfg-1"})
@@ -308,6 +345,23 @@ func TestReadMethodsUseExpectedEndpoints(t *testing.T) {
 			wantPath:  "/api/company/part/manufacturer/",
 			wantQuery: url.Values{"part": []string{"10"}, "manufacturer": []string{"31"}, "MPN": []string{"mfg-1"}},
 			response:  `{"count":1,"next":null,"previous":null,"results":[{"pk":110,"part":10,"manufacturer":31,"MPN":"mfg-1"}]}`,
+		},
+		{
+			name: "search manufacturer part detail page",
+			call: func(ctx context.Context, client *Client) error {
+				_, err := client.SearchManufacturerPartsPage(ctx, ManufacturerPartQuery{Search: "mfg", Part: 10, Manufacturer: 31, MPN: "mfg-1", Ordering: "MPN", Limit: 5, Offset: 2})
+				return err
+			},
+			wantPath: "/api/company/part/manufacturer/", wantQuery: url.Values{"search": []string{"mfg"}, "part": []string{"10"}, "manufacturer": []string{"31"}, "MPN": []string{"mfg-1"}, "ordering": []string{"MPN"}, "limit": []string{"5"}, "offset": []string{"2"}},
+			response: `{"count":1,"next":null,"previous":null,"results":[{"pk":110,"part":10,"manufacturer":31,"MPN":"mfg-1"}]}`,
+		},
+		{
+			name: "get manufacturer part detail",
+			call: func(ctx context.Context, client *Client) error {
+				_, err := client.GetManufacturerPartDetail(ctx, 110)
+				return err
+			},
+			wantPath: "/api/company/part/manufacturer/110/", response: `{"pk":110,"part":10,"manufacturer":31,"MPN":"mfg-1"}`,
 		},
 		{
 			name: "search purchase orders",

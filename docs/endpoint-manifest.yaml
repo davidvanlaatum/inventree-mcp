@@ -176,6 +176,12 @@ endpoints:
     method: GET
     operation_id: company_part_manufacturer_list
     response_schema: '#/components/schemas/PaginatedManufacturerPartList'
+  - id: get_manufacturer_part
+    area: companies
+    path: /api/company/part/manufacturer/{id}/
+    method: GET
+    operation_id: company_part_manufacturer_retrieve
+    response_schema: '#/components/schemas/ManufacturerPart'
   - id: create_manufacturer_part
     area: companies
     path: /api/company/part/manufacturer/

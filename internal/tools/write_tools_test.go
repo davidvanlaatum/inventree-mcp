@@ -429,6 +429,12 @@ func TestWriteToolAuthorizationsUseWriteScope(t *testing.T) {
 			expected := WriteAnnotations
 			expected.Idempotent = true
 			a.Equal(expected, auth.Annotations)
+		case UpdateCompanyToolName, UpdateSupplierPartToolName, UpdateManufacturerPartToolName:
+			a.Equal("write", auth.MutationClass)
+			a.Equal([]string{ScopeInventreeRead, ScopeInventreeWrite}, auth.Scopes)
+			expected := WriteAnnotations
+			expected.Idempotent = true
+			a.Equal(expected, auth.Annotations)
 		case BulkPropagatePartParametersToolName:
 			a.Equal("destructive", auth.MutationClass)
 			a.Equal([]string{ScopeInventreeRead, ScopeInventreeWrite, ScopeInventreeDestructive}, auth.Scopes)

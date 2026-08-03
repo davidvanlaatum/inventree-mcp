@@ -108,6 +108,17 @@ func (c *Client) SearchCompanies(ctx context.Context, query SearchQuery) ([]Comp
 	return listAll[Company](ctx, c, "/api/company/", query.values())
 }
 
+func (c *Client) SearchCompaniesPage(ctx context.Context, query SearchQuery) (CompanyPage, error) {
+	page, err := listPage[CompanyDetail](ctx, c, "/api/company/", query.values())
+	return CompanyPage{Count: page.Count, Results: page.Results, HasMore: page.Next != nil && *page.Next != ""}, err
+}
+
+func (c *Client) GetCompanyDetail(ctx context.Context, id int) (CompanyDetail, error) {
+	var out CompanyDetail
+	err := c.get(ctx, fmt.Sprintf("/api/company/%d/", id), &out)
+	return out, err
+}
+
 func (c *Client) GetCompany(ctx context.Context, id int) (Company, error) {
 	var out Company
 	err := c.get(ctx, fmt.Sprintf("/api/company/%d/", id), &out)
@@ -364,6 +375,17 @@ func (c *Client) SearchSupplierParts(ctx context.Context, query SupplierPartQuer
 	return listAll[SupplierPart](ctx, c, "/api/company/part/", query.values())
 }
 
+func (c *Client) SearchSupplierPartsPage(ctx context.Context, query SupplierPartQuery) (SupplierPartPage, error) {
+	page, err := listPage[SupplierPartDetail](ctx, c, "/api/company/part/", query.values())
+	return SupplierPartPage{Count: page.Count, Results: page.Results, HasMore: page.Next != nil && *page.Next != ""}, err
+}
+
+func (c *Client) GetSupplierPartDetail(ctx context.Context, id int) (SupplierPartDetail, error) {
+	var out SupplierPartDetail
+	err := c.get(ctx, fmt.Sprintf("/api/company/part/%d/", id), &out)
+	return out, err
+}
+
 func (c *Client) GetSupplierPart(ctx context.Context, id int) (SupplierPart, error) {
 	var out SupplierPart
 	err := c.get(ctx, fmt.Sprintf("/api/company/part/%d/", id), &out)
@@ -372,6 +394,17 @@ func (c *Client) GetSupplierPart(ctx context.Context, id int) (SupplierPart, err
 
 func (c *Client) SearchManufacturerParts(ctx context.Context, query ManufacturerPartQuery) ([]ManufacturerPart, error) {
 	return listAll[ManufacturerPart](ctx, c, "/api/company/part/manufacturer/", query.values())
+}
+
+func (c *Client) SearchManufacturerPartsPage(ctx context.Context, query ManufacturerPartQuery) (ManufacturerPartPage, error) {
+	page, err := listPage[ManufacturerPartDetail](ctx, c, "/api/company/part/manufacturer/", query.values())
+	return ManufacturerPartPage{Count: page.Count, Results: page.Results, HasMore: page.Next != nil && *page.Next != ""}, err
+}
+
+func (c *Client) GetManufacturerPartDetail(ctx context.Context, id int) (ManufacturerPartDetail, error) {
+	var out ManufacturerPartDetail
+	err := c.get(ctx, fmt.Sprintf("/api/company/part/manufacturer/%d/", id), &out)
+	return out, err
 }
 
 func (c *Client) SearchPurchaseOrders(ctx context.Context, query PurchaseOrderQuery) ([]PurchaseOrder, error) {

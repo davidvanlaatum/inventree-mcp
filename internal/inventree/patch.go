@@ -8,6 +8,10 @@ type PatchValue struct {
 	value any
 }
 
+func (v PatchValue) Value() any {
+	return v.value
+}
+
 func Set(value any) PatchValue {
 	return PatchValue{value: value}
 }
