@@ -65,8 +65,44 @@ func TestCreatePurchaseOrderWithLinesDryRunPreflightsWithoutWrites(t *testing.T)
 	r.Len(output.Actions, 2)
 	a.Equal("planned", output.Actions[0].Status)
 	a.Equal("EBAY-42-1", output.Actions[1].Reference)
+	a.Equal([]PlannedChange{
+		{Action: "create_purchase_order", RecordType: "purchase_order", Fields: map[string]any{"supplier": 30, "supplier_reference": "EBAY-42"}},
+		{Action: "create_purchase_order_line", RecordType: "purchase_order_line", Fields: map[string]any{
+			"part": 40, "reference": "EBAY-42-1", "notes": "", "quantity": float64(2), "purchase_price": "1.25", "purchase_price_currency": "AUD", "auto_pricing": false, "merge_items": false,
+		}, DependsOn: []PlannedChangeDependency{{Field: "order", Action: "create_purchase_order"}}},
+	}, output.PlannedChanges)
 	a.Zero(fake.createOrderCalls)
 	a.Zero(fake.createLineCalls)
+}
+
+func TestCreatePurchaseOrderWithLinesDryRunExposesEffectiveUpdates(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	price := 2.5
+	description := "updated order"
+	fake := &fakePurchasingClient{
+		company:       inventree.Company{PK: 30, Name: "Supplier", IsSupplier: true},
+		supplierParts: []inventree.SupplierPart{{PK: 40, Part: 10, Supplier: 30, SKU: "SKU-1"}},
+		orders:        []inventree.PurchaseOrder{{PK: 120, Reference: "PO-120", Supplier: 30, SupplierReference: "EBAY-42"}},
+		lines:         []inventree.PurchaseOrderLineItem{{PK: 130, Order: 120, Part: 40, Reference: "EBAY-42-1", Quantity: 1}},
+	}
+
+	_, output, err := createPurchaseOrderWithLines(purchasingDeps(fake))(ctx, &mcp.CallToolRequest{}, PurchaseOrderWorkflowInput{
+		DryRun: true, SupplierID: 30, SupplierReference: "EBAY-42", Description: &description,
+		Lines: []PurchaseOrderWorkflowLine{{SupplierPartID: 40, Quantity: 3, UnitPrice: &price, Currency: "AUD", Notes: "updated line"}},
+	})
+
+	r.NoError(err)
+	a.Equal([]PlannedChange{
+		{Action: "update_purchase_order", RecordType: "purchase_order", ID: 120, Fields: map[string]any{"description": description}},
+		{Action: "update_purchase_order_line", RecordType: "purchase_order_line", ID: 130, Fields: map[string]any{
+			"order": 120, "part": 40, "reference": "EBAY-42-1", "notes": "updated line", "quantity": float64(3), "purchase_price": "2.5", "purchase_price_currency": "AUD",
+		}},
+	}, output.PlannedChanges)
+	a.Zero(fake.updateOrderCalls)
+	a.Zero(fake.updateLineCalls)
 }
 
 func TestReceivePurchaseOrderDryRunResolvesLocationsWithoutWriting(t *testing.T) {
@@ -451,27 +487,64 @@ func TestIssuePurchaseOrderRequiresConfirmationAndPlacesPendingOrder(t *testing.
 	r := require.New(t)
 	a := assert.New(t)
 	ctx, _, _ := testhandler.SetupTestHandler(t)
-	fake := &fakePurchasingClient{orders: []inventree.PurchaseOrder{{PK: 120, Reference: "PO-1", Supplier: 30, Status: inventree.PurchaseOrderStatusPending}}}
+	fake := &fakePurchasingClient{
+		orders: []inventree.PurchaseOrder{{PK: 120, Reference: "PO-1", Supplier: 30, Status: inventree.PurchaseOrderStatusPending}},
+		lines:  []inventree.PurchaseOrderLineItem{{PK: 130, Order: 120, Part: 40, Reference: "LINE-1", Quantity: 2}},
+	}
 
 	_, dryRun, err := issuePurchaseOrder(purchasingDeps(fake))(ctx, &mcp.CallToolRequest{}, IssuePurchaseOrderInput{DryRun: true, OrderID: 120})
 	r.NoError(err)
 	a.Equal(StatusOK, dryRun.Status)
 	a.Equal("issue_purchase_order", dryRun.Action)
+	a.NotEmpty(dryRun.PlanHash)
+	a.Equal(fake.lines, dryRun.Lines)
+	a.Equal([]PlannedChange{{
+		Action: "issue_purchase_order", RecordType: "purchase_order", ID: 120,
+		Fields: map[string]any{"status": inventree.PurchaseOrderStatusPlaced},
+	}}, dryRun.PlannedChanges)
 	a.Zero(fake.issueCalls)
 
 	_, unconfirmed, err := issuePurchaseOrder(purchasingDeps(fake))(ctx, &mcp.CallToolRequest{}, IssuePurchaseOrderInput{OrderID: 120})
 	r.NoError(err)
 	a.Equal(StatusClarificationRequired, unconfirmed.Status)
 	r.NotNil(unconfirmed.Clarification)
-	a.Equal("confirm_issue", unconfirmed.Clarification.Retry)
+	a.Equal("dry_run", unconfirmed.Clarification.Retry)
+	a.Empty(unconfirmed.PlanHash)
+	a.NotContains(unconfirmed.Clarification.RetryValues, "plan_hash")
 	a.Zero(fake.issueCalls)
 
-	_, issued, err := issuePurchaseOrder(purchasingDeps(fake))(ctx, &mcp.CallToolRequest{}, IssuePurchaseOrderInput{OrderID: 120, ConfirmIssue: true})
+	_, issued, err := issuePurchaseOrder(purchasingDeps(fake))(ctx, &mcp.CallToolRequest{}, IssuePurchaseOrderInput{OrderID: 120, ConfirmIssue: true, PlanHash: dryRun.PlanHash})
 	r.NoError(err)
 	a.Equal(StatusOK, issued.Status)
 	r.NotNil(issued.Order)
 	a.Equal(inventree.PurchaseOrderStatusPlaced, issued.Order.Status)
 	a.Equal(1, fake.issueCalls)
+}
+
+func TestIssuePurchaseOrderRejectsStaleLinePlan(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	fake := &fakePurchasingClient{
+		orders: []inventree.PurchaseOrder{{PK: 120, Reference: "PO-1", Supplier: 30, Status: inventree.PurchaseOrderStatusPending}},
+		lines:  []inventree.PurchaseOrderLineItem{{PK: 130, Order: 120, Part: 40, Reference: "LINE-1", Quantity: 2}},
+	}
+	handler := issuePurchaseOrder(purchasingDeps(fake))
+
+	_, plan, err := handler(ctx, &mcp.CallToolRequest{}, IssuePurchaseOrderInput{DryRun: true, OrderID: 120})
+	r.NoError(err)
+	r.NotEmpty(plan.PlanHash)
+	fake.lines[0].Quantity = 3
+
+	_, stale, err := handler(ctx, &mcp.CallToolRequest{}, IssuePurchaseOrderInput{OrderID: 120, ConfirmIssue: true, PlanHash: plan.PlanHash})
+	r.NoError(err)
+	a.Equal(StatusClarificationRequired, stale.Status)
+	r.NotNil(stale.Clarification)
+	a.Equal("dry_run", stale.Clarification.Retry)
+	a.Empty(stale.PlanHash)
+	a.NotContains(stale.Clarification.RetryValues, "plan_hash")
+	a.Zero(fake.issueCalls)
 }
 
 func TestIssuePurchaseOrderGuardsNonPendingOrders(t *testing.T) {

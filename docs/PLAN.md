@@ -328,6 +328,7 @@ tests/
 - Support human-readable lookup fields, but fail on ambiguous matches.
 - Return InvenTree object IDs and URLs for every created or updated object.
 - Make all high-risk write workflows support `dry_run`.
+- Dry-run workflows must expose every effective mutation field in an explicit plan. Action names alone are not a reviewable plan; keep selected existing records factual and map each unresolved foreign-key field to the earlier planned create that supplies it. A field-level preview without a confirmation token is advisory: execution must repeat preflight and callers must review again after intervening upstream changes.
 - Do not make irreversible changes without an explicit tool argument such as `confirm: true`.
 - Destructive operations are allowed when the InvenTree API supports them, but only behind explicit confirmation and accurate tool annotations.
 - Use PATCH for partial updates wherever the InvenTree API supports it, so the AI can provide only changed fields.
@@ -639,7 +640,7 @@ Important behaviors:
 Important behaviors:
 
 - Use supplier-part links when receiving purchasable items.
-- Require `issue_purchase_order` with `confirm_issue:true` before a pending order is placed with its supplier; receiving never issues an order implicitly.
+- Require `issue_purchase_order` with `confirm_issue:true` and the exact current-state hash from its dry run before a pending order is placed with its supplier. The hash binds the complete order metadata and sorted purchase-order line state visible in the preview and rejects changes observed by the confirmation preflight; receiving never issues an order implicitly. InvenTree does not provide an atomic conditional issue operation across the final reads and placement request, so operators must coordinate a single writer while issuing. If placement returns an ambiguous result, inspect the current order and line state before preparing any retry.
 - `receive_purchase_order_items` accepts schema-valid partial outstanding quantities only for a placed order, rejects virtual parts because they do not create stock, resolves location from item override to line destination to global fallback, and creates new stock items without merging into or updating existing stock.
 - Return a deterministic `plan_hash` with each dry run. The plan includes the supplier pack conversion, resulting base-stock quantity, resolved packaging, and source line purchase price/currency. The operational call requires both `confirm_receive:true` and the exact hash for the current preflight plan; changed order, line, supplier-pack, packaging, or source price state invalidates the confirmation. InvenTree's global currency conversion configuration is not revisioned through this endpoint, so a concurrent administrator change remains outside the hash boundary.
 - Return the refreshed purchase order, resolved receiving plan, created stock items, and received quantities. If the non-idempotent receive result is ambiguous, return structured `partial_failure` recovery guidance and do not invite a blind retry.
@@ -647,7 +648,7 @@ Important behaviors:
 - Require explicit confirmation before closing an order.
 - `update_purchase_order_line` should use PATCH and serialize only supplied fields.
 - `preview_purchase_order_with_lines` is the milestone dry-run tool. It must be read-only, reject write intent, and perform supplier-part validation without creating a purchase order.
-- `create_purchase_order_with_lines` was not registered in the original milestone 1 delivery. Its post-milestone F-S03 workflow takes a supplier, stable supplier reference, description/date fields, and line inputs; runs preview-equivalent validation first; then creates or updates the purchase order and lines while returning stable purchase-order and line IDs for retry/recovery. The exact `(supplier_id, supplier_reference)` pair is the retry identity, while InvenTree generates its pattern-compliant internal reference. The completed F-S03 purchasing tools are classified as implemented in the checked manifest.
+- `create_purchase_order_with_lines` was not registered in the original milestone 1 delivery. Its post-milestone F-S03 workflow takes a supplier, stable supplier reference, description/date fields, and line inputs; runs preview-equivalent validation first; then creates or updates the purchase order and lines while returning stable purchase-order and line IDs for retry/recovery. Dry runs return field-level `planned_changes` for order and line creates or patches, including derived line references and dependencies on a planned order create. The exact `(supplier_id, supplier_reference)` pair is the retry identity, while InvenTree generates its pattern-compliant internal reference. The completed F-S03 purchasing tools are classified as implemented in the checked manifest.
 - Purchase-order write tools must include read/search support for purchase orders and lines so duplicate checks and recovery after interrupted writes do not require raw REST calls.
 
 ### Sales Tools

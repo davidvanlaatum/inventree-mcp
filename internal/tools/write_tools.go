@@ -62,6 +62,7 @@ type PartUpsertWorkflowClient interface {
 	UpdatePart(context.Context, int, inventree.PatchFields) (inventree.Part, error)
 	SearchSuppliers(context.Context, inventree.SearchQuery) ([]inventree.Company, error)
 	SearchManufacturers(context.Context, inventree.SearchQuery) ([]inventree.Company, error)
+	GetCompany(context.Context, int) (inventree.Company, error)
 	CreateCompany(context.Context, inventree.CompanyCreate) (inventree.Company, error)
 	SearchSupplierParts(context.Context, inventree.SupplierPartQuery) ([]inventree.SupplierPart, error)
 	CreateSupplierPart(context.Context, inventree.SupplierPartCreate) (inventree.SupplierPart, error)
@@ -198,6 +199,7 @@ type PartUpsertWorkflowOutput struct {
 	Status                   string                      `json:"status"`
 	DryRun                   bool                        `json:"dry_run"`
 	Actions                  []PartUpsertWorkflowAction  `json:"actions"`
+	PlannedChanges           []PlannedChange             `json:"planned_changes,omitempty"`
 	Part                     *inventree.Part             `json:"part,omitempty"`
 	Supplier                 *inventree.Company          `json:"supplier,omitempty"`
 	Manufacturer             *inventree.Company          `json:"manufacturer,omitempty"`
@@ -216,13 +218,14 @@ type PartUpsertWorkflowFailure struct {
 }
 
 type InitialStockWorkflowOutput struct {
-	Status        string                       `json:"status"`
-	DryRun        bool                         `json:"dry_run"`
-	Actions       []InitialStockWorkflowAction `json:"actions,omitempty"`
-	Part          *inventree.Part              `json:"part,omitempty"`
-	Location      *inventree.StockLocation     `json:"location,omitempty"`
-	StockItem     *inventree.StockItem         `json:"stock_item,omitempty"`
-	Clarification *ClarificationResponse       `json:"clarification,omitempty"`
+	Status         string                       `json:"status"`
+	DryRun         bool                         `json:"dry_run"`
+	Actions        []InitialStockWorkflowAction `json:"actions,omitempty"`
+	PlannedChanges []PlannedChange              `json:"planned_changes,omitempty"`
+	Part           *inventree.Part              `json:"part,omitempty"`
+	Location       *inventree.StockLocation     `json:"location,omitempty"`
+	StockItem      *inventree.StockItem         `json:"stock_item,omitempty"`
+	Clarification  *ClarificationResponse       `json:"clarification,omitempty"`
 }
 
 type InitialStockWorkflowAction struct {
@@ -239,6 +242,19 @@ type PartUpsertWorkflowAction struct {
 	RecordType string `json:"record_type,omitempty"`
 	ID         int    `json:"id,omitempty"`
 	Reason     string `json:"reason,omitempty"`
+}
+
+type PlannedChange struct {
+	Action     string                    `json:"action"`
+	RecordType string                    `json:"record_type"`
+	ID         int                       `json:"id,omitempty"`
+	Fields     map[string]any            `json:"fields"`
+	DependsOn  []PlannedChangeDependency `json:"depends_on,omitempty"`
+}
+
+type PlannedChangeDependency struct {
+	Field  string `json:"field"`
+	Action string `json:"action"`
 }
 
 type parameterWritePlan struct {
@@ -530,14 +546,18 @@ func runPartUpsertWorkflow(ctx context.Context, client PartUpsertWorkflowClient,
 	if err != nil || !ok {
 		return result, clarificationOutput, err
 	}
-	output.Part = &part
+	if part.PK > 0 {
+		output.Part = &part
+	}
 
 	manufacturer, manufacturerOK, result, clarificationOutput, err := resolveWorkflowCompany(ctx, client, input, "manufacturer", input.ManufacturerID, input.ManufacturerName, input.ManufacturerCurrency, input.DryRun, &output)
 	if err != nil || !manufacturerOK {
 		return result, clarificationOutput, err
 	}
 	if manufacturer != nil {
-		output.Manufacturer = manufacturer
+		if manufacturer.PK > 0 {
+			output.Manufacturer = manufacturer
+		}
 		manufacturerPart, ok, result, clarificationOutput, err := resolveWorkflowManufacturerPart(ctx, client, part.PK, *manufacturer, input, &output)
 		if err != nil || !ok {
 			return result, clarificationOutput, err
@@ -550,7 +570,9 @@ func runPartUpsertWorkflow(ctx context.Context, client PartUpsertWorkflowClient,
 		return result, clarificationOutput, err
 	}
 	if supplier != nil {
-		output.Supplier = supplier
+		if supplier.PK > 0 {
+			output.Supplier = supplier
+		}
 		supplierPart, ok, result, clarificationOutput, err := resolveWorkflowSupplierPart(ctx, client, part.PK, *supplier, output.ManufacturerPart, input, &output)
 		if err != nil || !ok {
 			return result, clarificationOutput, err
@@ -634,6 +656,12 @@ func initialStockWorkflow(deps Dependencies) mcp.ToolHandlerFor[InitialStockWork
 
 			if input.DryRun {
 				output.Actions = append(output.Actions, initialStockAction("create_stock_item", "planned", "stockitem", 0, "no matching stock item found"))
+				fields := map[string]any{"part": part.PK, "location": location.PK, "quantity": input.Quantity}
+				setOptionalField(fields, "status", input.Status)
+				setOptionalField(fields, "batch", input.Batch)
+				setOptionalField(fields, "serial", input.Serial)
+				setOptionalField(fields, "notes", input.Notes)
+				output.PlannedChanges = append(output.PlannedChanges, plannedChange("create_stock_item", "stockitem", 0, fields))
 				return TextResult(StatusOK), output, nil
 			}
 			record, err := client.CreateStockItem(ctx, inventree.StockItemCreate{
@@ -751,6 +779,7 @@ func resolveWorkflowPart(ctx context.Context, client PartUpsertWorkflowClient, i
 		}
 		if input.DryRun {
 			output.Actions = append(output.Actions, workflowAction("update_part", "planned", "part", part.PK, "supplied fields would be patched"))
+			output.PlannedChanges = append(output.PlannedChanges, plannedChange("update_part", "part", part.PK, patchFieldValues(fields)))
 			return part, true, nil, PartUpsertWorkflowOutput{}, nil
 		}
 		updated, err := client.UpdatePart(ctx, input.PartID, fields)
@@ -782,6 +811,7 @@ func resolveWorkflowPart(ctx context.Context, client PartUpsertWorkflowClient, i
 		}
 		if input.DryRun {
 			output.Actions = append(output.Actions, workflowAction("update_part", "planned", "part", parts[0].PK, "supplied fields would be patched"))
+			output.PlannedChanges = append(output.PlannedChanges, plannedChange("update_part", "part", parts[0].PK, patchFieldValues(fields)))
 			return parts[0], true, nil, PartUpsertWorkflowOutput{}, nil
 		}
 		updated, err := client.UpdatePart(ctx, parts[0].PK, fields)
@@ -801,6 +831,17 @@ func resolveWorkflowPart(ctx context.Context, client PartUpsertWorkflowClient, i
 	}
 	if input.DryRun {
 		output.Actions = append(output.Actions, workflowAction("create_part", "planned", "part", 0, "no matching part found"))
+		fields := map[string]any{"name": input.Name, "category": input.CategoryID}
+		if input.Description != nil && *input.Description != "" {
+			fields["description"] = *input.Description
+		}
+		if input.IPN != nil && *input.IPN != "" {
+			fields["IPN"] = *input.IPN
+		}
+		setOptionalField(fields, "units", input.Units)
+		setOptionalField(fields, "purchaseable", input.Purchaseable)
+		setOptionalField(fields, "default_location", input.DefaultLocation)
+		output.PlannedChanges = append(output.PlannedChanges, plannedChange("create_part", "part", 0, fields))
 		return inventree.Part{Name: input.Name, Category: &input.CategoryID}, true, nil, PartUpsertWorkflowOutput{}, nil
 	}
 	part, err := client.CreatePart(ctx, inventree.PartCreate{
@@ -825,7 +866,15 @@ func resolveWorkflowCompany(ctx context.Context, client PartUpsertWorkflowClient
 		return nil, false, TextResult(StatusClarificationRequired), workflowClarificationOutput(clarification, dryRun), nil
 	}
 	if id > 0 {
-		company := inventree.Company{PK: id}
+		company, err := client.GetCompany(ctx, id)
+		if err != nil {
+			return partUpsertResolutionFailure[*inventree.Company](output, workflowInput, "resolve_"+role, "company", err, "Read the company by its stable ID, verify its role, and continue only from current state.")
+		}
+		roleMatches := (role == "supplier" && company.IsSupplier) || (role == "manufacturer" && company.IsManufacturer)
+		if !roleMatches {
+			clarification := NewClarification("Which "+role+" company should be used?", role, "selected company does not have the "+role+" role", role+"_id", true, candidatesFor([]inventree.Company{company}), map[string]any{role + "_id": id})
+			return partUpsertResolutionClarification[*inventree.Company](output, workflowInput, "resolve_"+role, "company", "selected company role changed after an earlier write", clarification, dryRun, "Select a company with the required role, inspect the accumulated records, and continue only the remaining actions.")
+		}
 		output.Actions = append(output.Actions, workflowAction("reuse_"+role, "reused", "company", id, role+"_id supplied"))
 		return &company, true, nil, PartUpsertWorkflowOutput{}, nil
 	}
@@ -856,6 +905,8 @@ func resolveWorkflowCompany(ctx context.Context, client PartUpsertWorkflowClient
 	}
 	if dryRun {
 		output.Actions = append(output.Actions, workflowAction("create_"+role, "planned", "company", 0, "no matching "+role+" found"))
+		fields := map[string]any{"name": name, "currency": currency, "is_" + role: true}
+		output.PlannedChanges = append(output.PlannedChanges, plannedChange("create_"+role, "company", 0, fields))
 		return &inventree.Company{Name: name, Currency: currency}, true, nil, PartUpsertWorkflowOutput{}, nil
 	}
 	input := inventree.CompanyCreate{Name: name, Currency: currency}
@@ -881,6 +932,14 @@ func resolveWorkflowManufacturerPart(ctx context.Context, client PartUpsertWorkf
 			reason = "part and manufacturer would be resolved before reusing or skipping the optional link"
 		}
 		output.Actions = append(output.Actions, workflowAction(action, "planned", "manufacturerpart", 0, reason))
+		if input.MPN != nil {
+			fields := map[string]any{"MPN": *input.MPN}
+			dependencies := []PlannedChangeDependency{}
+			setPlannedReference(fields, "part", partID, "create_part", &dependencies)
+			setPlannedReference(fields, "manufacturer", manufacturer.PK, "create_manufacturer", &dependencies)
+			setOptionalField(fields, "link", input.Link)
+			output.PlannedChanges = append(output.PlannedChanges, plannedChangeWithDependencies(action, "manufacturerpart", 0, fields, dependencies))
+		}
 		return nil, true, nil, PartUpsertWorkflowOutput{}, nil
 	}
 	query := inventree.ManufacturerPartQuery{Part: partID, Manufacturer: manufacturer.PK}
@@ -905,6 +964,9 @@ func resolveWorkflowManufacturerPart(ctx context.Context, client PartUpsertWorkf
 	}
 	if input.DryRun {
 		output.Actions = append(output.Actions, workflowAction("create_manufacturer_part", "planned", "manufacturerpart", 0, "no matching manufacturer-part found"))
+		fields := map[string]any{"part": partID, "manufacturer": manufacturer.PK, "MPN": *input.MPN}
+		setOptionalField(fields, "link", input.Link)
+		output.PlannedChanges = append(output.PlannedChanges, plannedChange("create_manufacturer_part", "manufacturerpart", 0, fields))
 		return nil, true, nil, PartUpsertWorkflowOutput{}, nil
 	}
 	record, err := client.CreateManufacturerPart(ctx, inventree.ManufacturerPartCreate{Part: partID, Manufacturer: manufacturer.PK, MPN: input.MPN, Link: input.Link})
@@ -922,6 +984,17 @@ func resolveWorkflowSupplierPart(ctx context.Context, client PartUpsertWorkflowC
 	}
 	if input.DryRun && (partID <= 0 || supplier.PK <= 0) {
 		output.Actions = append(output.Actions, workflowAction("create_supplier_part", "planned", "supplierpart", 0, "new part or supplier would be created first"))
+		fields := map[string]any{"SKU": input.SupplierSKU}
+		dependencies := []PlannedChangeDependency{}
+		setPlannedReference(fields, "part", partID, "create_part", &dependencies)
+		setPlannedReference(fields, "supplier", supplier.PK, "create_supplier", &dependencies)
+		if manufacturerPart != nil {
+			setPlannedReference(fields, "manufacturer_part", manufacturerPart.PK, "create_manufacturer_part", &dependencies)
+		} else if input.MPN != nil && (input.ManufacturerID > 0 || strings.TrimSpace(input.ManufacturerName) != "") {
+			dependencies = append(dependencies, PlannedChangeDependency{Field: "manufacturer_part", Action: "create_manufacturer_part"})
+		}
+		setOptionalField(fields, "link", input.Link)
+		output.PlannedChanges = append(output.PlannedChanges, plannedChangeWithDependencies("create_supplier_part", "supplierpart", 0, fields, dependencies))
 		return nil, true, nil, PartUpsertWorkflowOutput{}, nil
 	}
 	records, err := client.SearchSupplierParts(ctx, inventree.SupplierPartQuery{Part: partID, Supplier: supplier.PK, SKU: input.SupplierSKU})
@@ -938,6 +1011,15 @@ func resolveWorkflowSupplierPart(ctx context.Context, client PartUpsertWorkflowC
 	}
 	if input.DryRun {
 		output.Actions = append(output.Actions, workflowAction("create_supplier_part", "planned", "supplierpart", 0, "no matching supplier-part found"))
+		fields := map[string]any{"part": partID, "supplier": supplier.PK, "SKU": input.SupplierSKU}
+		dependencies := []PlannedChangeDependency{}
+		if manufacturerPart != nil {
+			setPlannedReference(fields, "manufacturer_part", manufacturerPart.PK, "create_manufacturer_part", &dependencies)
+		} else if input.MPN != nil && (input.ManufacturerID > 0 || strings.TrimSpace(input.ManufacturerName) != "") {
+			dependencies = append(dependencies, PlannedChangeDependency{Field: "manufacturer_part", Action: "create_manufacturer_part"})
+		}
+		setOptionalField(fields, "link", input.Link)
+		output.PlannedChanges = append(output.PlannedChanges, plannedChangeWithDependencies("create_supplier_part", "supplierpart", 0, fields, dependencies))
 		return nil, true, nil, PartUpsertWorkflowOutput{}, nil
 	}
 	var manufacturerPartID *int
@@ -1063,6 +1145,38 @@ func normalizedOptionalString(value *string) *string {
 
 func workflowAction(name string, status string, recordType string, id int, reason string) PartUpsertWorkflowAction {
 	return PartUpsertWorkflowAction{Name: name, Status: status, RecordType: recordType, ID: id, Reason: reason}
+}
+
+func plannedChange(action, recordType string, id int, fields map[string]any) PlannedChange {
+	return PlannedChange{Action: action, RecordType: recordType, ID: id, Fields: fields}
+}
+
+func plannedChangeWithDependencies(action, recordType string, id int, fields map[string]any, dependencies []PlannedChangeDependency) PlannedChange {
+	change := plannedChange(action, recordType, id, fields)
+	change.DependsOn = dependencies
+	return change
+}
+
+func patchFieldValues(fields inventree.PatchFields) map[string]any {
+	values := make(map[string]any, len(fields))
+	for name, value := range fields {
+		values[name] = value.Value()
+	}
+	return values
+}
+
+func setOptionalField[T any](fields map[string]any, name string, value *T) {
+	if value != nil {
+		fields[name] = *value
+	}
+}
+
+func setPlannedReference(fields map[string]any, name string, id int, dependency string, dependencies *[]PlannedChangeDependency) {
+	if id > 0 {
+		fields[name] = id
+		return
+	}
+	*dependencies = append(*dependencies, PlannedChangeDependency{Field: name, Action: dependency})
 }
 
 func partWorkflowPatchFields(input UpsertPartWorkflowInput) inventree.PatchFields {

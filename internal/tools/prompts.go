@@ -75,7 +75,7 @@ var PromptManifest = []PromptManifestEntry{
 - Company updates never change the customer role (is_customer), contact, tax, tag, or image state; exact reads may report is_customer. Removing a supplier/manufacturer role requires confirmation and is refused while corresponding links exist.
 - Use explicit clear flags for nullable company and sourcing-link fields. Recovery projections intentionally omit notes and redact external links.
 - Do not invent categories, units, supplier SKUs, manufacturer part numbers, compliance status, or revision data.
-- Prefer upsert_part_with_supplier_and_manufacturer with dry_run:true before any write.
+- Prefer upsert_part_with_supplier_and_manufacturer with dry_run:true before any write. Review every field in planned_changes; depends_on identifies unresolved IDs from earlier planned creates, while record fields contain only factual stable records.
 - If the workflow reports validation_failed or partial_failure, preserve returned stable IDs and completed actions, inspect the named records, and continue only the reported remaining_actions after current-state verification.
 - Treat omitted recommended fields separately from API-required fields and return a structured clarification when required values are missing.`,
 	},
@@ -130,7 +130,7 @@ var PromptManifest = []PromptManifestEntry{
 - Resolve the part and stock location to stable part_id and location_id.
 - Confirm quantity is positive and stock status follows the operator's local convention.
 - Search existing stock items for the same part and location before writing.
-- Prefer create_initial_stock_entry with dry_run:true so the operator can review duplicate-preflight results.
+- Prefer create_initial_stock_entry with dry_run:true so the operator can review duplicate-preflight results and every effective stock-item field in planned_changes.
 - Return structured clarification instead of creating stock when part, location, quantity, status, or duplicate intent is ambiguous.`,
 	},
 	{

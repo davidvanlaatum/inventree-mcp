@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -65,6 +66,7 @@ type PurchaseOrderReceiveClient interface {
 
 type PurchaseOrderIssueClient interface {
 	GetPurchaseOrder(context.Context, int) (inventree.PurchaseOrder, error)
+	SearchPurchaseOrderLines(context.Context, inventree.PurchaseOrderLineQuery) ([]inventree.PurchaseOrderLineItem, error)
 	IssuePurchaseOrder(context.Context, int) error
 }
 
@@ -177,6 +179,7 @@ type PurchaseOrderWorkflowOutput struct {
 	PurchaseOrder     *inventree.PurchaseOrder          `json:"purchase_order,omitempty"`
 	Lines             []inventree.PurchaseOrderLineItem `json:"lines,omitempty"`
 	Actions           []PurchaseOrderWorkflowAction     `json:"actions"`
+	PlannedChanges    []PlannedChange                   `json:"planned_changes,omitempty"`
 	Failure           *PurchaseOrderWorkflowFailure     `json:"failure,omitempty"`
 	Clarification     *ClarificationResponse            `json:"clarification,omitempty"`
 }
@@ -238,17 +241,27 @@ type ReceivePurchaseOrderOutput struct {
 }
 
 type IssuePurchaseOrderInput struct {
-	DryRun       bool `json:"dry_run,omitempty" jsonschema:"Validate and return the issue plan without placing the order."`
-	ConfirmIssue bool `json:"confirm_issue,omitempty" jsonschema:"Required true to place the purchase order with its supplier."`
-	OrderID      int  `json:"order_id" jsonschema:"Existing pending purchase-order primary key."`
+	DryRun       bool   `json:"dry_run,omitempty" jsonschema:"Validate and return the issue plan without placing the order."`
+	ConfirmIssue bool   `json:"confirm_issue,omitempty" jsonschema:"Required true to place the purchase order with its supplier."`
+	PlanHash     string `json:"plan_hash,omitempty" jsonschema:"Exact current-state hash returned by dry_run:true; required with confirm_issue."`
+	OrderID      int    `json:"order_id" jsonschema:"Existing pending purchase-order primary key."`
 }
 
 type IssuePurchaseOrderOutput struct {
-	Status        string                   `json:"status"`
-	DryRun        bool                     `json:"dry_run"`
-	Order         *inventree.PurchaseOrder `json:"order,omitempty"`
-	Action        string                   `json:"action"`
-	Clarification *ClarificationResponse   `json:"clarification,omitempty"`
+	Status         string                            `json:"status"`
+	DryRun         bool                              `json:"dry_run"`
+	Order          *inventree.PurchaseOrder          `json:"order,omitempty"`
+	Lines          []inventree.PurchaseOrderLineItem `json:"lines,omitempty"`
+	Action         string                            `json:"action"`
+	PlannedChanges []PlannedChange                   `json:"planned_changes,omitempty"`
+	PlanHash       string                            `json:"plan_hash,omitempty"`
+	Clarification  *ClarificationResponse            `json:"clarification,omitempty"`
+}
+
+type issuePurchaseOrderPlan struct {
+	Order        inventree.PurchaseOrder           `json:"order"`
+	Lines        []inventree.PurchaseOrderLineItem `json:"lines"`
+	TargetStatus int                               `json:"target_status"`
 }
 
 func registerPurchasingLookupTools(server *mcp.Server, deps Dependencies) {
@@ -638,12 +651,30 @@ func issuePurchaseOrder(deps Dependencies) mcp.ToolHandlerFor[IssuePurchaseOrder
 				out.Clarification = &clarification
 				return TextResult(StatusClarificationRequired), out, nil
 			}
+			lines, err := client.SearchPurchaseOrderLines(ctx, inventree.PurchaseOrderLineQuery{Order: order.PK})
+			if err != nil {
+				return nil, out, err
+			}
+			sort.Slice(lines, func(i, j int) bool { return lines[i].PK < lines[j].PK })
+			out.Lines = lines
+			planHash, err := issuePlanHash(issuePurchaseOrderPlan{Order: order, Lines: lines, TargetStatus: inventree.PurchaseOrderStatusPlaced})
+			if err != nil {
+				return nil, out, err
+			}
 			out.Action = "issue_purchase_order"
 			if input.DryRun {
+				out.PlanHash = planHash
+				out.PlannedChanges = append(out.PlannedChanges, plannedChange("issue_purchase_order", "purchase_order", order.PK, map[string]any{"status": inventree.PurchaseOrderStatusPlaced}))
 				return TextResult(StatusOK), out, nil
 			}
 			if !input.ConfirmIssue {
-				clarification := NewClarification("Should this purchase order now be placed with its supplier?", "confirmation", "confirm_issue must be true after reviewing the pending purchase order", "confirm_issue", true, nil, map[string]any{"order_id": input.OrderID, "confirm_issue": true})
+				clarification := NewClarification("Should this purchase order now be placed with its supplier?", "confirmation", "confirm_issue must be true after reviewing the current-state issue plan", "dry_run", true, nil, map[string]any{"order_id": input.OrderID, "dry_run": true})
+				out.Status = StatusClarificationRequired
+				out.Clarification = &clarification
+				return TextResult(StatusClarificationRequired), out, nil
+			}
+			if input.PlanHash == "" || input.PlanHash != planHash {
+				clarification := NewClarification("Which current issue plan should authorize placing this purchase order?", "plan_hash", "plan_hash must match a dry run for the current order metadata and purchase-order lines", "dry_run", true, nil, map[string]any{"order_id": input.OrderID, "dry_run": true})
 				out.Status = StatusClarificationRequired
 				out.Clarification = &clarification
 				return TextResult(StatusClarificationRequired), out, nil
@@ -658,6 +689,15 @@ func issuePurchaseOrder(deps Dependencies) mcp.ToolHandlerFor[IssuePurchaseOrder
 			out.Order = &issued
 			return TextResult(StatusOK), out, nil
 		})
+}
+
+func issuePlanHash(plan issuePurchaseOrderPlan) (string, error) {
+	payload, err := json.Marshal(plan)
+	if err != nil {
+		return "", err
+	}
+	digest := sha256.Sum256(payload)
+	return hex.EncodeToString(digest[:]), nil
 }
 
 func receiveClarification(out ReceivePurchaseOrderOutput, question, subject, reason, retry string, fields map[string]any) (*mcp.CallToolResult, ReceivePurchaseOrderOutput, error) {
@@ -760,6 +800,16 @@ func executePurchaseOrderWorkflow(ctx context.Context, client PurchaseOrderWorkf
 		orderPatch = purchaseOrderWorkflowPatch(input)
 	} else {
 		out.Actions = append(out.Actions, PurchaseOrderWorkflowAction{Name: "create_purchase_order", Status: pendingActionStatus(input.DryRun), RecordType: "purchase_order", Reason: "InvenTree will generate the internal reference"})
+		if input.DryRun {
+			fields := map[string]any{"supplier": input.SupplierID, "supplier_reference": out.SupplierReference}
+			setOptionalField(fields, "description", input.Description)
+			setOptionalField(fields, "creation_date", input.CreationDate)
+			setOptionalField(fields, "start_date", input.StartDate)
+			setOptionalField(fields, "target_date", input.TargetDate)
+			setOptionalField(fields, "order_currency", input.Currency)
+			setOptionalField(fields, "destination", input.DestinationID)
+			out.PlannedChanges = append(out.PlannedChanges, plannedChange("create_purchase_order", "purchase_order", 0, fields))
+		}
 		if !input.DryRun {
 			supplierReference := out.SupplierReference
 			order, err = client.CreatePurchaseOrder(ctx, purchaseOrderCreate("", input.SupplierID, &supplierReference, input.Description, input.CreationDate, input.StartDate, input.TargetDate, input.Currency, input.DestinationID))
@@ -803,6 +853,9 @@ func executePurchaseOrderWorkflow(ctx context.Context, client PurchaseOrderWorkf
 	}
 	if len(orderPatch) > 0 {
 		out.Actions = append(out.Actions, PurchaseOrderWorkflowAction{Name: "update_purchase_order", Status: pendingActionStatus(input.DryRun), RecordType: "purchase_order", ID: order.PK, Reference: order.Reference})
+		if input.DryRun {
+			out.PlannedChanges = append(out.PlannedChanges, plannedChange("update_purchase_order", "purchase_order", order.PK, patchFieldValues(orderPatch)))
+		}
 		if !input.DryRun {
 			order, err = client.UpdatePurchaseOrder(ctx, order.PK, orderPatch)
 			if err != nil {
@@ -820,6 +873,8 @@ func executePurchaseOrderWorkflow(ctx context.Context, client PurchaseOrderWorkf
 		if found {
 			out.Actions = append(out.Actions, PurchaseOrderWorkflowAction{Name: "update_purchase_order_line", Status: pendingActionStatus(input.DryRun), RecordType: "purchase_order_line", ID: existingLine.PK, Reference: lineReference})
 			if input.DryRun {
+				fields := workflowLinePatch(previewLine, inputLine, order.PK, lineReference)
+				out.PlannedChanges = append(out.PlannedChanges, plannedChange("update_purchase_order_line", "purchase_order_line", existingLine.PK, patchFieldValues(fields)))
 				continue
 			}
 			fields := workflowLinePatch(previewLine, inputLine, order.PK, lineReference)
@@ -834,6 +889,18 @@ func executePurchaseOrderWorkflow(ctx context.Context, client PurchaseOrderWorkf
 		}
 		out.Actions = append(out.Actions, PurchaseOrderWorkflowAction{Name: "create_purchase_order_line", Status: pendingActionStatus(input.DryRun), RecordType: "purchase_order_line", Reference: lineReference})
 		if input.DryRun {
+			fields := map[string]any{"part": previewLine.SupplierPartID, "reference": lineReference, "notes": inputLine.Notes, "quantity": previewLine.Quantity}
+			dependencies := []PlannedChangeDependency{}
+			setPlannedReference(fields, "order", order.PK, "create_purchase_order", &dependencies)
+			fields["purchase_price_currency"] = previewLine.Currency
+			fields["auto_pricing"] = false
+			fields["merge_items"] = false
+			if previewLine.UnitPrice != nil {
+				fields["purchase_price"] = strconv.FormatFloat(*previewLine.UnitPrice, 'f', -1, 64)
+			}
+			setOptionalField(fields, "target_date", inputLine.TargetDate)
+			setOptionalField(fields, "destination", inputLine.DestinationID)
+			out.PlannedChanges = append(out.PlannedChanges, plannedChangeWithDependencies("create_purchase_order_line", "purchase_order_line", 0, fields, dependencies))
 			continue
 		}
 		created, createErr := client.CreatePurchaseOrderLine(ctx, purchaseOrderLineCreate(order.PK, previewLine.SupplierPartID, nil, &lineReference, &inputLine.Notes, previewLine.Quantity, previewLine.UnitPrice, &previewLine.Currency, inputLine.TargetDate, inputLine.DestinationID))

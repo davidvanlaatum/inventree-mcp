@@ -512,6 +512,7 @@ type fakeMilestoneLookupClient struct {
 	downloadedPartImage        inventree.DownloadedPartImage
 	downloadPartImageErr       error
 	getPartErr                 error
+	getCompanyErr              error
 	part                       inventree.Part
 	partCategory               inventree.Category
 	partCategoryErr            error
@@ -545,6 +546,7 @@ type fakeMilestoneLookupClient struct {
 	lastSearchStockLocationsQuery             inventree.SearchQuery
 	lastSearchStockItemsQuery                 inventree.StockItemQuery
 	lastGetStockLocationID                    int
+	lastGetCompanyID                          int
 	lastListAttachmentsQuery                  inventree.AttachmentQuery
 	lastSearchSupplierPartsQuery              inventree.SupplierPartQuery
 	lastSearchManufacturerPartsQuery          inventree.ManufacturerPartQuery
@@ -580,6 +582,21 @@ func (f *fakeMilestoneLookupClient) GetPart(_ context.Context, id int) (inventre
 		return f.part, nil
 	}
 	return inventree.Part{PK: id, Name: "part"}, nil
+}
+
+func (f *fakeMilestoneLookupClient) GetCompany(_ context.Context, id int) (inventree.Company, error) {
+	f.lastGetCompanyID = id
+	if f.getCompanyErr != nil {
+		return inventree.Company{}, f.getCompanyErr
+	}
+	for _, records := range [][]inventree.Company{f.companies, f.suppliers, f.manufacturers} {
+		for _, company := range records {
+			if company.PK == id {
+				return company, nil
+			}
+		}
+	}
+	return inventree.Company{PK: id, Name: "company", IsSupplier: true, IsManufacturer: true}, nil
 }
 
 func (f *fakeMilestoneLookupClient) SearchPartCategories(_ context.Context, query inventree.SearchQuery) ([]inventree.Category, error) {
