@@ -386,7 +386,8 @@ func executeStockPlan(ctx context.Context, store *stockPlanStore, client StockAd
 	if err != nil {
 		return stockUnknownResult(out, "stock adjustment completed but refreshed stock state is unavailable")
 	}
-	out.Record = &after
+	sanitized := sanitizedStockItem(after)
+	out.Record = &sanitized
 	if !stockStateMatches(after, plan.After) {
 		return stockUnknownResult(out, "refreshed stock state does not match the reviewed plan")
 	}

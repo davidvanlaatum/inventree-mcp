@@ -51,7 +51,11 @@ const (
 	SearchManufacturerPartsToolName         = "search_manufacturer_parts"
 	GetManufacturerPartToolName             = "get_manufacturer_part"
 	SearchStockLocationsToolName            = "search_stock_locations"
+	GetStockLocationToolName                = "get_stock_location"
+	SearchStockLocationTypesToolName        = "search_stock_location_types"
+	GetStockLocationTypeToolName            = "get_stock_location_type"
 	SearchStockItemsToolName                = "search_stock_items"
+	GetStockItemToolName                    = "get_stock_item"
 	ListAttachmentsToolName                 = "list_attachments"
 	GetAttachmentMetadataToolName           = "get_attachment_metadata"
 	DownloadAttachmentToolName              = "download_attachment"
@@ -74,6 +78,10 @@ const (
 	UpdateManufacturerPartToolName          = "update_manufacturer_part"
 	UpsertPartWorkflowToolName              = "upsert_part_with_supplier_and_manufacturer"
 	CreateStockItemToolName                 = "create_stock_item"
+	CreateStockLocationToolName             = "create_stock_location"
+	UpdateStockLocationToolName             = "update_stock_location"
+	RestructureStockLocationToolName        = "restructure_stock_location"
+	UpdateStockItemMetadataToolName         = "update_stock_item_metadata"
 	InitialStockWorkflowToolName            = "create_initial_stock_entry"
 	AdjustStockQuantityToolName             = "adjust_stock_quantity"
 	SetStockStatusToolName                  = "set_stock_status"
@@ -131,7 +139,11 @@ var lookupToolNames = []string{
 	SearchManufacturerPartsToolName,
 	GetManufacturerPartToolName,
 	SearchStockLocationsToolName,
+	GetStockLocationToolName,
+	SearchStockLocationTypesToolName,
+	GetStockLocationTypeToolName,
 	SearchStockItemsToolName,
+	GetStockItemToolName,
 	ListAttachmentsToolName,
 	GetAttachmentMetadataToolName,
 	DownloadAttachmentToolName,
@@ -166,6 +178,10 @@ var writeToolNames = []string{
 	UpdateManufacturerPartToolName,
 	UpsertPartWorkflowToolName,
 	CreateStockItemToolName,
+	CreateStockLocationToolName,
+	UpdateStockLocationToolName,
+	RestructureStockLocationToolName,
+	UpdateStockItemMetadataToolName,
 	InitialStockWorkflowToolName,
 	AdjustStockQuantityToolName,
 	SetStockStatusToolName,
@@ -208,7 +224,7 @@ func init() {
 		scopes := []string{ScopeInventreeWrite}
 		mutationClass := "write"
 		switch name {
-		case CreateParameterTemplateToolName, UpdateParameterTemplateToolName, CreateCategoryParameterDefaultToolName, UpdateCategoryParameterDefaultToolName, CreatePartCategoryToolName, UpdatePartCategoryToolName, UpdateCompanyToolName, UpdateSupplierPartToolName, UpdateManufacturerPartToolName:
+		case CreateParameterTemplateToolName, UpdateParameterTemplateToolName, CreateCategoryParameterDefaultToolName, UpdateCategoryParameterDefaultToolName, CreatePartCategoryToolName, UpdatePartCategoryToolName, UpdateCompanyToolName, UpdateSupplierPartToolName, UpdateManufacturerPartToolName, CreateStockLocationToolName, UpdateStockLocationToolName:
 			scopes = []string{ScopeInventreeRead, ScopeInventreeWrite}
 		case BulkPropagatePartParametersToolName:
 			scopes = []string{ScopeInventreeRead, ScopeInventreeWrite, ScopeInventreeDestructive}
@@ -216,7 +232,7 @@ func init() {
 		case CreateStockItemToolName, InitialStockWorkflowToolName:
 			scopes = []string{ScopeInventreeWrite, ScopeInventreeOperational}
 			mutationClass = "operational"
-		case AdjustStockQuantityToolName, SetStockStatusToolName, StocktakeAdjustmentToolName:
+		case AdjustStockQuantityToolName, SetStockStatusToolName, StocktakeAdjustmentToolName, RestructureStockLocationToolName, UpdateStockItemMetadataToolName:
 			scopes = []string{ScopeInventreeRead, ScopeInventreeWrite, ScopeInventreeOperational}
 			mutationClass = "operational"
 		case ReceivePurchaseOrderToolName:
@@ -254,6 +270,11 @@ func init() {
 		auth.Annotations.Idempotent = true
 		ToolAuthorizations[name] = auth
 	}
+	for _, name := range []string{UpdateStockLocationToolName, RestructureStockLocationToolName, UpdateStockItemMetadataToolName} {
+		auth := ToolAuthorizations[name]
+		auth.Annotations.Idempotent = true
+		ToolAuthorizations[name] = auth
+	}
 	for _, name := range []string{SearchPurchaseOrdersToolName, GetPurchaseOrderToolName, SearchPurchaseOrderLinesToolName, GetPurchaseOrderLineToolName, CreatePurchaseOrderToolName, AddPurchaseOrderLineToolName, UpdatePurchaseOrderLineToolName, CreatePurchaseOrderWorkflowToolName, IssuePurchaseOrderToolName, ReceivePurchaseOrderToolName} {
 		auth := ToolAuthorizations[name]
 		auth.MilestoneStatus = ToolMilestone1
@@ -285,6 +306,19 @@ type CompanyLookupClient interface {
 type StockLookupClient interface {
 	SearchStockLocations(context.Context, inventree.SearchQuery) ([]inventree.StockLocation, error)
 	SearchStockItems(context.Context, inventree.StockItemQuery) ([]inventree.StockItem, error)
+}
+
+type StockLocationExactLookupClient interface {
+	GetStockLocation(context.Context, int) (inventree.StockLocation, error)
+}
+
+type StockLocationTypeLookupClient interface {
+	SearchStockLocationTypes(context.Context, inventree.SearchQuery) ([]inventree.StockLocationType, error)
+	GetStockLocationType(context.Context, int) (inventree.StockLocationType, error)
+}
+
+type StockItemExactLookupClient interface {
+	GetStockItem(context.Context, int) (inventree.StockItem, error)
 }
 
 type AttachmentLookupClient interface {
@@ -415,7 +449,11 @@ func registerLookupTools(server *mcp.Server, deps Dependencies) {
 	addReadOnlyTool(server, deps, SearchManufacturersToolName, "Search manufacturers", "Searches companies with the manufacturer role.", searchManufacturers(deps))
 	registerCompanyAdminLookupTools(server, deps)
 	addReadOnlyTool(server, deps, SearchStockLocationsToolName, "Search stock locations", "Searches InvenTree stock locations.", searchStockLocations(deps))
+	addReadOnlyTool(server, deps, GetStockLocationToolName, "Get stock location", "Retrieves one stock location with hierarchy metadata by stable ID.", getStockLocation(deps))
+	addReadOnlyTool(server, deps, SearchStockLocationTypesToolName, "Search stock location types", "Searches existing stock location types for reference selection.", searchStockLocationTypes(deps))
+	addReadOnlyTool(server, deps, GetStockLocationTypeToolName, "Get stock location type", "Retrieves one stock location type by stable ID.", getStockLocationType(deps))
 	addReadOnlyTool(server, deps, SearchStockItemsToolName, "Search stock items", "Searches InvenTree stock items.", searchStockItems(deps))
+	addReadOnlyTool(server, deps, GetStockItemToolName, "Get stock item", "Retrieves one stock item with traceability and source context by stable ID.", getStockItem(deps))
 	addReadOnlyTool(server, deps, ListAttachmentsToolName, "List attachments", "Lists attachment metadata for an in-scope InvenTree object.", listAttachments(deps))
 	addReadOnlyTool(server, deps, GetAttachmentMetadataToolName, "Get attachment metadata", "Retrieves one attachment metadata record by ID.", getAttachmentMetadata(deps))
 	addReadOnlyTool(server, deps, DownloadAttachmentToolName, "Download attachment", "Downloads bounded content for one file attachment.", downloadAttachment(deps))
@@ -521,6 +559,36 @@ func searchStockLocations(deps Dependencies) mcp.ToolHandlerFor[SearchInput, Loo
 		})
 }
 
+func getStockLocation(deps Dependencies) mcp.ToolHandlerFor[IDInput, RecordOutput[inventree.StockLocation]] {
+	return LookupHandler[StockLocationExactLookupClient, IDInput, RecordOutput[inventree.StockLocation]](deps, GetStockLocationToolName,
+		func(ctx context.Context, _ *mcp.CallToolRequest, client StockLocationExactLookupClient, input IDInput) (*mcp.CallToolResult, RecordOutput[inventree.StockLocation], error) {
+			record, err := client.GetStockLocation(ctx, input.ID)
+			if err == nil && record.PK != input.ID {
+				return nil, RecordOutput[inventree.StockLocation]{}, errors.New("InvenTree returned a mismatched stock-location identity")
+			}
+			return recordOutput(record, err)
+		})
+}
+
+func searchStockLocationTypes(deps Dependencies) mcp.ToolHandlerFor[SearchInput, LookupOutput[inventree.StockLocationType]] {
+	return LookupHandler[StockLocationTypeLookupClient, SearchInput, LookupOutput[inventree.StockLocationType]](deps, SearchStockLocationTypesToolName,
+		func(ctx context.Context, _ *mcp.CallToolRequest, client StockLocationTypeLookupClient, input SearchInput) (*mcp.CallToolResult, LookupOutput[inventree.StockLocationType], error) {
+			records, err := client.SearchStockLocationTypes(ctx, searchQuery(input))
+			return searchOutput(records, input.Search, "location type", "location_type_id", "Which existing stock location type should be used?", err)
+		})
+}
+
+func getStockLocationType(deps Dependencies) mcp.ToolHandlerFor[IDInput, RecordOutput[inventree.StockLocationType]] {
+	return LookupHandler[StockLocationTypeLookupClient, IDInput, RecordOutput[inventree.StockLocationType]](deps, GetStockLocationTypeToolName,
+		func(ctx context.Context, _ *mcp.CallToolRequest, client StockLocationTypeLookupClient, input IDInput) (*mcp.CallToolResult, RecordOutput[inventree.StockLocationType], error) {
+			record, err := client.GetStockLocationType(ctx, input.ID)
+			if err == nil && record.PK != input.ID {
+				return nil, RecordOutput[inventree.StockLocationType]{}, errors.New("InvenTree returned a mismatched stock-location-type identity")
+			}
+			return recordOutput(record, err)
+		})
+}
+
 func searchStockItems(deps Dependencies) mcp.ToolHandlerFor[StockItemsInput, LookupOutput[inventree.StockItem]] {
 	return LookupHandler[StockLookupClient, StockItemsInput, LookupOutput[inventree.StockItem]](deps, SearchStockItemsToolName,
 		func(ctx context.Context, _ *mcp.CallToolRequest, client StockLookupClient, input StockItemsInput) (*mcp.CallToolResult, LookupOutput[inventree.StockItem], error) {
@@ -532,7 +600,22 @@ func searchStockItems(deps Dependencies) mcp.ToolHandlerFor[StockItemsInput, Loo
 				Limit:           NormalizeLookupLimit(input.Limit),
 				Offset:          input.Offset,
 			})
+			for i := range records {
+				records[i] = sanitizedStockItem(records[i])
+			}
 			return listOutput(records, err)
+		})
+}
+
+func getStockItem(deps Dependencies) mcp.ToolHandlerFor[IDInput, RecordOutput[inventree.StockItem]] {
+	return LookupHandler[StockItemExactLookupClient, IDInput, RecordOutput[inventree.StockItem]](deps, GetStockItemToolName,
+		func(ctx context.Context, _ *mcp.CallToolRequest, client StockItemExactLookupClient, input IDInput) (*mcp.CallToolResult, RecordOutput[inventree.StockItem], error) {
+			record, err := client.GetStockItem(ctx, input.ID)
+			if err == nil && record.PK != input.ID {
+				return nil, RecordOutput[inventree.StockItem]{}, errors.New("InvenTree returned a mismatched stock-item identity")
+			}
+			record = sanitizedStockItem(record)
+			return recordOutput(record, err)
 		})
 }
 
@@ -844,6 +927,8 @@ func candidateFor(record any) ClarificationCandidate {
 		return ClarificationCandidate{ID: strconv.Itoa(v.PK), Label: v.MPN, Summary: v.Description, URL: fmt.Sprintf("/api/company/part/manufacturer/%d/", v.PK), Fields: map[string]any{"part": v.Part, "manufacturer": v.Manufacturer}}
 	case inventree.StockLocation:
 		return ClarificationCandidate{ID: strconv.Itoa(v.PK), Label: v.Name, Summary: v.Description, URL: fmt.Sprintf("/api/stock/location/%d/", v.PK), Fields: map[string]any{"structural": v.Structural, "external": v.External}}
+	case inventree.StockLocationType:
+		return ClarificationCandidate{ID: strconv.Itoa(v.PK), Label: v.Name, Summary: v.Description, URL: fmt.Sprintf("/api/stock/location-type/%d/", v.PK)}
 	case inventree.StockItem:
 		return ClarificationCandidate{ID: strconv.Itoa(v.PK), Label: fmt.Sprintf("stock item %d", v.PK), URL: fmt.Sprintf("/api/stock/%d/", v.PK), Fields: map[string]any{"part": v.Part, "location": v.Location, "quantity": v.Quantity, "status": v.Status, "serial": v.Serial, "batch": v.Batch}}
 	case inventree.Attachment:

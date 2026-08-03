@@ -286,6 +286,209 @@ func TestMilestoneHappyPathToolsAgainstInvenTree(t *testing.T) {
 		a.Equal("category_id", laterPageDuplicate.Clarification.Retry)
 	})
 
+	t.Run("stock_location_and_metadata_administration", func(t *testing.T) {
+		r := require.New(t)
+		a := assert.New(t)
+		ctx, _, _ := testhandler.SetupTestHandler(t)
+		fixture := newMilestoneToolFixture(t, shared)
+		owner := fixture.ensure(t, testenv.FixtureSupplier)
+		part := fixture.ensure(t, testenv.FixturePart)
+
+		typeName, err := fixture.run.Name("stock-admin-type")
+		r.NoError(err)
+		var locationType inventree.StockLocationType
+		r.NoError(fixture.client.Post(ctx, "/api/stock/location-type/", map[string]any{"name": typeName, "description": "F-S21 tool integration type", "icon": ""}, &locationType))
+		r.NotZero(locationType.PK)
+
+		rootName, err := fixture.run.Name("stock-admin-root")
+		r.NoError(err)
+		_, rootOut, err := createStockLocation(fixture.deps())(ctx, &mcp.CallToolRequest{}, CreateStockLocationInput{Name: rootName, Description: dvgoutils.Ptr("root"), Structural: dvgoutils.Ptr(false), External: dvgoutils.Ptr(false)})
+		r.NoError(err)
+		r.NotNil(rootOut.Record)
+		root := *rootOut.Record
+
+		childName, err := fixture.run.Name("stock-admin-child")
+		r.NoError(err)
+		_, childOut, err := createStockLocation(fixture.deps())(ctx, &mcp.CallToolRequest{}, CreateStockLocationInput{Name: childName, Description: dvgoutils.Ptr("child"), ParentID: &root.PK, OwnerID: &owner.ID, LocationTypeID: &locationType.PK, Structural: dvgoutils.Ptr(false), External: dvgoutils.Ptr(false)})
+		r.NoError(err)
+		r.NotNil(childOut.Record)
+		child := *childOut.Record
+		r.Equal(root.PK, *child.Parent)
+		r.Equal(owner.ID, *child.Owner)
+		r.Equal(locationType.PK, *child.LocationType)
+
+		matrixName, err := fixture.run.Name("stock-admin-namespace")
+		r.NoError(err)
+		_, matrixRoot, err := createStockLocation(fixture.deps())(ctx, &mcp.CallToolRequest{}, CreateStockLocationInput{Name: matrixName})
+		r.NoError(err)
+		a.Equal(StatusOK, matrixRoot.Status)
+		_, matrixUnderRoot, err := createStockLocation(fixture.deps())(ctx, &mcp.CallToolRequest{}, CreateStockLocationInput{Name: matrixName, ParentID: &root.PK})
+		r.NoError(err)
+		a.Equal(StatusOK, matrixUnderRoot.Status)
+		_, matrixUnderChild, err := createStockLocation(fixture.deps())(ctx, &mcp.CallToolRequest{}, CreateStockLocationInput{Name: matrixName, ParentID: &child.PK})
+		r.NoError(err)
+		a.Equal(StatusOK, matrixUnderChild.Status)
+		_, duplicateRoot, err := createStockLocation(fixture.deps())(ctx, &mcp.CallToolRequest{}, CreateStockLocationInput{Name: "  " + strings.ToUpper(matrixName) + "  "})
+		r.NoError(err)
+		a.Equal(StatusClarificationRequired, duplicateRoot.Status)
+		_, duplicateChild, err := createStockLocation(fixture.deps())(ctx, &mcp.CallToolRequest{}, CreateStockLocationInput{Name: strings.ToUpper(matrixName), ParentID: &root.PK})
+		r.NoError(err)
+		a.Equal(StatusClarificationRequired, duplicateChild.Status)
+
+		_, exactLocation, err := getStockLocation(fixture.deps())(ctx, &mcp.CallToolRequest{}, IDInput{ID: child.PK})
+		r.NoError(err)
+		a.Equal(StatusOK, exactLocation.Status)
+		a.Equal(child.PK, exactLocation.Record.PK)
+		_, exactType, err := getStockLocationType(fixture.deps())(ctx, &mcp.CallToolRequest{}, IDInput{ID: locationType.PK})
+		r.NoError(err)
+		a.Equal(typeName, exactType.Record.Name)
+
+		_, invalidReference, err := createStockLocation(fixture.deps())(ctx, &mcp.CallToolRequest{}, CreateStockLocationInput{Name: rootName + "-invalid", OwnerID: dvgoutils.Ptr(99999999), LocationTypeID: dvgoutils.Ptr(99999998)})
+		r.NoError(err)
+		a.Equal(StatusClarificationRequired, invalidReference.Status)
+
+		updatedName := childName + "-updated"
+		_, ordinaryUpdate, err := updateStockLocation(fixture.deps())(ctx, &mcp.CallToolRequest{}, UpdateStockLocationInput{ID: child.PK, Name: &updatedName, Description: dvgoutils.Ptr("ordinary update"), ClearOwner: true, ClearLocationType: true})
+		r.NoError(err)
+		r.NotNil(ordinaryUpdate.Record)
+		a.Equal(updatedName, ordinaryUpdate.Record.Name)
+		a.Nil(ordinaryUpdate.Record.Owner)
+		a.Nil(ordinaryUpdate.Record.LocationType)
+		child = *ordinaryUpdate.Record
+
+		targetName, err := fixture.run.Name("stock-admin-reparent-target")
+		r.NoError(err)
+		_, targetOut, err := createStockLocation(fixture.deps())(ctx, &mcp.CallToolRequest{}, CreateStockLocationInput{Name: targetName})
+		r.NoError(err)
+		r.NotNil(targetOut.Record)
+		target := *targetOut.Record
+		_, restructurePlan, err := restructureStockLocation(fixture.deps())(ctx, &mcp.CallToolRequest{}, RestructureStockLocationInput{ID: child.PK, ParentID: &target.PK, Structural: dvgoutils.Ptr(true), External: dvgoutils.Ptr(true), DryRun: true})
+		r.NoError(err)
+		r.NotEmpty(restructurePlan.PlanHash)
+		r.NotNil(restructurePlan.Plan.TargetParent)
+		a.Equal(target.PK, restructurePlan.Plan.TargetParent.ID)
+		a.Equal(target.PK, *restructurePlan.Plan.After.ParentID)
+		_, restructured, err := restructureStockLocation(fixture.deps())(ctx, &mcp.CallToolRequest{}, RestructureStockLocationInput{ID: child.PK, ParentID: &target.PK, Structural: dvgoutils.Ptr(true), External: dvgoutils.Ptr(true), Confirm: true, PlanHash: restructurePlan.PlanHash})
+		r.NoError(err)
+		a.Equal(StatusOK, restructured.Status)
+		a.Equal(target.PK, *restructured.Record.Parent)
+		a.True(restructured.Record.Structural)
+		a.True(restructured.Record.External)
+
+		_, cycle, err := restructureStockLocation(fixture.deps())(ctx, &mcp.CallToolRequest{}, RestructureStockLocationInput{ID: target.PK, ParentID: &child.PK, DryRun: true})
+		r.NoError(err)
+		a.Equal(StatusClarificationRequired, cycle.Status)
+
+		_, nonStructuralPlan, err := restructureStockLocation(fixture.deps())(ctx, &mcp.CallToolRequest{}, RestructureStockLocationInput{ID: child.PK, Structural: dvgoutils.Ptr(false), DryRun: true})
+		r.NoError(err)
+		_, childReady, err := restructureStockLocation(fixture.deps())(ctx, &mcp.CallToolRequest{}, RestructureStockLocationInput{ID: child.PK, Structural: dvgoutils.Ptr(false), Confirm: true, PlanHash: nonStructuralPlan.PlanHash})
+		r.NoError(err)
+		a.False(childReady.Record.Structural)
+
+		stock, err := fixture.client.CreateStockItem(ctx, inventree.StockItemCreate{Part: part.ID, Location: child.PK, Quantity: 3})
+		r.NoError(err)
+		metadataInput := UpdateStockItemMetadataInput{ID: stock.PK, Batch: dvgoutils.Ptr("F-S21"), ExpiryDate: dvgoutils.Ptr("2027-01-02"), Packaging: dvgoutils.Ptr("tray"), Notes: dvgoutils.Ptr("reviewed metadata"), Link: dvgoutils.Ptr("https://example.test/stock"), DryRun: true}
+		_, metadataPlan, err := updateStockItemMetadata(fixture.deps())(ctx, &mcp.CallToolRequest{}, metadataInput)
+		r.NoError(err)
+		r.NotEmpty(metadataPlan.PlanHash)
+		_, err = fixture.client.UpdateStockItem(ctx, stock.PK, inventree.PatchFields{"quantity": inventree.Set(4.0)})
+		r.NoError(err)
+		metadataInput.DryRun = false
+		metadataInput.Confirm = true
+		metadataInput.PlanHash = metadataPlan.PlanHash
+		_, staleMetadata, err := updateStockItemMetadata(fixture.deps())(ctx, &mcp.CallToolRequest{}, metadataInput)
+		r.NoError(err)
+		a.Equal(StatusClarificationRequired, staleMetadata.Status)
+		currentStock, err := fixture.client.GetStockItem(ctx, stock.PK)
+		r.NoError(err)
+		if currentStock.Batch != nil {
+			a.Empty(*currentStock.Batch)
+		}
+
+		metadataInput.DryRun = true
+		metadataInput.Confirm = false
+		metadataInput.PlanHash = ""
+		_, metadataPlan, err = updateStockItemMetadata(fixture.deps())(ctx, &mcp.CallToolRequest{}, metadataInput)
+		r.NoError(err)
+		metadataInput.DryRun = false
+		metadataInput.Confirm = true
+		metadataInput.PlanHash = metadataPlan.PlanHash
+		_, metadataOut, err := updateStockItemMetadata(fixture.deps())(ctx, &mcp.CallToolRequest{}, metadataInput)
+		r.NoError(err)
+		a.Equal(StatusOK, metadataOut.Status)
+		r.NotNil(metadataOut.Record)
+		a.Equal("F-S21", *metadataOut.Record.Batch)
+		a.Equal("2027-01-02", *metadataOut.Record.ExpiryDate)
+		a.Equal("tray", *metadataOut.Record.Packaging)
+
+		lostCreateName, err := fixture.run.Name("stock-admin-lost-create")
+		r.NoError(err)
+		lostCreateClient, err := shared.ClientWithHTTPClient(fixture.account, &http.Client{Transport: &loseMutationResponseTransport{base: http.DefaultTransport, method: http.MethodPost, path: "/api/stock/location/"}})
+		r.NoError(err)
+		lostFixture := fixture
+		lostFixture.client = lostCreateClient
+		_, lostCreate, err := createStockLocation(lostFixture.deps())(ctx, &mcp.CallToolRequest{}, CreateStockLocationInput{Name: lostCreateName, Description: dvgoutils.Ptr("persisted despite lost response")})
+		r.NoError(err)
+		a.Equal(StatusOK, lostCreate.Status)
+		a.True(lostCreate.Recovered)
+		r.NotNil(lostCreate.Record)
+
+		lostPatchClient, err := shared.ClientWithHTTPClient(fixture.account, &http.Client{Transport: &loseMutationResponseTransport{base: http.DefaultTransport, method: http.MethodPatch, path: fmt.Sprintf("/api/stock/location/%d/", lostCreate.Record.PK)}})
+		r.NoError(err)
+		lostFixture.client = lostPatchClient
+		_, lostPatch, err := updateStockLocation(lostFixture.deps())(ctx, &mcp.CallToolRequest{}, UpdateStockLocationInput{ID: lostCreate.Record.PK, Description: dvgoutils.Ptr("ordinary patch persisted")})
+		r.NoError(err)
+		a.Equal(StatusOK, lostPatch.Status)
+		a.True(lostPatch.Recovered)
+		a.Equal("ordinary patch persisted", lostPatch.Record.Description)
+
+		_, lostRestructurePlan, err := restructureStockLocation(fixture.deps())(ctx, &mcp.CallToolRequest{}, RestructureStockLocationInput{ID: lostCreate.Record.PK, Structural: dvgoutils.Ptr(true), DryRun: true})
+		r.NoError(err)
+		lostRestructureClient, err := shared.ClientWithHTTPClient(fixture.account, &http.Client{Transport: &loseMutationResponseTransport{base: http.DefaultTransport, method: http.MethodPatch, path: fmt.Sprintf("/api/stock/location/%d/", lostCreate.Record.PK)}})
+		r.NoError(err)
+		lostFixture.client = lostRestructureClient
+		_, lostRestructure, err := restructureStockLocation(lostFixture.deps())(ctx, &mcp.CallToolRequest{}, RestructureStockLocationInput{ID: lostCreate.Record.PK, Structural: dvgoutils.Ptr(true), Confirm: true, PlanHash: lostRestructurePlan.PlanHash})
+		r.NoError(err)
+		a.Equal(StatusOK, lostRestructure.Status)
+		a.True(lostRestructure.Recovered)
+		a.True(lostRestructure.Record.Structural)
+
+		lostMetadataInput := UpdateStockItemMetadataInput{ID: stock.PK, Batch: dvgoutils.Ptr("F-S21-recovered"), DryRun: true}
+		_, lostMetadataPlan, err := updateStockItemMetadata(fixture.deps())(ctx, &mcp.CallToolRequest{}, lostMetadataInput)
+		r.NoError(err)
+		lostMetadataClient, err := shared.ClientWithHTTPClient(fixture.account, &http.Client{Transport: &loseMutationResponseTransport{base: http.DefaultTransport, method: http.MethodPatch, path: fmt.Sprintf("/api/stock/%d/", stock.PK)}})
+		r.NoError(err)
+		lostFixture.client = lostMetadataClient
+		lostMetadataInput.DryRun = false
+		lostMetadataInput.Confirm = true
+		lostMetadataInput.PlanHash = lostMetadataPlan.PlanHash
+		_, lostMetadata, err := updateStockItemMetadata(lostFixture.deps())(ctx, &mcp.CallToolRequest{}, lostMetadataInput)
+		r.NoError(err)
+		a.Equal(StatusOK, lostMetadata.Status)
+		a.True(lostMetadata.Recovered)
+		a.Equal("F-S21-recovered", *lostMetadata.Record.Batch)
+
+		_, exactStock, err := getStockItem(fixture.deps())(ctx, &mcp.CallToolRequest{}, IDInput{ID: stock.PK})
+		r.NoError(err)
+		a.Equal(stock.PK, exactStock.Record.PK)
+		a.Equal(float64(4), exactStock.Record.Quantity)
+
+		duplicateName, err := fixture.run.Name("page-duplicate")
+		r.NoError(err)
+		for i := 0; i < stockLocationPageSize; i++ {
+			var filler inventree.StockLocation
+			r.NoError(fixture.client.Post(ctx, "/api/stock/location/", map[string]any{"name": fmt.Sprintf("%s-%03d", duplicateName, i), "parent": root.PK, "structural": false, "external": false}, &filler))
+			r.NotZero(filler.PK)
+		}
+		var laterDuplicate inventree.StockLocation
+		r.NoError(fixture.client.Post(ctx, "/api/stock/location/", map[string]any{"name": duplicateName, "parent": root.PK, "structural": false, "external": false}, &laterDuplicate))
+		_, duplicateOut, err := createStockLocation(fixture.deps())(ctx, &mcp.CallToolRequest{}, CreateStockLocationInput{Name: "  " + strings.ToUpper(duplicateName) + "  ", ParentID: &root.PK})
+		r.NoError(err)
+		a.Equal(StatusClarificationRequired, duplicateOut.Status)
+		r.NotNil(duplicateOut.Clarification)
+		a.Contains(clarificationCandidateIDs(*duplicateOut.Clarification), fmt.Sprint(laterDuplicate.PK))
+	})
+
 	t.Run("company_and_sourcing_link_administration", func(t *testing.T) {
 		r := require.New(t)
 		a := assert.New(t)
@@ -1270,6 +1473,14 @@ func (f milestoneToolFixture) ensure(t *testing.T, kind testenv.FixtureKind) tes
 
 func attachmentTargetModelTypes() []string {
 	return []string{"part", "stockitem", "company", "supplierpart", "manufacturerpart", "purchaseorder"}
+}
+
+func clarificationCandidateIDs(clarification ClarificationResponse) []string {
+	ids := make([]string, 0, len(clarification.Candidates))
+	for _, candidate := range clarification.Candidates {
+		ids = append(ids, candidate.ID)
+	}
+	return ids
 }
 
 func (f milestoneToolFixture) attachmentTarget(t *testing.T, modelType string) attachmentTarget {

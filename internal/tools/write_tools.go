@@ -255,6 +255,7 @@ func registerWriteTools(server *mcp.Server, deps Dependencies) {
 	addWriteTool(server, deps, CreateStockItemToolName, "Create stock item", "Creates initial stock after checking for duplicate stock at the same part and location.", createStockItem(deps))
 	addWriteTool(server, deps, InitialStockWorkflowToolName, "Create initial stock entry", "Plans or creates initial stock after resolving the part, location, and duplicate guard.", initialStockWorkflow(deps))
 	registerStockAdjustmentTools(server, deps)
+	registerStockAdminTools(server, deps)
 	registerAttachmentWriteTools(server, deps)
 	registerPurchasingWriteTools(server, deps)
 }

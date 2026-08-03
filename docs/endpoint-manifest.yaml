@@ -270,6 +270,34 @@ endpoints:
     method: GET
     operation_id: stock_location_retrieve
     response_schema: '#/components/schemas/Location'
+  - id: create_stock_location
+    area: stock
+    path: /api/stock/location/
+    method: POST
+    operation_id: stock_location_create
+    request_schema: '#/components/schemas/Location'
+    request_content_type: application/json
+    response_schema: '#/components/schemas/Location'
+  - id: update_stock_location
+    area: stock
+    path: /api/stock/location/{id}/
+    method: PATCH
+    operation_id: stock_location_partial_update
+    request_schema: '#/components/schemas/PatchedLocation'
+    request_content_type: application/json
+    response_schema: '#/components/schemas/Location'
+  - id: search_stock_location_types
+    area: stock
+    path: /api/stock/location-type/
+    method: GET
+    operation_id: stock_location_type_list
+    response_schema: '#/components/schemas/PaginatedStockLocationTypeList'
+  - id: get_stock_location_type
+    area: stock
+    path: /api/stock/location-type/{id}/
+    method: GET
+    operation_id: stock_location_type_retrieve
+    response_schema: '#/components/schemas/StockLocationType'
   - id: search_part_parameters
     area: parameters
     path: /api/parameter/

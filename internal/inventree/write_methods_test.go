@@ -250,6 +250,58 @@ func TestWriteMethodsUseExpectedEndpoints(t *testing.T) {
 			},
 		},
 		{
+			name: "create stock location preserves explicit references and false",
+			call: func(ctx context.Context, client *Client) error {
+				_, err := client.CreateStockLocation(ctx, StockLocationCreate{Name: "Bin", Description: dvgoutils.Ptr(""), Parent: dvgoutils.Ptr(40), Owner: dvgoutils.Ptr(20), CustomIcon: dvgoutils.Ptr(""), Structural: dvgoutils.Ptr(false), External: dvgoutils.Ptr(false), LocationType: dvgoutils.Ptr(3)})
+				return err
+			},
+			method:   http.MethodPost,
+			path:     "/api/stock/location/",
+			response: `{"pk":41,"name":"Bin","parent":40,"owner":20,"structural":false,"external":false,"location_type":3}`,
+			assert: func(a *assert.Assertions, body map[string]any) {
+				a.Equal("", body["description"])
+				a.Equal(float64(40), body["parent"])
+				a.Equal(float64(20), body["owner"])
+				a.Equal("", body["custom_icon"])
+				a.Equal(false, body["structural"])
+				a.Equal(false, body["external"])
+				a.Equal(float64(3), body["location_type"])
+			},
+		},
+		{
+			name: "update stock location preserves null and false",
+			call: func(ctx context.Context, client *Client) error {
+				_, err := client.UpdateStockLocation(ctx, 41, PatchFields{"parent": Null(), "owner": Null(), "structural": Set(false), "external": Set(false)})
+				return err
+			},
+			method:   http.MethodPatch,
+			path:     "/api/stock/location/41/",
+			response: `{"pk":41,"name":"Bin","parent":null,"owner":null,"structural":false,"external":false}`,
+			assert: func(a *assert.Assertions, body map[string]any) {
+				a.Nil(body["parent"])
+				a.Nil(body["owner"])
+				a.Equal(false, body["structural"])
+				a.Equal(false, body["external"])
+			},
+		},
+		{
+			name: "update stock item uses constrained patch endpoint",
+			call: func(ctx context.Context, client *Client) error {
+				_, err := client.UpdateStockItem(ctx, 50, PatchFields{"batch": Set("B-2"), "expiry_date": Null(), "packaging": Set("tray"), "notes": Set("checked"), "link": Set("https://example.test/item")})
+				return err
+			},
+			method:   http.MethodPatch,
+			path:     "/api/stock/50/",
+			response: `{"pk":50,"part":10,"quantity":7,"batch":"B-2","packaging":"tray","notes":"checked","link":"https://example.test/item"}`,
+			assert: func(a *assert.Assertions, body map[string]any) {
+				a.Equal("B-2", body["batch"])
+				a.Nil(body["expiry_date"])
+				a.Equal("tray", body["packaging"])
+				a.Equal("checked", body["notes"])
+				a.Equal("https://example.test/item", body["link"])
+			},
+		},
+		{
 			name: "add stock uses native adjustment endpoint",
 			call: func(ctx context.Context, client *Client) error {
 				return client.AddStock(ctx, StockAdjustment{Items: []StockAdjustmentItem{{PK: 50, Quantity: "2.5"}}, Notes: "cycle count correction"})

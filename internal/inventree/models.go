@@ -93,26 +93,71 @@ type Company struct {
 }
 
 type StockLocation struct {
-	PK          int    `json:"pk"`
-	Name        string `json:"name"`
-	Description string `json:"description"`
-	Structural  bool   `json:"structural"`
-	External    bool   `json:"external"`
+	PK                 int                `json:"pk"`
+	Name               string             `json:"name"`
+	Description        string             `json:"description"`
+	Parent             *int               `json:"parent"`
+	PathString         string             `json:"pathstring"`
+	Level              int                `json:"level"`
+	Items              int                `json:"items"`
+	Sublocations       int                `json:"sublocations"`
+	Owner              *int               `json:"owner"`
+	CustomIcon         *string            `json:"custom_icon"`
+	Structural         bool               `json:"structural"`
+	External           bool               `json:"external"`
+	LocationType       *int               `json:"location_type"`
+	LocationTypeDetail *StockLocationType `json:"location_type_detail,omitempty"`
+	Path               []TreePath         `json:"path,omitempty"`
+}
+
+type StockLocationPage struct {
+	Count   int
+	Results []StockLocation
+	HasMore bool
+}
+
+type StockLocationType struct {
+	PK            int    `json:"pk"`
+	Name          string `json:"name"`
+	Description   string `json:"description"`
+	Icon          string `json:"icon"`
+	LocationCount *int   `json:"location_count"`
 }
 
 type StockItem struct {
-	PK                     int     `json:"pk"`
-	Part                   int     `json:"part"`
-	Location               *int    `json:"location"`
-	Quantity               float64 `json:"quantity"`
-	Serial                 *string `json:"serial"`
-	Batch                  *string `json:"batch"`
-	Packaging              *string `json:"packaging"`
-	Notes                  *string `json:"notes"`
-	Status                 int     `json:"status"`
-	DeleteOnDeplete        bool    `json:"delete_on_deplete"`
-	PurchaseOrder          *int    `json:"purchase_order"`
-	PurchaseOrderReference *string `json:"purchase_order_reference"`
+	PK                     int            `json:"pk"`
+	Part                   int            `json:"part"`
+	Location               *int           `json:"location"`
+	Quantity               float64        `json:"quantity"`
+	Serial                 *string        `json:"serial"`
+	Batch                  *string        `json:"batch"`
+	ExpiryDate             *string        `json:"expiry_date"`
+	Packaging              *string        `json:"packaging"`
+	Notes                  *string        `json:"notes"`
+	Link                   string         `json:"link"`
+	Status                 int            `json:"status"`
+	StatusText             *string        `json:"status_text"`
+	StatusCustomKey        *int           `json:"status_custom_key"`
+	DeleteOnDeplete        bool           `json:"delete_on_deplete"`
+	InStock                bool           `json:"in_stock"`
+	IsBuilding             bool           `json:"is_building"`
+	Owner                  *int           `json:"owner"`
+	SupplierPart           *int           `json:"supplier_part"`
+	Build                  *int           `json:"build"`
+	ConsumedBy             *int           `json:"consumed_by"`
+	Customer               *int           `json:"customer"`
+	SalesOrder             *int           `json:"sales_order"`
+	BelongsTo              *int           `json:"belongs_to"`
+	Parent                 *int           `json:"parent"`
+	Allocated              *float64       `json:"allocated"`
+	PurchasePrice          *DecimalString `json:"purchase_price"`
+	PurchasePriceCurrency  string         `json:"purchase_price_currency"`
+	CreationDate           *string        `json:"creation_date"`
+	StocktakeDate          *string        `json:"stocktake_date"`
+	Updated                *string        `json:"updated"`
+	PurchaseOrder          *int           `json:"purchase_order"`
+	PurchaseOrderReference *string        `json:"purchase_order_reference"`
+	LocationPath           []TreePath     `json:"location_path,omitempty"`
 }
 
 type Parameter struct {

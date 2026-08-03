@@ -56,6 +56,15 @@ type StockItemQuery struct {
 	Offset          int
 }
 
+type StockLocationQuery struct {
+	Search     string
+	Parent     *int
+	TopLevel   *bool
+	PathDetail *bool
+	Limit      int
+	Offset     int
+}
+
 type AttachmentQuery struct {
 	ModelType string
 	ModelID   int
@@ -192,6 +201,20 @@ func (q StockItemQuery) values() url.Values {
 	}
 	if q.PurchaseOrderID != 0 {
 		values.Set("purchase_order", strconv.Itoa(q.PurchaseOrderID))
+	}
+	return values
+}
+
+func (q StockLocationQuery) values() url.Values {
+	values := SearchQuery{Search: q.Search, Limit: q.Limit, Offset: q.Offset}.values()
+	if q.Parent != nil {
+		values.Set("parent", strconv.Itoa(*q.Parent))
+	}
+	if q.TopLevel != nil {
+		values.Set("top_level", strconv.FormatBool(*q.TopLevel))
+	}
+	if q.PathDetail != nil {
+		values.Set("path_detail", strconv.FormatBool(*q.PathDetail))
 	}
 	return values
 }
