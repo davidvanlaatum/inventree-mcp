@@ -496,6 +496,8 @@ type fakeMilestoneLookupClient struct {
 	companies                  []inventree.Company
 	suppliers                  []inventree.Company
 	manufacturers              []inventree.Company
+	manufacturerSearchResults  [][]inventree.Company
+	manufacturerSearchCalls    int
 	stockLocations             []inventree.StockLocation
 	stockItems                 []inventree.StockItem
 	parameters                 []inventree.Parameter
@@ -524,6 +526,12 @@ type fakeMilestoneLookupClient struct {
 	createdLinkAttachment      bool
 	deletedAttachment          bool
 	setPartPrimaryImage        bool
+	createPartErr              error
+	updatePartErr              error
+	createCompanyErr           error
+	searchManufacturersErr     error
+	createSupplierPartErr      error
+	createManufacturerPartErr  error
 
 	lastSearchPartsQuery                      inventree.SearchQuery
 	lastSearchPartCategoriesQuery             inventree.SearchQuery
@@ -627,6 +635,9 @@ func (f *fakeMilestoneLookupClient) SearchCompanies(_ context.Context, query inv
 func (f *fakeMilestoneLookupClient) CreateCompany(_ context.Context, input inventree.CompanyCreate) (inventree.Company, error) {
 	f.createdCompany = true
 	f.lastCreateCompany = input
+	if f.createCompanyErr != nil {
+		return inventree.Company{}, f.createCompanyErr
+	}
 	return inventree.Company{PK: 30, Name: input.Name, Currency: input.Currency, IsSupplier: input.IsSupplier, IsManufacturer: input.IsManufacturer}, nil
 }
 
@@ -637,6 +648,14 @@ func (f *fakeMilestoneLookupClient) SearchSuppliers(_ context.Context, query inv
 
 func (f *fakeMilestoneLookupClient) SearchManufacturers(_ context.Context, query inventree.SearchQuery) ([]inventree.Company, error) {
 	f.lastSearchManufacturersQuery = query
+	if f.searchManufacturersErr != nil {
+		return nil, f.searchManufacturersErr
+	}
+	if len(f.manufacturerSearchResults) > 0 {
+		index := min(f.manufacturerSearchCalls, len(f.manufacturerSearchResults)-1)
+		f.manufacturerSearchCalls++
+		return f.manufacturerSearchResults[index], nil
+	}
 	return f.manufacturers, nil
 }
 
@@ -719,11 +738,17 @@ func (f *fakeMilestoneLookupClient) SetPartPrimaryImage(_ context.Context, partI
 func (f *fakeMilestoneLookupClient) CreatePart(_ context.Context, input inventree.PartCreate) (inventree.Part, error) {
 	f.createdPart = true
 	f.lastCreatePart = input
+	if f.createPartErr != nil {
+		return inventree.Part{}, f.createPartErr
+	}
 	return inventree.Part{PK: 10, Name: input.Name, Category: input.Category, Purchaseable: input.Purchaseable != nil && *input.Purchaseable}, nil
 }
 
 func (f *fakeMilestoneLookupClient) UpdatePart(_ context.Context, id int, fields inventree.PatchFields) (inventree.Part, error) {
 	f.lastUpdatePartFields = fields
+	if f.updatePartErr != nil {
+		return inventree.Part{}, f.updatePartErr
+	}
 	return inventree.Part{PK: id}, nil
 }
 
@@ -761,6 +786,9 @@ func (f *fakeMilestoneLookupClient) GetSupplierPart(_ context.Context, id int) (
 func (f *fakeMilestoneLookupClient) CreateSupplierPart(_ context.Context, input inventree.SupplierPartCreate) (inventree.SupplierPart, error) {
 	f.createdSupplierPart = true
 	f.lastCreateSupplierPart = input
+	if f.createSupplierPartErr != nil {
+		return inventree.SupplierPart{}, f.createSupplierPartErr
+	}
 	return inventree.SupplierPart{PK: 40, Part: input.Part, Supplier: input.Supplier, SKU: input.SKU}, nil
 }
 
@@ -772,6 +800,9 @@ func (f *fakeMilestoneLookupClient) SearchManufacturerParts(_ context.Context, q
 func (f *fakeMilestoneLookupClient) CreateManufacturerPart(_ context.Context, input inventree.ManufacturerPartCreate) (inventree.ManufacturerPart, error) {
 	f.createdManufacturerPart = true
 	f.lastCreateManufacturerPart = input
+	if f.createManufacturerPartErr != nil {
+		return inventree.ManufacturerPart{}, f.createManufacturerPartErr
+	}
 	mpn := ""
 	if input.MPN != nil {
 		mpn = *input.MPN

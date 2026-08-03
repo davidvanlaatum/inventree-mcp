@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"encoding/base64"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/netip"
@@ -662,6 +663,193 @@ func TestUpsertPartWorkflowCreatesUnambiguousMissingRecords(t *testing.T) {
 	a.Equal(inventree.SupplierPartCreate{Part: 10, Supplier: 30, SKU: "ACME-10K", ManufacturerPart: dvgoutils.Ptr(50)}, fake.lastCreateSupplierPart)
 }
 
+func TestUpsertPartWorkflowSkipsManufacturerPartWithoutMPN(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	fake := &fakeMilestoneLookupClient{
+		parts:         []inventree.Part{{PK: 10, Name: "10k resistor"}},
+		suppliers:     []inventree.Company{{PK: 30, Name: "Acme", IsSupplier: true}},
+		manufacturers: []inventree.Company{{PK: 31, Name: "PartsCo", IsManufacturer: true}},
+	}
+
+	_, output, err := upsertPartWorkflow(depsForFake(fake))(ctx, &mcp.CallToolRequest{}, UpsertPartWorkflowInput{
+		Name:             "10k resistor",
+		SupplierName:     "Acme",
+		SupplierSKU:      "ACME-10K",
+		ManufacturerName: "PartsCo",
+		MPN:              dvgoutils.Ptr(" \t "),
+	})
+
+	r.NoError(err)
+	a.Equal(StatusOK, output.Status)
+	a.Nil(output.ManufacturerPart)
+	a.False(fake.createdManufacturerPart)
+	a.Equal(inventree.ManufacturerPartQuery{Part: 10, Manufacturer: 31}, fake.lastSearchManufacturerPartsQuery)
+	a.Equal(inventree.SupplierPartCreate{Part: 10, Supplier: 30, SKU: "ACME-10K"}, fake.lastCreateSupplierPart)
+	a.Contains(output.Actions, PartUpsertWorkflowAction{
+		Name:       "skip_manufacturer_part",
+		Status:     "skipped",
+		RecordType: "manufacturerpart",
+		Reason:     "MPN not supplied and no existing link matched; no fallback value was invented",
+	})
+}
+
+func TestRemainingPartUpsertActionsDoNotScheduleManufacturerPartWithoutMPN(t *testing.T) {
+	t.Parallel()
+	a := assert.New(t)
+	input := UpsertPartWorkflowInput{
+		ManufacturerName: "PartsCo",
+		SupplierName:     "Acme",
+	}
+
+	a.Equal([]string{"resolve_manufacturer", "resolve_or_skip_manufacturer_part", "resolve_supplier", "create_or_reuse_supplier_part"}, remainingPartUpsertActions(input, "create_part"))
+	a.Equal([]string{"resolve_or_skip_manufacturer_part", "resolve_supplier", "create_or_reuse_supplier_part"}, remainingPartUpsertActions(input, "create_manufacturer"))
+}
+
+func TestUpsertPartWorkflowReusesExistingManufacturerPartWithoutMPN(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	fake := &fakeMilestoneLookupClient{
+		parts:             []inventree.Part{{PK: 10, Name: "10k resistor"}},
+		suppliers:         []inventree.Company{{PK: 30, Name: "Acme", IsSupplier: true}},
+		manufacturers:     []inventree.Company{{PK: 31, Name: "PartsCo", IsManufacturer: true}},
+		manufacturerParts: []inventree.ManufacturerPart{{PK: 50, Part: 10, Manufacturer: 31, MPN: "known-upstream"}},
+	}
+
+	_, output, err := upsertPartWorkflow(depsForFake(fake))(ctx, &mcp.CallToolRequest{}, UpsertPartWorkflowInput{
+		Name:             "10k resistor",
+		SupplierName:     "Acme",
+		SupplierSKU:      "ACME-10K",
+		ManufacturerName: "PartsCo",
+	})
+
+	r.NoError(err)
+	a.Equal(StatusOK, output.Status)
+	r.NotNil(output.ManufacturerPart)
+	a.Equal(50, output.ManufacturerPart.PK)
+	a.Equal(dvgoutils.Ptr(50), fake.lastCreateSupplierPart.ManufacturerPart)
+	a.False(fake.createdManufacturerPart)
+}
+
+func TestUpsertPartWorkflowClarifiesMultipleManufacturerPartsWithoutMPNBeforeWriting(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	fake := &fakeMilestoneLookupClient{
+		parts:         []inventree.Part{{PK: 10, Name: "10k resistor"}},
+		manufacturers: []inventree.Company{{PK: 31, Name: "PartsCo", IsManufacturer: true}},
+		manufacturerParts: []inventree.ManufacturerPart{
+			{PK: 50, Part: 10, Manufacturer: 31, MPN: "MPN-1"},
+			{PK: 51, Part: 10, Manufacturer: 31, MPN: "MPN-2"},
+		},
+	}
+
+	_, output, err := upsertPartWorkflow(depsForFake(fake))(ctx, &mcp.CallToolRequest{}, UpsertPartWorkflowInput{
+		Name:             "10k resistor",
+		ManufacturerName: "PartsCo",
+	})
+
+	r.NoError(err)
+	a.Equal(StatusClarificationRequired, output.Status)
+	r.NotNil(output.Clarification)
+	a.Equal("manufacturer_part_id", output.Clarification.Retry)
+	a.False(fake.createdPart)
+	a.False(fake.createdManufacturerPart)
+	a.False(fake.createdSupplierPart)
+}
+
+func TestRunPartUpsertWorkflowPreservesCreatedPartWhenManufacturerLookupFails(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	fake := &fakeMilestoneLookupClient{searchManufacturersErr: &inventree.APIError{StatusCode: http.StatusInternalServerError, Kind: inventree.ErrorKindServer}}
+
+	_, output, err := runPartUpsertWorkflow(ctx, fake, UpsertPartWorkflowInput{
+		Name:                 "live order resistor",
+		CategoryID:           20,
+		ManufacturerName:     "PartsCo",
+		ManufacturerCurrency: "AUD",
+		SupplierName:         "Acme",
+		SupplierCurrency:     "AUD",
+		SupplierSKU:          "ORDER-SKU-1",
+	})
+
+	r.NoError(err)
+	a.Equal(StatusPartialFailure, output.Status)
+	r.NotNil(output.Part)
+	a.Equal(10, output.Part.PK)
+	r.NotNil(output.Failure)
+	a.Equal("resolve_manufacturer", output.Failure.Action)
+	a.NotEmpty(output.Failure.RecoveryPlan)
+	a.Contains(output.Actions, PartUpsertWorkflowAction{Name: "create_part", Status: "created", RecordType: "part", ID: 10, Reason: "no matching part found"})
+	a.Contains(output.Actions, PartUpsertWorkflowAction{Name: "resolve_manufacturer", Status: "failed", RecordType: "company", Reason: "InvenTree lookup did not complete after an earlier write"})
+	a.Equal([]string{"resolve_or_skip_manufacturer_part", "resolve_supplier", "create_or_reuse_supplier_part"}, output.RemainingActions)
+}
+
+func TestRunPartUpsertWorkflowPreservesCreatedPartWhenManufacturerLookupBecomesAmbiguous(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	fake := &fakeMilestoneLookupClient{manufacturers: []inventree.Company{
+		{PK: 31, Name: "PartsCo", IsManufacturer: true},
+		{PK: 32, Name: "PartsCo duplicate", IsManufacturer: true},
+	}}
+
+	_, output, err := runPartUpsertWorkflow(ctx, fake, UpsertPartWorkflowInput{
+		Name:             "live order resistor",
+		CategoryID:       20,
+		ManufacturerName: "PartsCo",
+	})
+
+	r.NoError(err)
+	a.Equal(StatusPartialFailure, output.Status)
+	r.NotNil(output.Part)
+	a.Equal(10, output.Part.PK)
+	r.NotNil(output.Failure)
+	a.Equal("resolve_manufacturer", output.Failure.Action)
+	a.NotEmpty(output.Failure.RecoveryPlan)
+	r.NotNil(output.Clarification)
+	a.Equal("manufacturer_id", output.Clarification.Retry)
+	a.Contains(output.Actions, PartUpsertWorkflowAction{Name: "create_part", Status: "created", RecordType: "part", ID: 10, Reason: "no matching part found"})
+	a.Contains(output.Actions, PartUpsertWorkflowAction{Name: "resolve_manufacturer", Status: "failed", RecordType: "company", Reason: "lookup became ambiguous after an earlier write"})
+}
+
+func TestUpsertPartWorkflowPreservesCreatedPartWhenManufacturerDisappearsAfterPreflight(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	fake := &fakeMilestoneLookupClient{manufacturerSearchResults: [][]inventree.Company{
+		{{PK: 31, Name: "PartsCo", IsManufacturer: true}},
+		{},
+	}}
+
+	_, output, err := upsertPartWorkflow(depsForFake(fake))(ctx, &mcp.CallToolRequest{}, UpsertPartWorkflowInput{
+		Name:             "live order resistor",
+		CategoryID:       20,
+		ManufacturerName: "PartsCo",
+	})
+
+	r.NoError(err)
+	a.Equal(StatusPartialFailure, output.Status)
+	r.NotNil(output.Part)
+	a.Equal(10, output.Part.PK)
+	r.NotNil(output.Failure)
+	a.Equal("resolve_manufacturer", output.Failure.Action)
+	a.Equal("Provide the company currency, inspect the accumulated records, and continue only the remaining actions.", output.Failure.RecoveryPlan)
+	r.NotNil(output.Clarification)
+	a.Equal("manufacturer_currency", output.Clarification.Retry)
+	a.Contains(output.Actions, PartUpsertWorkflowAction{Name: "create_part", Status: "created", RecordType: "part", ID: 10, Reason: "no matching part found"})
+	a.Contains(output.Actions, PartUpsertWorkflowAction{Name: "resolve_manufacturer", Status: "failed", RecordType: "company", Reason: "company no longer matched after preflight"})
+}
+
 func TestUpsertPartWorkflowAsksForAmbiguousPart(t *testing.T) {
 	t.Parallel()
 	r := require.New(t)
@@ -1140,6 +1328,112 @@ func TestCreateSupplierAndManufacturerPartsAskBeforeDuplicate(t *testing.T) {
 	a.Equal("manufacturer_part_id", manufacturerOutput.Clarification.Retry)
 	a.Equal(inventree.ManufacturerPartQuery{Part: 10, Manufacturer: 31, MPN: "MPN-1"}, fakeManufacturer.lastSearchManufacturerPartsQuery)
 	a.False(fakeManufacturer.createdManufacturerPart)
+}
+
+func TestCreateManufacturerPartNormalizesBlankOptionalMPN(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	fake := &fakeMilestoneLookupClient{}
+
+	_, output, err := createManufacturerPart(depsForFake(fake))(ctx, &mcp.CallToolRequest{}, CreateManufacturerPartInput{PartID: 10, ManufacturerID: 31, MPN: dvgoutils.Ptr("  \t ")})
+
+	r.NoError(err)
+	a.Equal(StatusOK, output.Status)
+	a.Equal(inventree.ManufacturerPartQuery{Part: 10, Manufacturer: 31}, fake.lastSearchManufacturerPartsQuery)
+	a.Nil(fake.lastCreateManufacturerPart.MPN)
+}
+
+func TestCreateManufacturerPartPreservesNonblankMPNExactly(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	fake := &fakeMilestoneLookupClient{}
+	mpn := " ABC 123 "
+
+	_, output, err := createManufacturerPart(depsForFake(fake))(ctx, &mcp.CallToolRequest{}, CreateManufacturerPartInput{PartID: 10, ManufacturerID: 31, MPN: &mpn})
+
+	r.NoError(err)
+	a.Equal(StatusOK, output.Status)
+	a.Equal(inventree.ManufacturerPartQuery{Part: 10, Manufacturer: 31, MPN: mpn}, fake.lastSearchManufacturerPartsQuery)
+	a.Equal(&mpn, fake.lastCreateManufacturerPart.MPN)
+}
+
+func TestCreateManufacturerPartReturnsSafeValidationDetails(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	fake := &fakeMilestoneLookupClient{createManufacturerPartErr: &inventree.APIError{
+		StatusCode: http.StatusBadRequest,
+		Kind:       inventree.ErrorKindValidation,
+		FieldErrors: map[string][]string{
+			"MPN":    {"This field may not be blank."},
+			"link":   {"Invalid URL https://operator:secret@example.test/?token=private"},
+			"tax_id": {"private-tax-value"},
+		},
+	}}
+
+	_, output, err := createManufacturerPart(depsForFake(fake))(ctx, &mcp.CallToolRequest{}, CreateManufacturerPartInput{PartID: 10, ManufacturerID: 31, MPN: dvgoutils.Ptr("MPN-1")})
+
+	r.NoError(err)
+	a.Equal(StatusValidationFailed, output.Status)
+	r.NotNil(output.Validation)
+	a.Equal(http.StatusBadRequest, output.Validation.StatusCode)
+	a.Equal([]ValidationFieldError{
+		{Field: "link", Messages: []string{"Enter a valid URL."}},
+		{Field: "MPN", Messages: []string{"This field may not be blank."}},
+	}, output.Validation.Fields)
+	a.NotContains(fmt.Sprint(output.Validation), "secret")
+	a.NotContains(fmt.Sprint(output.Validation), "private")
+	a.NotContains(fmt.Sprint(output.Validation), "tax_id")
+}
+
+func TestUpsertPartWorkflowPreservesCreatedIDsAfterLaterValidationFailure(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	fake := &fakeMilestoneLookupClient{
+		manufacturers: []inventree.Company{{PK: 31, Name: "PartsCo", IsManufacturer: true}},
+		suppliers:     []inventree.Company{{PK: 30, Name: "Acme", IsSupplier: true}},
+		createSupplierPartErr: &inventree.APIError{
+			StatusCode:  http.StatusBadRequest,
+			Kind:        inventree.ErrorKindValidation,
+			FieldErrors: map[string][]string{"SKU": {"This field is invalid: secret-value"}},
+		},
+	}
+
+	_, output, err := upsertPartWorkflow(depsForFake(fake))(ctx, &mcp.CallToolRequest{}, UpsertPartWorkflowInput{
+		Name:             "live order resistor",
+		CategoryID:       20,
+		ManufacturerName: "PartsCo",
+		MPN:              dvgoutils.Ptr("MPN-1"),
+		SupplierName:     "Acme",
+		SupplierSKU:      "ORDER-SKU-1",
+	})
+
+	r.NoError(err)
+	a.Equal(StatusPartialFailure, output.Status)
+	r.NotNil(output.Part)
+	a.Equal(10, output.Part.PK)
+	r.NotNil(output.ManufacturerPart)
+	a.Equal(50, output.ManufacturerPart.PK)
+	r.NotNil(output.Supplier)
+	a.Equal(30, output.Supplier.PK)
+	r.NotNil(output.Failure)
+	a.Equal("create_supplier_part", output.Failure.Action)
+	r.NotNil(output.Failure.Validation)
+	a.Equal("Search supplier parts using the returned part and supplier IDs plus the exact SKU before retrying creation.", output.Failure.RecoveryPlan)
+	a.Equal([]ValidationFieldError{{Field: "SKU", Messages: []string{"Rejected by InvenTree."}}}, output.Failure.Validation.Fields)
+	a.Empty(output.RemainingActions)
+	a.Contains(output.Actions, PartUpsertWorkflowAction{Name: "create_part", Status: "created", RecordType: "part", ID: 10, Reason: "no matching part found"})
+	a.Contains(output.Actions, PartUpsertWorkflowAction{Name: "create_manufacturer_part", Status: "created", RecordType: "manufacturerpart", ID: 50, Reason: "no matching manufacturer-part found"})
+	a.Contains(output.Actions, PartUpsertWorkflowAction{Name: "create_supplier_part", Status: "failed", RecordType: "supplierpart", Reason: "InvenTree mutation did not return a verified result"})
+	a.Equal(dvgoutils.Ptr("MPN-1"), fake.lastCreateManufacturerPart.MPN)
+	a.NotContains(fmt.Sprint(output), "secret-value")
 }
 
 func TestCreateSupplierAndManufacturerPartsAskForPositiveIDs(t *testing.T) {

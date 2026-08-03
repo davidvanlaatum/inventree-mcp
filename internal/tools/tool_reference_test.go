@@ -38,6 +38,7 @@ func TestToolReferenceDocumentsLookupFrameworkSchema(t *testing.T) {
 		"`" + StatusNotFound + "`",
 		"`" + StatusClarificationRequired + "`",
 		"`" + StatusNoImage + "`",
+		"`" + StatusValidationFailed + "`",
 		"`" + strconv.Itoa(DefaultLookupLimit) + "`",
 		"`" + strconv.Itoa(MaxLookupLimit) + "`",
 	} {
@@ -72,6 +73,9 @@ func TestToolReferenceDocumentsLookupFrameworkSchema(t *testing.T) {
 		reflect.TypeOf(UpsertPartWorkflowInput{}),
 		reflect.TypeOf(PartUpsertWorkflowOutput{}),
 		reflect.TypeOf(PartUpsertWorkflowAction{}),
+		reflect.TypeOf(PartUpsertWorkflowFailure{}),
+		reflect.TypeOf(ValidationFailure{}),
+		reflect.TypeOf(ValidationFieldError{}),
 		reflect.TypeOf(InitialStockWorkflowInput{}),
 		reflect.TypeOf(InitialStockWorkflowOutput{}),
 		reflect.TypeOf(InitialStockWorkflowAction{}),

@@ -94,7 +94,7 @@ Before `M1C-S04` is complete, mutating, operational, destructive, and upload too
 | [F-S12](#f-s12-global-parameter-value-search-and-delete) | Search parameter values across inventory and delete individual rows safely. | Done |
 | [F-S13](#f-s13-category-parameter-defaults) | Manage category parameter defaults using existing templates. | Done |
 | [F-S14](#f-s14-bulk-parameter-propagation-and-audit-workflows) | Add dry-run bulk parameter propagation and consistency audits. | Done |
-| [F-S15](#f-s15-live-order-entry-tool-hardening) | Close gaps found during live order-entry use of the MCP tools. | Future |
+| [F-S15](#f-s15-live-order-entry-tool-hardening) | Close gaps found during live order-entry use of the MCP tools. | Done |
 | [F-S16](#f-s16-mcp-go-sdk-v17-and-2026-07-28-protocol-adoption) | Adopt MCP Go SDK v1.7 and the MCP 2026-07-28 protocol safely. | Done |
 | [F-S17](#f-s17-native-mcp-elicitation-for-structured-clarifications) | Add native MCP elicitation while preserving structured clarification fallback. | Planned |
 | [F-S18](#f-s18-local-cli-self-update) | Add an explicit local CLI self-update workflow for direct binary installs. | Done |
@@ -1302,29 +1302,33 @@ Tasks:
 
 ### F-S15: Live Order Entry Tool Hardening
 
-- Status: `Future`
+- Status: `Done`
 - Issue: [#60](https://github.com/davidvanlaatum/inventree-mcp/issues/60)
 - Depends on: milestone 1 complete, F-S19, F-S20, product review, QA review, and infosec review
+- Progress: implementation completed on `codex/f-s15-live-order-entry-hardening`. The operator confirmed that manufacturer part numbers are optional: omitted, null, blank, or whitespace-only input must not invent a fallback MPN and must be normalized to an omitted value before mutation. Pinned InvenTree 1.4.3 rejects direct manufacturer-part creation without an MPN despite the snapshot declaring it optional; the combined workflow therefore reuses one exact part/manufacturer link, clarifies multiple links, or records a skipped step when none exists and continues the supplier-part path, while the direct create tool returns bounded validation.
+- Validation: `GOFLAGS=-trimpath go test -race -p=1 ./...` passed, including default-on pinned InvenTree Testcontainers coverage; the focused no-MPN live order-entry subtest passed; `go test -tags no_integration_tests -cover ./...` passed with no package reduction versus `origin/main` and improved `internal/tools` from 81.3% to 81.9%; `go generate ./internal/tools`, `go mod tidy -diff`, `golangci-lint run ./...`, `go vet ./...`, and `git diff --check` passed.
+- Review: Senior Go Developer, Senior QA / Test Architect, Senior Product Manager, and Senior Infosec Reviewer reviews completed. Findings covering accumulated-state loss after post-write lookup drift, optional-MPN reuse/clarification/skip behavior, MPN-aware remaining actions, exact nonblank MPN preservation, validation projection caps/deduplication, nested validation documentation, recovery-plan assertions, accurate failure reasons, transport/client error redaction, and cancellation/deadline sentinel preservation were fixed. Focused reruns by every affected role found no remaining actionable findings.
+- Residual risk: pinned InvenTree 1.4.3 still rejects direct manufacturer-part creation without an MPN despite the schema declaring it optional; the combined workflow avoids that write when no existing link matches, and the direct tool returns bounded `validation_failed` output. Workflow preflight and execution remain non-transactional, so concurrent upstream changes can still interrupt later resolution; accumulated stable IDs, actions, clarification, remaining work, and recovery guidance are preserved, but earlier writes are not rolled back.
 - Scope: turn the first live order-entry run from an eBay order page into regression coverage and cross-cutting tool hardening. F-S03 and F-S11 through F-S14 now own the purchase-order, parameter-template, parameter-value, category-default, and bulk-parameter endpoint families that originally required REST fallbacks. F-S19 and F-S20 own the remaining category and sourcing-link administration surfaces; this story retains end-to-end preflight, error, partial-failure recovery, and operator-workflow behavior.
 - Acceptance:
   - Combined write workflows preflight every required clarification before mutation where practical; when a later step can still fail, the error response includes created IDs, completed actions, remaining actions, and a concrete recovery plan.
-  - `create_manufacturer_part` and `upsert_part_with_supplier_and_manufacturer` reject blank or null MPN before calling InvenTree when the instance requires nonblank values, or implement a documented operator-approved fallback convention.
-  - InvenTree API errors returned through tools include the relevant response body fields, such as `MPN: This field cannot be blank`, while preserving token and sensitive-data redaction.
-  - Dry-run or preflight behavior is available consistently for write tools that operators use during order entry, including company, supplier-part, manufacturer-part, part, category, parameter, image, and purchase-order writes supplied by this story or its completed dependencies.
+  - `create_manufacturer_part` and `upsert_part_with_supplier_and_manufacturer` preserve optional MPN semantics and normalize null, blank, or whitespace-only input to omission before calling InvenTree; they never invent a fallback value.
+  - InvenTree API validation errors returned through tools include bounded allowlisted response fields with canonical non-echoing messages, such as `MPN: This field may not be blank`, while preserving token, URL, and sensitive-data redaction.
+  - Dry-run or preflight behavior is available consistently for write tools that operators use during order entry, including company, supplier-part, manufacturer-part, part, category, parameter, image, and purchase-order writes supplied by this story or its completed dependencies. Existing complete duplicate/reference preflight satisfies this criterion where a separate dry run would add no safety.
   - The completed dependency surfaces provide enough read/search operations to avoid REST fallbacks during duplicate checks and recovery for categories, parts, supplier parts, manufacturer parts, purchase orders, purchase-order lines, parameter templates, parameter values, category parameter defaults, and image/attachment state.
-  - Default-on pinned Testcontainers coverage reproduces the sanitized order-entry path with a blank-MPN manufacturer-part input, uses a subtest-owned run, account, client, and run-prefixed records, proves no hidden partial state is left without recoverable IDs, and verifies through scoped pre/post searches that every intentionally created record is returned or recoverable. A live run may supplement but does not replace this blocking regression.
+  - Default-on pinned Testcontainers coverage reproduces the sanitized order-entry path without an MPN, uses a subtest-owned run, account, client, and run-prefixed records, proves no hidden partial state is left without recoverable IDs, and verifies through scoped pre/post searches that every intentionally created record is returned or recoverable. A live run may supplement but does not replace this blocking regression.
   - Tool reference, operator recipes, and prompt/operator guidance are updated for any new recovery, dry-run/preflight, read/search, or write behavior added by this hardening story.
 
 Tasks:
 
-- [ ] Capture the live eBay order-entry workflow as an operator recipe and test scenario with sanitized fixture values.
-- [ ] Recheck the registered and documented tools delivered by F-S03, F-S11 through F-S14, F-S19, and F-S20 against the end-to-end order-entry workflow.
-- [ ] Add blank/null MPN validation or a documented fallback convention for manufacturer-part creation and part-upsert workflows.
-- [ ] Include structured InvenTree response-body details in tool errors with redaction tests.
-- [ ] Add recovery metadata to multi-step workflow failures, including any created part/company/link IDs.
-- [ ] Add dry-run/preflight support for lower-level write tools used during order entry where it is currently missing.
-- [ ] Add only cross-cutting read, duplicate-check, or recovery behavior that does not belong to the endpoint-family stories.
-- [ ] Update tool reference, operator recipes, and prompt/operator guidance for the hardened order-entry workflow.
+- [x] Capture the live eBay order-entry workflow as an operator recipe and test scenario with sanitized fixture values.
+- [x] Recheck the registered and documented tools delivered by F-S03, F-S11 through F-S14, F-S19, and F-S20 against the end-to-end order-entry workflow.
+- [x] Normalize null, blank, and whitespace-only optional MPN input without inventing a fallback value.
+- [x] Include bounded structured InvenTree validation details in tool outputs and errors with redaction tests.
+- [x] Add recovery metadata to multi-step workflow failures, including any created part/company/link IDs.
+- [x] Add dry-run/preflight support for lower-level write tools used during order entry where it is currently missing.
+- [x] Add only cross-cutting read, duplicate-check, or recovery behavior that does not belong to the endpoint-family stories.
+- [x] Update tool reference, operator recipes, and prompt/operator guidance for the hardened order-entry workflow.
 
 ### F-S16: MCP Go SDK v1.7 And 2026-07-28 Protocol Adoption
 

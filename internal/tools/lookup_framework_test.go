@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"errors"
+	"net/http"
 	"strconv"
 	"testing"
 
@@ -97,6 +98,27 @@ func TestLookupHandlerReturnsClientResolutionError(t *testing.T) {
 
 	_, _, err := handler(ctx, &mcp.CallToolRequest{}, SearchInput{})
 	r.ErrorIs(err, wantErr)
+}
+
+func TestLookupHandlerSanitizesClientResolutionAPIError(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	handler := LookupHandler[partSearchClient, SearchInput, searchPartsOutput](Dependencies{
+		ClientFromContext: func(context.Context) (any, error) {
+			return nil, &inventree.APIError{StatusCode: http.StatusUnauthorized, Detail: "token=secret-private-value"}
+		},
+	}, "sample_search_parts", func(context.Context, *mcp.CallToolRequest, partSearchClient, SearchInput) (*mcp.CallToolResult, searchPartsOutput, error) {
+		return nil, searchPartsOutput{}, nil
+	})
+
+	_, _, err := handler(ctx, &mcp.CallToolRequest{}, SearchInput{})
+	r.Error(err)
+	a.Equal("InvenTree request failed with status 401", err.Error())
+	a.NotContains(err.Error(), "secret")
+	a.NotContains(err.Error(), "private")
 }
 
 func TestLookupHandlerReturnsClarificationFromAmbiguousFakeClient(t *testing.T) {

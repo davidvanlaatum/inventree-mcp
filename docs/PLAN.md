@@ -909,12 +909,13 @@ Validation:
 - Structured clarification tests for duplicate stock, duplicate attachments, ambiguous parameters, and ambiguous supplier/manufacturer links.
 - Purchase preview no-write tests.
 
+Live order-entry hardening normalizes omitted, null, blank, and whitespace-only MPN input to omission without inventing a manufacturer identifier. With no MPN, the combined workflow searches the exact part/manufacturer pair, reuses one existing link, clarifies multiple links, or records a skipped manufacturer-part action when none exists, while still allowing the supplier-part path to complete. A direct manufacturer-part create still omits the field and reports the pinned server's safe validation rejection rather than fabricating a value. Ordinary writes return bounded allowlisted validation fields with canonical non-echoing messages. The combined part/supplier/manufacturer workflow preserves completed actions and stable records, identifies remaining actions, and returns a read/search recovery plan when a later mutation is rejected or has an ambiguous result. Existing duplicate/reference preflight satisfies the lower-level safety contract where a separate dry run would not add protection.
+
 ### Future Workflow Tools
 
 - BOM import workflow.
 - Build order create/allocate/complete workflow.
 - Stocktake adjustment workflow.
-- Live order-entry hardening from browser/order-page workflows: fill missing duplicate-check and recovery reads, ensure write tools have consistent dry-run/preflight behavior, validate blank/null manufacturer part numbers before mutation or document a fallback convention, and return redacted InvenTree response-body details in tool errors.
 
 Future workflows require a new product review pass before implementation.
 
