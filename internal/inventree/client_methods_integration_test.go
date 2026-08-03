@@ -368,6 +368,57 @@ func TestClientMethodsAgainstInvenTree(t *testing.T) {
 		r.Equal(float64(7), stockItems[0].Quantity)
 	})
 
+	t.Run("stock_location_and_metadata_administration", func(t *testing.T) {
+		r := require.New(t)
+		ctx, _, _ := testhandler.SetupTestHandler(t)
+		fixture := newClientMethodFixture(t, shared)
+		parent := fixture.ensure(t, testenv.FixtureLocation)
+		owner := fixture.ensure(t, testenv.FixtureSupplier)
+		part := fixture.ensure(t, testenv.FixturePart)
+		typeName, err := fixture.run.Name("location-type")
+		r.NoError(err)
+		var locationType inventree.StockLocationType
+		r.NoError(fixture.client.Post(ctx, "/api/stock/location-type/", map[string]any{"name": typeName, "description": "F-S21 integration location type", "icon": ""}, &locationType))
+		r.NotZero(locationType.PK)
+
+		name, err := fixture.run.Name("child-location")
+		r.NoError(err)
+		created, err := fixture.client.CreateStockLocation(ctx, inventree.StockLocationCreate{Name: name, Description: dvgoutils.Ptr("created by F-S21 integration"), Parent: &parent.ID, Owner: &owner.ID, Structural: dvgoutils.Ptr(false), External: dvgoutils.Ptr(false), LocationType: &locationType.PK})
+		r.NoError(err)
+		r.NotZero(created.PK)
+		r.Equal(name, created.Name)
+		r.Equal(parent.ID, *created.Parent)
+		r.Equal(owner.ID, *created.Owner)
+		r.Equal(locationType.PK, *created.LocationType)
+
+		page, err := fixture.client.SearchStockLocationsPage(ctx, inventree.StockLocationQuery{Parent: &parent.ID, PathDetail: dvgoutils.Ptr(true), Limit: 100})
+		r.NoError(err)
+		r.Contains(stockLocationIDs(page.Results), created.PK)
+		types, err := fixture.client.SearchStockLocationTypes(ctx, inventree.SearchQuery{Search: typeName, Limit: 100})
+		r.NoError(err)
+		r.Contains(stockLocationTypeIDs(types), locationType.PK)
+		gotType, err := fixture.client.GetStockLocationType(ctx, locationType.PK)
+		r.NoError(err)
+		r.Equal(typeName, gotType.Name)
+
+		updated, err := fixture.client.UpdateStockLocation(ctx, created.PK, inventree.PatchFields{"description": inventree.Set("updated by F-S21 integration"), "owner": inventree.Null(), "location_type": inventree.Null(), "external": inventree.Set(true)})
+		r.NoError(err)
+		r.Equal("updated by F-S21 integration", updated.Description)
+		r.Nil(updated.Owner)
+		r.Nil(updated.LocationType)
+		r.True(updated.External)
+
+		stock, err := fixture.client.CreateStockItem(ctx, inventree.StockItemCreate{Part: part.ID, Location: created.PK, Quantity: 2})
+		r.NoError(err)
+		stock, err = fixture.client.UpdateStockItem(ctx, stock.PK, inventree.PatchFields{"batch": inventree.Set("F-S21-BATCH"), "expiry_date": inventree.Set("2027-01-02"), "packaging": inventree.Set("tray"), "notes": inventree.Set("F-S21 metadata"), "link": inventree.Set("https://example.test/stock")})
+		r.NoError(err)
+		r.Equal("F-S21-BATCH", *stock.Batch)
+		r.Equal("2027-01-02", *stock.ExpiryDate)
+		r.Equal("tray", *stock.Packaging)
+		r.Equal("F-S21 metadata", *stock.Notes)
+		r.Equal("https://example.test/stock", stock.Link)
+	})
+
 	t.Run("parameter", func(t *testing.T) {
 		r := require.New(t)
 		ctx, _, _ := testhandler.SetupTestHandler(t)
@@ -827,6 +878,22 @@ func purchaseOrderLineIDs(lines []inventree.PurchaseOrderLineItem) []int {
 	ids := make([]int, 0, len(lines))
 	for _, line := range lines {
 		ids = append(ids, line.PK)
+	}
+	return ids
+}
+
+func stockLocationIDs(locations []inventree.StockLocation) []int {
+	ids := make([]int, 0, len(locations))
+	for _, location := range locations {
+		ids = append(ids, location.PK)
+	}
+	return ids
+}
+
+func stockLocationTypeIDs(types []inventree.StockLocationType) []int {
+	ids := make([]int, 0, len(types))
+	for _, locationType := range types {
+		ids = append(ids, locationType.PK)
 	}
 	return ids
 }

@@ -100,7 +100,7 @@ Before `M1C-S04` is complete, mutating, operational, destructive, and upload too
 | [F-S18](#f-s18-local-cli-self-update) | Add an explicit local CLI self-update workflow for direct binary installs. | Done |
 | [F-S19](#f-s19-part-category-administration) | Add guarded part-category retrieval, creation, and editing. | Done |
 | [F-S20](#f-s20-company-and-sourcing-link-maintenance) | Add exact reads and guarded maintenance for companies and sourcing links. | Done |
-| [F-S21](#f-s21-stock-location-and-stock-record-administration) | Add stock-location administration and constrained stock-record maintenance. | Future |
+| [F-S21](#f-s21-stock-location-and-stock-record-administration) | Add stock-location administration and constrained stock-record maintenance. | Done |
 
 ## Milestone 0: Repository And Planning
 
@@ -1487,7 +1487,7 @@ Decision: company updates may edit name, description, website, currency, active,
 
 ### F-S21: Stock Location And Stock Record Administration
 
-- Status: `Future`
+- Status: `Done`
 - Issue: [#80](https://github.com/davidvanlaatum/inventree-mcp/issues/80)
 - Depends on: milestone 1 complete, F-S05, product review, QA review, and infosec review
 - Scope: expose exact stock-location and stock-item reads, add guarded stock-location creation and editing, and define a constrained stock-item metadata update surface without bypassing the confirmed quantity, stocktake, status, or receiving workflows. Location or stock-item deletion remains out of scope.
@@ -1504,10 +1504,16 @@ Decision: company updates may edit name, description, website, currency, active,
 
 Tasks:
 
-- [ ] Decide the supported stock-location fields, duplicate normalization/pagination matrix, mutation classification, owner/location-type lookup policy, and narrow non-location stock-item metadata boundary before implementation; create a separate backlog story if physical relocation is required.
-- [ ] Add missing location create/update, any approved bounded owner/location-type read dependencies, and any approved stock-item endpoint-manifest and typed-client methods.
-- [ ] Add stable-ID stock-location and stock-item retrieval tools.
-- [ ] Add guarded stock-location create/update and only the approved constrained stock-record mutation tools.
-- [ ] Add hierarchy, duplicate, reference, serialization, operational-boundary, ambiguous-result, and read-back tests against the pinned InvenTree API.
-- [ ] Align schema notes, tool reference, operator recipes, prompts, and generated manifests.
-- [ ] Run focused Go, QA, product, and infosec review and resolve or document findings.
+- [x] Decide the supported stock-location fields, duplicate normalization/pagination matrix, mutation classification, owner/location-type lookup policy, and narrow non-location stock-item metadata boundary before implementation; create a separate backlog story if physical relocation is required.
+- [x] Add missing location create/update, any approved bounded owner/location-type read dependencies, and any approved stock-item endpoint-manifest and typed-client methods.
+- [x] Add stable-ID stock-location and stock-item retrieval tools.
+- [x] Add guarded stock-location create/update and only the approved constrained stock-record mutation tools.
+- [x] Add hierarchy, duplicate, reference, serialization, operational-boundary, ambiguous-result, and read-back tests against the pinned InvenTree API.
+- [x] Align schema notes, tool reference, operator recipes, prompts, and generated manifests.
+- [x] Run focused Go, QA, product, and infosec review and resolve or document findings.
+
+Decision: stock-location create/update supports name, description, parent, custom icon, structural, external, owner, and location type. Duplicate identity is a trimmed case-insensitive name under the exact parent; root and child namespaces are distinct, same names under different parents are allowed, scans are bounded at 1,000 records, and completeness-sensitive checks fail closed above that bound. Reparenting and structural/external changes require a current-state plan, `inventree.operational`, and explicit confirmation; other location writes require `inventree.read` and `inventree.write`. Stock-item metadata updates are limited to batch, expiry date, packaging, notes, and external link and always require a current-state-bound confirmation plus `inventree.read`, `inventree.write`, and `inventree.operational`. Location, quantity, status, serial, ownership, supplier/source links, pricing, `delete_on_deplete`, installation, and order/build fields remain excluded.
+
+- Validation: `go test -tags no_integration_tests -cover ./internal/inventree ./internal/tools` passed with `internal/inventree` at 91.8% and `internal/tools` at 81.3%, compared with the current base at 91.6% and 81.3%; `go test -race ./internal/inventree -run '^TestClientMethodsAgainstInvenTree$/stock_location_and_metadata_administration$' -count=1` and `go test -race ./internal/tools -run '^TestMilestoneHappyPathToolsAgainstInvenTree$/stock_location_and_metadata_administration$' -count=1` passed against the pinned InvenTree Testcontainers stack. The expanded tool scenario covers actual reparenting, root-versus-child and different-parent namespaces, later-page duplicates, protected-state plan invalidation, and live post-persist response loss for location create, ordinary location PATCH, restructuring PATCH, and stock metadata PATCH. `GOFLAGS=-trimpath go test -race -p=1 ./...` passed with every default-on Docker suite; `go vet ./...`, `golangci-lint run ./...`, `go mod tidy -diff`, and `git diff --check` passed.
+- Review: Senior Go Developer, Senior QA / Test Architect, Senior Product Manager, and Senior Infosec Reviewer reviews completed because F-S21 adds mutating tool surface, operational hierarchy and stock-metadata workflows, pinned-live validation, and public operator contracts. Initial findings covered stale derived hierarchy fields in reparenting plans, incomplete current-state binding for destination hierarchy and custom status, non-positive reference classification, missing owner discovery, stale mutation-class prose, ambiguous ownership wording, incomplete pinned-live namespace/recovery coverage, and missing stale protected-state tests. Fixes introduced a coherent stable-ID hierarchy projection with source/destination context, complete metadata binding with sanitized public links, structured invalid-reference clarification, aligned prompts/docs, and expanded deterministic and pinned-live coverage. Focused Go, QA, product, and infosec reruns found no remaining actionable findings.
+- Residual risk: duplicate/reference preflight, PATCH, and read-back remain separate upstream REST operations, so concurrent UI or API writers can still race between them. Current-state plan hashes detect hierarchy or stock-state changes observed before confirmation, and post-write divergence returns `partial_failure`, but InvenTree offers no atomic conditional mutation for the final write interval. Operators should coordinate a single writer and inspect the exact stable ID before preparing a fresh plan after any partial failure. Completeness-sensitive sibling scans fail closed above 1,000 records.

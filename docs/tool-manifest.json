@@ -258,6 +258,23 @@
       "http_registration": "registered_with_oauth_scope_guard"
     },
     {
+      "name": "create_stock_location",
+      "milestone_status": "milestone_1",
+      "mutation_class": "write",
+      "scopes": [
+        "inventree.read",
+        "inventree.write"
+      ],
+      "annotations": {
+        "read_only": false,
+        "destructive": false,
+        "idempotent": false,
+        "open_world": false
+      },
+      "upload_sources": null,
+      "http_registration": "registered_with_oauth_scope_guard"
+    },
+    {
       "name": "create_supplier_part",
       "milestone_status": "milestone_1",
       "mutation_class": "write",
@@ -506,6 +523,54 @@
       "http_registration": "registered"
     },
     {
+      "name": "get_stock_item",
+      "milestone_status": "milestone_1",
+      "mutation_class": "read_only",
+      "scopes": [
+        "inventree.read"
+      ],
+      "annotations": {
+        "read_only": true,
+        "destructive": false,
+        "idempotent": true,
+        "open_world": false
+      },
+      "upload_sources": null,
+      "http_registration": "registered"
+    },
+    {
+      "name": "get_stock_location",
+      "milestone_status": "milestone_1",
+      "mutation_class": "read_only",
+      "scopes": [
+        "inventree.read"
+      ],
+      "annotations": {
+        "read_only": true,
+        "destructive": false,
+        "idempotent": true,
+        "open_world": false
+      },
+      "upload_sources": null,
+      "http_registration": "registered"
+    },
+    {
+      "name": "get_stock_location_type",
+      "milestone_status": "milestone_1",
+      "mutation_class": "read_only",
+      "scopes": [
+        "inventree.read"
+      ],
+      "annotations": {
+        "read_only": true,
+        "destructive": false,
+        "idempotent": true,
+        "open_world": false
+      },
+      "upload_sources": null,
+      "http_registration": "registered"
+    },
+    {
       "name": "get_supplier_part",
       "milestone_status": "milestone_1",
       "mutation_class": "read_only",
@@ -614,6 +679,24 @@
         "read_only": false,
         "destructive": false,
         "idempotent": false,
+        "open_world": false
+      },
+      "upload_sources": null,
+      "http_registration": "registered_with_oauth_scope_guard"
+    },
+    {
+      "name": "restructure_stock_location",
+      "milestone_status": "milestone_1",
+      "mutation_class": "operational",
+      "scopes": [
+        "inventree.read",
+        "inventree.write",
+        "inventree.operational"
+      ],
+      "annotations": {
+        "read_only": false,
+        "destructive": false,
+        "idempotent": true,
         "open_world": false
       },
       "upload_sources": null,
@@ -781,6 +864,22 @@
     },
     {
       "name": "search_stock_items",
+      "milestone_status": "milestone_1",
+      "mutation_class": "read_only",
+      "scopes": [
+        "inventree.read"
+      ],
+      "annotations": {
+        "read_only": true,
+        "destructive": false,
+        "idempotent": true,
+        "open_world": false
+      },
+      "upload_sources": null,
+      "http_registration": "registered"
+    },
+    {
+      "name": "search_stock_location_types",
       "milestone_status": "milestone_1",
       "mutation_class": "read_only",
       "scopes": [
@@ -1049,6 +1148,41 @@
       "http_registration": "registered_with_oauth_scope_guard"
     },
     {
+      "name": "update_stock_item_metadata",
+      "milestone_status": "milestone_1",
+      "mutation_class": "operational",
+      "scopes": [
+        "inventree.read",
+        "inventree.write",
+        "inventree.operational"
+      ],
+      "annotations": {
+        "read_only": false,
+        "destructive": false,
+        "idempotent": true,
+        "open_world": false
+      },
+      "upload_sources": null,
+      "http_registration": "registered_with_oauth_scope_guard"
+    },
+    {
+      "name": "update_stock_location",
+      "milestone_status": "milestone_1",
+      "mutation_class": "write",
+      "scopes": [
+        "inventree.read",
+        "inventree.write"
+      ],
+      "annotations": {
+        "read_only": false,
+        "destructive": false,
+        "idempotent": true,
+        "open_world": false
+      },
+      "upload_sources": null,
+      "http_registration": "registered_with_oauth_scope_guard"
+    },
+    {
       "name": "update_supplier_part",
       "milestone_status": "milestone_1",
       "mutation_class": "write",
@@ -1164,6 +1298,11 @@
     },
     {
       "name": "receive_purchase_order_checklist",
+      "milestone_status": "milestone_1",
+      "registered": true
+    },
+    {
+      "name": "stock_administration_checklist",
       "milestone_status": "milestone_1",
       "registered": true
     },

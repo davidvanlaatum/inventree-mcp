@@ -137,9 +137,27 @@ func (c *Client) SearchStockLocations(ctx context.Context, query SearchQuery) ([
 	return listAll[StockLocation](ctx, c, "/api/stock/location/", query.values())
 }
 
+func (c *Client) SearchStockLocationsPage(ctx context.Context, query StockLocationQuery) (StockLocationPage, error) {
+	page, err := listPage[StockLocation](ctx, c, "/api/stock/location/", query.values())
+	return StockLocationPage{Count: page.Count, Results: page.Results, HasMore: page.Next != nil && *page.Next != ""}, err
+}
+
 func (c *Client) GetStockLocation(ctx context.Context, id int) (StockLocation, error) {
 	var out StockLocation
-	err := c.get(ctx, fmt.Sprintf("/api/stock/location/%d/", id), &out)
+	req, err := c.NewRequest(ctx, http.MethodGet, fmt.Sprintf("/api/stock/location/%d/", id), url.Values{"path_detail": []string{"true"}}, nil)
+	if err == nil {
+		err = c.DoJSON(req, &out)
+	}
+	return out, err
+}
+
+func (c *Client) SearchStockLocationTypes(ctx context.Context, query SearchQuery) ([]StockLocationType, error) {
+	return listAll[StockLocationType](ctx, c, "/api/stock/location-type/", query.values())
+}
+
+func (c *Client) GetStockLocationType(ctx context.Context, id int) (StockLocationType, error) {
+	var out StockLocationType
+	err := c.get(ctx, fmt.Sprintf("/api/stock/location-type/%d/", id), &out)
 	return out, err
 }
 

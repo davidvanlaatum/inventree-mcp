@@ -19,6 +19,7 @@ const (
 	StocktakeReviewPromptName               = "stocktake_review"
 	ParameterConsistencyReviewPromptName    = "parameter_consistency_review"
 	CategoryAdministrationPromptName        = "category_administration_checklist"
+	StockAdministrationPromptName           = "stock_administration_checklist"
 )
 
 type PromptManifestEntry struct {
@@ -30,6 +31,21 @@ type PromptManifestEntry struct {
 }
 
 var PromptManifest = []PromptManifestEntry{
+	{
+		Name:        StockAdministrationPromptName,
+		Title:       "Stock administration checklist",
+		Description: "Checklist for exact stock reads, guarded location administration, and constrained stock metadata changes.",
+		Status:      PromptMilestone1,
+		Checklist: `Use this checklist before creating or changing stock locations or stock metadata:
+- Search locations and location types first, and use search_companies plus get_company before selecting an owner. Then use get_stock_location or get_stock_item for exact current hierarchy and traceability state.
+- Location identity is a trimmed case-insensitive name under one exact parent. Roots match roots only; the same name under another parent is allowed. Completeness-sensitive scans fail closed above 1,000 records.
+- Use create_stock_location for new roots or children and update_stock_location only for ordinary name, description, owner, custom-icon, or location-type fields. Use explicit clear flags for nullable fields.
+- Use restructure_stock_location with dry_run:true for parent, structural, or external changes. Review the current-state plan, then provide its exact plan_hash with confirm:true. Self-parenting and descendant cycles are refused.
+- Use update_stock_item_metadata only for batch, expiry date, packaging, notes, or an HTTP(S) external link. Run dry_run:true, review the complete bound stock state, then provide its exact plan_hash with confirm:true.
+- Return structured clarification instead of guessing when identity, references, hierarchy intent, metadata intent, or current confirmation is missing or unsafe.
+- Never use these tools to delete or move stock, or change stock-item quantity, status, serial, ownership, supplier/source links, pricing, delete_on_deplete, installation, or order/build fields. Use the dedicated operational workflow or request a separate approved backlog story.
+- If a mutation returns partial_failure, read the stable ID and current siblings or stock state before preparing a fresh plan; never retry blindly.`,
+	},
 	{
 		Name:        CategoryAdministrationPromptName,
 		Title:       "Part category administration checklist",

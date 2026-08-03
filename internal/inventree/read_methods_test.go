@@ -185,8 +185,38 @@ func TestReadMethodsUseExpectedEndpoints(t *testing.T) {
 				_, err := client.GetStockLocation(ctx, 40)
 				return err
 			},
-			wantPath: "/api/stock/location/40/",
-			response: `{"pk":40,"name":"bin"}`,
+			wantPath:  "/api/stock/location/40/",
+			wantQuery: url.Values{"path_detail": []string{"true"}},
+			response:  `{"pk":40,"name":"bin"}`,
+		},
+		{
+			name: "search stock locations page by exact parent",
+			call: func(ctx context.Context, client *Client) error {
+				_, err := client.SearchStockLocationsPage(ctx, StockLocationQuery{Search: "bin", Parent: dvgoutils.Ptr(40), PathDetail: dvgoutils.Ptr(true), Limit: 100, Offset: 100})
+				return err
+			},
+			wantPath:  "/api/stock/location/",
+			wantQuery: url.Values{"search": []string{"bin"}, "parent": []string{"40"}, "path_detail": []string{"true"}, "limit": []string{"100"}, "offset": []string{"100"}},
+			response:  `{"count":1,"next":null,"previous":null,"results":[{"pk":41,"name":"bin","parent":40}]}`,
+		},
+		{
+			name: "search stock location types",
+			call: func(ctx context.Context, client *Client) error {
+				_, err := client.SearchStockLocationTypes(ctx, SearchQuery{Search: "shelf", Limit: 10})
+				return err
+			},
+			wantPath:  "/api/stock/location-type/",
+			wantQuery: url.Values{"search": []string{"shelf"}, "limit": []string{"10"}},
+			response:  `{"count":1,"next":null,"previous":null,"results":[{"pk":3,"name":"Shelf"}]}`,
+		},
+		{
+			name: "get stock location type",
+			call: func(ctx context.Context, client *Client) error {
+				_, err := client.GetStockLocationType(ctx, 3)
+				return err
+			},
+			wantPath: "/api/stock/location-type/3/",
+			response: `{"pk":3,"name":"Shelf"}`,
 		},
 		{
 			name: "search stock items",

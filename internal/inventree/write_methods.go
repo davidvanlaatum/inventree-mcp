@@ -105,6 +105,17 @@ type StockItemCreate struct {
 	Notes     *string `json:"notes,omitempty"`
 }
 
+type StockLocationCreate struct {
+	Name         string  `json:"name"`
+	Description  *string `json:"description,omitempty"`
+	Parent       *int    `json:"parent,omitempty"`
+	Owner        *int    `json:"owner,omitempty"`
+	CustomIcon   *string `json:"custom_icon,omitempty"`
+	Structural   *bool   `json:"structural,omitempty"`
+	External     *bool   `json:"external,omitempty"`
+	LocationType *int    `json:"location_type,omitempty"`
+}
+
 type StockAdjustmentItem struct {
 	PK       int    `json:"pk"`
 	Quantity string `json:"quantity"`
@@ -322,6 +333,24 @@ func (c *Client) CreateStockItem(ctx context.Context, input StockItemCreate) (St
 		return StockItem{}, fmt.Errorf("InvenTree stock create returned no stock items")
 	}
 	return batch[0], nil
+}
+
+func (c *Client) UpdateStockItem(ctx context.Context, id int, fields PatchFields) (StockItem, error) {
+	var out StockItem
+	err := c.Patch(ctx, fmt.Sprintf("/api/stock/%d/", id), fields, &out)
+	return out, err
+}
+
+func (c *Client) CreateStockLocation(ctx context.Context, input StockLocationCreate) (StockLocation, error) {
+	var out StockLocation
+	err := c.Post(ctx, "/api/stock/location/", input, &out)
+	return out, err
+}
+
+func (c *Client) UpdateStockLocation(ctx context.Context, id int, fields PatchFields) (StockLocation, error) {
+	var out StockLocation
+	err := c.Patch(ctx, fmt.Sprintf("/api/stock/location/%d/", id), fields, &out)
+	return out, err
 }
 
 func (c *Client) AddStock(ctx context.Context, input StockAdjustment) error {
