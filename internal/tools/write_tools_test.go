@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -554,6 +555,16 @@ func TestUpsertPartWorkflowDryRunPlansWithoutWrites(t *testing.T) {
 		{Name: "create_supplier", Status: "planned", RecordType: "company", Reason: "no matching supplier found"},
 		{Name: "create_supplier_part", Status: "planned", RecordType: "supplierpart", Reason: "new part or supplier would be created first"},
 	}, output.Actions)
+	a.Nil(output.Part)
+	a.Nil(output.Supplier)
+	a.Nil(output.Manufacturer)
+	a.Equal([]PlannedChange{
+		{Action: "create_part", RecordType: "part", Fields: map[string]any{"name": "10k resistor", "category": 20, "purchaseable": true}},
+		{Action: "create_manufacturer", RecordType: "company", Fields: map[string]any{"name": "PartsCo", "currency": "AUD", "is_manufacturer": true}},
+		{Action: "create_manufacturer_part", RecordType: "manufacturerpart", Fields: map[string]any{"MPN": "RC0603-10K"}, DependsOn: []PlannedChangeDependency{{Field: "part", Action: "create_part"}, {Field: "manufacturer", Action: "create_manufacturer"}}},
+		{Action: "create_supplier", RecordType: "company", Fields: map[string]any{"name": "Acme", "currency": "AUD", "is_supplier": true}},
+		{Action: "create_supplier_part", RecordType: "supplierpart", Fields: map[string]any{"SKU": "ACME-10K"}, DependsOn: []PlannedChangeDependency{{Field: "part", Action: "create_part"}, {Field: "supplier", Action: "create_supplier"}, {Field: "manufacturer_part", Action: "create_manufacturer_part"}}},
+	}, output.PlannedChanges)
 	a.False(fake.createdPart)
 	a.False(fake.createdCompany)
 	a.False(fake.createdManufacturerPart)
@@ -562,6 +573,109 @@ func TestUpsertPartWorkflowDryRunPlansWithoutWrites(t *testing.T) {
 	a.Contains(output.OmittedRecommendedFields, "units")
 	a.Contains(output.OmittedRecommendedFields, "default_location_id")
 	a.NotContains(output.OmittedRecommendedFields, "purchaseable")
+}
+
+func TestUpsertPartWorkflowDryRunExposesIssue88EffectiveFields(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	fake := &fakeMilestoneLookupClient{companies: []inventree.Company{{PK: 3, Name: "CoreElectronics", Currency: "AUD", Active: true, IsSupplier: true}}}
+	description := "3-pin keyed male PCB header for standard PC motherboard fan connections; 2.54 mm pitch."
+	units := "pcs"
+	purchaseable := true
+	link := "https://core-electronics.com.au/3-pin-male-polarized-header.html"
+
+	_, output, err := upsertPartWorkflow(depsForFake(fake))(ctx, &mcp.CallToolRequest{}, UpsertPartWorkflowInput{
+		DryRun:       true,
+		Name:         "3-Pin PC Fan Header, Male, 2.54 mm",
+		CategoryID:   12,
+		Description:  &description,
+		Purchaseable: &purchaseable,
+		SupplierID:   3,
+		SupplierSKU:  "CE05304",
+		Link:         &link,
+		Units:        &units,
+	})
+
+	r.NoError(err)
+	a.Equal(StatusOK, output.Status)
+	a.Nil(output.Part)
+	r.NotNil(output.Supplier)
+	a.Equal(3, output.Supplier.PK)
+	a.Equal("CoreElectronics", output.Supplier.Name)
+	a.True(output.Supplier.IsSupplier)
+	a.Equal(3, fake.lastGetCompanyID)
+	a.Equal([]PlannedChange{
+		{Action: "create_part", RecordType: "part", Fields: map[string]any{
+			"name": "3-Pin PC Fan Header, Male, 2.54 mm", "category": 12, "description": description, "purchaseable": true, "units": "pcs",
+		}},
+		{Action: "create_supplier_part", RecordType: "supplierpart", Fields: map[string]any{
+			"supplier": 3, "SKU": "CE05304", "link": link,
+		}, DependsOn: []PlannedChangeDependency{{Field: "part", Action: "create_part"}}},
+	}, output.PlannedChanges)
+	a.NotContains(output.OmittedRecommendedFields, "units")
+	a.NotContains(output.OmittedRecommendedFields, "purchaseable")
+	a.False(fake.createdPart)
+	a.False(fake.createdSupplierPart)
+}
+
+func TestUpsertPartWorkflowDryRunRejectsDirectCompanyWithoutRequestedRole(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	fake := &fakeMilestoneLookupClient{companies: []inventree.Company{{PK: 3, Name: "Customer only", IsSupplier: false}}}
+
+	_, output, err := upsertPartWorkflow(depsForFake(fake))(ctx, &mcp.CallToolRequest{}, UpsertPartWorkflowInput{
+		DryRun: true, Name: "part", CategoryID: 12, SupplierID: 3, SupplierSKU: "SKU-1",
+	})
+
+	r.NoError(err)
+	a.Equal(StatusClarificationRequired, output.Status)
+	r.NotNil(output.Clarification)
+	a.Equal("supplier_id", output.Clarification.Retry)
+	a.Contains(output.Clarification.Reason, "does not have the supplier role")
+	a.False(fake.createdPart)
+	a.False(fake.createdSupplierPart)
+}
+
+func TestUpsertPartWorkflowDryRunFailsClosedForMissingDirectCompany(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	fake := &fakeMilestoneLookupClient{getCompanyErr: errors.New("company not found")}
+
+	_, _, err := upsertPartWorkflow(depsForFake(fake))(ctx, &mcp.CallToolRequest{}, UpsertPartWorkflowInput{
+		DryRun: true, Name: "part", CategoryID: 12, SupplierID: 3, SupplierSKU: "SKU-1",
+	})
+
+	r.Error(err)
+	r.False(fake.createdPart)
+	r.False(fake.createdSupplierPart)
+}
+
+func TestUpsertPartWorkflowDryRunExposesExplicitPartPatchValues(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	fake := &fakeMilestoneLookupClient{part: inventree.Part{PK: 10, Name: "10k resistor", Purchaseable: true}}
+	description := ""
+	purchaseable := false
+
+	_, output, err := upsertPartWorkflow(depsForFake(fake))(ctx, &mcp.CallToolRequest{}, UpsertPartWorkflowInput{
+		DryRun: true, PartID: 10, Description: &description, Purchaseable: &purchaseable,
+	})
+
+	r.NoError(err)
+	a.Equal([]PlannedChange{{
+		Action: "update_part", RecordType: "part", ID: 10,
+		Fields: map[string]any{"description": "", "purchaseable": false},
+	}}, output.PlannedChanges)
+	r.NotNil(output.Part)
+	a.True(output.Part.Purchaseable)
+	a.Empty(fake.lastUpdatePartFields)
 }
 
 func TestUpsertPartWorkflowReusesExistingRecords(t *testing.T) {
@@ -1050,6 +1164,10 @@ func TestInitialStockWorkflowDryRunPlansWithoutWrite(t *testing.T) {
 		{Name: "reuse_location", Status: "reused", RecordType: "stocklocation", ID: 40, Reason: "single matching stock location found"},
 		{Name: "create_stock_item", Status: "planned", RecordType: "stockitem", Reason: "no matching stock item found"},
 	}, output.Actions)
+	a.Equal([]PlannedChange{{
+		Action: "create_stock_item", RecordType: "stockitem",
+		Fields: map[string]any{"part": 10, "location": 40, "quantity": float64(7), "status": 10},
+	}}, output.PlannedChanges)
 	a.Equal(inventree.SearchQuery{Search: "10k", Limit: DefaultLookupLimit}, fake.lastSearchPartsQuery)
 	a.Equal(inventree.SearchQuery{Search: "bin", Limit: DefaultLookupLimit}, fake.lastSearchStockLocationsQuery)
 	a.Equal(inventree.StockItemQuery{PartID: 10, LocationID: 40, Limit: DefaultLookupLimit}, fake.lastSearchStockItemsQuery)
