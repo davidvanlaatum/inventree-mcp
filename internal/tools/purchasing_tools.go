@@ -53,6 +53,10 @@ type PurchaseOrderWorkflowClient interface {
 	SearchPurchaseOrderLines(context.Context, inventree.PurchaseOrderLineQuery) ([]inventree.PurchaseOrderLineItem, error)
 	CreatePurchaseOrderLine(context.Context, inventree.PurchaseOrderLineCreate) (inventree.PurchaseOrderLineItem, error)
 	UpdatePurchaseOrderLine(context.Context, int, inventree.PatchFields) (inventree.PurchaseOrderLineItem, error)
+	SearchPurchaseOrderExtraLinesPage(context.Context, inventree.PurchaseOrderExtraLineQuery) (inventree.Page[inventree.PurchaseOrderExtraLine], error)
+	GetPurchaseOrderExtraLine(context.Context, int) (inventree.PurchaseOrderExtraLine, error)
+	CreatePurchaseOrderExtraLine(context.Context, inventree.PurchaseOrderExtraLineCreate) (inventree.PurchaseOrderExtraLine, error)
+	UpdatePurchaseOrderExtraLine(context.Context, int, inventree.PatchFields) (inventree.PurchaseOrderExtraLine, error)
 }
 
 type PurchaseOrderReceiveClient interface {
@@ -67,6 +71,8 @@ type PurchaseOrderReceiveClient interface {
 type PurchaseOrderIssueClient interface {
 	GetPurchaseOrder(context.Context, int) (inventree.PurchaseOrder, error)
 	SearchPurchaseOrderLines(context.Context, inventree.PurchaseOrderLineQuery) ([]inventree.PurchaseOrderLineItem, error)
+	SearchPurchaseOrderExtraLinesPage(context.Context, inventree.PurchaseOrderExtraLineQuery) (inventree.Page[inventree.PurchaseOrderExtraLine], error)
+	GetPurchaseOrderExtraLine(context.Context, int) (inventree.PurchaseOrderExtraLine, error)
 	IssuePurchaseOrder(context.Context, int) error
 }
 
@@ -132,17 +138,18 @@ type UpdatePurchaseOrderLineInput struct {
 }
 
 type PurchaseOrderWorkflowInput struct {
-	DryRun            bool                        `json:"dry_run,omitempty" jsonschema:"Return the complete create/update plan without writing."`
-	SupplierID        int                         `json:"supplier_id" jsonschema:"Existing supplier company primary key."`
-	SupplierReference string                      `json:"supplier_reference" jsonschema:"Stable supplier or external order identifier used with supplier_id for retry recovery."`
-	PurchaseOrderID   int                         `json:"purchase_order_id,omitempty" jsonschema:"Existing purchase-order primary key selected after an ambiguous exact retry lookup."`
-	Description       *string                     `json:"description,omitempty" jsonschema:"Optional order description."`
-	CreationDate      *string                     `json:"creation_date,omitempty" jsonschema:"Optional creation date in YYYY-MM-DD form."`
-	StartDate         *string                     `json:"start_date,omitempty" jsonschema:"Optional scheduled start date in YYYY-MM-DD form."`
-	TargetDate        *string                     `json:"target_date,omitempty" jsonschema:"Optional target delivery date in YYYY-MM-DD form."`
-	Currency          *string                     `json:"currency,omitempty" jsonschema:"Optional order currency."`
-	DestinationID     *int                        `json:"destination_id,omitempty" jsonschema:"Optional receiving stock-location primary key."`
-	Lines             []PurchaseOrderWorkflowLine `json:"lines" jsonschema:"Validated supplier-part lines to create or update."`
+	DryRun            bool                             `json:"dry_run,omitempty" jsonschema:"Return the complete create/update plan without writing."`
+	SupplierID        int                              `json:"supplier_id" jsonschema:"Existing supplier company primary key."`
+	SupplierReference string                           `json:"supplier_reference" jsonschema:"Stable supplier or external order identifier used with supplier_id for retry recovery."`
+	PurchaseOrderID   int                              `json:"purchase_order_id,omitempty" jsonschema:"Existing purchase-order primary key selected after an ambiguous exact retry lookup."`
+	Description       *string                          `json:"description,omitempty" jsonschema:"Optional order description."`
+	CreationDate      *string                          `json:"creation_date,omitempty" jsonschema:"Optional creation date in YYYY-MM-DD form."`
+	StartDate         *string                          `json:"start_date,omitempty" jsonschema:"Optional scheduled start date in YYYY-MM-DD form."`
+	TargetDate        *string                          `json:"target_date,omitempty" jsonschema:"Optional target delivery date in YYYY-MM-DD form."`
+	Currency          *string                          `json:"currency,omitempty" jsonschema:"Optional order currency."`
+	DestinationID     *int                             `json:"destination_id,omitempty" jsonschema:"Optional receiving stock-location primary key."`
+	Lines             []PurchaseOrderWorkflowLine      `json:"lines" jsonschema:"Validated supplier-part lines to create or update."`
+	ExtraLines        []PurchaseOrderWorkflowExtraLine `json:"extra_lines,omitempty" jsonschema:"Non-receivable informational, surcharge, or discount lines to create or update after supplier-part lines."`
 }
 
 type PurchaseOrderWorkflowLine struct {
@@ -155,6 +162,18 @@ type PurchaseOrderWorkflowLine struct {
 	Notes          string   `json:"notes,omitempty" jsonschema:"Optional line notes."`
 	TargetDate     *string  `json:"target_date,omitempty" jsonschema:"Optional line target date in YYYY-MM-DD form."`
 	DestinationID  *int     `json:"destination_id,omitempty" jsonschema:"Optional receiving stock-location primary key."`
+}
+
+type PurchaseOrderWorkflowExtraLine struct {
+	Reference   string  `json:"reference" jsonschema:"Required reference, unique among extra lines in this purchase order."`
+	Description *string `json:"description,omitempty" jsonschema:"Optional informational description."`
+	Line        *string `json:"line,omitempty" jsonschema:"Optional supplier invoice line number."`
+	Link        *string `json:"link,omitempty" jsonschema:"Optional HTTP(S) supplier product link without userinfo."`
+	Notes       *string `json:"notes,omitempty" jsonschema:"Optional invoice or operator context."`
+	Quantity    float64 `json:"quantity" jsonschema:"Nonnegative extra-line quantity."`
+	UnitPrice   *string `json:"unit_price,omitempty" jsonschema:"Optional exact signed unit price."`
+	Currency    *string `json:"currency,omitempty" jsonschema:"Three-letter currency required whenever unit_price is supplied."`
+	TargetDate  *string `json:"target_date,omitempty" jsonschema:"Optional target date in YYYY-MM-DD form."`
 }
 
 type PurchaseOrderWorkflowAction struct {
@@ -173,15 +192,16 @@ type PurchaseOrderWorkflowFailure struct {
 }
 
 type PurchaseOrderWorkflowOutput struct {
-	Status            string                            `json:"status"`
-	DryRun            bool                              `json:"dry_run"`
-	SupplierReference string                            `json:"supplier_reference"`
-	PurchaseOrder     *inventree.PurchaseOrder          `json:"purchase_order,omitempty"`
-	Lines             []inventree.PurchaseOrderLineItem `json:"lines,omitempty"`
-	Actions           []PurchaseOrderWorkflowAction     `json:"actions"`
-	PlannedChanges    []PlannedChange                   `json:"planned_changes,omitempty"`
-	Failure           *PurchaseOrderWorkflowFailure     `json:"failure,omitempty"`
-	Clarification     *ClarificationResponse            `json:"clarification,omitempty"`
+	Status            string                             `json:"status"`
+	DryRun            bool                               `json:"dry_run"`
+	SupplierReference string                             `json:"supplier_reference"`
+	PurchaseOrder     *inventree.PurchaseOrder           `json:"purchase_order,omitempty"`
+	Lines             []inventree.PurchaseOrderLineItem  `json:"lines,omitempty"`
+	ExtraLines        []inventree.PurchaseOrderExtraLine `json:"extra_lines,omitempty"`
+	Actions           []PurchaseOrderWorkflowAction      `json:"actions"`
+	PlannedChanges    []PlannedChange                    `json:"planned_changes,omitempty"`
+	Failure           *PurchaseOrderWorkflowFailure      `json:"failure,omitempty"`
+	Clarification     *ClarificationResponse             `json:"clarification,omitempty"`
 }
 
 type ReceivePurchaseOrderInput struct {
@@ -248,20 +268,22 @@ type IssuePurchaseOrderInput struct {
 }
 
 type IssuePurchaseOrderOutput struct {
-	Status         string                            `json:"status"`
-	DryRun         bool                              `json:"dry_run"`
-	Order          *inventree.PurchaseOrder          `json:"order,omitempty"`
-	Lines          []inventree.PurchaseOrderLineItem `json:"lines,omitempty"`
-	Action         string                            `json:"action"`
-	PlannedChanges []PlannedChange                   `json:"planned_changes,omitempty"`
-	PlanHash       string                            `json:"plan_hash,omitempty"`
-	Clarification  *ClarificationResponse            `json:"clarification,omitempty"`
+	Status         string                             `json:"status"`
+	DryRun         bool                               `json:"dry_run"`
+	Order          *inventree.PurchaseOrder           `json:"order,omitempty"`
+	Lines          []inventree.PurchaseOrderLineItem  `json:"lines,omitempty"`
+	ExtraLines     []inventree.PurchaseOrderExtraLine `json:"extra_lines,omitempty"`
+	Action         string                             `json:"action"`
+	PlannedChanges []PlannedChange                    `json:"planned_changes,omitempty"`
+	PlanHash       string                             `json:"plan_hash,omitempty"`
+	Clarification  *ClarificationResponse             `json:"clarification,omitempty"`
 }
 
 type issuePurchaseOrderPlan struct {
-	Order        inventree.PurchaseOrder           `json:"order"`
-	Lines        []inventree.PurchaseOrderLineItem `json:"lines"`
-	TargetStatus int                               `json:"target_status"`
+	Order        inventree.PurchaseOrder            `json:"order"`
+	Lines        []inventree.PurchaseOrderLineItem  `json:"lines"`
+	ExtraLines   []inventree.PurchaseOrderExtraLine `json:"extra_lines"`
+	TargetStatus int                                `json:"target_status"`
 }
 
 func registerPurchasingLookupTools(server *mcp.Server, deps Dependencies) {
@@ -269,12 +291,14 @@ func registerPurchasingLookupTools(server *mcp.Server, deps Dependencies) {
 	addReadOnlyTool(server, deps, GetPurchaseOrderToolName, "Get purchase order", "Retrieves one purchase order by stable ID.", getPurchaseOrder(deps))
 	addReadOnlyTool(server, deps, SearchPurchaseOrderLinesToolName, "Search purchase order lines", "Searches purchase-order lines for duplicate checks and recovery.", searchPurchaseOrderLines(deps))
 	addReadOnlyTool(server, deps, GetPurchaseOrderLineToolName, "Get purchase order line", "Retrieves one purchase-order line by stable ID.", getPurchaseOrderLine(deps))
+	registerPurchaseOrderExtraLineLookupTools(server, deps)
 }
 
 func registerPurchasingWriteTools(server *mcp.Server, deps Dependencies) {
 	addWriteTool(server, deps, CreatePurchaseOrderToolName, "Create purchase order", "Creates a purchase order for an existing supplier.", createPurchaseOrder(deps))
 	addWriteTool(server, deps, AddPurchaseOrderLineToolName, "Add purchase order line", "Adds a validated supplier-part line to an existing purchase order.", addPurchaseOrderLine(deps))
 	addWriteTool(server, deps, UpdatePurchaseOrderLineToolName, "Update purchase order line", "Partially updates a purchase-order line after supplier consistency validation.", updatePurchaseOrderLine(deps))
+	registerPurchaseOrderExtraLineWriteTools(server, deps)
 	addWriteTool(server, deps, CreatePurchaseOrderWorkflowToolName, "Create purchase order with lines", "Plans or retry-recoverably creates or updates a purchase order and validated lines.", createPurchaseOrderWithLines(deps))
 	addWriteTool(server, deps, IssuePurchaseOrderToolName, "Issue purchase order", "Plans or explicitly confirms placing a pending purchase order with its supplier.", issuePurchaseOrder(deps))
 	addWriteTool(server, deps, ReceivePurchaseOrderToolName, "Receive purchase order items", "Plans or explicitly confirms creation of new stock items from outstanding purchase-order line quantities.", receivePurchaseOrderItems(deps))
@@ -433,6 +457,23 @@ func createPurchaseOrderWithLines(deps Dependencies) mcp.ToolHandlerFor[Purchase
 			clarification := NewClarification("Which purchase order should be reused?", "purchase_order", "purchase_order_id must be positive when provided", "purchase_order_id", true, nil, nil)
 			base.Clarification = &clarification
 			return TextResult(StatusClarificationRequired), base, nil
+		}
+		extraReferences := make(map[string]struct{}, len(input.ExtraLines))
+		for _, extraLine := range input.ExtraLines {
+			prepared, prepareErr := prepareExtraLineCreate(CreatePurchaseOrderExtraLineInput{OrderID: 1, Reference: extraLine.Reference, Description: extraLine.Description, Line: extraLine.Line, Link: extraLine.Link, Notes: extraLine.Notes, Quantity: extraLine.Quantity, UnitPrice: extraLine.UnitPrice, Currency: extraLine.Currency, TargetDate: extraLine.TargetDate})
+			if prepareErr != nil {
+				base.Status = StatusClarificationRequired
+				clarification := NewClarification("Which valid purchase-order extra line should be used?", "extra_lines", prepareErr.Error(), "extra_lines", true, nil, map[string]any{"reference": strings.TrimSpace(extraLine.Reference)})
+				base.Clarification = &clarification
+				return TextResult(StatusClarificationRequired), base, nil
+			}
+			if _, duplicate := extraReferences[prepared.Reference]; duplicate {
+				base.Status = StatusClarificationRequired
+				clarification := NewClarification("Which unique extra-line reference should be used?", "extra_lines", "extra_lines contains the same normalized reference more than once", "extra_lines", true, nil, map[string]any{"reference": prepared.Reference})
+				base.Clarification = &clarification
+				return TextResult(StatusClarificationRequired), base, nil
+			}
+			extraReferences[prepared.Reference] = struct{}{}
 		}
 		previewInput := PurchasePreviewInput{SupplierID: input.SupplierID, Lines: make([]PurchasePreviewLineInput, 0, len(input.Lines))}
 		for _, line := range input.Lines {
@@ -657,7 +698,16 @@ func issuePurchaseOrder(deps Dependencies) mcp.ToolHandlerFor[IssuePurchaseOrder
 			}
 			sort.Slice(lines, func(i, j int) bool { return lines[i].PK < lines[j].PK })
 			out.Lines = lines
-			planHash, err := issuePlanHash(issuePurchaseOrderPlan{Order: order, Lines: lines, TargetStatus: inventree.PurchaseOrderStatusPlaced})
+			extraLines, err := scanPurchaseOrderExtraLines(ctx, client, order.PK)
+			if err != nil {
+				return nil, out, err
+			}
+			safeExtraLines := make([]inventree.PurchaseOrderExtraLine, len(extraLines))
+			for i := range extraLines {
+				safeExtraLines[i] = sanitizePurchaseOrderExtraLine(extraLines[i])
+			}
+			out.ExtraLines = safeExtraLines
+			planHash, err := issuePlanHash(issuePurchaseOrderPlan{Order: order, Lines: lines, ExtraLines: safeExtraLines, TargetStatus: inventree.PurchaseOrderStatusPlaced})
 			if err != nil {
 				return nil, out, err
 			}
@@ -674,7 +724,7 @@ func issuePurchaseOrder(deps Dependencies) mcp.ToolHandlerFor[IssuePurchaseOrder
 				return TextResult(StatusClarificationRequired), out, nil
 			}
 			if input.PlanHash == "" || input.PlanHash != planHash {
-				clarification := NewClarification("Which current issue plan should authorize placing this purchase order?", "plan_hash", "plan_hash must match a dry run for the current order metadata and purchase-order lines", "dry_run", true, nil, map[string]any{"order_id": input.OrderID, "dry_run": true})
+				clarification := NewClarification("Which current issue plan should authorize placing this purchase order?", "plan_hash", "plan_hash must match a dry run for the current order metadata, receivable lines, and extra lines", "dry_run", true, nil, map[string]any{"order_id": input.OrderID, "dry_run": true})
 				out.Status = StatusClarificationRequired
 				out.Clarification = &clarification
 				return TextResult(StatusClarificationRequired), out, nil
@@ -851,6 +901,36 @@ func executePurchaseOrderWorkflow(ctx context.Context, client PurchaseOrderWorkf
 			return TextResult(StatusClarificationRequired), out, nil
 		}
 	}
+	preparedExtraLines := make([]inventree.PurchaseOrderExtraLineCreate, 0, len(input.ExtraLines))
+	requestedExtraReferences := make(map[string]bool, len(input.ExtraLines))
+	for _, extraInput := range input.ExtraLines {
+		prepared, prepareErr := prepareExtraLineCreate(CreatePurchaseOrderExtraLineInput{OrderID: max(order.PK, 1), Reference: extraInput.Reference, Description: extraInput.Description, Line: extraInput.Line, Link: extraInput.Link, Notes: extraInput.Notes, Quantity: extraInput.Quantity, UnitPrice: extraInput.UnitPrice, Currency: extraInput.Currency, TargetDate: extraInput.TargetDate})
+		if prepareErr != nil {
+			return workflowFailure(out, "validate_purchase_order_extra_line", "purchase-order extra-line validation failed", "Correct the returned extra-line field before retrying; no extra-line write was attempted.")
+		}
+		preparedExtraLines = append(preparedExtraLines, prepared)
+		requestedExtraReferences[prepared.Reference] = true
+	}
+	existingExtraByReference := make(map[string]inventree.PurchaseOrderExtraLine)
+	if order.PK > 0 && len(preparedExtraLines) > 0 {
+		existingExtraLines, scanErr := scanPurchaseOrderExtraLines(ctx, client, order.PK)
+		if scanErr != nil {
+			return workflowFailure(out, "search_purchase_order_extra_lines", "purchase-order extra-line recovery read failed", "Use search_purchase_order_extra_lines with the returned purchase_order ID before writing more lines.")
+		}
+		for _, existingExtra := range existingExtraLines {
+			reference := strings.TrimSpace(existingExtra.Reference)
+			if !requestedExtraReferences[reference] {
+				continue
+			}
+			if prior, duplicate := existingExtraByReference[reference]; duplicate {
+				clarification := NewClarification("Which duplicate purchase-order extra-line reference should be changed before retrying?", "purchase_order_extra_line", "multiple existing extra lines have the same workflow reference; use update_purchase_order_extra_line to assign one candidate a unique reference, then retry this workflow", "id", true, candidatesFor([]inventree.PurchaseOrderExtraLine{sanitizePurchaseOrderExtraLine(prior), sanitizePurchaseOrderExtraLine(existingExtra)}), map[string]any{"reference": reference, "purchase_order_id": order.PK})
+				out.Status = StatusClarificationRequired
+				out.Clarification = &clarification
+				return TextResult(StatusClarificationRequired), out, nil
+			}
+			existingExtraByReference[reference] = existingExtra
+		}
+	}
 	if len(orderPatch) > 0 {
 		out.Actions = append(out.Actions, PurchaseOrderWorkflowAction{Name: "update_purchase_order", Status: pendingActionStatus(input.DryRun), RecordType: "purchase_order", ID: order.PK, Reference: order.Reference})
 		if input.DryRun {
@@ -911,6 +991,92 @@ func executePurchaseOrderWorkflow(ctx context.Context, client PurchaseOrderWorkf
 		out.Actions[len(out.Actions)-1].ID = created.PK
 		out.Actions[len(out.Actions)-1].Status = "created"
 		out.Lines = append(out.Lines, created)
+	}
+	for index, prepared := range preparedExtraLines {
+		prepared.Order = order.PK
+		extraInput := input.ExtraLines[index]
+		existingExtra, found := existingExtraByReference[prepared.Reference]
+		if found {
+			out.Actions = append(out.Actions, PurchaseOrderWorkflowAction{Name: "update_purchase_order_extra_line", Status: pendingActionStatus(input.DryRun), RecordType: "purchase_order_extra_line", ID: existingExtra.PK, Reference: prepared.Reference})
+			fields := workflowExtraLinePatch(prepared, extraInput)
+			if input.DryRun {
+				out.PlannedChanges = append(out.PlannedChanges, plannedChange("update_purchase_order_extra_line", "purchase_order_extra_line", existingExtra.PK, extraLinePatchFieldValues(fields)))
+				continue
+			}
+			updated, updateErr := client.UpdatePurchaseOrderExtraLine(ctx, existingExtra.PK, fields)
+			if updateErr != nil {
+				if ambiguousCategoryMutation(updateErr) {
+					recovered, readErr := client.GetPurchaseOrderExtraLine(ctx, existingExtra.PK)
+					if readErr == nil && recovered.PK == existingExtra.PK && extraLineMatchesPatch(recovered, fields) {
+						out.Actions[len(out.Actions)-1].Status = "recovered"
+						out.ExtraLines = append(out.ExtraLines, sanitizePurchaseOrderExtraLine(recovered))
+						continue
+					}
+				}
+				out.Actions[len(out.Actions)-1].Status = "failed"
+				return workflowFailure(out, "update_purchase_order_extra_line", "purchase-order extra-line update failed", "Read the returned stable extra-line ID before retrying with the same supplier_id, supplier_reference, and extra-line reference.")
+			}
+			if updated.PK != existingExtra.PK {
+				out.Actions[len(out.Actions)-1].Status = "failed"
+				return workflowFailure(out, "update_purchase_order_extra_line", "purchase-order extra-line update returned a mismatched identity", "Read the original stable extra-line ID before retrying.")
+			}
+			verified, verifyErr := client.GetPurchaseOrderExtraLine(ctx, existingExtra.PK)
+			if verifyErr != nil || verified.PK != existingExtra.PK || !extraLineMatchesPatch(verified, fields) {
+				out.Actions[len(out.Actions)-1].Status = "failed"
+				return workflowFailure(out, "verify_purchase_order_extra_line", "purchase-order extra-line update read-back failed", "Read the returned stable extra-line ID and exact target purchase order before retrying.")
+			}
+			out.Actions[len(out.Actions)-1].Status = "updated"
+			out.ExtraLines = append(out.ExtraLines, sanitizePurchaseOrderExtraLine(verified))
+			continue
+		}
+		out.Actions = append(out.Actions, PurchaseOrderWorkflowAction{Name: "create_purchase_order_extra_line", Status: pendingActionStatus(input.DryRun), RecordType: "purchase_order_extra_line", Reference: prepared.Reference})
+		if input.DryRun {
+			fields := extraLineCreateFields(prepared)
+			dependencies := []PlannedChangeDependency{}
+			setPlannedReference(fields, "order", order.PK, "create_purchase_order", &dependencies)
+			out.PlannedChanges = append(out.PlannedChanges, plannedChangeWithDependencies("create_purchase_order_extra_line", "purchase_order_extra_line", 0, fields, dependencies))
+			continue
+		}
+		created, createErr := client.CreatePurchaseOrderExtraLine(ctx, prepared)
+		if createErr != nil {
+			ambiguous := ambiguousCategoryMutation(createErr)
+			if ambiguous {
+				matches, recoveryErr := findExtraLinesByReference(ctx, client, order.PK, prepared.Reference, 0)
+				if recoveryErr == nil && len(matches) == 1 && extraLineMatchesCreate(matches[0], prepared) {
+					out.Actions[len(out.Actions)-1].ID = matches[0].PK
+					out.Actions[len(out.Actions)-1].Status = "recovered"
+					out.ExtraLines = append(out.ExtraLines, sanitizePurchaseOrderExtraLine(matches[0]))
+					continue
+				}
+				safeMatches := make([]inventree.PurchaseOrderExtraLine, len(matches))
+				for i := range matches {
+					safeMatches[i] = sanitizePurchaseOrderExtraLine(matches[i])
+				}
+				clarification := extraLineRecoveryClarification(order.PK, prepared.Reference, safeMatches)
+				out.Clarification = &clarification
+			}
+			out.Actions[len(out.Actions)-1].Status = "failed"
+			if ambiguous {
+				return workflowFailure(out, "create_purchase_order_extra_line", "purchase-order extra-line creation result is unknown", "Search extra lines by the returned purchase_order ID and exact reference before retrying because the remote result may be unknown.")
+			}
+			return workflowFailure(out, "create_purchase_order_extra_line", "purchase-order extra-line creation was rejected", "Correct the extra-line input or upstream permissions before retrying; no ambiguous write result was reported.")
+		}
+		verified, verifyErr := client.GetPurchaseOrderExtraLine(ctx, created.PK)
+		if verifyErr != nil || verified.PK != created.PK || !extraLineMatchesCreate(verified, prepared) {
+			out.Actions[len(out.Actions)-1].ID = created.PK
+			out.Actions[len(out.Actions)-1].Status = "failed"
+			return workflowFailure(out, "verify_purchase_order_extra_line", "purchase-order extra-line creation read-back failed", "Read the returned stable extra-line ID and exact target purchase order before retrying.")
+		}
+		out.Actions[len(out.Actions)-1].ID = verified.PK
+		out.Actions[len(out.Actions)-1].Status = "created"
+		out.ExtraLines = append(out.ExtraLines, sanitizePurchaseOrderExtraLine(verified))
+	}
+	if !input.DryRun && order.PK > 0 {
+		refreshed, refreshErr := client.GetPurchaseOrder(ctx, order.PK)
+		if refreshErr != nil || refreshed.PK != order.PK {
+			return workflowFailure(out, "refresh_purchase_order_total", "purchase-order total refresh failed", "Read the returned purchase-order ID and extra-line IDs before retrying; writes may already have succeeded.")
+		}
+		out.PurchaseOrder = &refreshed
 	}
 	return TextResult(StatusOK), out, nil
 }
@@ -1048,6 +1214,20 @@ func workflowLinePatch(preview PurchasePreviewLineOutput, input PurchaseOrderWor
 	if input.DestinationID != nil {
 		fields["destination"] = inventree.Set(*input.DestinationID)
 	}
+	return fields
+}
+
+func workflowExtraLinePatch(prepared inventree.PurchaseOrderExtraLineCreate, input PurchaseOrderWorkflowExtraLine) inventree.PatchFields {
+	fields := inventree.PatchFields{"order": inventree.Set(prepared.Order), "reference": inventree.Set(prepared.Reference), "quantity": inventree.Set(prepared.Quantity)}
+	setPatchString(fields, "description", input.Description)
+	setPatchString(fields, "line", input.Line)
+	setPatchString(fields, "link", prepared.Link)
+	setPatchString(fields, "notes", input.Notes)
+	if prepared.Price != nil {
+		fields["price"] = inventree.Set(*prepared.Price)
+		fields["price_currency"] = inventree.Set(*prepared.PriceCurrency)
+	}
+	setPatchString(fields, "target_date", input.TargetDate)
 	return fields
 }
 

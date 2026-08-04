@@ -9,6 +9,7 @@ import (
 	"image/color"
 	"image/png"
 	"io"
+	"math/big"
 	"mime/multipart"
 	"net/http"
 	"os"
@@ -658,7 +659,7 @@ func TestClientMethodsAgainstInvenTree(t *testing.T) {
 		r.Empty(orderWithoutSupplierReference.SupplierReference)
 		supplierReference, err := fixture.run.Name("po")
 		r.NoError(err)
-		order, err := fixture.client.CreatePurchaseOrder(ctx, inventree.PurchaseOrderCreate{Supplier: supplier.ID, SupplierReference: &supplierReference, Description: dvgoutils.Ptr("client-method integration order")})
+		order, err := fixture.client.CreatePurchaseOrder(ctx, inventree.PurchaseOrderCreate{Supplier: supplier.ID, SupplierReference: &supplierReference, Description: dvgoutils.Ptr("client-method integration order"), OrderCurrency: dvgoutils.Ptr("AUD")})
 		r.NoError(err)
 		r.NotZero(order.PK)
 		r.NotEmpty(order.Reference)
@@ -692,6 +693,47 @@ func TestClientMethodsAgainstInvenTree(t *testing.T) {
 		r.Equal(supplierPart.ID, gotLine.Part)
 		r.NotNil(gotLine.Destination)
 		r.Equal(destination.ID, *gotLine.Destination)
+		orderBeforeExtra, err := fixture.client.GetPurchaseOrder(ctx, order.PK)
+		r.NoError(err)
+		r.NotNil(orderBeforeExtra.TotalPrice)
+		extraReference, err := fixture.run.Name("po-extra-line")
+		r.NoError(err)
+		extra, err := fixture.client.CreatePurchaseOrderExtraLine(ctx, inventree.PurchaseOrderExtraLineCreate{Order: order.PK, Reference: extraReference, Description: dvgoutils.Ptr("informational supplier line"), Quantity: 1, Price: dvgoutils.Ptr("0"), PriceCurrency: dvgoutils.Ptr("AUD")})
+		r.NoError(err)
+		r.NotZero(extra.PK)
+		r.NotNil(extra.Price)
+		requireDecimalEqual(t, "0", *extra.Price)
+		extraPage, err := fixture.client.SearchPurchaseOrderExtraLinesPage(ctx, inventree.PurchaseOrderExtraLineQuery{Order: order.PK, Search: extraReference, Limit: 100})
+		r.NoError(err)
+		r.Contains(purchaseOrderExtraLineIDs(extraPage.Results), extra.PK)
+		gotExtra, err := fixture.client.GetPurchaseOrderExtraLine(ctx, extra.PK)
+		r.NoError(err)
+		r.Equal(order.PK, gotExtra.Order)
+		r.Equal(extraReference, gotExtra.Reference)
+		orderAfterZeroExtra, err := fixture.client.GetPurchaseOrder(ctx, order.PK)
+		r.NoError(err)
+		r.NotNil(orderAfterZeroExtra.TotalPrice)
+		r.Equal(*orderBeforeExtra.TotalPrice, *orderAfterZeroExtra.TotalPrice, "zero-priced extra line must preserve InvenTree's exact total representation")
+		updatedExtra, err := fixture.client.UpdatePurchaseOrderExtraLine(ctx, extra.PK, inventree.PatchFields{"quantity": inventree.Set(2.0), "price": inventree.Set("-0.5"), "price_currency": inventree.Set("AUD")})
+		r.NoError(err)
+		r.Equal(2.0, updatedExtra.Quantity)
+		r.NotNil(updatedExtra.Price)
+		requireDecimalEqual(t, "-0.5", *updatedExtra.Price)
+		orderAfterDiscount, err := fixture.client.GetPurchaseOrder(ctx, order.PK)
+		r.NoError(err)
+		r.NotNil(orderAfterDiscount.TotalPrice)
+		beforeTotal, ok := new(big.Rat).SetString(string(*orderBeforeExtra.TotalPrice))
+		r.True(ok)
+		afterDiscountTotal, ok := new(big.Rat).SetString(string(*orderAfterDiscount.TotalPrice))
+		r.True(ok)
+		r.Zero(new(big.Rat).Sub(afterDiscountTotal, beforeTotal).Cmp(big.NewRat(-1, 1)), "quantity 2 at unit price -0.5 must reduce the exact order total by 1")
+		r.NoError(fixture.client.DeletePurchaseOrderExtraLine(ctx, extra.PK))
+		_, err = fixture.client.GetPurchaseOrderExtraLine(ctx, extra.PK)
+		r.Error(err)
+		orderAfterExtraDelete, err := fixture.client.GetPurchaseOrder(ctx, order.PK)
+		r.NoError(err)
+		r.NotNil(orderAfterExtraDelete.TotalPrice)
+		r.Equal(*orderBeforeExtra.TotalPrice, *orderAfterExtraDelete.TotalPrice)
 		updatedOrder, err := fixture.client.UpdatePurchaseOrder(ctx, order.PK, inventree.PatchFields{"description": inventree.Set("updated client-method integration order")})
 		r.NoError(err)
 		r.Equal("updated client-method integration order", updatedOrder.Description)
@@ -748,6 +790,16 @@ func TestClientMethodsAgainstInvenTree(t *testing.T) {
 		r.NoError(err)
 		r.Equal(55, stock.Status)
 	})
+}
+
+func requireDecimalEqual(t *testing.T, expected string, actual inventree.DecimalString) {
+	t.Helper()
+	r := require.New(t)
+	expectedValue, ok := new(big.Rat).SetString(expected)
+	r.True(ok)
+	actualValue, ok := new(big.Rat).SetString(string(actual))
+	r.True(ok)
+	r.Zero(expectedValue.Cmp(actualValue))
 }
 
 type clientMethodFixture struct {
@@ -875,6 +927,14 @@ func purchaseOrderIDs(orders []inventree.PurchaseOrder) []int {
 }
 
 func purchaseOrderLineIDs(lines []inventree.PurchaseOrderLineItem) []int {
+	ids := make([]int, 0, len(lines))
+	for _, line := range lines {
+		ids = append(ids, line.PK)
+	}
+	return ids
+}
+
+func purchaseOrderExtraLineIDs(lines []inventree.PurchaseOrderExtraLine) []int {
 	ids := make([]int, 0, len(lines))
 	for _, line := range lines {
 		ids = append(ids, line.PK)

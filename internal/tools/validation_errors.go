@@ -39,6 +39,7 @@ var validationFieldAllowlist = map[string]string{
 	"purchase_price_currency": "purchase_price_currency", "purchaseable": "purchaseable", "quantity": "quantity",
 	"reference": "reference", "serial": "serial", "sku": "SKU", "start_date": "start_date",
 	"status": "status", "supplier": "supplier", "supplier_reference": "supplier_reference", "tags": "tags",
+	"price": "price", "price_currency": "price_currency",
 	"target_date": "target_date", "template": "template", "trackable": "trackable", "units": "units",
 	"virtual": "virtual", "website": "website",
 }

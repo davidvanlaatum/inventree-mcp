@@ -225,10 +225,28 @@
       "http_registration": "registered_with_oauth_scope_guard"
     },
     {
+      "name": "create_purchase_order_extra_line",
+      "milestone_status": "milestone_1",
+      "mutation_class": "write",
+      "scopes": [
+        "inventree.read",
+        "inventree.write"
+      ],
+      "annotations": {
+        "read_only": false,
+        "destructive": false,
+        "idempotent": false,
+        "open_world": false
+      },
+      "upload_sources": null,
+      "http_registration": "registered_with_oauth_scope_guard"
+    },
+    {
       "name": "create_purchase_order_with_lines",
       "milestone_status": "milestone_1",
       "mutation_class": "write",
       "scopes": [
+        "inventree.read",
         "inventree.write"
       ],
       "annotations": {
@@ -346,6 +364,24 @@
     },
     {
       "name": "delete_part_parameter",
+      "milestone_status": "milestone_1",
+      "mutation_class": "destructive",
+      "scopes": [
+        "inventree.read",
+        "inventree.write",
+        "inventree.destructive"
+      ],
+      "annotations": {
+        "read_only": false,
+        "destructive": true,
+        "idempotent": false,
+        "open_world": false
+      },
+      "upload_sources": null,
+      "http_registration": "registered_with_oauth_scope_guard"
+    },
+    {
+      "name": "delete_purchase_order_extra_line",
       "milestone_status": "milestone_1",
       "mutation_class": "destructive",
       "scopes": [
@@ -507,6 +543,22 @@
       "http_registration": "registered"
     },
     {
+      "name": "get_purchase_order_extra_line",
+      "milestone_status": "milestone_1",
+      "mutation_class": "read_only",
+      "scopes": [
+        "inventree.read"
+      ],
+      "annotations": {
+        "read_only": true,
+        "destructive": false,
+        "idempotent": true,
+        "open_world": false
+      },
+      "upload_sources": null,
+      "http_registration": "registered"
+    },
+    {
       "name": "get_purchase_order_line",
       "milestone_status": "milestone_1",
       "mutation_class": "read_only",
@@ -605,6 +657,7 @@
       "milestone_status": "milestone_1",
       "mutation_class": "write",
       "scopes": [
+        "inventree.read",
         "inventree.write"
       ],
       "annotations": {
@@ -816,6 +869,22 @@
     },
     {
       "name": "search_parts",
+      "milestone_status": "milestone_1",
+      "mutation_class": "read_only",
+      "scopes": [
+        "inventree.read"
+      ],
+      "annotations": {
+        "read_only": true,
+        "destructive": false,
+        "idempotent": true,
+        "open_world": false
+      },
+      "upload_sources": null,
+      "http_registration": "registered"
+    },
+    {
+      "name": "search_purchase_order_extra_lines",
       "milestone_status": "milestone_1",
       "mutation_class": "read_only",
       "scopes": [
@@ -1116,6 +1185,23 @@
     },
     {
       "name": "update_part_category",
+      "milestone_status": "milestone_1",
+      "mutation_class": "write",
+      "scopes": [
+        "inventree.read",
+        "inventree.write"
+      ],
+      "annotations": {
+        "read_only": false,
+        "destructive": false,
+        "idempotent": true,
+        "open_world": false
+      },
+      "upload_sources": null,
+      "http_registration": "registered_with_oauth_scope_guard"
+    },
+    {
+      "name": "update_purchase_order_extra_line",
       "milestone_status": "milestone_1",
       "mutation_class": "write",
       "scopes": [

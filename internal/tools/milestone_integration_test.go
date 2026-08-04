@@ -14,6 +14,7 @@ import (
 	"image/color"
 	"image/png"
 	"io"
+	"math/big"
 	"net/http"
 	"net/http/httptest"
 	"net/netip"
@@ -659,10 +660,13 @@ func TestMilestoneHappyPathToolsAgainstInvenTree(t *testing.T) {
 		supplierReference, err := fixture.run.Name("order-page")
 		r.NoError(err)
 		price := 1.25
+		extraReference, err := fixture.run.Name("order-extra")
+		r.NoError(err)
 		input := PurchaseOrderWorkflowInput{
 			SupplierID:        supplier.ID,
 			SupplierReference: supplierReference,
 			Description:       dvgoutils.Ptr("order-page integration workflow"),
+			Currency:          dvgoutils.Ptr("AUD"),
 			Lines: []PurchaseOrderWorkflowLine{{
 				SupplierPartID: supplierPart.ID,
 				Quantity:       4,
@@ -678,13 +682,22 @@ func TestMilestoneHappyPathToolsAgainstInvenTree(t *testing.T) {
 				Notes:          "separate same-part line must not merge",
 				DestinationID:  &destination.ID,
 			}},
+			ExtraLines: []PurchaseOrderWorkflowExtraLine{{Reference: extraReference, Description: dvgoutils.Ptr("original supplier invoice line"), Quantity: 1, UnitPrice: dvgoutils.Ptr("0"), Currency: dvgoutils.Ptr("AUD")}},
 		}
+		dryRunInput := input
+		dryRunInput.DryRun = true
+		_, dryRun, err := createPurchaseOrderWithLines(fixture.deps())(ctx, &mcp.CallToolRequest{}, dryRunInput)
+		r.NoError(err)
+		a.Equal(StatusOK, dryRun.Status)
+		r.Len(dryRun.PlannedChanges, 4)
+		a.Equal("create_purchase_order_extra_line", dryRun.PlannedChanges[3].Action)
 
 		_, created, err := createPurchaseOrderWithLines(fixture.deps())(ctx, &mcp.CallToolRequest{}, input)
 		r.NoError(err)
 		a.Equal(StatusOK, created.Status)
 		r.NotNil(created.PurchaseOrder)
 		r.Len(created.Lines, 2)
+		r.Len(created.ExtraLines, 1)
 		a.NotEmpty(created.PurchaseOrder.Reference)
 		a.Equal(supplierReference, created.PurchaseOrder.SupplierReference)
 		a.Equal(supplierReference+"-1", created.Lines[0].Reference)
@@ -694,18 +707,50 @@ func TestMilestoneHappyPathToolsAgainstInvenTree(t *testing.T) {
 		r.NotNil(created.Lines[1].Destination)
 		a.Equal(destination.ID, *created.Lines[0].Destination)
 		a.Equal(destination.ID, *created.Lines[1].Destination)
+		a.Equal(extraReference, created.ExtraLines[0].Reference)
+		r.NotNil(created.ExtraLines[0].Price)
+		a.True(decimalPointerMatches(dvgoutils.Ptr("0"), created.ExtraLines[0].Price))
+		r.NotNil(created.PurchaseOrder.TotalPrice)
 
 		input.Description = dvgoutils.Ptr("updated by retry recovery")
 		input.Lines[0].Quantity = 5
+		input.ExtraLines[0].Notes = dvgoutils.Ptr("retained invoice context")
 		_, retried, err := createPurchaseOrderWithLines(fixture.deps())(ctx, &mcp.CallToolRequest{}, input)
 		r.NoError(err)
 		a.Equal(StatusOK, retried.Status)
 		r.NotNil(retried.PurchaseOrder)
 		r.Len(retried.Lines, 2)
+		r.Len(retried.ExtraLines, 1)
 		a.Equal(created.PurchaseOrder.PK, retried.PurchaseOrder.PK)
 		a.Equal(created.Lines[0].PK, retried.Lines[0].PK)
 		a.Equal(created.Lines[1].PK, retried.Lines[1].PK)
+		a.Equal(created.ExtraLines[0].PK, retried.ExtraLines[0].PK)
+		a.Equal("retained invoice context", retried.ExtraLines[0].Notes)
 		a.Equal(5.0, retried.Lines[0].Quantity)
+
+		deleteReference, err := fixture.run.Name("delete-extra")
+		r.NoError(err)
+		_, extraToDelete, err := createPurchaseOrderExtraLine(fixture.deps())(ctx, &mcp.CallToolRequest{}, CreatePurchaseOrderExtraLineInput{OrderID: created.PurchaseOrder.PK, Reference: deleteReference, Quantity: 1, UnitPrice: dvgoutils.Ptr("-0.25"), Currency: dvgoutils.Ptr("AUD")})
+		r.NoError(err)
+		r.NotNil(extraToDelete.Record)
+		r.NotNil(extraToDelete.PurchaseOrder)
+		r.NotNil(extraToDelete.PurchaseOrder.TotalPrice)
+		r.NotNil(retried.PurchaseOrder.TotalPrice)
+		beforeDiscount, ok := new(big.Rat).SetString(string(*retried.PurchaseOrder.TotalPrice))
+		r.True(ok)
+		afterDiscount, ok := new(big.Rat).SetString(string(*extraToDelete.PurchaseOrder.TotalPrice))
+		r.True(ok)
+		r.Zero(new(big.Rat).Sub(afterDiscount, beforeDiscount).Cmp(big.NewRat(-1, 4)), "standalone tool must return the exact -0.25 total effect")
+		_, deletePreview, err := deletePurchaseOrderExtraLine(fixture.deps())(ctx, &mcp.CallToolRequest{}, DeletePurchaseOrderExtraLineInput{ID: extraToDelete.Record.PK})
+		r.NoError(err)
+		a.Equal(StatusClarificationRequired, deletePreview.Status)
+		_, deletedExtra, err := deletePurchaseOrderExtraLine(fixture.deps())(ctx, &mcp.CallToolRequest{}, DeletePurchaseOrderExtraLineInput{ID: extraToDelete.Record.PK, Confirm: true})
+		r.NoError(err)
+		a.Equal(StatusOK, deletedExtra.Status)
+		a.True(deletedExtra.Verified)
+		r.NotNil(deletedExtra.PurchaseOrder)
+		r.NotNil(deletedExtra.PurchaseOrder.TotalPrice)
+		a.Equal(*retried.PurchaseOrder.TotalPrice, *deletedExtra.PurchaseOrder.TotalPrice, "confirmed delete must return the refreshed restored total")
 
 		orders, err := fixture.client.SearchPurchaseOrders(ctx, inventree.PurchaseOrderQuery{Search: supplierReference, Supplier: supplier.ID})
 		r.NoError(err)

@@ -29,7 +29,7 @@ func TestWorkflowPlannedChangesMCPWireContract(t *testing.T) {
 	seenSchemas := map[string]bool{}
 	for _, tool := range listed.Tools {
 		switch tool.Name {
-		case UpsertPartWorkflowToolName, InitialStockWorkflowToolName, CreatePurchaseOrderWorkflowToolName, IssuePurchaseOrderToolName:
+		case UpsertPartWorkflowToolName, InitialStockWorkflowToolName, CreatePurchaseOrderWorkflowToolName, IssuePurchaseOrderToolName, CreatePurchaseOrderExtraLineToolName, UpdatePurchaseOrderExtraLineToolName:
 			schema := tool.OutputSchema.(map[string]any)
 			properties := schema["properties"].(map[string]any)
 			a.Contains(properties, "planned_changes", tool.Name)
@@ -37,10 +37,12 @@ func TestWorkflowPlannedChangesMCPWireContract(t *testing.T) {
 		}
 	}
 	a.Equal(map[string]bool{
-		UpsertPartWorkflowToolName:          true,
-		InitialStockWorkflowToolName:        true,
-		CreatePurchaseOrderWorkflowToolName: true,
-		IssuePurchaseOrderToolName:          true,
+		UpsertPartWorkflowToolName:           true,
+		InitialStockWorkflowToolName:         true,
+		CreatePurchaseOrderWorkflowToolName:  true,
+		IssuePurchaseOrderToolName:           true,
+		CreatePurchaseOrderExtraLineToolName: true,
+		UpdatePurchaseOrderExtraLineToolName: true,
 	}, seenSchemas)
 
 	partResult, err := catalogSession.CallTool(ctx, &mcp.CallToolParams{Name: UpsertPartWorkflowToolName, Arguments: map[string]any{
@@ -84,7 +86,8 @@ func TestWorkflowPlannedChangesMCPWireContract(t *testing.T) {
 
 	orderResult, err := purchasingSession.CallTool(ctx, &mcp.CallToolParams{Name: CreatePurchaseOrderWorkflowToolName, Arguments: map[string]any{
 		"dry_run": true, "supplier_id": 30, "supplier_reference": "WIRE-ORDER",
-		"lines": []any{map[string]any{"supplier_part_id": 40, "quantity": 2}},
+		"lines":       []any{map[string]any{"supplier_part_id": 40, "quantity": 2}},
+		"extra_lines": []any{map[string]any{"reference": "SUPPLIER-SKU", "quantity": 1, "unit_price": "0", "currency": "AUD"}},
 	}})
 	r.NoError(err)
 	a.False(orderResult.IsError)
@@ -97,6 +100,14 @@ func TestWorkflowPlannedChangesMCPWireContract(t *testing.T) {
 	a.Equal(false, lineFields["merge_items"])
 	lineDependencies := lineCreate["depends_on"].([]any)
 	a.Equal(map[string]any{"field": "order", "action": "create_purchase_order"}, lineDependencies[0])
+	extraCreate := orderChanges[2].(map[string]any)
+	a.Equal("create_purchase_order_extra_line", extraCreate["action"])
+	extraFields := extraCreate["fields"].(map[string]any)
+	a.Equal("0", extraFields["price"])
+	a.Equal("AUD", extraFields["price_currency"])
+	a.NotContains(extraFields, "project_code")
+	extraDependencies := extraCreate["depends_on"].([]any)
+	a.Equal(map[string]any{"field": "order", "action": "create_purchase_order"}, extraDependencies[0])
 
 	issueResult, err := purchasingSession.CallTool(ctx, &mcp.CallToolParams{Name: IssuePurchaseOrderToolName, Arguments: map[string]any{"dry_run": true, "order_id": 120}})
 	r.NoError(err)

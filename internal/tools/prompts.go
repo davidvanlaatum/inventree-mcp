@@ -152,6 +152,7 @@ var PromptManifest = []PromptManifestEntry{
 		Status:      PromptMilestone1,
 		Checklist: `Use this checklist before receiving purchase-order items:
 - Resolve the purchase order, each purchase-order line, and every effective stock location to stable IDs.
+- Distinguish receivable supplier-part lines from purchase-order extra lines: extra lines preserve invoice, surcharge, discount, or product-link context but are never received into stock.
 - Use dry_run:true first and verify each requested quantity is schema-valid, positive, and no greater than the line's outstanding quantity; virtual parts are excluded because they do not create stock.
 - Resolve receiving location in this order: item location_id, purchase-order line destination, then global location_id.
 - Receiving creates new stock items through InvenTree's native purchase-order receive endpoint; it never merges into or updates existing stock.

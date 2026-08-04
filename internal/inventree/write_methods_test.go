@@ -445,6 +445,36 @@ func TestWriteMethodsUseExpectedEndpoints(t *testing.T) {
 			},
 		},
 		{
+			name: "create purchase order extra line preserves exact signed price",
+			call: func(ctx context.Context, client *Client) error {
+				_, err := client.CreatePurchaseOrderExtraLine(ctx, PurchaseOrderExtraLineCreate{Order: 120, Reference: "CE05129", Description: dvgoutils.Ptr("100 Pack of Diodes"), Quantity: 1, Price: dvgoutils.Ptr("-1.250000"), PriceCurrency: dvgoutils.Ptr("AUD")})
+				return err
+			},
+			method:   http.MethodPost,
+			path:     "/api/order/po-extra-line/",
+			response: `{"pk":140,"order":120,"reference":"CE05129","quantity":1,"price":"-1.250000","price_currency":"AUD"}`,
+			assert: func(a *assert.Assertions, body map[string]any) {
+				a.Equal(float64(120), body["order"])
+				a.Equal("CE05129", body["reference"])
+				a.Equal("-1.250000", body["price"])
+				a.Equal("AUD", body["price_currency"])
+			},
+		},
+		{
+			name: "update purchase order extra line uses patch",
+			call: func(ctx context.Context, client *Client) error {
+				_, err := client.UpdatePurchaseOrderExtraLine(ctx, 140, PatchFields{"notes": Set("invoice context"), "price": Set("0")})
+				return err
+			},
+			method:   http.MethodPatch,
+			path:     "/api/order/po-extra-line/140/",
+			response: `{"pk":140,"order":120,"reference":"CE05129","quantity":1,"notes":"invoice context","price":"0.000000"}`,
+			assert: func(a *assert.Assertions, body map[string]any) {
+				a.Equal("invoice context", body["notes"])
+				a.Equal("0", body["price"])
+			},
+		},
+		{
 			name: "receive purchase order creates stock through receive endpoint",
 			call: func(ctx context.Context, client *Client) error {
 				_, err := client.ReceivePurchaseOrder(ctx, 120, PurchaseOrderReceive{Items: []PurchaseOrderReceiveItem{{LineItem: 130, Location: dvgoutils.Ptr(40), Quantity: "1.5", Status: dvgoutils.Ptr(10), BatchCode: dvgoutils.Ptr("B-1")}}})
@@ -506,6 +536,24 @@ func TestWriteMethodsUseExpectedEndpoints(t *testing.T) {
 			r.NoError(tt.call(ctx, client))
 		})
 	}
+}
+
+func TestDeletePurchaseOrderExtraLineUsesStableDetailEndpoint(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	client, err := NewClient(Config{
+		BaseURL:    "https://inventory.example.test",
+		Credential: Credential{Scheme: AuthSchemeToken, Token: "secret"},
+		HTTPClient: &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			a.Equal(http.MethodDelete, req.Method)
+			a.Equal("/api/order/po-extra-line/140/", req.URL.Path)
+			return jsonResponse(req, http.StatusNoContent, ``), nil
+		})},
+	})
+	r.NoError(err)
+	r.NoError(client.DeletePurchaseOrderExtraLine(ctx, 140))
 }
 
 func TestDeletePartParameterUsesStableDetailEndpoint(t *testing.T) {

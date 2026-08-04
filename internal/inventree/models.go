@@ -299,17 +299,18 @@ type UserToken struct {
 }
 
 type PurchaseOrder struct {
-	PK                int     `json:"pk"`
-	Reference         string  `json:"reference"`
-	Supplier          int     `json:"supplier"`
-	SupplierReference string  `json:"supplier_reference"`
-	Description       string  `json:"description"`
-	CreationDate      *string `json:"creation_date"`
-	StartDate         *string `json:"start_date"`
-	TargetDate        *string `json:"target_date"`
-	OrderCurrency     *string `json:"order_currency"`
-	Destination       *int    `json:"destination"`
-	Status            int     `json:"status"`
+	PK                int            `json:"pk"`
+	Reference         string         `json:"reference"`
+	Supplier          int            `json:"supplier"`
+	SupplierReference string         `json:"supplier_reference"`
+	Description       string         `json:"description"`
+	CreationDate      *string        `json:"creation_date"`
+	StartDate         *string        `json:"start_date"`
+	TargetDate        *string        `json:"target_date"`
+	OrderCurrency     *string        `json:"order_currency"`
+	Destination       *int           `json:"destination"`
+	Status            int            `json:"status"`
+	TotalPrice        *DecimalString `json:"total_price"`
 }
 
 type PurchaseOrderLineItem struct {
@@ -326,4 +327,18 @@ type PurchaseOrderLineItem struct {
 	TargetDate            *string        `json:"target_date"`
 	PurchasePrice         *DecimalString `json:"purchase_price"`
 	PurchasePriceCurrency string         `json:"purchase_price_currency"`
+}
+
+type PurchaseOrderExtraLine struct {
+	PK            int            `json:"pk"`
+	Order         int            `json:"order"`
+	Line          string         `json:"line"`
+	Reference     string         `json:"reference"`
+	Description   string         `json:"description"`
+	Link          string         `json:"link"`
+	Notes         string         `json:"notes"`
+	Quantity      float64        `json:"quantity"`
+	Price         *DecimalString `json:"price"`
+	PriceCurrency string         `json:"price_currency"`
+	TargetDate    *string        `json:"target_date"`
 }

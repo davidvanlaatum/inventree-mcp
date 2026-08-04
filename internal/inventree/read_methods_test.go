@@ -433,6 +433,25 @@ func TestReadMethodsUseExpectedEndpoints(t *testing.T) {
 			wantPath: "/api/order/po-line/130/",
 			response: `{"pk":130,"order":120,"part":40,"quantity":1}`,
 		},
+		{
+			name: "search purchase order extra lines",
+			call: func(ctx context.Context, client *Client) error {
+				_, err := client.SearchPurchaseOrderExtraLinesPage(ctx, PurchaseOrderExtraLineQuery{Search: "CE05129", Order: 120, Limit: 6, Offset: 3})
+				return err
+			},
+			wantPath:  "/api/order/po-extra-line/",
+			wantQuery: url.Values{"search": []string{"CE05129"}, "order": []string{"120"}, "limit": []string{"6"}, "offset": []string{"3"}},
+			response:  `{"count":1,"next":null,"previous":null,"results":[{"pk":140,"order":120,"reference":"CE05129","quantity":1,"price":"0.000000","price_currency":"AUD"}]}`,
+		},
+		{
+			name: "get purchase order extra line",
+			call: func(ctx context.Context, client *Client) error {
+				_, err := client.GetPurchaseOrderExtraLine(ctx, 140)
+				return err
+			},
+			wantPath: "/api/order/po-extra-line/140/",
+			response: `{"pk":140,"order":120,"reference":"CE05129","quantity":1}`,
+		},
 	}
 
 	for _, tt := range tests {

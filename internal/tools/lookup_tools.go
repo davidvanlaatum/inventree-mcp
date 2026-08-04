@@ -65,6 +65,8 @@ const (
 	GetPurchaseOrderToolName                = "get_purchase_order"
 	SearchPurchaseOrderLinesToolName        = "search_purchase_order_lines"
 	GetPurchaseOrderLineToolName            = "get_purchase_order_line"
+	SearchPurchaseOrderExtraLinesToolName   = "search_purchase_order_extra_lines"
+	GetPurchaseOrderExtraLineToolName       = "get_purchase_order_extra_line"
 	CreatePartToolName                      = "create_part"
 	UpdatePartToolName                      = "update_part"
 	CreatePartCategoryToolName              = "create_part_category"
@@ -89,6 +91,9 @@ const (
 	CreatePurchaseOrderToolName             = "create_purchase_order"
 	AddPurchaseOrderLineToolName            = "add_purchase_order_line"
 	UpdatePurchaseOrderLineToolName         = "update_purchase_order_line"
+	CreatePurchaseOrderExtraLineToolName    = "create_purchase_order_extra_line"
+	UpdatePurchaseOrderExtraLineToolName    = "update_purchase_order_extra_line"
+	DeletePurchaseOrderExtraLineToolName    = "delete_purchase_order_extra_line"
 	CreatePurchaseOrderWorkflowToolName     = "create_purchase_order_with_lines"
 	IssuePurchaseOrderToolName              = "issue_purchase_order"
 	ReceivePurchaseOrderToolName            = "receive_purchase_order_items"
@@ -153,6 +158,8 @@ var lookupToolNames = []string{
 	GetPurchaseOrderToolName,
 	SearchPurchaseOrderLinesToolName,
 	GetPurchaseOrderLineToolName,
+	SearchPurchaseOrderExtraLinesToolName,
+	GetPurchaseOrderExtraLineToolName,
 }
 
 var writeToolNames = []string{
@@ -189,6 +196,9 @@ var writeToolNames = []string{
 	CreatePurchaseOrderToolName,
 	AddPurchaseOrderLineToolName,
 	UpdatePurchaseOrderLineToolName,
+	CreatePurchaseOrderExtraLineToolName,
+	UpdatePurchaseOrderExtraLineToolName,
+	DeletePurchaseOrderExtraLineToolName,
 	CreatePurchaseOrderWorkflowToolName,
 	IssuePurchaseOrderToolName,
 	ReceivePurchaseOrderToolName,
@@ -224,7 +234,7 @@ func init() {
 		scopes := []string{ScopeInventreeWrite}
 		mutationClass := "write"
 		switch name {
-		case CreateParameterTemplateToolName, UpdateParameterTemplateToolName, CreateCategoryParameterDefaultToolName, UpdateCategoryParameterDefaultToolName, CreatePartCategoryToolName, UpdatePartCategoryToolName, UpdateCompanyToolName, UpdateSupplierPartToolName, UpdateManufacturerPartToolName, CreateStockLocationToolName, UpdateStockLocationToolName:
+		case CreateParameterTemplateToolName, UpdateParameterTemplateToolName, CreateCategoryParameterDefaultToolName, UpdateCategoryParameterDefaultToolName, CreatePartCategoryToolName, UpdatePartCategoryToolName, UpdateCompanyToolName, UpdateSupplierPartToolName, UpdateManufacturerPartToolName, CreateStockLocationToolName, UpdateStockLocationToolName, CreatePurchaseOrderExtraLineToolName, UpdatePurchaseOrderExtraLineToolName, CreatePurchaseOrderWorkflowToolName, IssuePurchaseOrderToolName:
 			scopes = []string{ScopeInventreeRead, ScopeInventreeWrite}
 		case BulkPropagatePartParametersToolName:
 			scopes = []string{ScopeInventreeRead, ScopeInventreeWrite, ScopeInventreeDestructive}
@@ -240,7 +250,7 @@ func init() {
 			mutationClass = "operational"
 		case UploadAttachmentToolName, UploadAttachmentFromURLToolName, CreateLinkAttachmentToolName, UpdateAttachmentMetadataToolName, SetPrimaryImageToolName:
 			scopes = []string{ScopeInventreeWrite, ScopeInventreeUpload}
-		case DeletePartParameterToolName, DeleteParameterTemplateToolName, MergeParameterTemplatesToolName, DeleteCategoryParameterDefaultToolName:
+		case DeletePartParameterToolName, DeleteParameterTemplateToolName, MergeParameterTemplatesToolName, DeleteCategoryParameterDefaultToolName, DeletePurchaseOrderExtraLineToolName:
 			scopes = []string{ScopeInventreeRead, ScopeInventreeWrite, ScopeInventreeDestructive}
 			mutationClass = "destructive"
 		case DeleteAttachmentToolName:
@@ -251,7 +261,7 @@ func init() {
 		if name == UploadAttachmentFromURLToolName {
 			annotations.OpenWorld = true
 		}
-		if name == DeleteAttachmentToolName || name == DeletePartParameterToolName || name == DeleteParameterTemplateToolName || name == MergeParameterTemplatesToolName || name == DeleteCategoryParameterDefaultToolName || name == BulkPropagatePartParametersToolName {
+		if name == DeleteAttachmentToolName || name == DeletePartParameterToolName || name == DeleteParameterTemplateToolName || name == MergeParameterTemplatesToolName || name == DeleteCategoryParameterDefaultToolName || name == DeletePurchaseOrderExtraLineToolName || name == BulkPropagatePartParametersToolName {
 			annotations.Destructive = true
 		}
 		ToolAuthorizations[name] = ToolAuthorization{
@@ -275,7 +285,10 @@ func init() {
 		auth.Annotations.Idempotent = true
 		ToolAuthorizations[name] = auth
 	}
-	for _, name := range []string{SearchPurchaseOrdersToolName, GetPurchaseOrderToolName, SearchPurchaseOrderLinesToolName, GetPurchaseOrderLineToolName, CreatePurchaseOrderToolName, AddPurchaseOrderLineToolName, UpdatePurchaseOrderLineToolName, CreatePurchaseOrderWorkflowToolName, IssuePurchaseOrderToolName, ReceivePurchaseOrderToolName} {
+	extraLineUpdate := ToolAuthorizations[UpdatePurchaseOrderExtraLineToolName]
+	extraLineUpdate.Annotations.Idempotent = true
+	ToolAuthorizations[UpdatePurchaseOrderExtraLineToolName] = extraLineUpdate
+	for _, name := range []string{SearchPurchaseOrdersToolName, GetPurchaseOrderToolName, SearchPurchaseOrderLinesToolName, GetPurchaseOrderLineToolName, SearchPurchaseOrderExtraLinesToolName, GetPurchaseOrderExtraLineToolName, CreatePurchaseOrderToolName, AddPurchaseOrderLineToolName, UpdatePurchaseOrderLineToolName, CreatePurchaseOrderExtraLineToolName, UpdatePurchaseOrderExtraLineToolName, DeletePurchaseOrderExtraLineToolName, CreatePurchaseOrderWorkflowToolName, IssuePurchaseOrderToolName, ReceivePurchaseOrderToolName} {
 		auth := ToolAuthorizations[name]
 		auth.MilestoneStatus = ToolMilestone1
 		ToolAuthorizations[name] = auth
@@ -931,6 +944,15 @@ func candidateFor(record any) ClarificationCandidate {
 		return ClarificationCandidate{ID: strconv.Itoa(v.PK), Label: v.Name, Summary: v.Description, URL: fmt.Sprintf("/api/stock/location-type/%d/", v.PK)}
 	case inventree.StockItem:
 		return ClarificationCandidate{ID: strconv.Itoa(v.PK), Label: fmt.Sprintf("stock item %d", v.PK), URL: fmt.Sprintf("/api/stock/%d/", v.PK), Fields: map[string]any{"part": v.Part, "location": v.Location, "quantity": v.Quantity, "status": v.Status, "serial": v.Serial, "batch": v.Batch}}
+	case inventree.PurchaseOrderExtraLine:
+		fields := map[string]any{"order": v.Order, "quantity": v.Quantity, "price_currency": v.PriceCurrency}
+		if v.Price != nil {
+			fields["price"] = *v.Price
+		}
+		if v.Link != "" {
+			fields["link"] = redactedMetadataURL(&v.Link)
+		}
+		return ClarificationCandidate{ID: strconv.Itoa(v.PK), Label: v.Reference, Summary: v.Description, URL: fmt.Sprintf("/api/order/po-extra-line/%d/", v.PK), Fields: fields}
 	case inventree.Attachment:
 		fields := map[string]any{
 			"model_type": v.ModelType,

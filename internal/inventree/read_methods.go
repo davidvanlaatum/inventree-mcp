@@ -445,6 +445,20 @@ func (c *Client) GetPurchaseOrderLine(ctx context.Context, id int) (PurchaseOrde
 	return out, err
 }
 
+func (c *Client) SearchPurchaseOrderExtraLines(ctx context.Context, query PurchaseOrderExtraLineQuery) ([]PurchaseOrderExtraLine, error) {
+	return listAll[PurchaseOrderExtraLine](ctx, c, "/api/order/po-extra-line/", query.values())
+}
+
+func (c *Client) SearchPurchaseOrderExtraLinesPage(ctx context.Context, query PurchaseOrderExtraLineQuery) (Page[PurchaseOrderExtraLine], error) {
+	return listPage[PurchaseOrderExtraLine](ctx, c, "/api/order/po-extra-line/", query.values())
+}
+
+func (c *Client) GetPurchaseOrderExtraLine(ctx context.Context, id int) (PurchaseOrderExtraLine, error) {
+	var out PurchaseOrderExtraLine
+	err := c.get(ctx, fmt.Sprintf("/api/order/po-extra-line/%d/", id), &out)
+	return out, err
+}
+
 func (c *Client) get(ctx context.Context, path string, out any) error {
 	req, err := c.NewRequest(ctx, http.MethodGet, path, nil, nil)
 	if err != nil {
