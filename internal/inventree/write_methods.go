@@ -159,6 +159,19 @@ type PurchaseOrderLineCreate struct {
 	Destination           *int    `json:"destination,omitempty"`
 }
 
+type PurchaseOrderExtraLineCreate struct {
+	Order         int     `json:"order"`
+	Line          *string `json:"line,omitempty"`
+	Reference     string  `json:"reference"`
+	Description   *string `json:"description,omitempty"`
+	Link          *string `json:"link,omitempty"`
+	Notes         *string `json:"notes,omitempty"`
+	Quantity      float64 `json:"quantity"`
+	Price         *string `json:"price,omitempty"`
+	PriceCurrency *string `json:"price_currency,omitempty"`
+	TargetDate    *string `json:"target_date,omitempty"`
+}
+
 type PurchaseOrderReceive struct {
 	Items    []PurchaseOrderReceiveItem `json:"items"`
 	Location *int                       `json:"location,omitempty"`
@@ -391,6 +404,26 @@ func (c *Client) UpdatePurchaseOrderLine(ctx context.Context, id int, fields Pat
 	var out PurchaseOrderLineItem
 	err := c.Patch(ctx, fmt.Sprintf("/api/order/po-line/%d/", id), fields, &out)
 	return out, err
+}
+
+func (c *Client) CreatePurchaseOrderExtraLine(ctx context.Context, input PurchaseOrderExtraLineCreate) (PurchaseOrderExtraLine, error) {
+	var out PurchaseOrderExtraLine
+	err := c.Post(ctx, "/api/order/po-extra-line/", input, &out)
+	return out, err
+}
+
+func (c *Client) UpdatePurchaseOrderExtraLine(ctx context.Context, id int, fields PatchFields) (PurchaseOrderExtraLine, error) {
+	var out PurchaseOrderExtraLine
+	err := c.Patch(ctx, fmt.Sprintf("/api/order/po-extra-line/%d/", id), fields, &out)
+	return out, err
+}
+
+func (c *Client) DeletePurchaseOrderExtraLine(ctx context.Context, id int) error {
+	req, err := c.NewRequest(ctx, http.MethodDelete, fmt.Sprintf("/api/order/po-extra-line/%d/", id), nil, nil)
+	if err != nil {
+		return err
+	}
+	return c.DoJSON(req, nil)
 }
 
 func (c *Client) ReceivePurchaseOrder(ctx context.Context, id int, input PurchaseOrderReceive) ([]StockItem, error) {

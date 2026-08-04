@@ -488,8 +488,9 @@ func TestIssuePurchaseOrderRequiresConfirmationAndPlacesPendingOrder(t *testing.
 	a := assert.New(t)
 	ctx, _, _ := testhandler.SetupTestHandler(t)
 	fake := &fakePurchasingClient{
-		orders: []inventree.PurchaseOrder{{PK: 120, Reference: "PO-1", Supplier: 30, Status: inventree.PurchaseOrderStatusPending}},
-		lines:  []inventree.PurchaseOrderLineItem{{PK: 130, Order: 120, Part: 40, Reference: "LINE-1", Quantity: 2}},
+		orders:     []inventree.PurchaseOrder{{PK: 120, Reference: "PO-1", Supplier: 30, Status: inventree.PurchaseOrderStatusPending}},
+		lines:      []inventree.PurchaseOrderLineItem{{PK: 130, Order: 120, Part: 40, Reference: "LINE-1", Quantity: 2}},
+		extraLines: []inventree.PurchaseOrderExtraLine{{PK: 140, Order: 120, Reference: "FREIGHT", Link: "https://supplier.test/freight?token=secret#details", Quantity: 1, Price: dvgoutils.Ptr(inventree.DecimalString("-2.50")), PriceCurrency: "AUD"}},
 	}
 
 	_, dryRun, err := issuePurchaseOrder(purchasingDeps(fake))(ctx, &mcp.CallToolRequest{}, IssuePurchaseOrderInput{DryRun: true, OrderID: 120})
@@ -498,6 +499,8 @@ func TestIssuePurchaseOrderRequiresConfirmationAndPlacesPendingOrder(t *testing.
 	a.Equal("issue_purchase_order", dryRun.Action)
 	a.NotEmpty(dryRun.PlanHash)
 	a.Equal(fake.lines, dryRun.Lines)
+	r.Len(dryRun.ExtraLines, 1)
+	a.Equal("https://supplier.test/freight", dryRun.ExtraLines[0].Link)
 	a.Equal([]PlannedChange{{
 		Action: "issue_purchase_order", RecordType: "purchase_order", ID: 120,
 		Fields: map[string]any{"status": inventree.PurchaseOrderStatusPlaced},
@@ -544,6 +547,35 @@ func TestIssuePurchaseOrderRejectsStaleLinePlan(t *testing.T) {
 	a.Equal("dry_run", stale.Clarification.Retry)
 	a.Empty(stale.PlanHash)
 	a.NotContains(stale.Clarification.RetryValues, "plan_hash")
+	a.Zero(fake.issueCalls)
+}
+
+func TestIssuePurchaseOrderRejectsStaleExtraLinePlan(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	fake := &fakePurchasingClient{
+		orders:     []inventree.PurchaseOrder{{PK: 120, Reference: "PO-1", Supplier: 30, Status: inventree.PurchaseOrderStatusPending}},
+		lines:      []inventree.PurchaseOrderLineItem{{PK: 130, Order: 120, Part: 40, Reference: "LINE-1", Quantity: 2}},
+		extraLines: []inventree.PurchaseOrderExtraLine{{PK: 140, Order: 120, Reference: "FREIGHT", Link: "https://supplier.test/freight-one?token=secret", Quantity: 1, Price: dvgoutils.Ptr(inventree.DecimalString("12.50")), PriceCurrency: "AUD"}},
+	}
+	handler := issuePurchaseOrder(purchasingDeps(fake))
+
+	_, plan, err := handler(ctx, &mcp.CallToolRequest{}, IssuePurchaseOrderInput{DryRun: true, OrderID: 120})
+	r.NoError(err)
+	r.NotEmpty(plan.PlanHash)
+	fake.extraLines[0].Link = "https://supplier.test/freight-one?token=changed"
+	_, queryOnlyPlan, err := handler(ctx, &mcp.CallToolRequest{}, IssuePurchaseOrderInput{DryRun: true, OrderID: 120})
+	r.NoError(err)
+	a.Equal(plan.PlanHash, queryOnlyPlan.PlanHash, "hidden URL metadata must not create a public hash oracle")
+	fake.extraLines[0].Link = "https://supplier.test/freight-two?token=secret"
+
+	_, stale, err := handler(ctx, &mcp.CallToolRequest{}, IssuePurchaseOrderInput{OrderID: 120, ConfirmIssue: true, PlanHash: plan.PlanHash})
+	r.NoError(err)
+	a.Equal(StatusClarificationRequired, stale.Status)
+	r.NotNil(stale.Clarification)
+	a.Equal("dry_run", stale.Clarification.Retry)
 	a.Zero(fake.issueCalls)
 }
 
@@ -792,28 +824,41 @@ func purchasingDeps(fake *fakePurchasingClient) Dependencies {
 }
 
 type fakePurchasingClient struct {
-	company                    inventree.Company
-	part                       inventree.Part
-	orders                     []inventree.PurchaseOrder
-	lines                      []inventree.PurchaseOrderLineItem
-	supplierParts              []inventree.SupplierPart
-	supplierPart               inventree.SupplierPart
-	lastOrderQuery             inventree.PurchaseOrderQuery
-	lastLineQuery              inventree.PurchaseOrderLineQuery
-	createOrderCalls           int
-	createOrderErrAfterPersist error
-	updateOrderCalls           int
-	createLineCalls            int
-	updateLineCalls            int
-	createLineErr              error
-	failCreateLineAt           int
-	receiveCalls               int
-	receiveErr                 error
-	issueCalls                 int
-	lastReceive                inventree.PurchaseOrderReceive
-	stockItems                 []inventree.StockItem
-	locationErr                error
-	getOrderErrAfterReceive    error
+	company                              inventree.Company
+	part                                 inventree.Part
+	orders                               []inventree.PurchaseOrder
+	lines                                []inventree.PurchaseOrderLineItem
+	extraLines                           []inventree.PurchaseOrderExtraLine
+	supplierParts                        []inventree.SupplierPart
+	supplierPart                         inventree.SupplierPart
+	lastOrderQuery                       inventree.PurchaseOrderQuery
+	lastLineQuery                        inventree.PurchaseOrderLineQuery
+	createOrderCalls                     int
+	createOrderErrAfterPersist           error
+	updateOrderCalls                     int
+	createLineCalls                      int
+	updateLineCalls                      int
+	createExtraLineCalls                 int
+	updateExtraLineCalls                 int
+	createExtraLineErr                   error
+	createExtraLineErrAfterPersist       error
+	createExtraLineDuplicateAfterPersist bool
+	failCreateExtraLineAt                int
+	updateExtraLineErrAfterPersist       error
+	extraLinePageSize                    int
+	extraLineCountOverride               int
+	extraLineSearchErr                   error
+	deleteExtraLineKeep                  bool
+	getOrderCalls                        int
+	createLineErr                        error
+	failCreateLineAt                     int
+	receiveCalls                         int
+	receiveErr                           error
+	issueCalls                           int
+	lastReceive                          inventree.PurchaseOrderReceive
+	stockItems                           []inventree.StockItem
+	locationErr                          error
+	getOrderErrAfterReceive              error
 }
 
 func (f *fakePurchasingClient) IssuePurchaseOrder(_ context.Context, id int) error {
@@ -870,6 +915,7 @@ func (f *fakePurchasingClient) SearchPurchaseOrders(_ context.Context, query inv
 }
 
 func (f *fakePurchasingClient) GetPurchaseOrder(_ context.Context, id int) (inventree.PurchaseOrder, error) {
+	f.getOrderCalls++
 	if f.receiveCalls > 0 && f.getOrderErrAfterReceive != nil {
 		return inventree.PurchaseOrder{}, f.getOrderErrAfterReceive
 	}
@@ -958,6 +1004,150 @@ func (f *fakePurchasingClient) UpdatePurchaseOrderLine(_ context.Context, id int
 		return f.lines[index], nil
 	}
 	return inventree.PurchaseOrderLineItem{}, errors.New("line not found")
+}
+
+func (f *fakePurchasingClient) SearchPurchaseOrderExtraLinesPage(_ context.Context, query inventree.PurchaseOrderExtraLineQuery) (inventree.Page[inventree.PurchaseOrderExtraLine], error) {
+	if f.extraLineSearchErr != nil {
+		return inventree.Page[inventree.PurchaseOrderExtraLine]{}, f.extraLineSearchErr
+	}
+	results := make([]inventree.PurchaseOrderExtraLine, 0, len(f.extraLines))
+	for _, line := range f.extraLines {
+		if (query.Order == 0 || line.Order == query.Order) && (query.Search == "" || strings.Contains(line.Reference, query.Search) || strings.Contains(line.Description, query.Search)) {
+			results = append(results, line)
+		}
+	}
+	start := min(query.Offset, len(results))
+	end := len(results)
+	limit := query.Limit
+	if f.extraLinePageSize > 0 && (limit == 0 || f.extraLinePageSize < limit) {
+		limit = f.extraLinePageSize
+	}
+	if limit > 0 {
+		end = min(start+limit, len(results))
+	}
+	count := len(results)
+	if f.extraLineCountOverride > 0 {
+		count = f.extraLineCountOverride
+	}
+	page := inventree.Page[inventree.PurchaseOrderExtraLine]{Count: count, Results: results[start:end]}
+	if end < len(results) {
+		next := "next"
+		page.Next = &next
+	}
+	return page, nil
+}
+
+func (f *fakePurchasingClient) GetPurchaseOrderExtraLine(_ context.Context, id int) (inventree.PurchaseOrderExtraLine, error) {
+	for _, line := range f.extraLines {
+		if line.PK == id {
+			return line, nil
+		}
+	}
+	return inventree.PurchaseOrderExtraLine{}, &inventree.APIError{StatusCode: 404, Kind: inventree.ErrorKindNotFound}
+}
+
+func (f *fakePurchasingClient) CreatePurchaseOrderExtraLine(_ context.Context, input inventree.PurchaseOrderExtraLineCreate) (inventree.PurchaseOrderExtraLine, error) {
+	f.createExtraLineCalls++
+	if f.createExtraLineErr != nil && (f.failCreateExtraLineAt == 0 || f.createExtraLineCalls == f.failCreateExtraLineAt) {
+		return inventree.PurchaseOrderExtraLine{}, f.createExtraLineErr
+	}
+	line := inventree.PurchaseOrderExtraLine{PK: 200 + f.createExtraLineCalls, Order: input.Order, Reference: input.Reference, Quantity: input.Quantity}
+	if input.Description != nil {
+		line.Description = *input.Description
+	}
+	if input.Line != nil {
+		line.Line = *input.Line
+	}
+	if input.Link != nil {
+		line.Link = *input.Link
+	}
+	if input.Notes != nil {
+		line.Notes = *input.Notes
+	}
+	if input.Price != nil {
+		value := inventree.DecimalString(*input.Price)
+		line.Price = &value
+	}
+	if input.PriceCurrency != nil {
+		line.PriceCurrency = *input.PriceCurrency
+	}
+	line.TargetDate = input.TargetDate
+	f.extraLines = append(f.extraLines, line)
+	if f.createExtraLineDuplicateAfterPersist {
+		duplicate := line
+		duplicate.PK++
+		duplicate.Quantity++
+		f.extraLines = append(f.extraLines, duplicate)
+	}
+	if f.createExtraLineErrAfterPersist != nil {
+		return inventree.PurchaseOrderExtraLine{}, f.createExtraLineErrAfterPersist
+	}
+	return line, nil
+}
+
+func (f *fakePurchasingClient) UpdatePurchaseOrderExtraLine(_ context.Context, id int, fields inventree.PatchFields) (inventree.PurchaseOrderExtraLine, error) {
+	f.updateExtraLineCalls++
+	for index := range f.extraLines {
+		if f.extraLines[index].PK == id {
+			applyExtraLinePatchForTest(&f.extraLines[index], fields)
+			if f.updateExtraLineErrAfterPersist != nil {
+				return inventree.PurchaseOrderExtraLine{}, f.updateExtraLineErrAfterPersist
+			}
+			return f.extraLines[index], nil
+		}
+	}
+	return inventree.PurchaseOrderExtraLine{}, errors.New("extra line not found")
+}
+
+func (f *fakePurchasingClient) DeletePurchaseOrderExtraLine(_ context.Context, id int) error {
+	for index := range f.extraLines {
+		if f.extraLines[index].PK == id {
+			if f.deleteExtraLineKeep {
+				return nil
+			}
+			f.extraLines = append(f.extraLines[:index], f.extraLines[index+1:]...)
+			return nil
+		}
+	}
+	return &inventree.APIError{StatusCode: 404, Kind: inventree.ErrorKindNotFound}
+}
+
+func applyExtraLinePatchForTest(line *inventree.PurchaseOrderExtraLine, fields inventree.PatchFields) {
+	for name, field := range fields {
+		value := field.Value()
+		switch name {
+		case "order":
+			line.Order = value.(int)
+		case "reference":
+			line.Reference = value.(string)
+		case "description":
+			line.Description = value.(string)
+		case "line":
+			line.Line = value.(string)
+		case "link":
+			line.Link = value.(string)
+		case "notes":
+			line.Notes = value.(string)
+		case "quantity":
+			line.Quantity = value.(float64)
+		case "price":
+			if value == nil {
+				line.Price = nil
+			} else {
+				decimal := inventree.DecimalString(value.(string))
+				line.Price = &decimal
+			}
+		case "price_currency":
+			line.PriceCurrency = value.(string)
+		case "target_date":
+			if value == nil {
+				line.TargetDate = nil
+			} else {
+				target := value.(string)
+				line.TargetDate = &target
+			}
+		}
+	}
 }
 
 func (f *fakePurchasingClient) SearchSupplierParts(_ context.Context, query inventree.SupplierPartQuery) ([]inventree.SupplierPart, error) {

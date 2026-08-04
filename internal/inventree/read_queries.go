@@ -118,6 +118,13 @@ type PurchaseOrderLineQuery struct {
 	Offset       int
 }
 
+type PurchaseOrderExtraLineQuery struct {
+	Search string
+	Order  int
+	Limit  int
+	Offset int
+}
+
 func (q SearchQuery) values() url.Values {
 	values := url.Values{}
 	if q.Search != "" {
@@ -314,6 +321,18 @@ func (q PurchaseOrderLineQuery) values() url.Values {
 	}
 	if q.Received != nil {
 		values.Set("received", strconv.FormatBool(*q.Received))
+	}
+	setPagination(values, q.Limit, q.Offset)
+	return values
+}
+
+func (q PurchaseOrderExtraLineQuery) values() url.Values {
+	values := url.Values{}
+	if q.Search != "" {
+		values.Set("search", q.Search)
+	}
+	if q.Order != 0 {
+		values.Set("order", strconv.Itoa(q.Order))
 	}
 	setPagination(values, q.Limit, q.Offset)
 	return values
