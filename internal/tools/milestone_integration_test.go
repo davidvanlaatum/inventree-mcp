@@ -916,6 +916,60 @@ func TestMilestoneHappyPathToolsAgainstInvenTree(t *testing.T) {
 		_, serializedCount, err := stocktakeAdjustment(fixture.deps())(ctx, &mcp.CallToolRequest{}, StocktakeAdjustmentInput{DryRun: true, StockItemID: serialized.PK, ObservedQuantity: 0, Reason: "integration serialized count"})
 		r.NoError(err)
 		a.Equal(StatusClarificationRequired, serializedCount.Status)
+		_, serializedDepletion, err := depleteStockItem(fixture.deps())(ctx, &mcp.CallToolRequest{}, DepleteStockItemInput{DryRun: true, StockItemID: serialized.PK, Reason: "integration unsafe serialized depletion"})
+		r.NoError(err)
+		a.Equal(StatusClarificationRequired, serializedDepletion.Status)
+		r.NotNil(serializedDepletion.Clarification)
+		a.Equal("serial", serializedDepletion.Clarification.Field)
+		serializedStillPresent, err := fixture.client.GetStockItem(ctx, serialized.PK)
+		r.NoError(err)
+		a.Equal(serialized.PK, serializedStillPresent.PK)
+		a.Equal(1.0, serializedStillPresent.Quantity)
+
+		deleteOnDeplete := true
+		depletionStock, err := fixture.client.CreateStockItem(ctx, inventree.StockItemCreate{Part: part.ID, Location: location.ID, Quantity: 2, DeleteOnDeplete: &deleteOnDeplete})
+		r.NoError(err)
+		depletionInput := DepleteStockItemInput{DryRun: true, StockItemID: depletionStock.PK, Reason: "integration remove placeholder stock"}
+		_, depletionPlan, err := depleteStockItem(fixture.deps())(ctx, &mcp.CallToolRequest{}, depletionInput)
+		r.NoError(err)
+		r.NotEmpty(depletionPlan.PlanHash)
+		a.True(depletionPlan.Plan.WillDelete)
+		a.Equal(2.0, depletionPlan.Plan.Before.Quantity)
+		r.NotNil(depletionPlan.Plan.Depletion)
+		r.NotNil(depletionPlan.Plan.Depletion.Allocated)
+		a.Zero(*depletionPlan.Plan.Depletion.Allocated)
+		r.NotNil(depletionPlan.Plan.Depletion.InstalledItems)
+		a.Zero(*depletionPlan.Plan.Depletion.InstalledItems)
+		r.NotNil(depletionPlan.Plan.Depletion.ChildItems)
+		a.Zero(*depletionPlan.Plan.Depletion.ChildItems)
+		depletionInput.DryRun = false
+		depletionInput.Confirm = true
+		depletionInput.PlanHash = depletionPlan.PlanHash
+		_, depleted, err := depleteStockItem(fixture.deps())(ctx, &mcp.CallToolRequest{}, depletionInput)
+		r.NoError(err)
+		a.Equal(StatusOK, depleted.Status)
+		a.True(depleted.Verified)
+		a.False(depleted.Recovered)
+		_, err = fixture.client.GetStockItem(ctx, depletionStock.PK)
+		r.Error(err)
+
+		lostStock, err := fixture.client.CreateStockItem(ctx, inventree.StockItemCreate{Part: part.ID, Location: location.ID, Quantity: 1, DeleteOnDeplete: &deleteOnDeplete})
+		r.NoError(err)
+		lostClient, err := shared.ClientWithHTTPClient(fixture.account, &http.Client{Transport: &loseMutationResponseTransport{base: http.DefaultTransport, method: http.MethodPost, path: "/api/stock/remove/"}})
+		r.NoError(err)
+		lostDeps := fixture.deps()
+		lostDeps.ClientFromContext = func(context.Context) (any, error) { return lostClient, nil }
+		lostInput := DepleteStockItemInput{DryRun: true, StockItemID: lostStock.PK, Reason: "integration response-loss depletion"}
+		_, lostPlan, err := depleteStockItem(lostDeps)(ctx, &mcp.CallToolRequest{}, lostInput)
+		r.NoError(err)
+		lostInput.DryRun = false
+		lostInput.Confirm = true
+		lostInput.PlanHash = lostPlan.PlanHash
+		_, recovered, err := depleteStockItem(lostDeps)(ctx, &mcp.CallToolRequest{}, lostInput)
+		r.NoError(err)
+		a.Equal(StatusOK, recovered.Status)
+		a.True(recovered.Verified)
+		a.True(recovered.Recovered)
 	})
 
 	t.Run("attachment_target_matrix_upload_download_and_max_bytes", func(t *testing.T) {

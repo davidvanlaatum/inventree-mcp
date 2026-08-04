@@ -789,6 +789,17 @@ func TestClientMethodsAgainstInvenTree(t *testing.T) {
 		stock, err = fixture.client.GetStockItem(ctx, stock.PK)
 		r.NoError(err)
 		r.Equal(55, stock.Status)
+
+		deleteOnDeplete := true
+		depleted, err := fixture.client.CreateStockItem(ctx, inventree.StockItemCreate{Part: part.ID, Location: location.ID, Quantity: 2, DeleteOnDeplete: &deleteOnDeplete})
+		r.NoError(err)
+		r.True(depleted.DeleteOnDeplete)
+		r.NoError(fixture.client.RemoveStock(ctx, inventree.StockAdjustment{Items: []inventree.StockAdjustmentItem{{PK: depleted.PK, Quantity: "2"}}, Notes: "integration complete depletion"}))
+		_, err = fixture.client.GetStockItem(ctx, depleted.PK)
+		r.Error(err)
+		var apiErr *inventree.APIError
+		r.ErrorAs(err, &apiErr)
+		r.Equal(inventree.ErrorKindNotFound, apiErr.Kind)
 	})
 }
 

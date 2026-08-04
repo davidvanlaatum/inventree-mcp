@@ -187,6 +187,14 @@ type StocktakeAdjustmentInput struct {
 	Reason           string  `json:"reason" jsonschema:"Nonblank operator audit reason recorded with the stock transaction."`
 }
 
+type DepleteStockItemInput struct {
+	DryRun      bool   `json:"dry_run,omitempty" jsonschema:"Return the current-state-bound deletion plan without writing."`
+	Confirm     bool   `json:"confirm,omitempty" jsonschema:"Required true for execution after reviewing a dry run."`
+	PlanHash    string `json:"plan_hash,omitempty" jsonschema:"Opaque single-use confirmation token returned by the latest dry run."`
+	StockItemID int    `json:"stock_item_id" jsonschema:"Existing delete-on-deplete stock-item primary key."`
+	Reason      string `json:"reason" jsonschema:"Nonblank operator audit reason recorded with the stock removal transaction."`
+}
+
 type StockStateSnapshot struct {
 	StockItemID     int     `json:"stock_item_id"`
 	PartID          int     `json:"part_id"`
@@ -199,13 +207,33 @@ type StockStateSnapshot struct {
 	DeleteOnDeplete bool    `json:"delete_on_deplete"`
 }
 
+type StockDepletionContext struct {
+	InStock         bool     `json:"in_stock"`
+	Allocated       *float64 `json:"allocated,omitempty"`
+	IsBuilding      bool     `json:"is_building"`
+	BuildID         *int     `json:"build_id,omitempty"`
+	ConsumedByID    *int     `json:"consumed_by_id,omitempty"`
+	BelongsToID     *int     `json:"belongs_to_id,omitempty"`
+	ParentID        *int     `json:"parent_id,omitempty"`
+	InstalledItems  *int     `json:"installed_items,omitempty"`
+	ChildItems      *int     `json:"child_items,omitempty"`
+	TrackingItems   *int     `json:"tracking_items,omitempty"`
+	OwnerID         *int     `json:"owner_id,omitempty"`
+	SupplierPartID  *int     `json:"supplier_part_id,omitempty"`
+	PurchaseOrderID *int     `json:"purchase_order_id,omitempty"`
+	CustomerID      *int     `json:"customer_id,omitempty"`
+	SalesOrderID    *int     `json:"sales_order_id,omitempty"`
+}
+
 type StockAdjustmentPlan struct {
-	Action     string             `json:"action"`
-	Before     StockStateSnapshot `json:"before"`
-	After      StockStateSnapshot `json:"after"`
-	Reason     string             `json:"reason"`
-	HighRisk   bool               `json:"high_risk"`
-	RiskReason string             `json:"risk_reason,omitempty"`
+	Action     string                 `json:"action"`
+	Before     StockStateSnapshot     `json:"before"`
+	After      StockStateSnapshot     `json:"after"`
+	Reason     string                 `json:"reason"`
+	HighRisk   bool                   `json:"high_risk"`
+	RiskReason string                 `json:"risk_reason,omitempty"`
+	WillDelete bool                   `json:"will_delete,omitempty"`
+	Depletion  *StockDepletionContext `json:"depletion,omitempty"`
 }
 
 type StockAdjustmentFailure struct {
@@ -222,6 +250,8 @@ type StockAdjustmentOutput struct {
 	Record        *inventree.StockItem    `json:"record,omitempty"`
 	Failure       *StockAdjustmentFailure `json:"failure,omitempty"`
 	Clarification *ClarificationResponse  `json:"clarification,omitempty"`
+	Verified      bool                    `json:"verified,omitempty"`
+	Recovered     bool                    `json:"recovered,omitempty"`
 }
 
 func registerStockAdjustmentTools(server *mcp.Server, deps Dependencies) {
@@ -231,6 +261,7 @@ func registerStockAdjustmentTools(server *mcp.Server, deps Dependencies) {
 	addWriteTool(server, deps, AdjustStockQuantityToolName, "Adjust stock quantity", "Plans or confirms one relative stock quantity adjustment with an audit reason.", adjustStockQuantity(deps))
 	addWriteTool(server, deps, SetStockStatusToolName, "Set stock status", "Plans or confirms one status-only stock change with an audit reason.", setStockStatus(deps))
 	addWriteTool(server, deps, StocktakeAdjustmentToolName, "Record stocktake adjustment", "Plans or confirms one absolute quantity-only stocktake count with an audit reason.", stocktakeAdjustment(deps))
+	addWriteTool(server, deps, DepleteStockItemToolName, "Deplete delete-on-deplete stock item", "Plans or confirms complete removal of one safe delete-on-deplete stock item with an audit reason.", depleteStockItem(deps))
 }
 
 func adjustStockQuantity(deps Dependencies) mcp.ToolHandlerFor[AdjustStockQuantityInput, StockAdjustmentOutput] {

@@ -235,14 +235,15 @@ func TestWriteMethodsUseExpectedEndpoints(t *testing.T) {
 			name: "create stock item decodes array response",
 			call: func(ctx context.Context, client *Client) error {
 				_, err := client.CreateStockItem(ctx, StockItemCreate{
-					Part:      10,
-					Location:  40,
-					Quantity:  7,
-					Status:    dvgoutils.Ptr(10),
-					Batch:     dvgoutils.Ptr("B-1"),
-					Serial:    dvgoutils.Ptr("S-1"),
-					Packaging: dvgoutils.Ptr("reel"),
-					Notes:     dvgoutils.Ptr("initial stock"),
+					Part:            10,
+					Location:        40,
+					Quantity:        7,
+					Status:          dvgoutils.Ptr(10),
+					Batch:           dvgoutils.Ptr("B-1"),
+					Serial:          dvgoutils.Ptr("S-1"),
+					Packaging:       dvgoutils.Ptr("reel"),
+					Notes:           dvgoutils.Ptr("initial stock"),
+					DeleteOnDeplete: dvgoutils.Ptr(true),
 				})
 				return err
 			},
@@ -258,6 +259,7 @@ func TestWriteMethodsUseExpectedEndpoints(t *testing.T) {
 				a.Equal("S-1", body["serial"])
 				a.Equal("reel", body["packaging"])
 				a.Equal("initial stock", body["notes"])
+				a.Equal(true, body["delete_on_deplete"])
 				_, hasCustomer := body["customer"]
 				a.False(hasCustomer)
 				_, hasSalesOrder := body["sales_order"]

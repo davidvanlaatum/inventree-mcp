@@ -432,6 +432,8 @@ type fakeStockAdjustmentClient struct {
 	getCalls         int
 	getErrAt         map[int]error
 	beforeMutation   func(*fakeStockAdjustmentClient)
+	deleted          bool
+	responseLoss     bool
 	planStore        *stockPlanStore
 }
 
@@ -439,6 +441,9 @@ func (f *fakeStockAdjustmentClient) GetStockItem(context.Context, int) (inventre
 	f.getCalls++
 	if err := f.getErrAt[f.getCalls]; err != nil {
 		return inventree.StockItem{}, err
+	}
+	if f.deleted {
+		return inventree.StockItem{}, &inventree.APIError{StatusCode: http.StatusNotFound, Kind: inventree.ErrorKindNotFound}
 	}
 	return f.item, nil
 }
@@ -462,6 +467,12 @@ func (f *fakeStockAdjustmentClient) RemoveStock(_ context.Context, input inventr
 	}
 	f.runBeforeMutation()
 	f.item.Quantity -= mustAdjustmentQuantity(input)
+	if f.item.DeleteOnDeplete && f.item.Quantity == 0 {
+		f.deleted = true
+	}
+	if f.responseLoss {
+		return errors.New("injected response loss after stock removal")
+	}
 	return nil
 }
 

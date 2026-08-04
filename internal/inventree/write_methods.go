@@ -95,14 +95,15 @@ type CategoryParameterTemplateCreate struct {
 }
 
 type StockItemCreate struct {
-	Part      int     `json:"part"`
-	Location  int     `json:"location"`
-	Quantity  float64 `json:"quantity"`
-	Status    *int    `json:"status,omitempty"`
-	Batch     *string `json:"batch,omitempty"`
-	Serial    *string `json:"serial,omitempty"`
-	Packaging *string `json:"packaging,omitempty"`
-	Notes     *string `json:"notes,omitempty"`
+	Part            int     `json:"part"`
+	Location        int     `json:"location"`
+	Quantity        float64 `json:"quantity"`
+	Status          *int    `json:"status,omitempty"`
+	Batch           *string `json:"batch,omitempty"`
+	Serial          *string `json:"serial,omitempty"`
+	Packaging       *string `json:"packaging,omitempty"`
+	Notes           *string `json:"notes,omitempty"`
+	DeleteOnDeplete *bool   `json:"delete_on_deplete,omitempty"`
 }
 
 type StockLocationCreate struct {
