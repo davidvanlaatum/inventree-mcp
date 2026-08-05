@@ -88,6 +88,7 @@ const (
 	AdjustStockQuantityToolName             = "adjust_stock_quantity"
 	SetStockStatusToolName                  = "set_stock_status"
 	StocktakeAdjustmentToolName             = "stocktake_adjustment"
+	DepleteStockItemToolName                = "deplete_stock_item"
 	CreatePurchaseOrderToolName             = "create_purchase_order"
 	AddPurchaseOrderLineToolName            = "add_purchase_order_line"
 	UpdatePurchaseOrderLineToolName         = "update_purchase_order_line"
@@ -193,6 +194,7 @@ var writeToolNames = []string{
 	AdjustStockQuantityToolName,
 	SetStockStatusToolName,
 	StocktakeAdjustmentToolName,
+	DepleteStockItemToolName,
 	CreatePurchaseOrderToolName,
 	AddPurchaseOrderLineToolName,
 	UpdatePurchaseOrderLineToolName,
@@ -245,6 +247,9 @@ func init() {
 		case AdjustStockQuantityToolName, SetStockStatusToolName, StocktakeAdjustmentToolName, RestructureStockLocationToolName, UpdateStockItemMetadataToolName:
 			scopes = []string{ScopeInventreeRead, ScopeInventreeWrite, ScopeInventreeOperational}
 			mutationClass = "operational"
+		case DepleteStockItemToolName:
+			scopes = []string{ScopeInventreeRead, ScopeInventreeWrite, ScopeInventreeOperational, ScopeInventreeDestructive}
+			mutationClass = "destructive"
 		case ReceivePurchaseOrderToolName:
 			scopes = []string{ScopeInventreeRead, ScopeInventreeWrite, ScopeInventreeOperational}
 			mutationClass = "operational"
@@ -261,7 +266,7 @@ func init() {
 		if name == UploadAttachmentFromURLToolName {
 			annotations.OpenWorld = true
 		}
-		if name == DeleteAttachmentToolName || name == DeletePartParameterToolName || name == DeleteParameterTemplateToolName || name == MergeParameterTemplatesToolName || name == DeleteCategoryParameterDefaultToolName || name == DeletePurchaseOrderExtraLineToolName || name == BulkPropagatePartParametersToolName {
+		if name == DeleteAttachmentToolName || name == DeletePartParameterToolName || name == DeleteParameterTemplateToolName || name == MergeParameterTemplatesToolName || name == DeleteCategoryParameterDefaultToolName || name == DeletePurchaseOrderExtraLineToolName || name == BulkPropagatePartParametersToolName || name == DepleteStockItemToolName {
 			annotations.Destructive = true
 		}
 		ToolAuthorizations[name] = ToolAuthorization{

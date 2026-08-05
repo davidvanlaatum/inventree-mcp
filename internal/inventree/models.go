@@ -150,6 +150,9 @@ type StockItem struct {
 	BelongsTo              *int           `json:"belongs_to"`
 	Parent                 *int           `json:"parent"`
 	Allocated              *float64       `json:"allocated"`
+	InstalledItems         *int           `json:"installed_items"`
+	ChildItems             *int           `json:"child_items"`
+	TrackingItems          *int           `json:"tracking_items"`
 	PurchasePrice          *DecimalString `json:"purchase_price"`
 	PurchasePriceCurrency  string         `json:"purchase_price_currency"`
 	CreationDate           *string        `json:"creation_date"`
