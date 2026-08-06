@@ -34,6 +34,7 @@ func New(deps tools.Dependencies) *mcp.Server {
 		Name:    "inventree-mcp",
 		Title:   "InvenTree MCP",
 		Version: buildinfo.Version,
+		Icons:   []mcp.Icon{tools.InvenTreeIcon()},
 	}, nil)
 	tools.Register(srv, deps)
 	return srv

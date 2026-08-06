@@ -5,6 +5,8 @@ package tools
 import (
 	"encoding/json"
 	"slices"
+
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 const (
@@ -27,6 +29,7 @@ type ToolManifestEntry struct {
 	Annotations      AnnotationClass `json:"annotations"`
 	UploadSources    []string        `json:"upload_sources"`
 	HTTPRegistration string          `json:"http_registration"`
+	Icons            []mcp.Icon      `json:"icons"`
 }
 
 type PromptManifestDoc struct {
@@ -46,6 +49,7 @@ func GenerateToolManifest() ToolManifestDocument {
 			Annotations:      auth.Annotations,
 			UploadSources:    uploadSourcesForTool(auth.Name),
 			HTTPRegistration: httpRegistrationForTool(auth.Name, auth.MutationClass),
+			Icons:            []mcp.Icon{InvenTreeIcon()},
 		})
 	}
 	slices.SortFunc(entries, func(a, b ToolManifestEntry) int {
@@ -65,10 +69,11 @@ func GenerateToolManifest() ToolManifestDocument {
 	})
 
 	return ToolManifestDocument{
-		SchemaVersion: 1,
+		SchemaVersion: 2,
 		GeneratedFrom: []string{
 			"internal/tools.ToolAuthorizations",
 			"internal/tools.PromptManifest",
+			"internal/tools.InvenTreeIcon",
 		},
 		Tools:   entries,
 		Prompts: prompts,
