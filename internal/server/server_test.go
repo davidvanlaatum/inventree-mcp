@@ -56,6 +56,10 @@ func TestStdioServerCanInitializeAndListTools(t *testing.T) {
 
 	result, err := session.ListTools(ctx, nil)
 	r.NoError(err)
+	initializeResult := session.InitializeResult()
+	r.NotNil(initializeResult)
+	r.NotNil(initializeResult.ServerInfo)
+	a.Equal([]mcp.Icon{tools.InvenTreeIcon()}, initializeResult.ServerInfo.Icons)
 	expectedNames := expectedToolNames(false)
 	r.Len(result.Tools, len(expectedNames))
 	for _, tool := range result.Tools {
@@ -65,6 +69,7 @@ func TestStdioServerCanInitializeAndListTools(t *testing.T) {
 		a.False(*tool.Annotations.DestructiveHint, tool.Name)
 		a.NotNil(tool.Annotations.OpenWorldHint, tool.Name)
 		a.False(*tool.Annotations.OpenWorldHint, tool.Name)
+		a.Equal([]mcp.Icon{tools.InvenTreeIcon()}, tool.Icons, tool.Name)
 	}
 
 	cancel()
@@ -106,6 +111,8 @@ func TestTrafficLogCapturesStdioJSONRPCMessages(t *testing.T) {
 
 	var methods []string
 	var outboundCount int
+	var foundServerIcon bool
+	var foundToolIcons bool
 	for _, line := range strings.Split(strings.TrimSpace(output.String()), "\n") {
 		var entry trafficLogEntry
 		r.NoError(json.Unmarshal([]byte(line), &entry))
@@ -122,6 +129,31 @@ func TestTrafficLogCapturesStdioJSONRPCMessages(t *testing.T) {
 		if method, ok := message["method"].(string); ok {
 			methods = append(methods, entry.Direction+":"+method)
 		}
+		if entry.Direction != "outbound" {
+			continue
+		}
+		result, ok := message["result"].(map[string]any)
+		if !ok {
+			continue
+		}
+		if _, isDiscoverResult := result["supportedVersions"]; isDiscoverResult {
+			meta, ok := result["_meta"].(map[string]any)
+			r.True(ok)
+			serverInfo, ok := meta["io.modelcontextprotocol/serverInfo"].(map[string]any)
+			r.True(ok)
+			assertOfficialIconJSON(t, serverInfo["icons"], "serverInfo")
+			foundServerIcon = true
+		}
+		if listedTools, ok := result["tools"].([]any); ok {
+			r.Len(listedTools, len(expectedToolNames(false)))
+			for _, listedTool := range listedTools {
+				tool, ok := listedTool.(map[string]any)
+				r.True(ok)
+				name, _ := tool["name"].(string)
+				assertOfficialIconJSON(t, tool["icons"], name)
+			}
+			foundToolIcons = true
+		}
 	}
 
 	a.Contains(methods, "inbound:server/discover")
@@ -129,6 +161,22 @@ func TestTrafficLogCapturesStdioJSONRPCMessages(t *testing.T) {
 	a.NotContains(methods, "inbound:initialize")
 	a.NotContains(methods, "inbound:notifications/initialized")
 	a.Positive(outboundCount)
+	a.True(foundServerIcon)
+	a.True(foundToolIcons)
+}
+
+func assertOfficialIconJSON(t *testing.T, value any, descriptor string) {
+	t.Helper()
+	r := require.New(t)
+	a := assert.New(t)
+
+	icons, ok := value.([]any)
+	r.True(ok, descriptor)
+	r.Len(icons, 1, descriptor)
+	icon, ok := icons[0].(map[string]any)
+	r.True(ok, descriptor)
+	a.Equal(tools.InvenTreeIconSource, icon["src"], descriptor)
+	a.Equal("image/png", icon["mimeType"], descriptor)
 }
 
 func TestStdioServerListsOnlyMilestonePrompts(t *testing.T) {
@@ -258,6 +306,7 @@ func TestServerListsWriteToolsOnlyWhenEnabled(t *testing.T) {
 	names := make(map[string]bool, len(result.Tools))
 	for _, tool := range result.Tools {
 		names[tool.Name] = true
+		a.Equal([]mcp.Icon{tools.InvenTreeIcon()}, tool.Icons, tool.Name)
 	}
 	a.Equal(expectedNames, names)
 	a.True(names[tools.CreatePartToolName])

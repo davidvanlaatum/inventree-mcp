@@ -104,6 +104,7 @@ Before `M1C-S04` is complete, mutating, operational, destructive, and upload too
 | [F-S22](#f-s22-reviewable-dry-run-mutation-plans) | Expose the effective field-level mutations behind workflow dry runs. | Done |
 | [F-S23](#f-s23-purchase-order-extra-line-items) | Add guarded purchase-order extra-line administration and combined-workflow support. | Done |
 | [F-S24](#f-s24-guarded-delete-on-deplete-stock-depletion) | Intentionally deplete and delete one safe delete-on-deplete stock item. | Done |
+| [F-S25](#f-s25-inventree-tool-and-server-icons) | Brand MCP tool calls and server identity with the official InvenTree icon. | Done |
 
 ## Milestone 0: Repository And Planning
 
@@ -1618,3 +1619,29 @@ Tasks:
 - Validation: `go generate ./internal/tools`, `go mod tidy -diff`, `go vet ./...`, `golangci-lint run ./...`, `GOFLAGS=-trimpath go test -race -p=1 ./...`, and `git diff --check` pass. `go test -tags no_integration_tests -cover ./internal/inventree ./internal/tools` reports 91.8% and 82.1% respectively, versus 91.8% and 82.0% from the exact base commit. Focused pinned InvenTree 1.4.3 runs for `TestClientMethodsAgainstInvenTree/stock_adjustments` and `TestMilestoneHappyPathToolsAgainstInvenTree/stock_adjustment_happy_path` pass with live quantity-two deletion, quantity-one lost-response recovery, absence verification, and serialized-stock refusal.
 - Review: Senior Go Developer, Senior QA / Test Architect, Senior Product Manager, and Senior Infosec Reviewer reviews completed because F-S24 adds destructive operational tool surface and changes public operator contracts. Initial findings requested live unsafe-state refusal, recovery-readback cancellation and zero-quantity boundaries, fail-closed negative relationship counts, consistent no-blind-retry prompt guidance, and serial-first refusal compatible with pinned InvenTree behavior. The implementation and focused coverage address each finding. Final focused Go, QA, product, and infosec reruns found no actionable findings.
 - Residual risk: preflight, removal, and absence verification are separate InvenTree requests, so a concurrent UI or API writer can race the interval. After an ambiguous removal, exact-ID not-found proves absence but cannot distinguish this operation from a concurrent authorized removal. Operators should coordinate a single writer and inspect the stable stock-item ID before starting a new plan.
+
+### F-S25: InvenTree Tool And Server Icons
+
+- Status: `Done`
+- Depends on: F-S16
+- Progress: implementation started on `codex/f-s25-inventree-tool-icons` from `v0.0.5`. The selected shared asset is the official documentation-hosted PNG at `https://docs.inventree.org/en/latest/assets/logo.png` so current InvenTree branding can be reused without bundling a duplicate image.
+- Scope: publish the official InvenTree logo through standard MCP icon metadata for every registered tool and for the MCP server implementation identity. Keep rendering client-controlled and do not add an Apps SDK widget, Codex plugin package, or new tool behavior.
+- Acceptance:
+  - Every registered tool descriptor exposes exactly one icon with source `https://docs.inventree.org/en/latest/assets/logo.png` and MIME type `image/png`.
+  - The server implementation identity exposes the same icon through standard MCP initialization metadata.
+  - One shared definition supplies the URL and icon metadata so server and tool branding cannot drift.
+  - Deterministic SDK-boundary tests verify tool-list and initialization metadata, including the serialized `src` and `mimeType` fields.
+  - The checked tool manifest and public tool reference record the icon contract and explain that MCP clients decide whether and where to render it.
+  - Existing tool names, annotations, OAuth scopes, input/output schemas, and handler behavior remain unchanged.
+
+Tasks:
+
+- [x] Add shared official InvenTree icon metadata.
+- [x] Attach the icon to every tool descriptor and the server implementation identity.
+- [x] Add deterministic descriptor, initialization, and checked-manifest coverage.
+- [x] Align the public tool reference and task evidence.
+- [x] Run Go, QA, product, and infosec review and resolve or document findings.
+
+- Validation: `go generate ./internal/tools`, `go mod tidy -diff`, `go vet ./...`, `golangci-lint run ./...`, `GOFLAGS=-trimpath go test -race -p=1 ./...`, and `git diff --check` pass. `go test -p=1 -tags no_integration_tests -cover ./...` passes with `internal/server` at 76.2% and `internal/tools` at 82.1%, unchanged from the exact `origin/main` base. The first concurrent current/base coverage attempt hit the known unrelated `TestRunCommandUsesIsolatedBoundedProcess` timeout; the exact-base run passed and the required serial `-p=1` current-tree rerun passed.
+- Review: Senior Go Developer, Senior QA / Test Architect, Senior Product Manager, and Senior Infosec Reviewer reviews completed because F-S25 changes the public MCP tool surface and documentation contract. Findings required raw JSON-RPC assertions for the `server/discover` identity and every `tools/list` icon, binding the server assertion specifically to the discovery result, and documenting mutable external-asset availability, caching, content/MIME drift, and cross-origin privacy/trust behavior. The tests and docs address each finding; focused Go, QA, product, and infosec reruns found no actionable findings.
+- Residual risk: MCP clients control icon rendering and may ignore standard icon metadata, cache an older image, or continue showing a generic tool glyph. The externally hosted mutable `en/latest` asset intentionally follows upstream branding, so its availability, content, or MIME behavior can change independently of an `inventree-mcp` release. Rendering can make a cross-origin request to `docs.inventree.org` that exposes client network metadata such as egress IP, user agent, and request timing. Clients should fetch without credentials, validate decoded image content independently of the advisory MIME type, and may reject the icon under stricter external-content policy.

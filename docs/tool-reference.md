@@ -6,11 +6,13 @@ This file is the operator-facing and agent-facing reference for registered MCP t
 
 ## Checked Tool Manifest
 
-`docs/tool-manifest.json` is generated from `internal/tools.ToolAuthorizations` and `internal/tools.PromptManifest` with:
+`docs/tool-manifest.json` is generated from `internal/tools.ToolAuthorizations`, `internal/tools.PromptManifest`, and `internal/tools.InvenTreeIcon` with:
 
 ```sh
 go generate ./internal/tools
 ```
+
+Every registered tool and the MCP server implementation identity publish the official InvenTree documentation logo at `https://docs.inventree.org/en/latest/assets/logo.png` with MIME type `image/png`. The checked manifest records the per-tool icon metadata. Rendering remains client-controlled, so an MCP client may ignore the icon, cache an older image, or continue to show its generic tool glyph. Because the `en/latest` asset is externally hosted and intentionally follows current upstream branding, its availability, content, or MIME behavior can change independently of an `inventree-mcp` release. A client that renders the icon may make a cross-origin request to `docs.inventree.org`, exposing network metadata such as its egress IP, user agent, and request timing. Clients should fetch it without credentials, validate the decoded image independently of the advisory MIME type, and may reject it under stricter external-content policy.
 
 The manifest is checked in and tested. It records each registered tool's `milestone_1` status, mutation class (`read_only`, `write`, `operational`, or `destructive`), required scopes, MCP annotation booleans, upload source class, and HTTP registration state. Read-only tools and `health_version` are `registered` for HTTP development mode. Production HTTP startup registers write, operational, upload, image, and destructive tools only with OAuth authorization mode enabled, where they are `registered_with_oauth_scope_guard`.
 
@@ -23,6 +25,7 @@ Each registered tool must have:
 - Milestone status: `milestone_1`, `future`, or `deferred`.
 - Mutation class: `read_only`, `write`, `operational`, or `destructive`.
 - MCP annotations: read-only, destructive, idempotent, and open-world behavior.
+- Standard MCP icon source and MIME type.
 - Required OAuth scopes.
 - Accepted upload sources, when relevant: `inline_base64`, `stdio_local_path`, `http_url_fetch`, `http_url_link`, or `existing_attachment_image`.
 - Stable retry fields for clarification responses.

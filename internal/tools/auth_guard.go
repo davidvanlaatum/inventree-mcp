@@ -13,7 +13,16 @@ const (
 	MetaSecuritySchemesKey       = "securitySchemes"
 	MetaOpenAISecuritySchemesKey = "openai/securitySchemes"
 	MetaWWWAuthenticateKey       = "mcp/www_authenticate"
+	InvenTreeIconSource          = "https://docs.inventree.org/en/latest/assets/logo.png"
 )
+
+// InvenTreeIcon returns the shared official icon metadata for MCP descriptors.
+func InvenTreeIcon() mcp.Icon {
+	return mcp.Icon{
+		Source:   InvenTreeIconSource,
+		MIMEType: "image/png",
+	}
+}
 
 type OAuthSecurityScheme struct {
 	Type   string   `json:"type"`
@@ -34,6 +43,7 @@ func ToolDescriptor(name string, title string, description string) *mcp.Tool {
 		Title:       title,
 		Description: description,
 		Annotations: ToolAnnotations(authz.Annotations),
+		Icons:       []mcp.Icon{InvenTreeIcon()},
 	}
 	if len(authz.Scopes) > 0 {
 		schemes := []OAuthSecurityScheme{{Type: "oauth2", Scopes: append([]string(nil), authz.Scopes...)}}
