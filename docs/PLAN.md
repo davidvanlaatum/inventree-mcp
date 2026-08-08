@@ -556,6 +556,7 @@ The fetched schema facts and attachment/image capability table live in `docs/api
 
 Important behaviors:
 
+- Preserve InvenTree's endpoint-specific `model_type` contracts. Attachment tools use the attachment endpoint's short values (`part`, `stockitem`, `company`, `manufacturerpart`, `supplierpart`, and `purchaseorder` in current scope), while parameter templates use the parameter endpoint's qualified `app.model` values such as `part.part` and `order.purchaseorder`. Tool schemas and operator docs must list the applicable vocabulary explicitly and must not present either enum as valid for the other endpoint.
 - For milestone 1, expose attachment tools only for `part`, `stockitem`, `company`, `supplierpart`, `manufacturerpart`, and existing `purchaseorder` records. Build, transfer, return, sales, and BOM-related attachment workflows are deferred even if the generic attachment schema can represent them.
 - Support image uploads for object types that expose image fields or attachment-backed images.
 - Support attachment download through `download_attachment` using a stable attachment ID. It is read-only, requires `inventree.read`, must resolve attachment metadata first, must reject metadata whose `model_type` is outside the milestone attachment object allowlist before fetching bytes, and must fetch only schema-supported attachment or thumbnail URLs belonging to the configured InvenTree instance. It must not fetch arbitrary caller-provided URLs and must not use the URL-upload fetcher.

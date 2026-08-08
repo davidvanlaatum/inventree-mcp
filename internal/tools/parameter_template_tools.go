@@ -33,7 +33,7 @@ type CreateParameterTemplateInput struct {
 	Name            string  `json:"name" jsonschema:"Explicit nonblank parameter-template name."`
 	Units           *string `json:"units" jsonschema:"Explicit units; use an empty string for a unitless template."`
 	Description     *string `json:"description" jsonschema:"Explicit description; use an empty string when no description is needed."`
-	ModelType       *string `json:"model_type" jsonschema:"Explicit InvenTree model-type restriction; use an empty string for no restriction. Supported values: build.build, company.company, company.manufacturerpart, company.supplierpart, order.purchaseorder, order.returnorder, order.salesorder, order.salesordershipment, order.transferorder, part.part, part.partcategory, stock.stocklocation."`
+	ModelType       *string `json:"model_type" jsonschema:"Explicit InvenTree parameter model-type restriction. Use one of the parameter endpoint's qualified app.model values: build.build, company.company, company.manufacturerpart, company.supplierpart, order.purchaseorder, order.returnorder, order.salesorder, order.salesordershipment, order.transferorder, part.part, part.partcategory, or stock.stocklocation; use an empty string for no restriction. Do not use attachment model types such as part or purchaseorder."`
 	Checkbox        *bool   `json:"checkbox" jsonschema:"Explicit checkbox behavior."`
 	Choices         *string `json:"choices" jsonschema:"Explicit comma-separated choices; use an empty string for free-form values."`
 	SelectionListID *int    `json:"selection_list_id,omitempty" jsonschema:"Optional existing InvenTree selection-list primary key."`
@@ -45,7 +45,7 @@ type UpdateParameterTemplateInput struct {
 	Name               *string `json:"name,omitempty" jsonschema:"Optional replacement name; empty names are rejected."`
 	Units              *string `json:"units,omitempty" jsonschema:"Optional replacement units, including an explicit empty string."`
 	Description        *string `json:"description,omitempty" jsonschema:"Optional replacement description, including an explicit empty string."`
-	ModelType          *string `json:"model_type,omitempty" jsonschema:"Optional replacement model-type restriction, including an explicit empty string; nonempty values must use the documented InvenTree model-type enum."`
+	ModelType          *string `json:"model_type,omitempty" jsonschema:"Optional replacement InvenTree parameter model-type restriction. Use one of the parameter endpoint's qualified app.model values: build.build, company.company, company.manufacturerpart, company.supplierpart, order.purchaseorder, order.returnorder, order.salesorder, order.salesordershipment, order.transferorder, part.part, part.partcategory, or stock.stocklocation; use an explicit empty string for no restriction. Do not use attachment model types such as part or purchaseorder."`
 	Checkbox           *bool   `json:"checkbox,omitempty" jsonschema:"Optional explicit checkbox behavior."`
 	Choices            *string `json:"choices,omitempty" jsonschema:"Optional replacement choices, including an explicit empty string."`
 	SelectionListID    *int    `json:"selection_list_id,omitempty" jsonschema:"Optional replacement selection-list primary key."`
