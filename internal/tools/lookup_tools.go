@@ -89,6 +89,7 @@ const (
 	SetStockStatusToolName                  = "set_stock_status"
 	StocktakeAdjustmentToolName             = "stocktake_adjustment"
 	DepleteStockItemToolName                = "deplete_stock_item"
+	TransferStockItemToolName               = "transfer_stock_item"
 	CreatePurchaseOrderToolName             = "create_purchase_order"
 	AddPurchaseOrderLineToolName            = "add_purchase_order_line"
 	UpdatePurchaseOrderLineToolName         = "update_purchase_order_line"
@@ -195,6 +196,7 @@ var writeToolNames = []string{
 	SetStockStatusToolName,
 	StocktakeAdjustmentToolName,
 	DepleteStockItemToolName,
+	TransferStockItemToolName,
 	CreatePurchaseOrderToolName,
 	AddPurchaseOrderLineToolName,
 	UpdatePurchaseOrderLineToolName,
@@ -244,7 +246,7 @@ func init() {
 		case CreateStockItemToolName, InitialStockWorkflowToolName:
 			scopes = []string{ScopeInventreeWrite, ScopeInventreeOperational}
 			mutationClass = "operational"
-		case AdjustStockQuantityToolName, SetStockStatusToolName, StocktakeAdjustmentToolName, RestructureStockLocationToolName, UpdateStockItemMetadataToolName:
+		case AdjustStockQuantityToolName, SetStockStatusToolName, StocktakeAdjustmentToolName, TransferStockItemToolName, RestructureStockLocationToolName, UpdateStockItemMetadataToolName:
 			scopes = []string{ScopeInventreeRead, ScopeInventreeWrite, ScopeInventreeOperational}
 			mutationClass = "operational"
 		case DepleteStockItemToolName:

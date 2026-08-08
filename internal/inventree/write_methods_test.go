@@ -369,6 +369,25 @@ func TestWriteMethodsUseExpectedEndpoints(t *testing.T) {
 			},
 		},
 		{
+			name: "transfer stock uses native transfer endpoint",
+			call: func(ctx context.Context, client *Client) error {
+				return client.TransferStock(ctx, StockTransfer{Items: []StockAdjustmentItem{{PK: 50, Quantity: "7"}}, Notes: "move to corrected drawer", Location: 12})
+			},
+			method:   http.MethodPost,
+			path:     "/api/stock/transfer/",
+			response: `{}`,
+			assert: func(a *assert.Assertions, body map[string]any) {
+				items := body["items"].([]any)
+				item := items[0].(map[string]any)
+				a.Equal(float64(50), item["pk"])
+				a.Equal("7", item["quantity"])
+				a.Len(item, 2)
+				a.Equal("move to corrected drawer", body["notes"])
+				a.Equal(float64(12), body["location"])
+				a.Len(body, 3)
+			},
+		},
+		{
 			name: "change stock status uses status-only endpoint",
 			call: func(ctx context.Context, client *Client) error {
 				return client.ChangeStockStatus(ctx, StockStatusChange{Items: []int{50}, Status: 60, Note: "destroyed after inspection"})

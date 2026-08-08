@@ -127,6 +127,12 @@ type StockAdjustment struct {
 	Notes string                `json:"notes"`
 }
 
+type StockTransfer struct {
+	Items    []StockAdjustmentItem `json:"items"`
+	Notes    string                `json:"notes"`
+	Location int                   `json:"location"`
+}
+
 type StockStatusChange struct {
 	Items  []int  `json:"items"`
 	Status int    `json:"status"`
@@ -377,6 +383,10 @@ func (c *Client) RemoveStock(ctx context.Context, input StockAdjustment) error {
 
 func (c *Client) CountStock(ctx context.Context, input StockAdjustment) error {
 	return c.Post(ctx, "/api/stock/count/", input, nil)
+}
+
+func (c *Client) TransferStock(ctx context.Context, input StockTransfer) error {
+	return c.Post(ctx, "/api/stock/transfer/", input, nil)
 }
 
 func (c *Client) ChangeStockStatus(ctx context.Context, input StockStatusChange) error {

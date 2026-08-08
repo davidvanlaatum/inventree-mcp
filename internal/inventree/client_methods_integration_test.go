@@ -12,6 +12,7 @@ import (
 	"math/big"
 	"mime/multipart"
 	"net/http"
+	"net/url"
 	"os"
 	"strconv"
 	"testing"
@@ -784,6 +785,80 @@ func TestClientMethodsAgainstInvenTree(t *testing.T) {
 		r.Equal(location.ID, *stock.Location)
 		r.NotNil(stock.Batch)
 		r.Equal(batch, *stock.Batch)
+
+		destinationName, err := fixture.run.Name("stock-transfer-destination")
+		r.NoError(err)
+		external := true
+		transferDestination, err := fixture.client.CreateStockLocation(ctx, inventree.StockLocationCreate{Name: destinationName, Parent: &location.ID, External: &external})
+		r.NoError(err)
+		r.True(transferDestination.External)
+		r.NoError(fixture.client.TransferStock(ctx, inventree.StockTransfer{Items: []inventree.StockAdjustmentItem{{PK: stock.PK, Quantity: "4"}}, Notes: "integration full transfer", Location: transferDestination.PK}))
+		transferred, err := fixture.client.GetStockItem(ctx, stock.PK)
+		r.NoError(err)
+		r.Equal(stock.PK, transferred.PK)
+		r.Equal(4.0, transferred.Quantity)
+		r.NotNil(transferred.Location)
+		r.Equal(transferDestination.PK, *transferred.Location)
+		r.Equal(stock.Part, transferred.Part)
+		r.Equal(stock.Status, transferred.Status)
+		r.Equal(stock.Batch, transferred.Batch)
+		r.Equal(stock.Packaging, transferred.Packaging)
+		r.Equal(stock.SupplierPart, transferred.SupplierPart)
+		r.Equal(stock.PurchaseOrder, transferred.PurchaseOrder)
+		r.Equal(stock.PurchasePrice, transferred.PurchasePrice)
+		r.Equal(stock.PurchasePriceCurrency, transferred.PurchasePriceCurrency)
+
+		var tracking struct {
+			Results []struct {
+				PK           int     `json:"pk"`
+				Item         *int    `json:"item"`
+				Notes        *string `json:"notes"`
+				TrackingType int     `json:"tracking_type"`
+			} `json:"results"`
+		}
+		req, err := fixture.client.NewRequest(ctx, http.MethodGet, "/api/stock/track/", url.Values{"item": []string{strconv.Itoa(stock.PK)}, "limit": []string{"100"}, "ordering": []string{"-date"}}, nil)
+		r.NoError(err)
+		r.NoError(fixture.client.DoJSON(req, &tracking))
+		r.NotEmpty(tracking.Results)
+		foundTransfer := false
+		for _, entry := range tracking.Results {
+			if entry.Item != nil && *entry.Item == stock.PK && entry.Notes != nil && *entry.Notes == "integration full transfer" {
+				foundTransfer = true
+				r.NotZero(entry.PK)
+				r.NotZero(entry.TrackingType)
+			}
+		}
+		r.True(foundTransfer, "native full transfer should record an exact-item tracking entry with the audit reason")
+
+		supplier := fixture.ensure(t, testenv.FixtureSupplier)
+		supplierPart := fixture.ensure(t, testenv.FixtureSupplierPart)
+		supplierReference, err := fixture.run.Name("stock-transfer-po")
+		r.NoError(err)
+		order, err := fixture.client.CreatePurchaseOrder(ctx, inventree.PurchaseOrderCreate{Supplier: supplier.ID, SupplierReference: &supplierReference, OrderCurrency: dvgoutils.Ptr("AUD")})
+		r.NoError(err)
+		lineReference, err := fixture.run.Name("stock-transfer-line")
+		r.NoError(err)
+		line, err := fixture.client.CreatePurchaseOrderLine(ctx, inventree.PurchaseOrderLineCreate{Order: order.PK, SupplierPart: supplierPart.ID, Reference: &lineReference, Quantity: 2, PurchasePrice: dvgoutils.Ptr("1.25"), PurchasePriceCurrency: dvgoutils.Ptr("AUD"), Destination: &location.ID})
+		r.NoError(err)
+		r.NoError(fixture.client.IssuePurchaseOrder(ctx, order.PK))
+		received, err := fixture.client.ReceivePurchaseOrder(ctx, order.PK, inventree.PurchaseOrderReceive{Items: []inventree.PurchaseOrderReceiveItem{{LineItem: line.PK, Location: &location.ID, Quantity: "2", BatchCode: dvgoutils.Ptr("transfer-provenance")}}})
+		r.NoError(err)
+		r.Len(received, 1)
+		provenanceBefore, err := fixture.client.GetStockItem(ctx, received[0].PK)
+		r.NoError(err)
+		r.NotNil(provenanceBefore.SupplierPart)
+		r.NotNil(provenanceBefore.PurchaseOrder)
+		r.NotNil(provenanceBefore.PurchasePrice)
+		r.Equal("AUD", provenanceBefore.PurchasePriceCurrency)
+		r.NoError(fixture.client.TransferStock(ctx, inventree.StockTransfer{Items: []inventree.StockAdjustmentItem{{PK: provenanceBefore.PK, Quantity: "2"}}, Notes: "integration provenance transfer", Location: transferDestination.PK}))
+		provenanceAfter, err := fixture.client.GetStockItem(ctx, provenanceBefore.PK)
+		r.NoError(err)
+		r.Equal(provenanceBefore.PK, provenanceAfter.PK)
+		r.Equal(provenanceBefore.SupplierPart, provenanceAfter.SupplierPart)
+		r.Equal(provenanceBefore.PurchaseOrder, provenanceAfter.PurchaseOrder)
+		r.Equal(provenanceBefore.PurchasePrice, provenanceAfter.PurchasePrice)
+		r.Equal(provenanceBefore.PurchasePriceCurrency, provenanceAfter.PurchasePriceCurrency)
+		r.Equal(provenanceBefore.Batch, provenanceAfter.Batch)
 
 		r.NoError(fixture.client.ChangeStockStatus(ctx, inventree.StockStatusChange{Items: []int{stock.PK}, Status: 55, Note: "integration damaged status"}))
 		stock, err = fixture.client.GetStockItem(ctx, stock.PK)

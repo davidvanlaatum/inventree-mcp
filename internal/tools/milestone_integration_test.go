@@ -874,6 +874,40 @@ func TestMilestoneHappyPathToolsAgainstInvenTree(t *testing.T) {
 		r.NotNil(counted.Record.Packaging)
 		a.Equal(packaging, *counted.Record.Packaging)
 
+		transferDestinationName, err := fixture.run.Name("stock-transfer-destination")
+		r.NoError(err)
+		transferDestination, err := fixture.client.CreateStockLocation(ctx, inventree.StockLocationCreate{Name: transferDestinationName, Parent: &location.ID, External: dvgoutils.Ptr(true)})
+		r.NoError(err)
+		transferInput := TransferStockItemInput{DryRun: true, StockItemID: stock.PK, DestinationLocationID: transferDestination.PK, Reason: "integration move to corrected drawer"}
+		_, transferPlan, err := transferStockItem(fixture.deps())(ctx, &mcp.CallToolRequest{}, transferInput)
+		r.NoError(err)
+		r.Equal(StatusOK, transferPlan.Status, "unexpected transfer clarification: %+v", transferPlan.Clarification)
+		r.NotEmpty(transferPlan.PlanHash)
+		r.NotNil(transferPlan.Plan.Transfer)
+		a.False(transferPlan.Plan.Transfer.WillSplit)
+		a.Equal(location.ID, transferPlan.Plan.Transfer.Source.ID)
+		a.Equal(transferDestination.PK, transferPlan.Plan.Transfer.Destination.ID)
+		a.True(transferPlan.Plan.Transfer.Destination.External)
+		a.Equal(7.0, transferPlan.Plan.Before.Quantity)
+		a.Equal(7.0, transferPlan.Plan.After.Quantity)
+		transferInput.DryRun = false
+		transferInput.Confirm = true
+		transferInput.PlanHash = transferPlan.PlanHash
+		_, transferred, err := transferStockItem(fixture.deps())(ctx, &mcp.CallToolRequest{}, transferInput)
+		r.NoError(err)
+		a.Equal(StatusOK, transferred.Status)
+		a.True(transferred.Verified)
+		a.False(transferred.Recovered)
+		r.NotNil(transferred.Record)
+		a.Equal(stock.PK, transferred.Record.PK)
+		a.Equal(7.0, transferred.Record.Quantity)
+		r.NotNil(transferred.Record.Location)
+		a.Equal(transferDestination.PK, *transferred.Record.Location)
+		r.NotNil(transferred.Record.Batch)
+		a.Equal(batch, *transferred.Record.Batch)
+		r.NotNil(transferred.Record.Packaging)
+		a.Equal(packaging, *transferred.Record.Packaging)
+
 		statusInput := SetStockStatusInput{DryRun: true, StockItemID: stock.PK, Status: stockStatusDamaged, Reason: "integration inspection found damage"}
 		_, statusPlan, err := setStockStatus(fixture.deps())(ctx, &mcp.CallToolRequest{}, statusInput)
 		r.NoError(err)
@@ -921,6 +955,11 @@ func TestMilestoneHappyPathToolsAgainstInvenTree(t *testing.T) {
 		a.Equal(StatusClarificationRequired, serializedDepletion.Status)
 		r.NotNil(serializedDepletion.Clarification)
 		a.Equal("serial", serializedDepletion.Clarification.Field)
+		_, serializedTransfer, err := transferStockItem(fixture.deps())(ctx, &mcp.CallToolRequest{}, TransferStockItemInput{DryRun: true, StockItemID: serialized.PK, DestinationLocationID: transferDestination.PK, Reason: "integration unsafe serialized transfer"})
+		r.NoError(err)
+		a.Equal(StatusClarificationRequired, serializedTransfer.Status)
+		r.NotNil(serializedTransfer.Clarification)
+		a.Equal("serial", serializedTransfer.Clarification.Field)
 		serializedStillPresent, err := fixture.client.GetStockItem(ctx, serialized.PK)
 		r.NoError(err)
 		a.Equal(serialized.PK, serializedStillPresent.PK)
@@ -970,6 +1009,28 @@ func TestMilestoneHappyPathToolsAgainstInvenTree(t *testing.T) {
 		a.Equal(StatusOK, recovered.Status)
 		a.True(recovered.Verified)
 		a.True(recovered.Recovered)
+
+		lostTransferStock, err := fixture.client.CreateStockItem(ctx, inventree.StockItemCreate{Part: part.ID, Location: location.ID, Quantity: 3, Batch: dvgoutils.Ptr("response-loss-transfer")})
+		r.NoError(err)
+		lostTransferClient, err := shared.ClientWithHTTPClient(fixture.account, &http.Client{Transport: &loseMutationResponseTransport{base: http.DefaultTransport, method: http.MethodPost, path: "/api/stock/transfer/"}})
+		r.NoError(err)
+		lostTransferDeps := fixture.deps()
+		lostTransferDeps.ClientFromContext = func(context.Context) (any, error) { return lostTransferClient, nil }
+		lostTransferInput := TransferStockItemInput{DryRun: true, StockItemID: lostTransferStock.PK, DestinationLocationID: transferDestination.PK, Reason: "integration response-loss transfer"}
+		_, lostTransferPlan, err := transferStockItem(lostTransferDeps)(ctx, &mcp.CallToolRequest{}, lostTransferInput)
+		r.NoError(err)
+		lostTransferInput.DryRun = false
+		lostTransferInput.Confirm = true
+		lostTransferInput.PlanHash = lostTransferPlan.PlanHash
+		_, recoveredTransfer, err := transferStockItem(lostTransferDeps)(ctx, &mcp.CallToolRequest{}, lostTransferInput)
+		r.NoError(err)
+		a.Equal(StatusOK, recoveredTransfer.Status)
+		a.True(recoveredTransfer.Verified)
+		a.True(recoveredTransfer.Recovered)
+		r.NotNil(recoveredTransfer.Record)
+		a.Equal(lostTransferStock.PK, recoveredTransfer.Record.PK)
+		r.NotNil(recoveredTransfer.Record.Location)
+		a.Equal(transferDestination.PK, *recoveredTransfer.Record.Location)
 	})
 
 	t.Run("attachment_target_matrix_upload_download_and_max_bytes", func(t *testing.T) {

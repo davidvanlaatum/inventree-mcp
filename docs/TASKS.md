@@ -106,6 +106,9 @@ Before `M1C-S04` is complete, mutating, operational, destructive, and upload too
 | [F-S24](#f-s24-guarded-delete-on-deplete-stock-depletion) | Intentionally deplete and delete one safe delete-on-deplete stock item. | Done |
 | [F-S25](#f-s25-inventree-tool-and-server-icons) | Brand MCP tool calls and server identity with the official InvenTree icon. | Done |
 | [F-S26](#f-s26-mcp-functionality-gap-guidance) | Guide consuming agents to surface untracked MCP functionality gaps for operator-approved issue creation. | Done |
+| [F-S27](#f-s27-guarded-full-stock-item-transfer) | Move one complete safe stock item to an explicit valid destination. | Done |
+| [F-S28](#f-s28-partial-stock-item-transfer-and-split-recovery) | Add partial transfers after split identity and recovery semantics are approved. | Planned |
+| [F-S29](#f-s29-reviewed-multi-item-stock-transfer-batches) | Add reviewed transfer batches after atomicity and failure semantics are verified. | Planned |
 
 ## Milestone 0: Repository And Planning
 
@@ -1674,3 +1677,82 @@ Tasks:
 - Validation: `go test -race ./internal/server`, `GOFLAGS=-trimpath go test -race -p=1 ./...`, `go vet ./...`, `golangci-lint run ./...`, `go mod tidy -diff`, and `git diff --check` pass. `go test -tags no_integration_tests -cover ./internal/server` reports 76.2% statement coverage, unchanged from the exact `origin/main` base.
 - Review: Senior Go Developer, Senior QA / Test Architect, and Senior Product Manager reviews completed because F-S26 changes MCP initialization behavior and public operator contracts. Initial Go and QA findings identified missing legacy `initialize` coverage over the STDIO-equivalent transport; the added deterministic fallback test proves the exact instructions in both the typed SDK result and parsed JSON-RPC response. Product review found the operator guidance was incorrectly nested under STDIO setup; it now lives in a transport-neutral section that names current discovery, legacy initialization, STDIO, and HTTP. Focused reruns found no remaining actionable findings.
 - Residual risk: MCP clients control whether and how server instructions reach their agents and may ignore or reinterpret this advisory guidance. GitHub searches can be unavailable, incomplete, or stale, and semantic duplicate matching remains agent-dependent. Future MCP SDK behavior may change, so upgrades must retain the current discovery and legacy initialization assertions.
+
+### F-S27: Guarded Full Stock-Item Transfer
+
+- Status: `Done`
+- Issue: [#95](https://github.com/davidvanlaatum/inventree-mcp/issues/95)
+- Depends on: F-S21, F-S22, product review, QA review, and infosec review
+- Progress: implementation completed on `codex/f-s27-guarded-stock-transfer`, originally based on `main` at `0a8efb4d`. The approved first slice accepts one stable stock-item ID and one explicit stable destination-location ID, moves the complete current quantity only, and never intentionally splits or batches stock. Every destination that passes exact-ID read and InvenTree's native transfer validation is eligible; the MCP adds no structural, external, or ownership exclusion. Partial/split behavior is deferred to F-S28 and multi-item batching to F-S29.
+- Scope: add one current-state-bound operational tool that transfers the complete current quantity of one ordinary safe stock item through `/api/stock/transfer/`, records a nonblank audit reason, preserves reviewed provenance, and verifies the original stable stock-item ID at the explicit destination. Reject no-op, depleted, unavailable, allocated, serialized, build-related, consumed, installed, parent/child, or otherwise protected source state. Return structured read-before-retry recovery when the result cannot be proved. Do not infer the part default location, accept a caller quantity, create a split, or batch multiple source items.
+- Acceptance:
+  - Exact positive `stock_item_id` and `destination_location_id` values plus a nonblank audit reason are required; the destination is never inferred.
+  - Dry run reports the complete current quantity, source and destination location IDs and paths, affected part, reviewed safety and provenance state, and `will_split:false` without writing.
+  - Execution requires `confirm:true` and the exact principal-bound, five-minute, single-use token from the matching current-state dry run; stale, reused, mismatched, or restart-invalidated tokens do not write.
+  - Source validation requires a current source location and rejects non-positive or schema-invalid quantity, unavailable stock, unknown or nonzero allocation, serialization, build/consumption, installation, parent/child, and other protected relationship state with structured clarification.
+  - Every exact-read destination remains eligible regardless of structural, external, or ownership metadata unless InvenTree rejects it; same-location transfers are refused as no-ops and safe upstream validation errors are returned without mutation claims.
+  - Execution posts exactly one `{pk, quantity}` entry containing the complete reviewed quantity to the native transfer endpoint with the audit reason, then verifies the original exact stable ID at the destination with unchanged reviewed quantity and provenance.
+  - An ambiguous upstream result is recovered only when exact-ID read-back proves the complete reviewed transfer; other verification outcomes return `partial_failure` with the current safe record when available and explicit no-blind-retry guidance.
+  - OAuth authorization requires `inventree.read`, `inventree.write`, and `inventree.operational`; the tool is operational, closed-world, non-destructive, and non-idempotent.
+  - API capability notes, endpoint manifest, tool reference, operator recipe, stocktake prompt, generated tool manifest, and task/issue evidence stay aligned.
+  - Unit, MCP-boundary, authorization, deterministic response-loss, and default-on pinned InvenTree 1.4.3 Testcontainers coverage exercise full transfer, provenance and tracking retention, all-valid-destination behavior, invalid/no-op/unsafe state refusal, stale/reused confirmation, and recovery paths.
+
+Tasks:
+
+- [x] Add typed native stock-transfer client behavior and endpoint-manifest coverage.
+- [x] Add the guarded full-transfer tool, current-state plan, scopes, annotations, and recovery behavior.
+- [x] Add deterministic, MCP-boundary, authorization, and pinned-live coverage.
+- [x] Align schema notes, tool reference, operator recipe, stocktake prompt, generated manifest, and issue evidence.
+- [x] Run the full Go, QA, product, and infosec review panel and resolve or document findings.
+
+- Validation: `go generate ./internal/tools`, `go mod tidy -diff`, `go vet ./...`, `golangci-lint run ./...`, `GOFLAGS=-trimpath go test -race -p=1 ./...`, and `git diff --check` pass. Focused default-on InvenTree 1.4.3 runs prove the typed client transfer and guarded tool success/recovery paths against the real API, including an external destination, stable item identity, audit tracking, and nonempty supplier-part, purchase-order, price/currency, and batch provenance retention. `go test -p=1 -tags no_integration_tests -cover ./...` passes with `internal/inventree` at 91.8% and `internal/tools` at 82.4%; the exact pre-F-S27 base reports 91.8% and 82.1%, respectively, so no package-level reduction was introduced.
+- Review: Senior Go Developer, Senior QA / Test Architect, Senior Product Manager, and Senior Infosec Reviewer reviews completed because F-S27 adds a mutating operational tool, public contract, and Testcontainers coverage. Initial findings required a non-null source schema, output-type reuse, exact-read failure and identity tests, explicit one-attempt recovery assertions, real nonempty pinned purchase provenance, and consistent destination/source clarification plus exact-ID recovery guidance. The implementation, tests, and docs address every finding; focused Go, QA, product, and infosec reruns found no remaining actionable findings.
+- Residual risk: InvenTree exposes no conditional stock-transfer revision, and the native write and exact-ID verification are separate requests. Another writer can race the final interval; a divergent read-back returns `partial_failure`, but an indistinguishable concurrent write could still escape detection. Native destination rules can also reject an exact-read location after preflight, and that definite rejection is returned without a mutation claim.
+
+### F-S28: Partial Stock-Item Transfer And Split Recovery
+
+- Status: `Planned`
+- Issue: [#97](https://github.com/davidvanlaatum/inventree-mcp/issues/97)
+- Depends on: F-S27, pinned InvenTree split-behavior verification, product review, QA review, and infosec review
+- Scope: add a guarded single-source partial-quantity transfer only after pinned InvenTree behavior establishes the source remainder, destination record identity, copied provenance, tracking events, and a response-loss recovery contract that cannot duplicate a split. Preserve F-S27's complete-transfer input and behavior unchanged. Do not add multi-item batching or implicit default-location resolution.
+- Acceptance:
+  - Product review explicitly approves partial quantity validation, split-result identity, safe source states, and recovery behavior before implementation becomes Active.
+  - Pinned-live evidence identifies the source and destination stable records, copied provenance, and tracking behavior for a split.
+  - Dry run exposes source remainder, destination quantity, paths, provenance, split behavior, and every recovery assumption.
+  - Ambiguous execution never creates a second split or advises a blind retry; unresolved identity returns actionable read-before-retry recovery.
+  - OAuth, annotations, public docs, generated manifests, and deterministic plus pinned-live coverage stay aligned without changing F-S27.
+
+Tasks:
+
+- [ ] Verify and document pinned InvenTree partial-transfer and split identity behavior.
+- [ ] Resolve the product, QA, and infosec contract decisions.
+- [ ] Implement only the approved partial-transfer and recovery surface.
+- [ ] Validate, review, and align public contracts without widening into F-S29.
+
+- Validation: pending implementation selection.
+- Review: pending implementation selection.
+- Residual risk: split-result recovery identity is intentionally unresolved until pinned-live evidence exists.
+
+### F-S29: Reviewed Multi-Item Stock-Transfer Batches
+
+- Status: `Planned`
+- Issue: [#98](https://github.com/davidvanlaatum/inventree-mcp/issues/98)
+- Depends on: F-S27, pinned InvenTree batch atomicity/failure verification, product review, QA review, and infosec review; also F-S28 if partial quantities are approved for batches
+- Scope: add bounded reviewed multi-item transfers only after native atomicity, validation, response-loss, and partial-progress behavior are characterized. Preserve F-S27 as the simple single-item workflow and do not silently include F-S28 partial quantities. Do not add transfer-order workflows or implicit default-location resolution.
+- Acceptance:
+  - Product review explicitly selects complete-only versus partial-capable batches, duplicate-source handling, maximum size, ordering, and any source/provenance restrictions.
+  - Pinned-live tests establish native atomicity and mid-batch failure behavior before implementation becomes Active.
+  - One current-state-bound plan lists every stable item, quantity, source/destination path, provenance, split behavior, and deterministic action order.
+  - Results distinguish verified, recovered, failed, and unknown per-item outcomes without blind retry guidance and within bounded request/response sizes.
+  - OAuth, annotations, public docs, generated manifests, and deterministic plus pinned-live coverage stay aligned without changing F-S27 or F-S28 contracts.
+
+Tasks:
+
+- [ ] Verify and document pinned InvenTree batch atomicity and failure behavior.
+- [ ] Resolve complete-only/partial, duplicate, size, ordering, and recovery decisions.
+- [ ] Implement only the approved bounded batch surface.
+- [ ] Validate, review, and align public contracts.
+
+- Validation: pending implementation selection.
+- Review: pending implementation selection.
+- Residual risk: native batch atomicity and response-loss semantics are intentionally unresolved until pinned-live evidence exists.
