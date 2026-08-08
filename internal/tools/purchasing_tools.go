@@ -298,6 +298,7 @@ func registerPurchasingWriteTools(server *mcp.Server, deps Dependencies) {
 	addWriteTool(server, deps, CreatePurchaseOrderToolName, "Create purchase order", "Creates a purchase order for an existing supplier.", createPurchaseOrder(deps))
 	addWriteTool(server, deps, AddPurchaseOrderLineToolName, "Add purchase order line", "Adds a validated supplier-part line to an existing purchase order.", addPurchaseOrderLine(deps))
 	addWriteTool(server, deps, UpdatePurchaseOrderLineToolName, "Update purchase order line", "Partially updates a purchase-order line after supplier consistency validation.", updatePurchaseOrderLine(deps))
+	registerPurchaseOrderLineDeleteTool(server, deps)
 	registerPurchaseOrderExtraLineWriteTools(server, deps)
 	addWriteTool(server, deps, CreatePurchaseOrderWorkflowToolName, "Create purchase order with lines", "Plans or retry-recoverably creates or updates a purchase order and validated lines.", createPurchaseOrderWithLines(deps))
 	addWriteTool(server, deps, IssuePurchaseOrderToolName, "Issue purchase order", "Plans or explicitly confirms placing a pending purchase order with its supplier.", issuePurchaseOrder(deps))
