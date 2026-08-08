@@ -93,6 +93,7 @@ func registerAttachmentWriteTools(server *mcp.Server, deps Dependencies) {
 	addWriteTool(server, deps, UpdateAttachmentMetadataToolName, "Update attachment metadata", "Partially updates attachment metadata fields.", updateAttachmentMetadata(deps))
 	addWriteTool(server, deps, DeleteAttachmentToolName, "Delete attachment", "Deletes one attachment after confirm:true.", deleteAttachment(deps))
 	addWriteTool(server, deps, SetPrimaryImageToolName, "Set primary image", "Sets a part primary image from an existing image attachment.", setPrimaryImage(deps))
+	registerCompanyImageWriteTools(server, deps)
 }
 
 func uploadAttachment(deps Dependencies) mcp.ToolHandlerFor[UploadAttachmentInput, AttachmentWriteOutput] {

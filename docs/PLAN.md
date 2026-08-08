@@ -412,6 +412,8 @@ Mutating non-destructive tools:
 - `create_link_attachment`
 - `update_attachment_metadata`
 - `set_primary_image`
+- `set_company_image`
+- `set_company_image_from_url`
 - `create_purchase_order`
 - `add_purchase_order_line`
 - `update_purchase_order_line`
@@ -441,6 +443,7 @@ Mutating destructive or irreversible tools:
 
 - `remove_bom_item`
 - `delete_attachment`
+- `clear_company_image`
 - `close_purchase_order`
 - `complete_build_order`
 
@@ -564,11 +567,13 @@ Important behaviors:
 - Support primary part image download through `download_part_image` using a stable part ID. It is read-only, requires `inventree.read`, resolves only the readable schema-exposed `Part.image` field or part thumbnail endpoint for that part, and applies the same configured-instance, maximum-size, bounded-read, hash, selected-mode, and redaction controls as `download_attachment`. `Part.existing_image` is write-only and must be treated as assignment/update input only, not as a download source.
 - `download_part_image` should return a structured no-image result when the part has no primary image. If the part image is backed by a generic attachment and the caller already has the attachment ID, `download_attachment` may be used instead.
 - Treat the part thumbnail API as part of the primary part image implementation. For schema version `511`, `set_primary_image` resolves an existing same-part image attachment, downloads it through the scoped InvenTree attachment path, then uploads those bytes with multipart `PATCH /api/part/{id}/` using the `image` file field. Live integration rejected using a generic attachment URL with `PATCH /api/part/thumbs/{id}/`; keep `existing_image` write-only and outside download behavior.
+- Company primary images use direct multipart `PATCH /api/company/{id}/` after the dedicated tool resolves and validates PNG, JPEG, or WebP bytes. Enforce a fixed 5 MiB encoded limit, 4096-pixel per-dimension limit, 16-megapixel total limit, and agreement between decoded format, extension, and media type. First assignment is unconfirmed; replacement requires `confirm:true`. Exact same-instance download and SHA-256 comparison must prove assignment or response-loss recovery while preserving every unrelated company detail field and role.
+- `clear_company_image` is a separate destructive tool requiring `confirm:true` and exact null read-back. Pinned InvenTree 1.4.3 deletes the current stored media file when the nullable image association is cleared. The tool applies to an existing company regardless of supplier, manufacturer, or customer role and does not add customer-role or sales administration.
 - Keep notes image upload, generated report attachments, stock test-result attachments, and other app-specific file surfaces out of the first release unless the plan is explicitly changed.
 - Define upload input forms explicitly:
   - `upload_attachment` accepts inline byte blobs encoded as base64 in HTTP and STDIO mode, with required filename and content type.
   - `upload_attachment` may additionally accept local file paths in STDIO mode only when a configured allowlist permits the path.
-  - `upload_attachment_from_url` is the only tool that accepts HTTP(S) URLs.
+- `upload_attachment_from_url` is the only generic attachment tool that accepts HTTP(S) URLs; `set_company_image_from_url` is the only company-image tool that does so.
 - `create_link_attachment` creates an InvenTree link attachment without fetching remote bytes.
   - HTTP mode must not read arbitrary server-local paths supplied by a client.
   - URL fetching must reject non-HTTP(S) schemes, local file URLs, and responses that exceed the configured maximum size.
@@ -577,7 +582,7 @@ Important behaviors:
 - Treat URL upload as open-world. `upload_attachment_from_url` must have `openWorldHint:true`; ordinary byte/local-path `upload_attachment` should not inherit that hint.
 - Treat link attachments as mutating non-destructive. They store the URL in InvenTree's `link` field and do not fetch content.
 - `create_link_attachment` must validate allowed URL schemes and may optionally apply a separate link allowlist policy. It must not fetch the URL. Operator-facing responses should make clear that link attachments are stored references, not uploaded files.
-- Require `confirm: true` for deletes and for replacing an existing primary image.
+- Require `confirm: true` for deletes, clearing a company primary image, and replacing an existing primary image.
 - Validate content type, filename, size, upload source, and target object before upload.
 - Enforce configured maximum attachment size before buffering the entire file in memory.
 - Return attachment ID, object type, object ID, filename, content type, size, URL, and whether the uploaded image became primary.
@@ -782,7 +787,7 @@ For update tools, prefer PATCH over PUT wherever InvenTree supports PATCH. The i
 - Use `omitempty` only where it does not erase an intentional zero value.
 - Preserve the distinction between omitted, empty string, false, zero, and null when the API supports those states.
 - Provide endpoint-specific PATCH methods such as `PatchPart`, `PatchCompany`, `PatchStockItem`, `PatchBOMItem`, and `PatchPurchaseOrderLine`.
-- Provide attachment and image methods such as `ListAttachments`, `DownloadAttachment`, `DownloadPartImage`, `UploadAttachment`, `PatchAttachment`, `PatchPrimaryImage`, `PatchPartThumbnail`, and `DeleteAttachment` where the API supports them. For current schema version `511`, generic attachment support should map to `/api/attachment/` and `/api/attachment/{id}/`; attachment content download should use the schema-supported `attachment` URL by default or `thumbnail` URL in explicit thumbnail mode, and part-image download should use readable `Part.image` or the part thumbnail endpoint. Both download paths must remain scoped to the configured InvenTree base URL.
+- Provide attachment and image methods such as `ListAttachments`, `DownloadAttachment`, `DownloadPartImage`, `DownloadCompanyImage`, `UploadAttachment`, `PatchAttachment`, `SetPartPrimaryImage`, `SetCompanyPrimaryImage`, `ClearCompanyPrimaryImage`, and `DeleteAttachment` where the API supports them. For current schema version `511`, generic attachment support maps to `/api/attachment/` and `/api/attachment/{id}/`; attachment content download uses the schema-supported `attachment` URL by default or `thumbnail` URL in explicit thumbnail mode, part-image download uses readable `Part.image` or the part thumbnail endpoint, and company-image verification uses readable `Company.image`. Every media download remains scoped to the configured InvenTree base URL.
 - Fall back to full update only when the API lacks PATCH for that endpoint, and document that exception in the tool description.
 - Include tests proving that omitted fields are absent from the JSON payload.
 
@@ -1021,7 +1026,7 @@ Implementation notes:
 - Examples for STDIO and HTTP mode.
 - Security notes for STDIO credentials, HTTP OAuth envelope keys, token lifetimes, replay limitations, and deployment.
 - Operator recipes for common data entry.
-- `docs/operator-recipes.md` must include first-release recipes for ChatGPT connector OAuth setup, STDIO setup, reverse-proxy HTTP deployment, add/update purchasable part, reuse existing parameters, add supplier/manufacturer links, create initial stock, upload/link attachment, set/replace primary part image, preview purchase order lines, and resolve structured clarification prompts.
+- `docs/operator-recipes.md` must include first-release recipes for ChatGPT connector OAuth setup, STDIO setup, reverse-proxy HTTP deployment, add/update purchasable part, reuse existing parameters, add supplier/manufacturer links, create initial stock, upload/link attachment, set/replace primary part image, set/replace/clear a company primary image, preview purchase order lines, and resolve structured clarification prompts.
 - The reverse-proxy HTTP deployment recipe must cover canonical public issuer URL, public MCP resource URL, authorization/token endpoint URLs, trusted proxy CIDRs or header policy, and common failure symptoms such as redirect URI mismatch, wrong audience, and internal-host metadata leakage.
 - `AGENTS.md` with implementation rules for ambiguity handling, parameter reuse, schema verification, auth safety, Testcontainers isolation, and documentation upkeep.
 - `docs/api-schema.md` summarizing the schema source, refresh command, verified endpoint facts, and current schema version.
@@ -1190,10 +1195,10 @@ The full first beta milestone should include:
 - Part/category tools: `search_parts`, `get_part`, `search_part_categories`, `get_part_category`, `create_part_category`, `update_part_category`, `create_part`, `update_part`, `search_parameter_templates`, `get_part_parameters`, `set_part_parameters`.
 - Company tools: `search_companies`, `search_suppliers`, `search_manufacturers`, `create_company`, `create_supplier_part`, `create_manufacturer_part`.
 - Stock tools: `search_stock_locations`, `search_stock_items`, `create_stock_item`.
-- Attachment/image tools: `list_attachments`, `get_attachment_metadata`, `download_attachment`, `download_part_image`, `upload_attachment`, `upload_attachment_from_url`, `create_link_attachment`, `update_attachment_metadata`, `delete_attachment`, `set_primary_image`.
+- Attachment/image tools: `list_attachments`, `get_attachment_metadata`, `download_attachment`, `download_part_image`, `upload_attachment`, `upload_attachment_from_url`, `create_link_attachment`, `update_attachment_metadata`, `delete_attachment`, `set_primary_image`, `set_company_image`, `set_company_image_from_url`, `clear_company_image`.
 - Milestone attachment object scope: `part`, `stockitem`, `company`, `supplierpart`, `manufacturerpart`, and `purchaseorder`. Sales/return/transfer/build attachment support is deferred unless explicitly added later.
 - Purchase-order attachment support in milestone 1 applies only to existing purchase orders found by ID/search. The milestone does not create purchase orders except through later explicitly enabled mutating workflows.
-- Milestone primary image scope: `part` only. Company image endpoint notes are recorded in `docs/api-schema.md` for later implementation, but company primary-image support is deferred.
+- Milestone primary image scope covers parts through an existing same-part attachment and existing companies through guarded direct PNG/JPEG/WebP sources. Company-image operations do not mutate company roles or add customer/sales workflows.
 - Parameter behavior: `set_part_parameters` searches and reuses existing templates before writing and asks for operator clarification when unsure.
 - Purchasing preview: `preview_purchase_order_with_lines`, with supplier-part validation and no writes.
 - Structured clarification responses for ambiguous part/category/company/location lookups.
@@ -1247,7 +1252,7 @@ Milestone test classification:
 
 - Blocking tests must have deterministic local execution paths for milestone-scope behavior. Docker-backed integration tests run by default and can be explicitly excluded for unit-only, fast, or Docker-unavailable runs with `INVENTREE_TEST_SKIP_DOCKER=1` or `GOFLAGS=-trimpath go test -race -short`.
 - Non-blocking tests may cover optional live external InvenTree instances, canary compatibility checks, and extended stress runs.
-- Future tests must be tied to deferred scope such as production HTTP setup/deployment wiring, sales workflows, return orders, transfer orders, company primary images, and build attachment support.
+- Future tests must be tied to deferred scope such as production HTTP setup/deployment wiring, sales workflows, return orders, transfer orders, and build attachment support.
 - Future image/file tests must cover deferred surfaces only when they enter scope, including notes image upload, generated report attachments, and stock test-result attachments.
 
 Milestone README recipes:

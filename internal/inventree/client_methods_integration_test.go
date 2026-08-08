@@ -646,6 +646,54 @@ func TestClientMethodsAgainstInvenTree(t *testing.T) {
 		r.Equal(replacementBytes, replacement.Content)
 	})
 
+	t.Run("company_image", func(t *testing.T) {
+		r := require.New(t)
+		ctx, _, _ := testhandler.SetupTestHandler(t)
+		fixture := newClientMethodFixture(t, shared)
+		company := fixture.ensure(t, testenv.FixtureSupplier)
+		before, err := fixture.client.GetCompanyDetail(ctx, company.ID)
+		r.NoError(err)
+		r.Nil(before.Image)
+
+		initialBytes := tinyPNG()
+		updated, err := fixture.client.SetCompanyPrimaryImage(ctx, company.ID, inventree.CompanyPrimaryImageCreate{
+			Filename: "company-initial.png", ContentType: "image/png", Content: initialBytes,
+		})
+		r.NoError(err)
+		r.Equal(company.ID, updated.PK)
+		r.NotNil(updated.Image)
+		initial, err := fixture.client.DownloadCompanyImage(ctx, company.ID, 1024)
+		r.NoError(err)
+		r.Equal(initialBytes, initial.Content)
+		r.Equal(company.ID, initial.Company.PK)
+		r.Contains(initial.ContentType, "image/png")
+		r.NotContains(initial.SourceURL, "?")
+
+		replacementBytes := alternateTinyPNG()
+		replaced, err := fixture.client.SetCompanyPrimaryImage(ctx, company.ID, inventree.CompanyPrimaryImageCreate{
+			Filename: "company-replacement.png", ContentType: "image/png", Content: replacementBytes,
+		})
+		r.NoError(err)
+		r.Equal(company.ID, replaced.PK)
+		replacement, err := fixture.client.DownloadCompanyImage(ctx, company.ID, 1024)
+		r.NoError(err)
+		r.Equal(replacementBytes, replacement.Content)
+		r.NotEqual(initial.SourceURL, replacement.SourceURL, "InvenTree retains the prior file and selects a collision-safe replacement name")
+		r.Equal(http.StatusNotFound, authenticatedMediaStatus(t, ctx, initial.SourceURL, fixture.account.Token), "InvenTree removes the prior media file after replacement")
+
+		cleared, err := fixture.client.ClearCompanyPrimaryImage(ctx, company.ID)
+		r.NoError(err)
+		r.Equal(company.ID, cleared.PK)
+		r.Nil(cleared.Image)
+		readback, err := fixture.client.GetCompanyDetail(ctx, company.ID)
+		r.NoError(err)
+		r.Nil(readback.Image)
+		_, err = fixture.client.DownloadCompanyImage(ctx, company.ID, 1024)
+		r.ErrorIs(err, inventree.ErrCompanyImageMissing)
+
+		r.Equal(http.StatusNotFound, authenticatedMediaStatus(t, ctx, replacement.SourceURL, fixture.account.Token), "InvenTree removes the current media file when the image association is cleared")
+	})
+
 	t.Run("po", func(t *testing.T) {
 		r := require.New(t)
 		ctx, _, _ := testhandler.SetupTestHandler(t)
@@ -886,6 +934,18 @@ func requireDecimalEqual(t *testing.T, expected string, actual inventree.Decimal
 	actualValue, ok := new(big.Rat).SetString(string(actual))
 	r.True(ok)
 	r.Zero(expectedValue.Cmp(actualValue))
+}
+
+func authenticatedMediaStatus(t *testing.T, ctx context.Context, rawURL string, token string) int {
+	t.Helper()
+	r := require.New(t)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
+	r.NoError(err)
+	req.Header.Set("Authorization", "Token "+token)
+	resp, err := http.DefaultClient.Do(req)
+	r.NoError(err)
+	defer func() { _ = resp.Body.Close() }()
+	return resp.StatusCode
 }
 
 type clientMethodFixture struct {

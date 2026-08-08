@@ -463,9 +463,21 @@ func TestWriteToolAuthorizationsUseWriteScope(t *testing.T) {
 			a.Equal("write", auth.MutationClass)
 			a.Equal([]string{ScopeInventreeWrite, ScopeInventreeUpload}, auth.Scopes)
 			a.True(auth.Annotations.OpenWorld)
+		case SetCompanyImageToolName:
+			a.Equal("write", auth.MutationClass)
+			a.Equal([]string{ScopeInventreeRead, ScopeInventreeWrite, ScopeInventreeUpload}, auth.Scopes)
+			a.Equal(WriteAnnotations, auth.Annotations)
+		case SetCompanyImageFromURLToolName:
+			a.Equal("write", auth.MutationClass)
+			a.Equal([]string{ScopeInventreeRead, ScopeInventreeWrite, ScopeInventreeUpload}, auth.Scopes)
+			a.True(auth.Annotations.OpenWorld)
 		case DeleteAttachmentToolName:
 			a.Equal("destructive", auth.MutationClass)
 			a.Equal([]string{ScopeInventreeWrite, ScopeInventreeUpload, ScopeInventreeDestructive}, auth.Scopes)
+			a.True(auth.Annotations.Destructive)
+		case ClearCompanyImageToolName:
+			a.Equal("destructive", auth.MutationClass)
+			a.Equal([]string{ScopeInventreeRead, ScopeInventreeWrite, ScopeInventreeUpload, ScopeInventreeDestructive}, auth.Scopes)
 			a.True(auth.Annotations.Destructive)
 		case DeletePartParameterToolName, DeleteParameterTemplateToolName, MergeParameterTemplatesToolName, DeleteCategoryParameterDefaultToolName, DeletePurchaseOrderExtraLineToolName:
 			a.Equal("destructive", auth.MutationClass)
@@ -498,6 +510,9 @@ func TestWriteToolInputsExcludeSalesAndCustomerWorkflowFields(t *testing.T) {
 		reflect.TypeOf(DepleteStockItemInput{}),
 		reflect.TypeOf(IssuePurchaseOrderInput{}),
 		reflect.TypeOf(ReceivePurchaseOrderInput{}),
+		reflect.TypeOf(SetCompanyImageInput{}),
+		reflect.TypeOf(SetCompanyImageFromURLInput{}),
+		reflect.TypeOf(ClearCompanyImageInput{}),
 		reflect.TypeOf(ReceivePurchaseOrderItem{}),
 		reflect.TypeOf(CreatePurchaseOrderExtraLineInput{}),
 		reflect.TypeOf(UpdatePurchaseOrderExtraLineInput{}),

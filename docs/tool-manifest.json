@@ -99,6 +99,31 @@
       ]
     },
     {
+      "name": "clear_company_image",
+      "milestone_status": "milestone_1",
+      "mutation_class": "destructive",
+      "scopes": [
+        "inventree.read",
+        "inventree.write",
+        "inventree.upload",
+        "inventree.destructive"
+      ],
+      "annotations": {
+        "read_only": false,
+        "destructive": true,
+        "idempotent": false,
+        "open_world": false
+      },
+      "upload_sources": null,
+      "http_registration": "registered_with_oauth_scope_guard",
+      "icons": [
+        {
+          "src": "https://docs.inventree.org/en/latest/assets/logo.png",
+          "mimeType": "image/png"
+        }
+      ]
+    },
+    {
       "name": "create_category_parameter_default",
       "milestone_status": "milestone_1",
       "mutation_class": "write",
@@ -1396,6 +1421,59 @@
       },
       "upload_sources": null,
       "http_registration": "registered",
+      "icons": [
+        {
+          "src": "https://docs.inventree.org/en/latest/assets/logo.png",
+          "mimeType": "image/png"
+        }
+      ]
+    },
+    {
+      "name": "set_company_image",
+      "milestone_status": "milestone_1",
+      "mutation_class": "write",
+      "scopes": [
+        "inventree.read",
+        "inventree.write",
+        "inventree.upload"
+      ],
+      "annotations": {
+        "read_only": false,
+        "destructive": false,
+        "idempotent": false,
+        "open_world": false
+      },
+      "upload_sources": [
+        "inline_base64",
+        "stdio_local_path"
+      ],
+      "http_registration": "registered_with_oauth_scope_guard",
+      "icons": [
+        {
+          "src": "https://docs.inventree.org/en/latest/assets/logo.png",
+          "mimeType": "image/png"
+        }
+      ]
+    },
+    {
+      "name": "set_company_image_from_url",
+      "milestone_status": "milestone_1",
+      "mutation_class": "write",
+      "scopes": [
+        "inventree.read",
+        "inventree.write",
+        "inventree.upload"
+      ],
+      "annotations": {
+        "read_only": false,
+        "destructive": false,
+        "idempotent": false,
+        "open_world": true
+      },
+      "upload_sources": [
+        "http_url_fetch"
+      ],
+      "http_registration": "registered_with_oauth_scope_guard",
       "icons": [
         {
           "src": "https://docs.inventree.org/en/latest/assets/logo.png",

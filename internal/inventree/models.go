@@ -82,14 +82,17 @@ type CategoryPage struct {
 }
 
 type Company struct {
-	PK             int    `json:"pk"`
-	Name           string `json:"name"`
-	Description    string `json:"description"`
-	Currency       string `json:"currency"`
-	Active         bool   `json:"active"`
-	IsSupplier     bool   `json:"is_supplier"`
-	IsManufacturer bool   `json:"is_manufacturer"`
-	IsCustomer     bool   `json:"is_customer"`
+	PK                int     `json:"pk"`
+	Name              string  `json:"name"`
+	Description       string  `json:"description"`
+	Currency          string  `json:"currency"`
+	Image             *string `json:"image"`
+	Active            bool    `json:"active"`
+	IsSupplier        bool    `json:"is_supplier"`
+	IsManufacturer    bool    `json:"is_manufacturer"`
+	IsCustomer        bool    `json:"is_customer"`
+	PartsSupplied     int     `json:"parts_supplied"`
+	PartsManufactured int     `json:"parts_manufactured"`
 }
 
 type StockLocation struct {
@@ -238,8 +241,16 @@ type ManufacturerPart struct {
 
 type CompanyDetail struct {
 	Company
-	Website string  `json:"website"`
-	Notes   *string `json:"notes"`
+	Website        string  `json:"website"`
+	Phone          string  `json:"phone"`
+	Email          *string `json:"email"`
+	Contact        string  `json:"contact"`
+	Link           string  `json:"link"`
+	Notes          *string `json:"notes"`
+	TaxID          string  `json:"tax_id"`
+	PrimaryAddress any     `json:"primary_address"`
+	Parameters     any     `json:"parameters"`
+	Tags           any     `json:"tags"`
 }
 
 type SupplierPartDetail struct {

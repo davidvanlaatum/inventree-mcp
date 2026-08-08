@@ -105,6 +105,9 @@ const (
 	UpdateAttachmentMetadataToolName        = "update_attachment_metadata"
 	DeleteAttachmentToolName                = "delete_attachment"
 	SetPrimaryImageToolName                 = "set_primary_image"
+	SetCompanyImageToolName                 = "set_company_image"
+	SetCompanyImageFromURLToolName          = "set_company_image_from_url"
+	ClearCompanyImageToolName               = "clear_company_image"
 
 	defaultDownloadMaxBytes int64 = 5 * 1024 * 1024
 	maxDownloadMaxBytes     int64 = 25 * 1024 * 1024
@@ -212,6 +215,9 @@ var writeToolNames = []string{
 	UpdateAttachmentMetadataToolName,
 	DeleteAttachmentToolName,
 	SetPrimaryImageToolName,
+	SetCompanyImageToolName,
+	SetCompanyImageFromURLToolName,
+	ClearCompanyImageToolName,
 }
 
 var ToolAuthorizations = map[string]ToolAuthorization{
@@ -257,18 +263,23 @@ func init() {
 			mutationClass = "operational"
 		case UploadAttachmentToolName, UploadAttachmentFromURLToolName, CreateLinkAttachmentToolName, UpdateAttachmentMetadataToolName, SetPrimaryImageToolName:
 			scopes = []string{ScopeInventreeWrite, ScopeInventreeUpload}
+		case SetCompanyImageToolName, SetCompanyImageFromURLToolName:
+			scopes = []string{ScopeInventreeRead, ScopeInventreeWrite, ScopeInventreeUpload}
 		case DeletePartParameterToolName, DeleteParameterTemplateToolName, MergeParameterTemplatesToolName, DeleteCategoryParameterDefaultToolName, DeletePurchaseOrderExtraLineToolName:
 			scopes = []string{ScopeInventreeRead, ScopeInventreeWrite, ScopeInventreeDestructive}
 			mutationClass = "destructive"
 		case DeleteAttachmentToolName:
 			scopes = []string{ScopeInventreeWrite, ScopeInventreeUpload, ScopeInventreeDestructive}
 			mutationClass = "destructive"
+		case ClearCompanyImageToolName:
+			scopes = []string{ScopeInventreeRead, ScopeInventreeWrite, ScopeInventreeUpload, ScopeInventreeDestructive}
+			mutationClass = "destructive"
 		}
 		annotations := WriteAnnotations
-		if name == UploadAttachmentFromURLToolName {
+		if name == UploadAttachmentFromURLToolName || name == SetCompanyImageFromURLToolName {
 			annotations.OpenWorld = true
 		}
-		if name == DeleteAttachmentToolName || name == DeletePartParameterToolName || name == DeleteParameterTemplateToolName || name == MergeParameterTemplatesToolName || name == DeleteCategoryParameterDefaultToolName || name == DeletePurchaseOrderExtraLineToolName || name == BulkPropagatePartParametersToolName || name == DepleteStockItemToolName {
+		if name == DeleteAttachmentToolName || name == ClearCompanyImageToolName || name == DeletePartParameterToolName || name == DeleteParameterTemplateToolName || name == MergeParameterTemplatesToolName || name == DeleteCategoryParameterDefaultToolName || name == DeletePurchaseOrderExtraLineToolName || name == BulkPropagatePartParametersToolName || name == DepleteStockItemToolName {
 			annotations.Destructive = true
 		}
 		ToolAuthorizations[name] = ToolAuthorization{
