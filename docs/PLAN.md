@@ -17,6 +17,7 @@ Build an InvenTree MCP server in Go using the official Model Context Protocol Go
 - MCP SDK: `github.com/modelcontextprotocol/go-sdk/mcp`.
 - MCP SDK version: reviewed baseline is `github.com/modelcontextprotocol/go-sdk` `v1.7.0`, supporting MCP protocol `2026-07-28` while retaining legacy protocol negotiation. Future upgrades must re-run the MCP transport, auth, request-limit, cancellation, and annotation checks because protocol and wire-shape behavior may change.
 - MCP branding: server identity and every registered tool publish the official InvenTree documentation logo through standard MCP icon metadata. Clients decide whether and where to render that metadata.
+- MCP server instructions: initialization and discovery tell consuming agents how to handle a missing `inventree-mcp` capability. Agents distinguish server gaps from input, authorization, configuration, and upstream limitations; explain the gap and safe workarounds; search open and closed project issues when GitHub access is available; and ask the operator before creating an untracked issue. Clients decide how to apply this advisory model guidance.
 - MCP STDIO transport: `mcp.StdioTransport`.
 - MCP HTTP transport: `mcp.NewStreamableHTTPHandler`.
 - HTTP auth support: implement a ChatGPT Developer Connector-compatible OAuth 2.1 layer owned by the MCP server. HTTP clients authenticate to `/mcp` with MCP-issued OAuth bearer tokens, not raw InvenTree tokens.
