@@ -30,7 +30,7 @@ type IDInput struct {
 }
 
 type ObjectLookupInput struct {
-	ModelType string `json:"model_type" jsonschema:"In-scope InvenTree object type, such as part or stockitem."`
+	ModelType string `json:"model_type" jsonschema:"InvenTree attachment model type. Use one of the attachment endpoint's short, unqualified values: part, stockitem, company, manufacturerpart, supplierpart, or purchaseorder. Do not use parameter model types such as part.part or order.purchaseorder."`
 	ModelID   int    `json:"model_id" jsonschema:"Stable InvenTree object primary key."`
 	Search    string `json:"search,omitempty" jsonschema:"Optional search text or filename filter."`
 	Limit     int    `json:"limit,omitempty" jsonschema:"Maximum number of records to return. Defaults to 20 and is capped at 100."`

@@ -109,6 +109,7 @@ Before `M1C-S04` is complete, mutating, operational, destructive, and upload too
 | [F-S27](#f-s27-guarded-full-stock-item-transfer) | Move one complete safe stock item to an explicit valid destination. | Done |
 | [F-S28](#f-s28-partial-stock-item-transfer-and-split-recovery) | Add partial transfers after split identity and recovery semantics are approved. | Planned |
 | [F-S29](#f-s29-reviewed-multi-item-stock-transfer-batches) | Add reviewed transfer batches after atomicity and failure semantics are verified. | Planned |
+| [F-S30](#f-s30-clarify-endpoint-specific-model-type-contracts) | Distinguish attachment and parameter endpoint `model_type` vocabularies without changing behavior. | Done |
 
 ## Milestone 0: Repository And Planning
 
@@ -1756,3 +1757,29 @@ Tasks:
 - Validation: pending implementation selection.
 - Review: pending implementation selection.
 - Residual risk: native batch atomicity and response-loss semantics are intentionally unresolved until pinned-live evidence exists.
+
+### F-S30: Clarify Endpoint-Specific Model-Type Contracts
+
+- Status: `Done`
+- Issue: [#101](https://github.com/davidvanlaatum/inventree-mcp/issues/101)
+- Depends on: M1D-S02, M1F-S02, F-S11, product review, and QA review
+- Progress: implementation started on `codex/f-s30-model-type-contracts` from `main` at `03e18cb5`. The approved product decision preserves the existing `model_type` field and both upstream endpoint-specific vocabularies without aliases, normalization, or runtime behavior changes.
+- Scope: make the attachment endpoint's short model types and the parameter endpoint's qualified `app.model` types explicit in generated MCP input-schema descriptions, tool reference documentation, schema capability notes, and operator recipes. Add contract tests that prevent the descriptions or documentation from conflating or omitting either vocabulary.
+- Acceptance:
+  - The `list_attachments` and attachment creation/upload input-schema descriptions list the six supported short, unqualified values: `part`, `stockitem`, `company`, `manufacturerpart`, `supplierpart`, and `purchaseorder`.
+  - Parameter-template create and update input-schema descriptions list the twelve supported qualified values plus the explicit empty unrestricted value.
+  - Schema descriptions warn against supplying the other endpoint's vocabulary, preserve handler-level validation and all currently accepted runtime values, and do not add JSON Schema enum constraints.
+  - Shared documentation no longer claims one `model_type` vocabulary applies to both attachment and parameter tools.
+  - API capability notes and operator recipes explain that the distinction comes from separate upstream InvenTree endpoint enums and include concrete examples.
+  - Focused contract tests inspect the registered MCP schemas and documentation for both complete, disjoint contracts.
+
+Tasks:
+
+- [x] Clarify registered attachment and parameter-template input-schema descriptions.
+- [x] Split the shared tool-reference field guidance and align schema, plan, and operator docs.
+- [x] Add focused MCP schema and documentation contract tests.
+- [x] Run validation, coverage comparison, and the applicable Go, QA, product, and infosec review panel.
+
+- Validation: `go generate ./internal/tools`, `go mod tidy -diff`, `go vet ./...`, `golangci-lint run ./...`, focused race-enabled `docs` and `internal/tools` model-type contract tests, `GOFLAGS=-trimpath go test -race -p=1 ./...`, no-integration per-package coverage, and `git diff --check` pass. Compared with exact base `main` at `03e18cb5`, `internal/tools` remains 82.4% and `docs` rises from 16.7% to 57.1%; no package-level reduction was introduced.
+- Review: Senior Go Developer, Senior QA / Test Architect, Senior Product Manager, and Senior Infosec Reviewer reviews completed because the change affects registered MCP input-schema descriptions and public operator contracts. Initial Go and QA findings identified substring assertions that overlapping model names could satisfy incorrectly; fixed by requiring each complete ordered vocabulary clause and proving every value in either runtime allowlist is rejected by the other. Product findings requested that issue/schema wording distinguish descriptive lists from JSON Schema enum constraints and precisely name only the attachment tools that accept `model_type`; issue #101, task acceptance, and tool-reference wording were aligned. Infosec found no authorization, validation-boundary, or exposure issues. Focused Go, QA, and product reruns found no remaining actionable findings.
+- Residual risk: input-schema descriptions are advisory and handler allowlists remain authoritative. A future upstream InvenTree enum change requires the schema snapshot, runtime allowlists, descriptions, contract tests, and operator docs to be updated together; this task intentionally adds no aliases or automatic normalization.

@@ -134,6 +134,8 @@ Attachment model types in the schema include:
 
 Initial implementation should expose only non-sales model types relevant to the current product scope.
 
+The attachment endpoint's `AttachmentModelTypeEnum` uses short, unqualified values such as `part`, `stockitem`, and `purchaseorder`. This is distinct from the parameter endpoint's `ModelTypeD42Enum`, which uses qualified Django-style `app.model` values such as `part.part`, `stock.stocklocation`, and `order.purchaseorder`. MCP tools preserve both schema-defined vocabularies: attachment tools accept only the in-scope short values, while parameter-template administration accepts the qualified values or an explicit empty unrestricted value. Neither vocabulary is an alias for the other.
+
 ## Verified Image Fields
 
 - `Part` exposes readable `image` and write-only `existing_image`.
@@ -244,6 +246,7 @@ F-S14 bulk propagation uses the schema-backed `category` and `cascade` filters o
 
 Parameter guidance:
 
+- Parameter rows and templates use the schema's qualified `ModelTypeD42Enum` values, such as `part.part` and `order.purchaseorder`; the attachment endpoint instead uses a separate short `AttachmentModelTypeEnum`, such as `part` and `purchaseorder`. MCP documentation and input-schema descriptions keep those endpoint contracts separate rather than translating or aliasing them.
 - The list endpoint exposes schema-backed `model_type`, `model_id`, `template`, `search`, `limit`, and `offset` filters. It does not expose a direct part-category filter; `search_part_parameters` requires at least one narrowing filter, reads bounded 100-row pages, resolves part records, and applies exact category/value filtering before returning deterministic row-ID-ordered pagination. It refuses searches whose complete filtered ordering cannot be established within a 1,000-row scan bound and asks for narrower filters.
 - Search and reuse existing parameter templates before creating new ones.
 - Use category parameter links to understand expected parameters for a category.

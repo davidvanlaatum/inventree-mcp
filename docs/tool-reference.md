@@ -59,8 +59,9 @@ Common lookup inputs:
 | `limit` | list/search tools | Optional maximum result count. Defaults to `20` and is capped at `100`. |
 | `offset` | list/search tools | Optional pagination offset for deterministic retries. |
 | `id` | get-by-id tools | Stable InvenTree primary key. |
-| `model_type` | object-scoped attachment/parameter tools | In-scope InvenTree object type such as `part`, `stockitem`, `company`, `manufacturerpart`, `supplierpart`, or `purchaseorder`. |
-| `model_id` | object-scoped attachment/parameter tools | Stable primary key for the selected object type. |
+| `model_type` | `list_attachments` and attachment creation/upload tools | Attachment endpoint model type. Use only the short, unqualified in-scope values `part`, `stockitem`, `company`, `manufacturerpart`, `supplierpart`, or `purchaseorder`; qualified parameter values such as `part.part` and `order.purchaseorder` are invalid for attachment tools. Attachment metadata update and delete tools identify the target by attachment `id` instead. |
+| `model_type` | parameter-template administration | Optional parameter endpoint restriction. Use an explicit empty string for no restriction or one of the qualified `app.model` values `build.build`, `company.company`, `company.manufacturerpart`, `company.supplierpart`, `order.purchaseorder`, `order.returnorder`, `order.salesorder`, `order.salesordershipment`, `order.transferorder`, `part.part`, `part.partcategory`, or `stock.stocklocation`; short attachment values such as `part` and `purchaseorder` are invalid. |
+| `model_id` | attachment tools and parameter-row outputs | Stable primary key interpreted using the endpoint-specific `model_type`. Part-parameter tools accept `part_id` and supply `part.part` internally rather than asking callers for a model type. |
 | `part_id` | part parameter and stock-item tools | Stable part primary key for part-scoped reads or stock duplicate checks. |
 | `parameter_id`, `part_name`, `category_id`, `template_id`, `template_name`, `units`, `value`, `verified` | cross-inventory parameter tools | Stable row/part/category/template identity, review metadata, exact value, and confirmed deletion read-back result. |
 | `location_id` | stock-item tools | Stable stock location primary key. Required for `create_stock_item`; optional for stock duplicate-check searches. |

@@ -27,7 +27,7 @@ type AttachmentWriteClient interface {
 }
 
 type UploadAttachmentInput struct {
-	ModelType      string   `json:"model_type" jsonschema:"In-scope InvenTree attachment target type."`
+	ModelType      string   `json:"model_type" jsonschema:"InvenTree attachment model type. Use one of the attachment endpoint's short, unqualified values: part, stockitem, company, manufacturerpart, supplierpart, or purchaseorder. Do not use parameter model types such as part.part or order.purchaseorder."`
 	ModelID        int      `json:"model_id" jsonschema:"Stable target object primary key."`
 	Filename       string   `json:"filename,omitempty" jsonschema:"Attachment filename. Required for inline bytes; optional for local paths."`
 	ContentType    string   `json:"content_type,omitempty" jsonschema:"Attachment content type."`
@@ -39,7 +39,7 @@ type UploadAttachmentInput struct {
 }
 
 type UploadAttachmentFromURLInput struct {
-	ModelType      string   `json:"model_type" jsonschema:"In-scope InvenTree attachment target type."`
+	ModelType      string   `json:"model_type" jsonschema:"InvenTree attachment model type. Use one of the attachment endpoint's short, unqualified values: part, stockitem, company, manufacturerpart, supplierpart, or purchaseorder. Do not use parameter model types such as part.part or order.purchaseorder."`
 	ModelID        int      `json:"model_id" jsonschema:"Stable target object primary key."`
 	URL            string   `json:"url" jsonschema:"HTTP(S) URL to fetch and upload as a file attachment."`
 	Filename       string   `json:"filename,omitempty" jsonschema:"Optional filename override."`
@@ -49,7 +49,7 @@ type UploadAttachmentFromURLInput struct {
 }
 
 type CreateLinkAttachmentInput struct {
-	ModelType      string   `json:"model_type" jsonschema:"In-scope InvenTree attachment target type."`
+	ModelType      string   `json:"model_type" jsonschema:"InvenTree attachment model type. Use one of the attachment endpoint's short, unqualified values: part, stockitem, company, manufacturerpart, supplierpart, or purchaseorder. Do not use parameter model types such as part.part or order.purchaseorder."`
 	ModelID        int      `json:"model_id" jsonschema:"Stable target object primary key."`
 	URL            string   `json:"url" jsonschema:"HTTP(S) URL to store as a link attachment without fetching."`
 	Filename       string   `json:"filename,omitempty" jsonschema:"Optional filename for duplicate preflight. InvenTree assigns stored-link filename metadata."`

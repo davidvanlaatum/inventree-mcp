@@ -20,6 +20,9 @@ var toolManifestJSON []byte
 //go:embed tool-reference.md
 var toolReferenceMarkdown string
 
+//go:embed operator-recipes.md
+var operatorRecipesMarkdown string
+
 func TasksMarkdown() string {
 	return tasksMarkdown
 }
@@ -42,4 +45,8 @@ func ToolManifestJSON() []byte {
 
 func ToolReferenceMarkdown() string {
 	return toolReferenceMarkdown
+}
+
+func OperatorRecipesMarkdown() string {
+	return operatorRecipesMarkdown
 }

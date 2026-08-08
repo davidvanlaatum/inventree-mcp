@@ -144,6 +144,7 @@ HTTP mode accepts the same debug traffic log option as STDIO. HTTP debug entries
 
 ## Create, Update, Delete, Or Merge Parameter Templates
 
+- Model-type vocabulary: parameter templates use the parameter endpoint's qualified `app.model` values, for example `part.part` and `order.purchaseorder`. These are a different upstream enum from attachment model types; do not shorten them to `part` or `purchaseorder`.
 - Create: search first, then call `create_parameter_template` only with explicit `name`, `units`, `description`, `model_type`, `checkbox`, `choices`, and `enabled`. Use empty strings intentionally for unitless, unrestricted, no-description, or free-form templates. Nonempty `model_type` must be one of `build.build`, `company.company`, `company.manufacturerpart`, `company.supplierpart`, `order.purchaseorder`, `order.returnorder`, `order.salesorder`, `order.salesordershipment`, `order.transferorder`, `part.part`, `part.partcategory`, or `stock.stocklocation`. A case-insensitive same-name collision always requires choosing or reconciling an existing template.
 - Update: call `update_parameter_template` with a stable `template_id` and only the fields that should change. Omitted fields remain unchanged; empty strings and false are explicit replacements. Use `clear_selection_list:true` to write null and never combine it with `selection_list_id`.
 - Delete: call `delete_parameter_template` without confirmation to review the template and reference IDs. Direct deletion is available only when no parameter row or category-default link remains; then repeat with `confirm:true`. The tool never cascades references.
@@ -179,6 +180,7 @@ HTTP mode accepts the same debug traffic log option as STDIO. HTTP debug entries
 
 ## Attach Datasheet Or Photo
 
+- Model-type vocabulary: attachment tools use the attachment endpoint's short, unqualified values `part`, `stockitem`, `company`, `manufacturerpart`, `supplierpart`, or `purchaseorder`. These are a different upstream enum from parameter-template restrictions; do not pass qualified values such as `part.part` or `order.purchaseorder`.
 - Required inputs: target object type and ID plus exactly one upload source. Inline uploads require filename and content type; local-file uploads require content type and may derive filename from the path; URL-copy uploads may derive filename and content type from the HTTP response; stored links require only the target URL, with any supplied filename used only for duplicate preflight because InvenTree assigns stored-link filename metadata.
 - Accepted sources: inline bytes in any mode; STDIO allowlisted local path; HTTP(S) URL only through `upload_attachment_from_url`; stored link only through `create_link_attachment`.
 - Source resolver behavior: inline bytes are size-capped before upload, STDIO local paths must sit under trusted operator-controlled allowlisted roots and are rejected in HTTP mode before filesystem access, and URL-copy sources must pass SSRF checks without forwarding MCP or InvenTree auth headers.
