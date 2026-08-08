@@ -21,6 +21,7 @@ import (
 	"github.com/davidvanlaatum/dvgoutils/logging/testhandler"
 	"github.com/davidvanlaatum/inventree-mcp/internal/inventree"
 	"github.com/davidvanlaatum/inventree-mcp/internal/testenv"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -789,10 +790,30 @@ func TestClientMethodsAgainstInvenTree(t *testing.T) {
 		updatedLine, err := fixture.client.UpdatePurchaseOrderLine(ctx, line.PK, inventree.PatchFields{"order": inventree.Set(order.PK), "part": inventree.Set(supplierPart.ID), "quantity": inventree.Set(4.0)})
 		r.NoError(err)
 		r.Equal(4.0, updatedLine.Quantity)
+		// InvenTree 1.4.3's DELETE /api/order/po-line/{id}/ does not itself
+		// restrict deletion by order status or by received quantity; the
+		// tools package layers its own zero-received/no-linked-stock guard
+		// on top of this permissive upstream behavior. These client-method
+		// assertions pin the exact upstream contract the tool relies on.
+		pendingDeleteReference, err := fixture.run.Name("po-line-delete-pending")
+		r.NoError(err)
+		lineDeletedWhilePending, err := fixture.client.CreatePurchaseOrderLine(ctx, inventree.PurchaseOrderLineCreate{Order: order.PK, SupplierPart: supplierPart.ID, Reference: &pendingDeleteReference, Quantity: 1})
+		r.NoError(err)
+		r.NoError(fixture.client.DeletePurchaseOrderLine(ctx, lineDeletedWhilePending.PK))
+		_, err = fixture.client.GetPurchaseOrderLine(ctx, lineDeletedWhilePending.PK)
+		r.Error(err, "InvenTree must delete an unreceived line on a pending order")
+
 		r.NoError(fixture.client.IssuePurchaseOrder(ctx, order.PK))
 		issuedOrder, err := fixture.client.GetPurchaseOrder(ctx, order.PK)
 		r.NoError(err)
 		r.Equal(inventree.PurchaseOrderStatusPlaced, issuedOrder.Status)
+
+		placedDeleteReference, err := fixture.run.Name("po-line-delete-placed")
+		r.NoError(err)
+		lineDeletedWhilePlaced, err := fixture.client.CreatePurchaseOrderLine(ctx, inventree.PurchaseOrderLineCreate{Order: order.PK, SupplierPart: supplierPart.ID, Reference: &placedDeleteReference, Quantity: 1})
+		r.NoError(err, "InvenTree must allow adding a line to a PLACED order")
+		r.NoError(fixture.client.DeletePurchaseOrderLine(ctx, lineDeletedWhilePlaced.PK), "InvenTree must delete an unreceived line on a PLACED order")
+
 		received, err := fixture.client.ReceivePurchaseOrder(ctx, order.PK, inventree.PurchaseOrderReceive{Items: []inventree.PurchaseOrderReceiveItem{{LineItem: line.PK, Location: &destination.ID, Quantity: "1.5", BatchCode: dvgoutils.Ptr("client-method-receipt")}}})
 		r.NoError(err)
 		r.NotEmpty(received)
@@ -802,6 +823,22 @@ func TestClientMethodsAgainstInvenTree(t *testing.T) {
 		lineAfterReceipt, err := fixture.client.GetPurchaseOrderLine(ctx, line.PK)
 		r.NoError(err)
 		r.Equal(1.5, lineAfterReceipt.Received)
+
+		stockBeforeDelete, err := fixture.client.SearchStockItems(ctx, inventree.StockItemQuery{PurchaseOrderID: order.PK})
+		r.NoError(err)
+		r.Len(stockBeforeDelete, 1)
+		receivedStockItemPK := stockBeforeDelete[0].PK
+
+		r.NoError(fixture.client.DeletePurchaseOrderLine(ctx, line.PK), "InvenTree does not itself refuse to delete a line with received quantity")
+		_, err = fixture.client.GetPurchaseOrderLine(ctx, line.PK)
+		r.Error(err)
+
+		stockAfterDelete, err := fixture.client.SearchStockItems(ctx, inventree.StockItemQuery{PurchaseOrderID: order.PK})
+		r.NoError(err)
+		r.Len(stockAfterDelete, 1, "the previously received stock item must survive, now orphaned from its deleted line")
+		a := assert.New(t)
+		a.Equal(receivedStockItemPK, stockAfterDelete[0].PK)
+		a.Equal(1.5, stockAfterDelete[0].Quantity, "InvenTree does not adjust surviving stock quantity when its originating line is deleted")
 	})
 
 	t.Run("stock_adjustments", func(t *testing.T) {

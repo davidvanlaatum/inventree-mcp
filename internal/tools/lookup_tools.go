@@ -93,6 +93,7 @@ const (
 	CreatePurchaseOrderToolName             = "create_purchase_order"
 	AddPurchaseOrderLineToolName            = "add_purchase_order_line"
 	UpdatePurchaseOrderLineToolName         = "update_purchase_order_line"
+	DeletePurchaseOrderLineToolName         = "delete_purchase_order_line"
 	CreatePurchaseOrderExtraLineToolName    = "create_purchase_order_extra_line"
 	UpdatePurchaseOrderExtraLineToolName    = "update_purchase_order_extra_line"
 	DeletePurchaseOrderExtraLineToolName    = "delete_purchase_order_extra_line"
@@ -203,6 +204,7 @@ var writeToolNames = []string{
 	CreatePurchaseOrderToolName,
 	AddPurchaseOrderLineToolName,
 	UpdatePurchaseOrderLineToolName,
+	DeletePurchaseOrderLineToolName,
 	CreatePurchaseOrderExtraLineToolName,
 	UpdatePurchaseOrderExtraLineToolName,
 	DeletePurchaseOrderExtraLineToolName,
@@ -265,7 +267,7 @@ func init() {
 			scopes = []string{ScopeInventreeWrite, ScopeInventreeUpload}
 		case SetCompanyImageToolName, SetCompanyImageFromURLToolName:
 			scopes = []string{ScopeInventreeRead, ScopeInventreeWrite, ScopeInventreeUpload}
-		case DeletePartParameterToolName, DeleteParameterTemplateToolName, MergeParameterTemplatesToolName, DeleteCategoryParameterDefaultToolName, DeletePurchaseOrderExtraLineToolName:
+		case DeletePartParameterToolName, DeleteParameterTemplateToolName, MergeParameterTemplatesToolName, DeleteCategoryParameterDefaultToolName, DeletePurchaseOrderExtraLineToolName, DeletePurchaseOrderLineToolName:
 			scopes = []string{ScopeInventreeRead, ScopeInventreeWrite, ScopeInventreeDestructive}
 			mutationClass = "destructive"
 		case DeleteAttachmentToolName:
@@ -279,7 +281,7 @@ func init() {
 		if name == UploadAttachmentFromURLToolName || name == SetCompanyImageFromURLToolName {
 			annotations.OpenWorld = true
 		}
-		if name == DeleteAttachmentToolName || name == ClearCompanyImageToolName || name == DeletePartParameterToolName || name == DeleteParameterTemplateToolName || name == MergeParameterTemplatesToolName || name == DeleteCategoryParameterDefaultToolName || name == DeletePurchaseOrderExtraLineToolName || name == BulkPropagatePartParametersToolName || name == DepleteStockItemToolName {
+		if name == DeleteAttachmentToolName || name == ClearCompanyImageToolName || name == DeletePartParameterToolName || name == DeleteParameterTemplateToolName || name == MergeParameterTemplatesToolName || name == DeleteCategoryParameterDefaultToolName || name == DeletePurchaseOrderExtraLineToolName || name == DeletePurchaseOrderLineToolName || name == BulkPropagatePartParametersToolName || name == DepleteStockItemToolName {
 			annotations.Destructive = true
 		}
 		ToolAuthorizations[name] = ToolAuthorization{
@@ -306,7 +308,7 @@ func init() {
 	extraLineUpdate := ToolAuthorizations[UpdatePurchaseOrderExtraLineToolName]
 	extraLineUpdate.Annotations.Idempotent = true
 	ToolAuthorizations[UpdatePurchaseOrderExtraLineToolName] = extraLineUpdate
-	for _, name := range []string{SearchPurchaseOrdersToolName, GetPurchaseOrderToolName, SearchPurchaseOrderLinesToolName, GetPurchaseOrderLineToolName, SearchPurchaseOrderExtraLinesToolName, GetPurchaseOrderExtraLineToolName, CreatePurchaseOrderToolName, AddPurchaseOrderLineToolName, UpdatePurchaseOrderLineToolName, CreatePurchaseOrderExtraLineToolName, UpdatePurchaseOrderExtraLineToolName, DeletePurchaseOrderExtraLineToolName, CreatePurchaseOrderWorkflowToolName, IssuePurchaseOrderToolName, ReceivePurchaseOrderToolName} {
+	for _, name := range []string{SearchPurchaseOrdersToolName, GetPurchaseOrderToolName, SearchPurchaseOrderLinesToolName, GetPurchaseOrderLineToolName, SearchPurchaseOrderExtraLinesToolName, GetPurchaseOrderExtraLineToolName, CreatePurchaseOrderToolName, AddPurchaseOrderLineToolName, UpdatePurchaseOrderLineToolName, DeletePurchaseOrderLineToolName, CreatePurchaseOrderExtraLineToolName, UpdatePurchaseOrderExtraLineToolName, DeletePurchaseOrderExtraLineToolName, CreatePurchaseOrderWorkflowToolName, IssuePurchaseOrderToolName, ReceivePurchaseOrderToolName} {
 		auth := ToolAuthorizations[name]
 		auth.MilestoneStatus = ToolMilestone1
 		ToolAuthorizations[name] = auth
@@ -962,6 +964,12 @@ func candidateFor(record any) ClarificationCandidate {
 		return ClarificationCandidate{ID: strconv.Itoa(v.PK), Label: v.Name, Summary: v.Description, URL: fmt.Sprintf("/api/stock/location-type/%d/", v.PK)}
 	case inventree.StockItem:
 		return ClarificationCandidate{ID: strconv.Itoa(v.PK), Label: fmt.Sprintf("stock item %d", v.PK), URL: fmt.Sprintf("/api/stock/%d/", v.PK), Fields: map[string]any{"part": v.Part, "location": v.Location, "quantity": v.Quantity, "status": v.Status, "serial": v.Serial, "batch": v.Batch}}
+	case inventree.PurchaseOrderLineItem:
+		fields := map[string]any{"order": v.Order, "supplier_part_id": v.Part, "quantity": v.Quantity, "received": v.Received, "destination": v.Destination, "purchase_price_currency": v.PurchasePriceCurrency}
+		if v.PurchasePrice != nil {
+			fields["purchase_price"] = *v.PurchasePrice
+		}
+		return ClarificationCandidate{ID: strconv.Itoa(v.PK), Label: v.Reference, Summary: v.Notes, URL: fmt.Sprintf("/api/order/po-line/%d/", v.PK), Fields: fields}
 	case inventree.PurchaseOrderExtraLine:
 		fields := map[string]any{"order": v.Order, "quantity": v.Quantity, "price_currency": v.PriceCurrency}
 		if v.Price != nil {
