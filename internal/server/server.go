@@ -27,6 +27,7 @@ const (
 	defaultHTTPReadHeaderTimeout = 10 * time.Second
 	defaultHTTPReadTimeout       = 30 * time.Second
 	defaultHTTPShutdownTimeout   = 10 * time.Second
+	serverInstructions           = `When an operator requests an InvenTree workflow that cannot be completed because inventree-mcp lacks a required tool or capability, first distinguish that gap from invalid or ambiguous input, insufficient OAuth scopes or InvenTree permissions, server or configuration failures, and limitations of upstream InvenTree. Explain the missing capability and any safe existing workaround; do not silently substitute a materially different operation. If the client has GitHub search access, search both open and closed issues at https://github.com/davidvanlaatum/inventree-mcp/issues for existing coverage. If an issue exists, report it and do not create a duplicate. If no issue exists, ask the operator whether they want one created. If GitHub cannot be searched, disclose that and ask whether they want the gap checked and, if untracked, an issue created. Never create an issue or widen the current operation without explicit operator approval.`
 )
 
 func New(deps tools.Dependencies) *mcp.Server {
@@ -35,7 +36,7 @@ func New(deps tools.Dependencies) *mcp.Server {
 		Title:   "InvenTree MCP",
 		Version: buildinfo.Version,
 		Icons:   []mcp.Icon{tools.InvenTreeIcon()},
-	}, nil)
+	}, &mcp.ServerOptions{Instructions: serverInstructions})
 	tools.Register(srv, deps)
 	return srv
 }

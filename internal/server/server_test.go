@@ -60,6 +60,7 @@ func TestStdioServerCanInitializeAndListTools(t *testing.T) {
 	r.NotNil(initializeResult)
 	r.NotNil(initializeResult.ServerInfo)
 	a.Equal([]mcp.Icon{tools.InvenTreeIcon()}, initializeResult.ServerInfo.Icons)
+	a.Equal(serverInstructions, initializeResult.Instructions)
 	expectedNames := expectedToolNames(false)
 	r.Len(result.Tools, len(expectedNames))
 	for _, tool := range result.Tools {
@@ -137,6 +138,7 @@ func TestTrafficLogCapturesStdioJSONRPCMessages(t *testing.T) {
 			continue
 		}
 		if _, isDiscoverResult := result["supportedVersions"]; isDiscoverResult {
+			a.Equal(serverInstructions, result["instructions"])
 			meta, ok := result["_meta"].(map[string]any)
 			r.True(ok)
 			serverInfo, ok := meta["io.modelcontextprotocol/serverInfo"].(map[string]any)
@@ -163,6 +165,74 @@ func TestTrafficLogCapturesStdioJSONRPCMessages(t *testing.T) {
 	a.Positive(outboundCount)
 	a.True(foundServerIcon)
 	a.True(foundToolIcons)
+}
+
+func TestStdioLegacyInitializePublishesServerInstructions(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	var output strings.Builder
+	traffic := &trafficLog{w: &output}
+	clientTransport, serverTransport := mcp.NewInMemoryTransports()
+	srv := New(tools.Dependencies{})
+	srv.AddReceivingMiddleware(func(next mcp.MethodHandler) mcp.MethodHandler {
+		return func(ctx context.Context, method string, req mcp.Request) (mcp.Result, error) {
+			if method == "server/discover" {
+				return &mcp.DiscoverResult{
+					SupportedVersions: []string{"2025-11-25"},
+					Capabilities:      &mcp.ServerCapabilities{},
+				}, nil
+			}
+			return next(ctx, method, req)
+		}
+	})
+	serverDone := make(chan error, 1)
+	go func() {
+		serverDone <- srv.Run(ctx, loggingTransport{
+			transport: serverTransport,
+			log:       traffic,
+			name:      string(config.TransportStdio),
+		})
+	}()
+
+	client := mcp.NewClient(&mcp.Implementation{Name: "test-client", Version: "v0.0.0"}, nil)
+	session, err := client.Connect(ctx, clientTransport, nil)
+	r.NoError(err)
+	initializeResult := session.InitializeResult()
+	r.NotNil(initializeResult)
+	a.Equal("2025-11-25", initializeResult.ProtocolVersion)
+	a.Equal(serverInstructions, initializeResult.Instructions)
+	r.NoError(session.Close())
+	cancel()
+	<-serverDone
+
+	var foundInitializeRequest bool
+	var foundInitializeResult bool
+	for _, line := range strings.Split(strings.TrimSpace(output.String()), "\n") {
+		var entry trafficLogEntry
+		r.NoError(json.Unmarshal([]byte(line), &entry))
+		var message map[string]any
+		r.NoError(json.Unmarshal(entry.Message, &message))
+		if entry.Direction == "inbound" && message["method"] == "initialize" {
+			foundInitializeRequest = true
+		}
+		if entry.Direction != "outbound" {
+			continue
+		}
+		result, ok := message["result"].(map[string]any)
+		if !ok || result["protocolVersion"] != "2025-11-25" {
+			continue
+		}
+		a.Equal(serverInstructions, result["instructions"])
+		foundInitializeResult = true
+	}
+	a.True(foundInitializeRequest)
+	a.True(foundInitializeResult)
 }
 
 func assertOfficialIconJSON(t *testing.T, value any, descriptor string) {
@@ -377,6 +447,9 @@ func TestHTTPHandlerUsesStatelessStreamableServer(t *testing.T) {
 	initRecorder := postMCP(t, handler, `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","clientInfo":{"name":"test-client","version":"v0.0.0"},"capabilities":{}}}`)
 	r.Equal(http.StatusOK, initRecorder.Code)
 	a.Contains(initRecorder.Body.String(), "inventree-mcp")
+	encodedInstructions, err := json.Marshal(serverInstructions)
+	r.NoError(err)
+	a.Contains(initRecorder.Body.String(), `"instructions":`+string(encodedInstructions))
 
 	listRecorder := postMCP(t, handler, `{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}`)
 	r.Equal(http.StatusOK, listRecorder.Code)
@@ -410,6 +483,7 @@ func TestHTTPHandlerNegotiates20260728ThroughDiscover(t *testing.T) {
 	a.Equal("2026-07-28", result.ProtocolVersion)
 	r.NotNil(result.ServerInfo)
 	a.Equal("inventree-mcp", result.ServerInfo.Name)
+	a.Equal(serverInstructions, result.Instructions)
 	a.Empty(session.ID())
 
 	listed, err := session.ListTools(ctx, nil)

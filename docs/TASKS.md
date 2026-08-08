@@ -105,6 +105,7 @@ Before `M1C-S04` is complete, mutating, operational, destructive, and upload too
 | [F-S23](#f-s23-purchase-order-extra-line-items) | Add guarded purchase-order extra-line administration and combined-workflow support. | Done |
 | [F-S24](#f-s24-guarded-delete-on-deplete-stock-depletion) | Intentionally deplete and delete one safe delete-on-deplete stock item. | Done |
 | [F-S25](#f-s25-inventree-tool-and-server-icons) | Brand MCP tool calls and server identity with the official InvenTree icon. | Done |
+| [F-S26](#f-s26-mcp-functionality-gap-guidance) | Guide consuming agents to surface untracked MCP functionality gaps for operator-approved issue creation. | Done |
 
 ## Milestone 0: Repository And Planning
 
@@ -1645,3 +1646,31 @@ Tasks:
 - Validation: `go generate ./internal/tools`, `go mod tidy -diff`, `go vet ./...`, `golangci-lint run ./...`, `GOFLAGS=-trimpath go test -race -p=1 ./...`, and `git diff --check` pass. `go test -p=1 -tags no_integration_tests -cover ./...` passes with `internal/server` at 76.2% and `internal/tools` at 82.1%, unchanged from the exact `origin/main` base. The first concurrent current/base coverage attempt hit the known unrelated `TestRunCommandUsesIsolatedBoundedProcess` timeout; the exact-base run passed and the required serial `-p=1` current-tree rerun passed.
 - Review: Senior Go Developer, Senior QA / Test Architect, Senior Product Manager, and Senior Infosec Reviewer reviews completed because F-S25 changes the public MCP tool surface and documentation contract. Findings required raw JSON-RPC assertions for the `server/discover` identity and every `tools/list` icon, binding the server assertion specifically to the discovery result, and documenting mutable external-asset availability, caching, content/MIME drift, and cross-origin privacy/trust behavior. The tests and docs address each finding; focused Go, QA, product, and infosec reruns found no actionable findings.
 - Residual risk: MCP clients control icon rendering and may ignore standard icon metadata, cache an older image, or continue showing a generic tool glyph. The externally hosted mutable `en/latest` asset intentionally follows upstream branding, so its availability, content, or MIME behavior can change independently of an `inventree-mcp` release. Rendering can make a cross-origin request to `docs.inventree.org` that exposes client network metadata such as egress IP, user agent, and request timing. Clients should fetch without credentials, validate decoded image content independently of the advisory MIME type, and may reject the icon under stricter external-content policy.
+
+### F-S26: MCP Functionality-Gap Guidance
+
+- Status: `Done`
+- Issue: [#96](https://github.com/davidvanlaatum/inventree-mcp/issues/96)
+- Depends on: F-S16
+- Progress: implementation completed on `codex/f-s26-mcp-gap-guidance`; issue #96 remains open until the implementing pull request is verified merged.
+- Scope: publish advisory MCP server instructions that guide consuming agents when an operator-requested workflow cannot be completed because `inventree-mcp` lacks a required tool or capability. Do not add a GitHub tool, grant issue-creation authority, or change existing InvenTree tool behavior.
+- Acceptance:
+  - Current `server/discover` and legacy `initialize` results publish the same model-facing instructions in STDIO and HTTP modes.
+  - The instructions distinguish a missing `inventree-mcp` capability from invalid or ambiguous input, insufficient OAuth scopes or InvenTree permissions, server/configuration failures, and upstream InvenTree limitations.
+  - The instructions ask agents to explain the gap and safe existing workarounds without silently substituting a materially different operation.
+  - Agents with GitHub search access are asked to search open and closed project issues, report existing coverage without duplication, and ask the operator before creating an untracked issue.
+  - Agents without GitHub search access are asked to disclose that they cannot verify existing coverage and ask whether the operator wants the gap checked and, if untracked, an issue created.
+  - Documentation states that server instructions are advisory and client-controlled, so agent compliance is not guaranteed.
+  - Deterministic SDK- and JSON-RPC-boundary tests verify the exact instructions across current discovery and legacy initialization.
+
+Tasks:
+
+- [x] Define the functionality-gap classification and operator-approval wording.
+- [x] Publish the guidance through MCP server options.
+- [x] Add current-discovery, legacy-initialization, STDIO, and HTTP assertions.
+- [x] Align the plan, tool reference, operator recipe, and task contract.
+- [x] Run Go, QA, and product review and resolve or document findings.
+
+- Validation: `go test -race ./internal/server`, `GOFLAGS=-trimpath go test -race -p=1 ./...`, `go vet ./...`, `golangci-lint run ./...`, `go mod tidy -diff`, and `git diff --check` pass. `go test -tags no_integration_tests -cover ./internal/server` reports 76.2% statement coverage, unchanged from the exact `origin/main` base.
+- Review: Senior Go Developer, Senior QA / Test Architect, and Senior Product Manager reviews completed because F-S26 changes MCP initialization behavior and public operator contracts. Initial Go and QA findings identified missing legacy `initialize` coverage over the STDIO-equivalent transport; the added deterministic fallback test proves the exact instructions in both the typed SDK result and parsed JSON-RPC response. Product review found the operator guidance was incorrectly nested under STDIO setup; it now lives in a transport-neutral section that names current discovery, legacy initialization, STDIO, and HTTP. Focused reruns found no remaining actionable findings.
+- Residual risk: MCP clients control whether and how server instructions reach their agents and may ignore or reinterpret this advisory guidance. GitHub searches can be unavailable, incomplete, or stale, and semantic duplicate matching remains agent-dependent. Future MCP SDK behavior may change, so upgrades must retain the current discovery and legacy initialization assertions.

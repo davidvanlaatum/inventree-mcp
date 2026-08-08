@@ -28,6 +28,10 @@ If the later smoke test requires manual recovery, stop every process using the b
 - The checked machine-readable source is `docs/tool-manifest.json`, generated with `go generate ./internal/tools`.
 - Use `docs/tool-reference.md` for field-level contracts, mutation classes, upload sources, required scopes, MCP annotations, and clarification retry fields.
 
+## MCP Functionality-Gap Guidance
+
+Current `server/discover` and legacy `initialize` publish the same advisory server instructions in STDIO and HTTP modes. They ask consuming agents to distinguish a missing `inventree-mcp` capability from input, authorization, configuration, or upstream limitations; explain any safe workaround; check open and closed project issues when GitHub access is available; and obtain operator approval before creating an untracked issue. Clients may ignore this guidance, and agents without GitHub access must disclose that they cannot verify existing coverage and ask whether the operator wants the gap checked and, if untracked, an issue created.
+
 ## ChatGPT Connector OAuth Setup
 
 Production HTTP includes protected-resource and authorization-server metadata, an operator-facing setup page, CIMD `private_key_jwt` client authentication, PKCE S256 authorization-code exchange, refresh, encrypted MCP token envelopes, request-scoped credential recovery, and per-tool scope guards. The implementation follows the current [OpenAI authentication guide](https://developers.openai.com/plugins/build/auth) and does not allow an unsigned `none` downgrade.
