@@ -430,6 +430,7 @@ Mutating operationally sensitive tools:
 - `set_stock_status`
 - `stocktake_adjustment`
 - `deplete_stock_item`
+- `transfer_stock_item`
 - `add_bom_item`
 - `update_bom_item`
 - `receive_purchase_order_items`
@@ -533,6 +534,7 @@ Important behaviors:
 - Every stock adjustment execution requires a dry-run plan bound to current stock state, explicit confirmation, and a nonblank operator audit reason. The returned `plan_hash` field is an opaque, principal-bound, single-use confirmation token that expires after five minutes; a newer dry run for the same principal, action, and stock item supersedes its earlier token, and a restart invalidates all outstanding tokens. Outstanding confirmation storage is bounded globally and per principal. Plans call out quantity decreases and `Destroyed`, `Rejected`, or `Lost` status transitions as high-risk.
 - No-op changes are refused. Relative and absolute quantity changes are refused for serialized stock because InvenTree does not apply those operations to serialized items; status-only changes remain supported. A quantity change that would reduce an item with `delete_on_deplete:true` to zero is also refused because implicit deletion is outside this non-destructive workflow.
 - Intentional delete-on-deplete removal uses the separate destructive `deplete_stock_item` tool. It removes the complete current positive quantity rather than accepting a caller-selected partial amount, requires read, write, operational, and destructive scopes plus the standard principal-bound confirmation token and audit reason, and rejects allocated, serialized, building, consumed, installed, parent-linked, or child-bearing stock. Supplier, purchase-order, and completed-build provenance is shown and bound into the plan but does not independently block removal. Exact-ID not-found verification is the only success condition, including recovery after a lost successful removal response.
+- Physical relocation uses the separate operational `transfer_stock_item` tool and native stock-transfer endpoint. The first F-S27 contract accepts one stable source item and one explicit destination, always moves the complete current quantity, reports `will_split:false`, preserves reviewed provenance, and verifies the original stable ID at the destination. It applies conservative source-state safeguards but no MCP-specific structural, external, ownership, or type restriction to an exact-read destination; InvenTree remains authoritative for destination validity. F-S28 separately owns partial quantities and split recovery, and F-S29 owns reviewed multi-item batches.
 - Do not adjust the same stock item concurrently through MCP, the InvenTree UI, another server replica, or a direct API client. Execution performs a fresh preflight and rejects state changes it observes, but InvenTree exposes no compare-and-swap primitive across the subsequent mutation. A concurrent change in that narrow read/write window can still race; readback mismatch is returned as `partial_failure` with read-before-retry guidance.
 
 ### Attachment and Image Tools

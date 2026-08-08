@@ -172,15 +172,16 @@ var PromptManifest = []PromptManifestEntry{
 		Status:      PromptMilestone1,
 		Checklist: `Use this checklist before changing an existing stock item:
 - Resolve exactly one stable stock_item_id and read its current quantity, location, status, batch, serial, packaging, and delete_on_deplete state.
-- Return structured clarification instead of guessing when stock identity, observed quantity, target status, or audit reason is missing or ambiguous.
-- Use adjust_stock_quantity for a relative non-zero delta, stocktake_adjustment for an absolute physical count, set_stock_status only for a status change, and deplete_stock_item only for reviewed complete removal of a safe delete-on-deplete record; do not combine hidden location or metadata changes.
+- Return structured clarification instead of guessing when stock identity, current source location, explicit transfer destination, observed quantity, target status, or audit reason is missing or ambiguous.
+- Use adjust_stock_quantity for a relative non-zero delta, stocktake_adjustment for an absolute physical count, set_stock_status only for a status change, deplete_stock_item only for reviewed complete removal of a safe delete-on-deplete record, and transfer_stock_item only for reviewed relocation of one safe item's complete quantity to an explicit destination; do not combine hidden quantity, location, status, or metadata changes.
 - Supply a nonblank operator audit reason and run dry_run:true before every execution.
 - Review the before/after plan and high-risk warning. Quantity decreases and Destroyed, Rejected, or Lost statuses require especially careful review.
 - Refuse no-op changes, refuse relative or absolute quantity changes for serialized stock, and refuse a target quantity of zero when delete_on_deplete is true because this workflow must not implicitly delete stock. Status-only changes remain supported for serialized stock.
 - For intentional depletion, require delete_on_deplete:true and positive in-stock quantity; review allocation, serialization, build/consumption, installation, parent/child, supplier, and order context; reject linked unsafe states; and verify exact-ID absence after removing the complete current quantity.
+- For physical relocation, supply one explicit destination_location_id and no quantity; review source/destination paths, complete quantity, provenance, safety context, and will_split:false. Reject same-location and unsafe source state. Accept every exact-read destination for native InvenTree validation without imposing structural, external, ownership, or type exclusions. Partial transfers and batches are separate future workflows.
 - Execute only with confirm:true and the opaque plan_hash token from the same principal within five minutes. The token is single-use; a newer dry run for the same action and item supersedes it, and a restart invalidates it.
 - Do not adjust the same stock item concurrently through MCP, the InvenTree UI, another server replica, or a direct API client. If state changed, prepare a new dry run.
-- If deplete_stock_item returns partial_failure, call get_stock_item for the exact stable ID before preparing any new plan because deletion may already have completed. For other stock adjustments, do not retry blindly; run a new dry run for the same stable stock_item_id to inspect current state and adjust only if still needed.`,
+- If deplete_stock_item returns partial_failure, call get_stock_item for the exact stable ID before preparing any new plan because deletion may already have completed. If transfer_stock_item returns partial_failure, also call get_stock_item for the exact stable ID before preparing another transfer plan because relocation may already have completed. For other stock adjustments, do not retry blindly; run a new dry run for the same stable stock_item_id to inspect current state and adjust only if still needed.`,
 	},
 }
 

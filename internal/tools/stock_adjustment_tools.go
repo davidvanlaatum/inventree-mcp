@@ -195,6 +195,15 @@ type DepleteStockItemInput struct {
 	Reason      string `json:"reason" jsonschema:"Nonblank operator audit reason recorded with the stock removal transaction."`
 }
 
+type TransferStockItemInput struct {
+	DryRun                bool   `json:"dry_run,omitempty" jsonschema:"Return the current-state-bound full-transfer plan without writing."`
+	Confirm               bool   `json:"confirm,omitempty" jsonschema:"Required true for execution after reviewing a dry run."`
+	PlanHash              string `json:"plan_hash,omitempty" jsonschema:"Opaque single-use confirmation token returned by the latest dry run."`
+	StockItemID           int    `json:"stock_item_id" jsonschema:"Existing stock-item primary key whose complete quantity will be transferred."`
+	DestinationLocationID int    `json:"destination_location_id" jsonschema:"Explicit existing destination stock-location primary key."`
+	Reason                string `json:"reason" jsonschema:"Nonblank operator audit reason recorded with the stock transfer."`
+}
+
 type StockStateSnapshot struct {
 	StockItemID     int     `json:"stock_item_id"`
 	PartID          int     `json:"part_id"`
@@ -225,6 +234,56 @@ type StockDepletionContext struct {
 	SalesOrderID    *int     `json:"sales_order_id,omitempty"`
 }
 
+type StockTransferLocation struct {
+	ID           int                  `json:"id"`
+	Name         string               `json:"name"`
+	ParentID     *int                 `json:"parent_id,omitempty"`
+	Path         []inventree.TreePath `json:"path,omitempty"`
+	Structural   bool                 `json:"structural"`
+	External     bool                 `json:"external"`
+	OwnerID      *int                 `json:"owner_id,omitempty"`
+	LocationType *int                 `json:"location_type_id,omitempty"`
+}
+
+type StockTransferProvenance struct {
+	PartID                int                      `json:"part_id"`
+	Status                int                      `json:"status"`
+	StatusCustomKey       *int                     `json:"status_custom_key,omitempty"`
+	Batch                 *string                  `json:"batch,omitempty"`
+	ExpiryDate            *string                  `json:"expiry_date,omitempty"`
+	Packaging             *string                  `json:"packaging,omitempty"`
+	DeleteOnDeplete       bool                     `json:"delete_on_deplete"`
+	OwnerID               *int                     `json:"owner_id,omitempty"`
+	SupplierPartID        *int                     `json:"supplier_part_id,omitempty"`
+	PurchaseOrderID       *int                     `json:"purchase_order_id,omitempty"`
+	PurchasePrice         *inventree.DecimalString `json:"purchase_price,omitempty"`
+	PurchasePriceCurrency string                   `json:"purchase_price_currency,omitempty"`
+	CreationDate          *string                  `json:"creation_date,omitempty"`
+}
+
+type StockTransferSafety struct {
+	InStock        bool     `json:"in_stock"`
+	Allocated      *float64 `json:"allocated,omitempty"`
+	Serial         *string  `json:"serial,omitempty"`
+	IsBuilding     bool     `json:"is_building"`
+	BuildID        *int     `json:"build_id,omitempty"`
+	ConsumedByID   *int     `json:"consumed_by_id,omitempty"`
+	BelongsToID    *int     `json:"belongs_to_id,omitempty"`
+	ParentID       *int     `json:"parent_id,omitempty"`
+	InstalledItems *int     `json:"installed_items,omitempty"`
+	ChildItems     *int     `json:"child_items,omitempty"`
+	CustomerID     *int     `json:"customer_id,omitempty"`
+	SalesOrderID   *int     `json:"sales_order_id,omitempty"`
+}
+
+type StockTransferContext struct {
+	Source      StockTransferLocation   `json:"source"`
+	Destination StockTransferLocation   `json:"destination"`
+	Provenance  StockTransferProvenance `json:"provenance"`
+	Safety      StockTransferSafety     `json:"safety"`
+	WillSplit   bool                    `json:"will_split"`
+}
+
 type StockAdjustmentPlan struct {
 	Action     string                 `json:"action"`
 	Before     StockStateSnapshot     `json:"before"`
@@ -234,6 +293,7 @@ type StockAdjustmentPlan struct {
 	RiskReason string                 `json:"risk_reason,omitempty"`
 	WillDelete bool                   `json:"will_delete,omitempty"`
 	Depletion  *StockDepletionContext `json:"depletion,omitempty"`
+	Transfer   *StockTransferContext  `json:"transfer,omitempty"`
 }
 
 type StockAdjustmentFailure struct {
@@ -254,6 +314,8 @@ type StockAdjustmentOutput struct {
 	Recovered     bool                    `json:"recovered,omitempty"`
 }
 
+type StockTransferOutput = StockAdjustmentOutput
+
 func registerStockAdjustmentTools(server *mcp.Server, deps Dependencies) {
 	if deps.stockPlanStore == nil {
 		deps.stockPlanStore = newStockPlanStore(time.Now, randomStockPlanToken)
@@ -262,6 +324,7 @@ func registerStockAdjustmentTools(server *mcp.Server, deps Dependencies) {
 	addWriteTool(server, deps, SetStockStatusToolName, "Set stock status", "Plans or confirms one status-only stock change with an audit reason.", setStockStatus(deps))
 	addWriteTool(server, deps, StocktakeAdjustmentToolName, "Record stocktake adjustment", "Plans or confirms one absolute quantity-only stocktake count with an audit reason.", stocktakeAdjustment(deps))
 	addWriteTool(server, deps, DepleteStockItemToolName, "Deplete delete-on-deplete stock item", "Plans or confirms complete removal of one safe delete-on-deplete stock item with an audit reason.", depleteStockItem(deps))
+	addWriteTool(server, deps, TransferStockItemToolName, "Transfer complete stock item", "Plans or confirms relocation of one safe stock item's complete quantity to an explicit destination.", transferStockItem(deps))
 }
 
 func adjustStockQuantity(deps Dependencies) mcp.ToolHandlerFor[AdjustStockQuantityInput, StockAdjustmentOutput] {

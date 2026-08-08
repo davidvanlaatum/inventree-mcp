@@ -250,6 +250,14 @@ endpoints:
     request_schema: '#/components/schemas/StockCount'
     request_content_type: application/json
     response_schema: '#/components/schemas/StockCount'
+  - id: transfer_stock
+    area: stock
+    path: /api/stock/transfer/
+    method: POST
+    operation_id: stock_transfer_create
+    request_schema: '#/components/schemas/StockTransfer'
+    request_content_type: application/json
+    response_schema: '#/components/schemas/StockTransfer'
   - id: change_stock_status
     area: stock
     path: /api/stock/change_status/
