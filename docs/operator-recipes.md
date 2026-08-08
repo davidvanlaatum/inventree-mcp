@@ -189,6 +189,19 @@ HTTP mode accepts the same debug traffic log option as STDIO. HTTP debug entries
 - Expected output: attachment ID, target object, filename, size or link classification, content type, source kind, and thumbnail/image state when available.
 - HTTP note: attachment write tools require OAuth authorization mode plus `inventree.write` and `inventree.upload` before handler dispatch.
 
+## Set, Replace, Or Clear A Company Primary Image
+
+- Required identity: one existing stable `company_id`. Supplier-only, manufacturer-only, customer-only, and mixed-role companies are eligible; these tools never change role state or add sales/customer administration.
+- Inline or STDIO-local source: use `set_company_image` with exactly one of `inline_base64` or `local_path` and a matching content type. Inline bytes require a filename; a local file may derive its filename from the allowlisted path or use an explicit override. Local files remain unavailable in HTTP mode.
+- URL source: use only `set_company_image_from_url`. The fetch follows the bounded SSRF/redirect policy and never forwards MCP or InvenTree credentials. A caller may supply a supported `content_type` override when the response omits it; decoded-content validation remains authoritative.
+- Raster contract: PNG (`.png`, `image/png`), JPEG (`.jpg` or `.jpeg`, `image/jpeg`), or WebP (`.webp`, `image/webp`); decoded format, extension, and media type must agree. Encoded content is capped at 5 MiB, each dimension at 4096 pixels, and total area at 16 megapixels.
+- Replacement: first assignment does not require confirmation. Replacing a non-null current image requires `confirm:true` and returns `replaced:true`.
+- Concurrency: coordinate company-image administration as a single-writer workflow. The tool validates the source and refreshes the exact company immediately before PATCH, but pinned InvenTree exposes no conditional image update; a concurrent assignment or clear can still win the final read/write race. Inspect the exact company and current digest after any unexpected or partial result, and never retry blindly.
+- Verification and recovery: success requires exact company-ID read-back, preservation of every unrelated company field, same-instance image download, and a SHA-256 match with submitted bytes. An ambiguous response returns recovered success only when that complete check passes; otherwise inspect the returned current state and do not retry blindly.
+- Clear: call `clear_company_image` with `confirm:true`. Pinned InvenTree 1.4.3 sets `image` to null and removes the associated current media file; success requires exact null read-back and unrelated-field preservation, and returns `current.has_image:false` with no image URL. An already-empty company returns `no_image` without mutation.
+- Generic attachments: a company attachment remains an attachment and is never treated as the primary logo. Use the company-image tools only for the `Company.image` field.
+- HTTP authorization: assignment requires `inventree.read`, `inventree.write`, and `inventree.upload`; clear additionally requires `inventree.destructive`.
+
 ## Update Or Delete Attachment Metadata
 
 - Required inputs: stable attachment ID. Deletion also requires `confirm:true`.

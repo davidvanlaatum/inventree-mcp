@@ -25,6 +25,8 @@ const parameterModelTypePart = "part.part"
 
 var ErrPartImageMissing = errors.New("part has no primary image")
 
+var ErrCompanyImageMissing = errors.New("company has no primary image")
+
 var downloadAttachmentModelTypes = map[string]bool{
 	"part":             true,
 	"stockitem":        true,
@@ -65,6 +67,14 @@ type DownloadedAttachment struct {
 
 type DownloadedPartImage struct {
 	Part        Part
+	Content     []byte
+	Filename    string
+	ContentType string
+	SourceURL   string
+}
+
+type DownloadedCompanyImage struct {
+	Company     CompanyDetail
 	Content     []byte
 	Filename    string
 	ContentType string
@@ -346,6 +356,58 @@ func (c *Client) DownloadPartImage(ctx context.Context, id int, mode AttachmentC
 	}
 	return DownloadedPartImage{
 		Part:        part,
+		Content:     content,
+		Filename:    filenameFromContentURL(sourceURL),
+		ContentType: resp.Header.Get("Content-Type"),
+		SourceURL:   redactedURLString(sourceURL),
+	}, nil
+}
+
+func (c *Client) DownloadCompanyImage(ctx context.Context, id int, maxBytes int64) (DownloadedCompanyImage, error) {
+	if maxBytes <= 0 {
+		return DownloadedCompanyImage{}, errors.New("company image download maxBytes must be positive")
+	}
+	company, err := c.GetCompanyDetail(ctx, id)
+	if err != nil {
+		return DownloadedCompanyImage{}, err
+	}
+	if company.PK != id {
+		return DownloadedCompanyImage{}, errors.New("company image lookup returned a mismatched identity")
+	}
+	if company.Image == nil || strings.TrimSpace(*company.Image) == "" {
+		return DownloadedCompanyImage{}, ErrCompanyImageMissing
+	}
+	sourceURL, err := c.resolveInvenTreeContentURL(*company.Image)
+	if err != nil {
+		return DownloadedCompanyImage{}, err
+	}
+
+	downloadCtx, cancel := boundedDownloadContext(ctx, c.httpClient)
+	defer cancel()
+	req, err := http.NewRequestWithContext(downloadCtx, http.MethodGet, sourceURL.String(), nil)
+	if err != nil {
+		return DownloadedCompanyImage{}, err
+	}
+	req.Header.Set("Accept", "image/png,image/jpeg,image/webp")
+	c.credential.Apply(req)
+
+	resp, err := noRedirectClient(c.httpClient).Do(req)
+	if err != nil {
+		return DownloadedCompanyImage{}, errors.New("download InvenTree company image failed")
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+		if resp.StatusCode >= http.StatusMultipleChoices && resp.StatusCode < http.StatusBadRequest {
+			return DownloadedCompanyImage{}, fmt.Errorf("InvenTree company image redirected with status %d", resp.StatusCode)
+		}
+		return DownloadedCompanyImage{}, fmt.Errorf("download InvenTree company image failed with status %d", resp.StatusCode)
+	}
+	content, err := readBounded(resp.Body, maxBytes)
+	if err != nil {
+		return DownloadedCompanyImage{}, err
+	}
+	return DownloadedCompanyImage{
+		Company:     company,
 		Content:     content,
 		Filename:    filenameFromContentURL(sourceURL),
 		ContentType: resp.Header.Get("Content-Type"),

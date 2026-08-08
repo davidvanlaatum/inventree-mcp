@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"image"
 	"image/color"
+	"image/jpeg"
 	"image/png"
 	"io"
 	"math/big"
@@ -1375,6 +1376,134 @@ func TestMilestoneHappyPathToolsAgainstInvenTree(t *testing.T) {
 		a.Equal(StatusNoImage, noImage.Status)
 	})
 
+	t.Run("company_primary_images", func(t *testing.T) {
+		r := require.New(t)
+		a := assert.New(t)
+		ctx, _, _ := testhandler.SetupTestHandler(t)
+		fixture := newMilestoneToolFixture(t, shared)
+		initialBytes := tinyPNGColorBytes(color.NRGBA{R: 255, A: 255})
+		replacementBytes := tinyPNGColorBytes(color.NRGBA{B: 255, A: 255})
+		jpegBytes := tinyJPEGBytes()
+		webpBytes := tinyWebPBytes()
+		type roleCase struct {
+			name                   string
+			supplier, manufacturer bool
+			customer               bool
+			content                []byte
+			extension, contentType string
+		}
+		roles := []roleCase{
+			{name: "none"},
+			{name: "supplier", supplier: true},
+			{name: "manufacturer", manufacturer: true, content: jpegBytes, extension: ".jpg", contentType: "image/jpeg"},
+			{name: "customer", customer: true, content: webpBytes, extension: ".webp", contentType: "image/webp"},
+			{name: "supplier-manufacturer", supplier: true, manufacturer: true},
+			{name: "supplier-customer", supplier: true, customer: true},
+			{name: "manufacturer-customer", manufacturer: true, customer: true},
+			{name: "mixed", supplier: true, manufacturer: true, customer: true},
+		}
+		companies := make(map[string]inventree.CompanyDetail, len(roles))
+		for _, role := range roles {
+			name, err := fixture.run.Name("company-image-" + role.name)
+			r.NoError(err)
+			created, err := fixture.client.CreateCompany(ctx, inventree.CompanyCreate{
+				Name: name, Currency: "AUD", IsSupplier: role.supplier, IsManufacturer: role.manufacturer,
+			})
+			r.NoError(err)
+			_, err = fixture.client.UpdateCompany(ctx, created.PK, inventree.PatchFields{
+				"is_supplier": inventree.Set(role.supplier), "is_manufacturer": inventree.Set(role.manufacturer), "is_customer": inventree.Set(role.customer),
+			})
+			r.NoError(err)
+			before, err := fixture.client.GetCompanyDetail(ctx, created.PK)
+			r.NoError(err)
+			r.Nil(before.Image)
+			content := role.content
+			extension := role.extension
+			contentType := role.contentType
+			if content == nil {
+				content, extension, contentType = initialBytes, ".png", "image/png"
+			}
+
+			_, output, err := setCompanyImage(fixture.deps())(ctx, &mcp.CallToolRequest{}, SetCompanyImageInput{
+				CompanyID: created.PK, InlineBase64: base64.StdEncoding.EncodeToString(content), Filename: role.name + extension, ContentType: contentType,
+			})
+			r.NoError(err)
+			a.Equal(StatusOK, output.Status)
+			a.True(output.Verified)
+			a.False(output.Replaced)
+			r.NotNil(output.Image)
+			a.Equal(sha256Hex(content), output.Image.SHA256)
+			a.Equal(role.supplier, before.IsSupplier)
+			a.Equal(role.manufacturer, before.IsManufacturer)
+			a.Equal(role.customer, before.IsCustomer)
+			a.Equal(role.supplier, outputRoleCompany(t, ctx, fixture.client, created.PK).IsSupplier)
+			a.Equal(role.manufacturer, outputRoleCompany(t, ctx, fixture.client, created.PK).IsManufacturer)
+			a.Equal(role.customer, outputRoleCompany(t, ctx, fixture.client, created.PK).IsCustomer)
+			companies[role.name] = before
+		}
+
+		mixed := companies["mixed"]
+		_, _, err := setCompanyImage(fixture.deps())(ctx, &mcp.CallToolRequest{}, SetCompanyImageInput{
+			CompanyID: mixed.PK, InlineBase64: base64.StdEncoding.EncodeToString([]byte("not an image")), Filename: "invalid.png", ContentType: "image/png", Confirm: true,
+		})
+		r.ErrorContains(err, "not a supported valid raster image")
+		unchanged, err := fixture.client.DownloadCompanyImage(ctx, mixed.PK, 1024)
+		r.NoError(err)
+		a.Equal(initialBytes, unchanged.Content)
+
+		var fetchedAuth []string
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			fetchedAuth = append(fetchedAuth, req.Header.Get("Authorization"))
+			w.Header().Set("Content-Type", "image/png")
+			w.Header().Set("Content-Disposition", `attachment; filename="replacement.png"`)
+			_, _ = w.Write(replacementBytes)
+		}))
+		t.Cleanup(server.Close)
+		urlDeps := fixture.deps()
+		urlDeps.URLFetcher = allowLocalTestServerFetcher(t, server.URL)
+		_, replaced, err := setCompanyImageFromURL(urlDeps)(ctx, &mcp.CallToolRequest{}, SetCompanyImageFromURLInput{
+			CompanyID: mixed.PK, URL: server.URL + "/replacement.png", Confirm: true,
+		})
+		r.NoError(err)
+		a.Equal(StatusOK, replaced.Status)
+		a.True(replaced.Replaced)
+		a.True(replaced.Verified)
+		a.Equal(sha256Hex(replacementBytes), replaced.Image.SHA256)
+		a.Equal([]string{""}, fetchedAuth)
+
+		supplier := companies["supplier"]
+		lostSetClient, err := shared.ClientWithHTTPClient(fixture.account, &http.Client{Transport: &loseMutationResponseTransport{
+			base: http.DefaultTransport, method: http.MethodPatch, path: fmt.Sprintf("/api/company/%d/", supplier.PK),
+		}})
+		r.NoError(err)
+		lostSetDeps := fixture.deps()
+		lostSetDeps.ClientFromContext = func(context.Context) (any, error) { return lostSetClient, nil }
+		_, recoveredSet, err := setCompanyImage(lostSetDeps)(ctx, &mcp.CallToolRequest{}, SetCompanyImageInput{
+			CompanyID: supplier.PK, InlineBase64: base64.StdEncoding.EncodeToString(replacementBytes), Filename: "recovered.png", ContentType: "image/png", Confirm: true,
+		})
+		r.NoError(err)
+		a.Equal(StatusOK, recoveredSet.Status)
+		a.True(recoveredSet.Recovered)
+		a.True(recoveredSet.Verified)
+
+		for name, company := range companies {
+			deps := fixture.deps()
+			if name == "mixed" {
+				lostClearClient, err := shared.ClientWithHTTPClient(fixture.account, &http.Client{Transport: &loseMutationResponseTransport{
+					base: http.DefaultTransport, method: http.MethodPatch, path: fmt.Sprintf("/api/company/%d/", company.PK),
+				}})
+				r.NoError(err)
+				deps.ClientFromContext = func(context.Context) (any, error) { return lostClearClient, nil }
+			}
+			_, cleared, err := clearCompanyImage(deps)(ctx, &mcp.CallToolRequest{}, ClearCompanyImageInput{CompanyID: company.PK, Confirm: true})
+			r.NoError(err)
+			a.Equal(StatusOK, cleared.Status)
+			a.True(cleared.Verified)
+			a.Equal(name == "mixed", cleared.Recovered)
+			a.Nil(outputRoleCompany(t, ctx, fixture.client, company.PK).Image)
+		}
+	})
+
 	t.Run("global_parameter_search_and_confirmed_delete", func(t *testing.T) {
 		r := require.New(t)
 		a := assert.New(t)
@@ -1861,11 +1990,40 @@ func sha256Hex(content []byte) string {
 }
 
 func tinyPNGBytes() []byte {
+	return tinyPNGColorBytes(color.NRGBA{R: 255, A: 255})
+}
+
+func tinyPNGColorBytes(pixel color.NRGBA) []byte {
 	var buf bytes.Buffer
 	img := image.NewNRGBA(image.Rect(0, 0, 1, 1))
-	img.SetNRGBA(0, 0, color.NRGBA{R: 255, A: 255})
+	img.SetNRGBA(0, 0, pixel)
 	if err := png.Encode(&buf, img); err != nil {
 		panic(err)
 	}
 	return buf.Bytes()
+}
+
+func tinyJPEGBytes() []byte {
+	var buf bytes.Buffer
+	img := image.NewNRGBA(image.Rect(0, 0, 2, 3))
+	img.SetNRGBA(0, 0, color.NRGBA{G: 255, A: 255})
+	if err := jpeg.Encode(&buf, img, nil); err != nil {
+		panic(err)
+	}
+	return buf.Bytes()
+}
+
+func tinyWebPBytes() []byte {
+	content, err := base64.StdEncoding.DecodeString("UklGRrIBAABXRUJQVlA4TKUBAAAvSsAYAA8w//M///MfeJAkbXvaSG7m8Q3GfYSBJekwQztm/IcZlgwnmWImn2BK7aFmBtnVir6q//8VOkFE/xm4baTIu8c48ArEo6+B3zFKYln3pqClSCKX0begFTAXFOLXHSyF8cCNcZEG4OywuA4KVVfJCiArU7GAgJI8+lJP/OKMT/fBAjevg1cYB7YVkFuWga2lyPi5I0HFy5YTpWIHg0RZpkniRVW9odHAKOwosWuOGdxIyn2OvaCDvhg/we6TwadPBPbqBV58MsLmMJ8yZnOWk8SRz4N+QoyPL+MnamzMvcE1rHNEr91F9GKZPVUcS9w7PhhH36suB9qPeYb/oLk6cuTiJ0wOK3m5h1cKjW6EVZCYMK7dxcKCBdgP9HkKr9gkAO2P8GKZGWVdIAatQa+1IDpt6qyorVwdy01xdW8Jkfk6xjEXmVQQ+HQdFr6OKhIN34dXWq0+0qr6EJSCeeVLH9+gvGTLyqM65PQ44ihzlTXxQKjKbAvshXgir7Lil9w4L2bvMycmjQcqXaMCO6BlY28i+FOLzbfI1vEqxAhotocAAA==")
+	if err != nil {
+		panic(err)
+	}
+	return content
+}
+
+func outputRoleCompany(t *testing.T, ctx context.Context, client *inventree.Client, id int) inventree.CompanyDetail {
+	t.Helper()
+	company, err := client.GetCompanyDetail(ctx, id)
+	require.NoError(t, err)
+	return company
 }

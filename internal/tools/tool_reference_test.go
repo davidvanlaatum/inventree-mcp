@@ -86,6 +86,11 @@ func TestToolReferenceDocumentsLookupFrameworkSchema(t *testing.T) {
 		reflect.TypeOf(DeleteAttachmentInput{}),
 		reflect.TypeOf(SetPrimaryImageInput{}),
 		reflect.TypeOf(AttachmentWriteOutput{}),
+		reflect.TypeOf(SetCompanyImageInput{}),
+		reflect.TypeOf(SetCompanyImageFromURLInput{}),
+		reflect.TypeOf(ClearCompanyImageInput{}),
+		reflect.TypeOf(CompanyImageOutput{}),
+		reflect.TypeOf(CompanyImageState{}),
 		reflect.TypeOf(ClarificationResponse{}),
 		reflect.TypeOf(ClarificationCandidate{}),
 	} {
@@ -165,9 +170,15 @@ func TestToolReferenceDocumentsRegisteredWriteTools(t *testing.T) {
 		case UploadAttachmentToolName, UploadAttachmentFromURLToolName, CreateLinkAttachmentToolName, UpdateAttachmentMetadataToolName, SetPrimaryImageToolName:
 			a.Equal("write", auth.MutationClass)
 			a.Equal([]string{ScopeInventreeWrite, ScopeInventreeUpload}, auth.Scopes)
+		case SetCompanyImageToolName, SetCompanyImageFromURLToolName:
+			a.Equal("write", auth.MutationClass)
+			a.Equal([]string{ScopeInventreeRead, ScopeInventreeWrite, ScopeInventreeUpload}, auth.Scopes)
 		case DeleteAttachmentToolName:
 			a.Equal("destructive", auth.MutationClass)
 			a.Equal([]string{ScopeInventreeWrite, ScopeInventreeUpload, ScopeInventreeDestructive}, auth.Scopes)
+		case ClearCompanyImageToolName:
+			a.Equal("destructive", auth.MutationClass)
+			a.Equal([]string{ScopeInventreeRead, ScopeInventreeWrite, ScopeInventreeUpload, ScopeInventreeDestructive}, auth.Scopes)
 		case DeletePartParameterToolName, DeleteParameterTemplateToolName, MergeParameterTemplatesToolName, DeleteCategoryParameterDefaultToolName, DeletePurchaseOrderExtraLineToolName:
 			a.Equal("destructive", auth.MutationClass)
 			a.Equal([]string{ScopeInventreeRead, ScopeInventreeWrite, ScopeInventreeDestructive}, auth.Scopes)

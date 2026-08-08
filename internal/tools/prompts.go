@@ -114,12 +114,13 @@ var PromptManifest = []PromptManifestEntry{
 		Description: "Checklist for attachment/image reads, uploads, links, metadata updates, deletes, and primary-image replacement.",
 		Status:      PromptMilestone1,
 		Checklist: `Use this checklist before attachment/image reads, writes, or primary-image replacement work:
-- Resolve the target object type and stable object ID before listing or downloading attachments and part images.
-- Current milestone tools can list metadata, download schema-exposed attachment or part-image content, upload inline or allowlisted local files, upload URL copies, create stored links, update metadata, delete confirmed attachments, and set a primary part image from a stable same-part image attachment.
-- Keep upload sources distinct: inline bytes, STDIO allowlisted local paths, URL-upload copy, and stored links are separate intents.
-- Ask for structured clarification when target object identity, URL intent, original versus thumbnail mode, filename/content/link duplicates, primary-image attachment selection, or replacement confirmation is ambiguous.
-- Do not fetch stored link targets; download only schema-exposed InvenTree file, thumbnail, or part-image URLs.
-- Require confirm:true before deleting attachments and before replacing an existing primary part image.`,
+- Resolve the target object type and stable object ID before listing or downloading attachments and part images, or changing a company primary image.
+- Current milestone tools can list metadata, download schema-exposed attachment or part-image content, upload inline or allowlisted local files, upload URL copies, create stored links, update metadata, delete confirmed attachments, set a primary part image from a stable same-part image attachment, and assign, replace, or clear an existing company's primary image.
+- Keep upload sources distinct: inline bytes, STDIO allowlisted local paths, URL-upload copy, and stored links are separate intents. Company-image URL fetches use only set_company_image_from_url; generic company attachments never become the company logo.
+- Company images must be matching PNG, JPEG, or WebP raster content no larger than 5 MiB, 4096 pixels per dimension, or 16 megapixels total.
+- Ask for structured clarification when target object identity, URL intent, original versus thumbnail mode, filename/content/link duplicates, primary-image attachment selection, raster metadata, or replacement confirmation is ambiguous.
+- Do not fetch stored link targets; download only schema-exposed InvenTree file, thumbnail, part-image, or company-image URLs.
+- Require confirm:true before deleting attachments, replacing an existing primary part or company image, or clearing a company image. Exact digest or null read-back is required; after partial_failure, inspect current state and never retry blindly.`,
 	},
 	{
 		Name:        InitialStockEntryChecklistPromptName,

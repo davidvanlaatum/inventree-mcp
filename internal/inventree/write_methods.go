@@ -214,6 +214,12 @@ type PartPrimaryImageCreate struct {
 	Content     []byte
 }
 
+type CompanyPrimaryImageCreate struct {
+	Filename    string
+	ContentType string
+	Content     []byte
+}
+
 func (c *Client) CreatePart(ctx context.Context, input PartCreate) (Part, error) {
 	var out Part
 	err := c.Post(ctx, "/api/part/", input, &out)
@@ -508,6 +514,21 @@ func (c *Client) SetPartPrimaryImage(ctx context.Context, partID int, input Part
 		content:     input.Content,
 	}, &out)
 	return out, err
+}
+
+func (c *Client) SetCompanyPrimaryImage(ctx context.Context, companyID int, input CompanyPrimaryImageCreate) (CompanyDetail, error) {
+	var out CompanyDetail
+	err := c.patchMultipart(ctx, fmt.Sprintf("/api/company/%d/", companyID), nil, multipartFile{
+		fieldName:   "image",
+		filename:    input.Filename,
+		contentType: input.ContentType,
+		content:     input.Content,
+	}, &out)
+	return out, err
+}
+
+func (c *Client) ClearCompanyPrimaryImage(ctx context.Context, companyID int) (CompanyDetail, error) {
+	return c.UpdateCompany(ctx, companyID, PatchFields{"image": Null()})
 }
 
 func NewPartParameter(partID int, templateID int, data string) ParameterCreate {
