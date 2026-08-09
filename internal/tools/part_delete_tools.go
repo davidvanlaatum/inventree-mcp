@@ -11,9 +11,29 @@ import (
 // PartDeleteClient is deliberately read-heavy: delete_part must report every
 // known dependency before it will consider deleting a part, and refuses
 // outright while any of the blocking categories below are non-empty.
+//
+// Pinned against InvenTree 1.4.3 (see the "part_delete" integration
+// subtest), DELETE /api/part/{id}/ is far more permissive than the shape of
+// this guard might suggest, and that permissiveness is exactly why the
+// guard exists rather than being redundant with upstream. Upstream itself
+// enforces only two things: the part must be inactive first ("Cannot delete
+// this part as it is still active"), and a part currently used as a
+// component in another part's BOM is protected ("Cannot delete this part
+// as it is used in an assembly"). Every other relationship this tool checks
+// -- stock, the part's own BOM, builds, purchase-order lines, sales-order
+// lines, variants, supplier parts, manufacturer parts, parameters,
+// attachments, and related-part links -- is silently permitted by InvenTree
+// once the part is inactive, and pinned evidence shows the consequences
+// differ by relation: deleting a part with an existing stock item also
+// destroys that stock item (not merely orphans it), while deleting a part
+// referenced by a purchase-order line leaves the line behind, orphaned.
+// This tool therefore refuses on every one of those categories itself,
+// with exact stable IDs reported up front, rather than ever risking a
+// silent cascade InvenTree would otherwise allow.
 type PartDeleteClient interface {
 	GetPart(context.Context, int) (inventree.Part, error)
 	GetPartCategory(context.Context, int) (inventree.Category, error)
+	SearchPartsByQuery(context.Context, inventree.PartQuery) ([]inventree.Part, error)
 	SearchStockItems(context.Context, inventree.StockItemQuery) ([]inventree.StockItem, error)
 	SearchSupplierParts(context.Context, inventree.SupplierPartQuery) ([]inventree.SupplierPart, error)
 	SearchManufacturerParts(context.Context, inventree.ManufacturerPartQuery) ([]inventree.ManufacturerPart, error)
@@ -49,20 +69,29 @@ type PartDeleteOutput struct {
 }
 
 // PartDeleteBlockingReferences reports the stable IDs of every record that
-// refused this deletion, so an operator can inspect them without the tool
-// ever cascading a removal on their behalf.
+// refuses this deletion, so an operator can inspect and remove them
+// explicitly instead of the tool ever cascading a removal on their behalf.
 type PartDeleteBlockingReferences struct {
+	Active               bool  `json:"active,omitempty"`
 	StockItemIDs         []int `json:"stock_item_ids,omitempty"`
 	BomAsAssemblyIDs     []int `json:"bom_as_assembly_ids,omitempty"`
 	BomAsComponentIDs    []int `json:"bom_as_component_ids,omitempty"`
 	BuildIDs             []int `json:"build_ids,omitempty"`
 	PurchaseOrderLineIDs []int `json:"purchase_order_line_ids,omitempty"`
 	SalesOrderLineIDs    []int `json:"sales_order_line_ids,omitempty"`
+	VariantPartIDs       []int `json:"variant_part_ids,omitempty"`
+	SupplierPartIDs      []int `json:"supplier_part_ids,omitempty"`
+	ManufacturerPartIDs  []int `json:"manufacturer_part_ids,omitempty"`
+	ParameterIDs         []int `json:"parameter_ids,omitempty"`
+	AttachmentIDs        []int `json:"attachment_ids,omitempty"`
+	RelatedPartIDs       []int `json:"related_part_ids,omitempty"`
 }
 
 func (b PartDeleteBlockingReferences) empty() bool {
-	return len(b.StockItemIDs) == 0 && len(b.BomAsAssemblyIDs) == 0 && len(b.BomAsComponentIDs) == 0 &&
-		len(b.BuildIDs) == 0 && len(b.PurchaseOrderLineIDs) == 0 && len(b.SalesOrderLineIDs) == 0
+	return !b.Active && len(b.StockItemIDs) == 0 && len(b.BomAsAssemblyIDs) == 0 && len(b.BomAsComponentIDs) == 0 &&
+		len(b.BuildIDs) == 0 && len(b.PurchaseOrderLineIDs) == 0 && len(b.SalesOrderLineIDs) == 0 &&
+		len(b.VariantPartIDs) == 0 && len(b.SupplierPartIDs) == 0 && len(b.ManufacturerPartIDs) == 0 &&
+		len(b.ParameterIDs) == 0 && len(b.AttachmentIDs) == 0 && len(b.RelatedPartIDs) == 0
 }
 
 func registerPartDeleteTool(server *mcp.Server, deps Dependencies) {
@@ -88,7 +117,7 @@ func deletePart(deps Dependencies) mcp.ToolHandlerFor[DeletePartInput, PartDelet
 				return nil, PartDeleteOutput{}, err
 			}
 
-			blocking, err := loadPartDeleteBlockingReferences(ctx, client, record, preview.SupplierParts)
+			blocking, err := loadPartDeleteBlockingReferences(ctx, client, record, preview)
 			if err != nil {
 				return nil, PartDeleteOutput{}, err
 			}
@@ -174,8 +203,19 @@ func loadPartDeletePreview(ctx context.Context, client PartDeleteClient, record 
 	return preview, nil
 }
 
-func loadPartDeleteBlockingReferences(ctx context.Context, client PartDeleteClient, record inventree.Part, supplierParts []inventree.SupplierPart) (PartDeleteBlockingReferences, error) {
-	var blocking PartDeleteBlockingReferences
+func loadPartDeleteBlockingReferences(ctx context.Context, client PartDeleteClient, record inventree.Part, preview partDeletePreview) (PartDeleteBlockingReferences, error) {
+	blocking := PartDeleteBlockingReferences{
+		// InvenTree 1.4.3 itself refuses to delete any active part; this
+		// tool refuses on the same condition rather than letting an
+		// otherwise-clean confirmed deletion fail with a generic upstream
+		// validation error.
+		Active:              record.Active,
+		SupplierPartIDs:     supplierPartIDs(preview.SupplierParts),
+		ManufacturerPartIDs: manufacturerPartIDs(preview.ManufacturerParts),
+		ParameterIDs:        parameterIDs(preview.Parameters),
+		AttachmentIDs:       attachmentIDs(preview.Attachments),
+		RelatedPartIDs:      partRelationIDs(preview.RelatedParts),
+	}
 
 	stockItems, err := client.SearchStockItems(ctx, inventree.StockItemQuery{PartID: record.PK})
 	if err != nil {
@@ -201,19 +241,29 @@ func loadPartDeleteBlockingReferences(ctx context.Context, client PartDeleteClie
 	}
 	blocking.BuildIDs = buildIDs(builds)
 
-	for _, supplierPart := range supplierParts {
-		lines, err := client.SearchPurchaseOrderLines(ctx, inventree.PurchaseOrderLineQuery{SupplierPart: supplierPart.PK})
-		if err != nil {
-			return PartDeleteBlockingReferences{}, safePartDeleteError("purchase-order-line preflight")
-		}
-		blocking.PurchaseOrderLineIDs = append(blocking.PurchaseOrderLineIDs, purchaseOrderLineIDsFor(lines)...)
+	// InvenTree's purchase-order-line list exposes a dedicated base_part
+	// filter (the resolved underlying Part behind any of its supplier
+	// parts), so this queries directly by record.PK instead of fanning out
+	// over every supplier-part of the part.
+	lines, err := client.SearchPurchaseOrderLines(ctx, inventree.PurchaseOrderLineQuery{BasePart: record.PK})
+	if err != nil {
+		return PartDeleteBlockingReferences{}, safePartDeleteError("purchase-order-line preflight")
 	}
+	blocking.PurchaseOrderLineIDs = purchaseOrderLineIDsFor(lines)
 
 	salesOrderLines, err := client.SearchSalesOrderLines(ctx, inventree.SalesOrderLineQuery{Part: record.PK})
 	if err != nil {
 		return PartDeleteBlockingReferences{}, safePartDeleteError("sales-order-line preflight")
 	}
 	blocking.SalesOrderLineIDs = salesOrderLineIDs(salesOrderLines)
+
+	// A part that is a variant template for other parts cannot be safely
+	// deleted without breaking those parts' variant relationship.
+	variants, err := client.SearchPartsByQuery(ctx, inventree.PartQuery{VariantOf: record.PK})
+	if err != nil {
+		return PartDeleteBlockingReferences{}, safePartDeleteError("variant-part preflight")
+	}
+	blocking.VariantPartIDs = partIDs(variants)
 
 	return blocking, nil
 }
@@ -234,7 +284,7 @@ func partDeletePreviewOutput(status string, record inventree.Part, preview partD
 }
 
 func partDeleteUnsafeClarification(record inventree.Part, preview partDeletePreview, blocking PartDeleteBlockingReferences) (*mcp.CallToolResult, PartDeleteOutput, error) {
-	clarification := NewClarification("Which safe action addresses this part instead of deleting it?", "blocking", "stock, builds, bill-of-materials, purchase-order, or sales-order records still reference this part; deletion would either be rejected upstream or silently orphan those records", "id", true, candidatesFor([]inventree.Part{record}), map[string]any{"id": record.PK})
+	clarification := NewClarification("Which safe action addresses this part instead of deleting it?", "blocking", "the part is still active, or stock, builds, bill-of-materials, purchase-order lines, sales-order lines, variant parts, supplier parts, manufacturer parts, parameters, attachments, or related-part links still reference it; InvenTree permits deleting an inactive part despite most of these, sometimes destroying the referencing record rather than merely orphaning it, so this tool refuses instead of risking that outcome; deactivate and remove the reported records explicitly first", "id", true, candidatesFor([]inventree.Part{record}), map[string]any{"id": record.PK})
 	return TextResult(StatusClarificationRequired), partDeletePreviewOutput(StatusClarificationRequired, record, preview, &blocking, &clarification), nil
 }
 
@@ -287,6 +337,54 @@ func salesOrderLineIDs(lines []inventree.SalesOrderLineItem) []int {
 	ids := make([]int, 0, len(lines))
 	for _, line := range lines {
 		ids = append(ids, line.PK)
+	}
+	return ids
+}
+
+func partIDs(parts []inventree.Part) []int {
+	ids := make([]int, 0, len(parts))
+	for _, part := range parts {
+		ids = append(ids, part.PK)
+	}
+	return ids
+}
+
+func supplierPartIDs(parts []inventree.SupplierPart) []int {
+	ids := make([]int, 0, len(parts))
+	for _, part := range parts {
+		ids = append(ids, part.PK)
+	}
+	return ids
+}
+
+func manufacturerPartIDs(parts []inventree.ManufacturerPart) []int {
+	ids := make([]int, 0, len(parts))
+	for _, part := range parts {
+		ids = append(ids, part.PK)
+	}
+	return ids
+}
+
+func parameterIDs(parameters []inventree.Parameter) []int {
+	ids := make([]int, 0, len(parameters))
+	for _, parameter := range parameters {
+		ids = append(ids, parameter.PK)
+	}
+	return ids
+}
+
+func attachmentIDs(attachments []inventree.Attachment) []int {
+	ids := make([]int, 0, len(attachments))
+	for _, attachment := range attachments {
+		ids = append(ids, attachment.PK)
+	}
+	return ids
+}
+
+func partRelationIDs(relations []inventree.PartRelation) []int {
+	ids := make([]int, 0, len(relations))
+	for _, relation := range relations {
+		ids = append(ids, relation.PK)
 	}
 	return ids
 }

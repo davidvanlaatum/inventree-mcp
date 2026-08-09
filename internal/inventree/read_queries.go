@@ -22,6 +22,7 @@ type CategoryQuery struct {
 type PartQuery struct {
 	CategoryID int
 	Cascade    *bool
+	VariantOf  int
 	Limit      int
 	Offset     int
 }
@@ -112,6 +113,7 @@ type PurchaseOrderLineQuery struct {
 	Search       string
 	Order        int
 	SupplierPart int
+	BasePart     int
 	Pending      *bool
 	Received     *bool
 	Limit        int
@@ -181,6 +183,9 @@ func (q PartQuery) values() url.Values {
 	}
 	if q.Cascade != nil {
 		values.Set("cascade", strconv.FormatBool(*q.Cascade))
+	}
+	if q.VariantOf != 0 {
+		values.Set("variant_of", strconv.Itoa(q.VariantOf))
 	}
 	setPagination(values, q.Limit, q.Offset)
 	return values
@@ -340,6 +345,9 @@ func (q PurchaseOrderLineQuery) values() url.Values {
 	}
 	if q.SupplierPart != 0 {
 		values.Set("part", strconv.Itoa(q.SupplierPart))
+	}
+	if q.BasePart != 0 {
+		values.Set("base_part", strconv.Itoa(q.BasePart))
 	}
 	if q.Pending != nil {
 		values.Set("pending", strconv.FormatBool(*q.Pending))

@@ -24,6 +24,7 @@ type fakePartDeleteClient struct {
 	purchaseOrderLines []inventree.PurchaseOrderLineItem
 	salesOrderLines    []inventree.SalesOrderLineItem
 	partRelations      []inventree.PartRelation
+	variantParts       []inventree.Part
 
 	deleteErr       error
 	keepAfterDelete bool
@@ -122,8 +123,19 @@ func (f *fakePartDeleteClient) SearchBuilds(_ context.Context, query inventree.B
 func (f *fakePartDeleteClient) SearchPurchaseOrderLines(_ context.Context, query inventree.PurchaseOrderLineQuery) ([]inventree.PurchaseOrderLineItem, error) {
 	result := make([]inventree.PurchaseOrderLineItem, 0, len(f.purchaseOrderLines))
 	for _, line := range f.purchaseOrderLines {
-		if query.SupplierPart == 0 || line.Part == query.SupplierPart {
-			result = append(result, line)
+		if query.BasePart != 0 && (line.InternalPart == nil || *line.InternalPart != query.BasePart) {
+			continue
+		}
+		result = append(result, line)
+	}
+	return result, nil
+}
+
+func (f *fakePartDeleteClient) SearchPartsByQuery(_ context.Context, query inventree.PartQuery) ([]inventree.Part, error) {
+	result := make([]inventree.Part, 0, len(f.variantParts))
+	for _, part := range f.variantParts {
+		if query.VariantOf == 0 || (part.VariantOf != nil && *part.VariantOf == query.VariantOf) {
+			result = append(result, part)
 		}
 	}
 	return result, nil
@@ -205,6 +217,29 @@ func TestDeletePartNotFound(t *testing.T) {
 	a.Equal(StatusNotFound, out.Status)
 }
 
+// InvenTree 1.4.3 itself refuses to delete any active part ("Cannot delete
+// this part as it is still active"), independent of every other blocking
+// category; this tool refuses on the same condition up front instead of
+// letting an otherwise-clean confirmed deletion fail with a generic
+// upstream validation error.
+func TestDeletePartRefusesActivePart(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	fake := newPartDeleteFixture()
+	activePart := fake.parts[369]
+	activePart.Active = true
+	fake.parts[369] = activePart
+
+	_, out, err := deletePart(partDeleteDeps(fake))(ctx, &mcp.CallToolRequest{}, DeletePartInput{ID: 369, Confirm: true})
+	r.NoError(err)
+	a.Equal(StatusClarificationRequired, out.Status)
+	r.NotNil(out.Blocking)
+	a.True(out.Blocking.Active)
+	a.Zero(fake.deleteCalls)
+}
+
 func TestDeletePartRefusesStock(t *testing.T) {
 	t.Parallel()
 	r := require.New(t)
@@ -271,20 +306,87 @@ func TestDeletePartRefusesBuild(t *testing.T) {
 	a.Zero(fake.deleteCalls)
 }
 
-func TestDeletePartRefusesPurchaseOrderLineViaSupplierPart(t *testing.T) {
+func TestDeletePartRefusesPurchaseOrderLine(t *testing.T) {
 	t.Parallel()
 	r := require.New(t)
 	a := assert.New(t)
 	ctx, _, _ := testhandler.SetupTestHandler(t)
 	fake := newPartDeleteFixture()
+	basePart := 369
 	fake.supplierParts = []inventree.SupplierPart{{PK: 40, Part: 369, Supplier: 30, SKU: "SKU-40"}}
-	fake.purchaseOrderLines = []inventree.PurchaseOrderLineItem{{PK: 800, Order: 120, Part: 40, Quantity: 5}}
+	fake.purchaseOrderLines = []inventree.PurchaseOrderLineItem{{PK: 800, Order: 120, Part: 40, InternalPart: &basePart, Quantity: 5}}
 
 	_, out, err := deletePart(partDeleteDeps(fake))(ctx, &mcp.CallToolRequest{}, DeletePartInput{ID: 369, Confirm: true})
 	r.NoError(err)
 	a.Equal(StatusClarificationRequired, out.Status)
 	r.NotNil(out.Blocking)
 	a.Equal([]int{800}, out.Blocking.PurchaseOrderLineIDs)
+	a.Zero(fake.deleteCalls)
+}
+
+func TestDeletePartRefusesPurchaseOrderLineAcrossMultipleSupplierParts(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	fake := newPartDeleteFixture()
+	basePart := 369
+	fake.supplierParts = []inventree.SupplierPart{
+		{PK: 40, Part: 369, Supplier: 30, SKU: "SKU-40"},
+		{PK: 41, Part: 369, Supplier: 31, SKU: "SKU-41"},
+	}
+	fake.purchaseOrderLines = []inventree.PurchaseOrderLineItem{
+		{PK: 800, Order: 120, Part: 40, InternalPart: &basePart, Quantity: 5},
+		{PK: 801, Order: 121, Part: 41, InternalPart: &basePart, Quantity: 2},
+	}
+
+	_, out, err := deletePart(partDeleteDeps(fake))(ctx, &mcp.CallToolRequest{}, DeletePartInput{ID: 369, Confirm: true})
+	r.NoError(err)
+	a.Equal(StatusClarificationRequired, out.Status)
+	r.NotNil(out.Blocking)
+	a.ElementsMatch([]int{800, 801}, out.Blocking.PurchaseOrderLineIDs)
+	a.Zero(fake.deleteCalls)
+}
+
+func TestDeletePartRefusesVariantPart(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	fake := newPartDeleteFixture()
+	templateID := 369
+	fake.variantParts = []inventree.Part{{PK: 371, Name: "Solder Variant", VariantOf: &templateID}}
+
+	_, out, err := deletePart(partDeleteDeps(fake))(ctx, &mcp.CallToolRequest{}, DeletePartInput{ID: 369, Confirm: true})
+	r.NoError(err)
+	a.Equal(StatusClarificationRequired, out.Status)
+	r.NotNil(out.Blocking)
+	a.Equal([]int{371}, out.Blocking.VariantPartIDs)
+	a.Zero(fake.deleteCalls)
+}
+
+func TestDeletePartRefusesMultipleBlockingCategoriesSimultaneously(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	fake := newPartDeleteFixture()
+	fake.stockItems = []inventree.StockItem{{PK: 500, Part: 369, Quantity: 5}}
+	fake.builds = []inventree.Build{{PK: 700, Part: 369, Reference: "BO-0001"}}
+	partID := 369
+	fake.salesOrderLines = []inventree.SalesOrderLineItem{{PK: 900, Order: 55, Part: &partID, Quantity: 1}}
+
+	_, out, err := deletePart(partDeleteDeps(fake))(ctx, &mcp.CallToolRequest{}, DeletePartInput{ID: 369, Confirm: true})
+	r.NoError(err)
+	a.Equal(StatusClarificationRequired, out.Status)
+	r.NotNil(out.Blocking)
+	a.Equal([]int{500}, out.Blocking.StockItemIDs)
+	a.Equal([]int{700}, out.Blocking.BuildIDs)
+	a.Equal([]int{900}, out.Blocking.SalesOrderLineIDs)
+	a.Empty(out.Blocking.BomAsAssemblyIDs)
+	a.Empty(out.Blocking.BomAsComponentIDs)
+	a.Empty(out.Blocking.PurchaseOrderLineIDs)
+	a.Empty(out.Blocking.VariantPartIDs)
 	a.Zero(fake.deleteCalls)
 }
 
@@ -305,18 +407,100 @@ func TestDeletePartRefusesSalesOrderLine(t *testing.T) {
 	a.Zero(fake.deleteCalls)
 }
 
-func TestDeletePartPreviewReportsInformationalContext(t *testing.T) {
+// InvenTree 1.4.3's own DELETE /api/part/{id}/ silently permits deleting a
+// part while a supplier part, manufacturer part, parameter, attachment, or
+// related-part link still exists (pinned by the "part_delete" client-method
+// integration subtest) -- there is no upstream protection to rely on for
+// any of these. This tool's own guard therefore blocks on every one of them
+// itself, exactly like stock, BOM, builds, and orders.
+func TestDeletePartRefusesSupplierPart(t *testing.T) {
 	t.Parallel()
 	r := require.New(t)
 	a := assert.New(t)
 	ctx, _, _ := testhandler.SetupTestHandler(t)
 	fake := newPartDeleteFixture()
 	fake.supplierParts = []inventree.SupplierPart{{PK: 40, Part: 369, Supplier: 30, SKU: "SKU-40"}}
+
+	_, out, err := deletePart(partDeleteDeps(fake))(ctx, &mcp.CallToolRequest{}, DeletePartInput{ID: 369, Confirm: true})
+	r.NoError(err)
+	a.Equal(StatusClarificationRequired, out.Status)
+	r.NotNil(out.Blocking)
+	a.Equal([]int{40}, out.Blocking.SupplierPartIDs)
+	r.Len(out.SupplierParts, 1, "the full record stays available for review even though it's also reported as blocking")
+	a.Zero(fake.deleteCalls)
+}
+
+func TestDeletePartRefusesManufacturerPart(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	fake := newPartDeleteFixture()
 	fake.manufacturerParts = []inventree.ManufacturerPart{{PK: 41, Part: 369, Manufacturer: 31, MPN: "MPN-41"}}
+
+	_, out, err := deletePart(partDeleteDeps(fake))(ctx, &mcp.CallToolRequest{}, DeletePartInput{ID: 369, Confirm: true})
+	r.NoError(err)
+	a.Equal(StatusClarificationRequired, out.Status)
+	r.NotNil(out.Blocking)
+	a.Equal([]int{41}, out.Blocking.ManufacturerPartIDs)
+	a.Zero(fake.deleteCalls)
+}
+
+func TestDeletePartRefusesParameter(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	fake := newPartDeleteFixture()
 	fake.parameters = []inventree.Parameter{{PK: 42, Template: 1, ModelType: "part", ModelID: 369, Data: "1"}}
+
+	_, out, err := deletePart(partDeleteDeps(fake))(ctx, &mcp.CallToolRequest{}, DeletePartInput{ID: 369, Confirm: true})
+	r.NoError(err)
+	a.Equal(StatusClarificationRequired, out.Status)
+	r.NotNil(out.Blocking)
+	a.Equal([]int{42}, out.Blocking.ParameterIDs)
+	a.Zero(fake.deleteCalls)
+}
+
+func TestDeletePartRefusesAttachment(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	fake := newPartDeleteFixture()
 	fake.attachments = []inventree.Attachment{{PK: 43, ModelType: "part", ModelID: 369, Filename: "datasheet.pdf"}}
+
+	_, out, err := deletePart(partDeleteDeps(fake))(ctx, &mcp.CallToolRequest{}, DeletePartInput{ID: 369, Confirm: true})
+	r.NoError(err)
+	a.Equal(StatusClarificationRequired, out.Status)
+	r.NotNil(out.Blocking)
+	a.Equal([]int{43}, out.Blocking.AttachmentIDs)
+	a.Zero(fake.deleteCalls)
+}
+
+func TestDeletePartRefusesRelatedPart(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	fake := newPartDeleteFixture()
 	otherPartID := 370
 	fake.partRelations = []inventree.PartRelation{{PK: 44, Part1: 369, Part2: otherPartID}}
+
+	_, out, err := deletePart(partDeleteDeps(fake))(ctx, &mcp.CallToolRequest{}, DeletePartInput{ID: 369, Confirm: true})
+	r.NoError(err)
+	a.Equal(StatusClarificationRequired, out.Status)
+	r.NotNil(out.Blocking)
+	a.Equal([]int{44}, out.Blocking.RelatedPartIDs)
+	a.Zero(fake.deleteCalls)
+}
+
+func TestDeletePartPreviewReportsFullDependencyDetail(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	fake := newPartDeleteFixture()
 
 	_, out, err := deletePart(partDeleteDeps(fake))(ctx, &mcp.CallToolRequest{}, DeletePartInput{ID: 369})
 	r.NoError(err)
@@ -326,11 +510,6 @@ func TestDeletePartPreviewReportsInformationalContext(t *testing.T) {
 	a.Nil(out.Blocking)
 	r.NotNil(out.Category)
 	a.Equal(10, out.Category.PK)
-	r.Len(out.SupplierParts, 1)
-	r.Len(out.ManufacturerParts, 1)
-	r.Len(out.Parameters, 1)
-	r.Len(out.Attachments, 1)
-	r.Len(out.RelatedParts, 1)
 	a.Zero(fake.deleteCalls)
 }
 

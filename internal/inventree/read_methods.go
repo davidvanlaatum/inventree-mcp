@@ -90,6 +90,10 @@ func (c *Client) SearchPartsPage(ctx context.Context, query PartQuery) (PartPage
 	return PartPage{Count: page.Count, Results: page.Results, HasMore: page.Next != nil && *page.Next != ""}, err
 }
 
+func (c *Client) SearchPartsByQuery(ctx context.Context, query PartQuery) ([]Part, error) {
+	return listAll[Part](ctx, c, "/api/part/", query.values())
+}
+
 func (c *Client) GetPart(ctx context.Context, id int) (Part, error) {
 	var out Part
 	err := c.get(ctx, fmt.Sprintf("/api/part/%d/", id), &out)

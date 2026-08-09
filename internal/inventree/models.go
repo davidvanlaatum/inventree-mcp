@@ -40,6 +40,7 @@ type Part struct {
 	Trackable       bool    `json:"trackable"`
 	Virtual         bool    `json:"virtual"`
 	Image           *string `json:"image"`
+	VariantOf       *int    `json:"variant_of"`
 }
 
 type PartPage struct {
@@ -332,6 +333,7 @@ type PurchaseOrderLineItem struct {
 	Order                 int            `json:"order"`
 	Part                  int            `json:"part"`
 	SupplierPart          *int           `json:"supplier_part,omitempty"`
+	InternalPart          *int           `json:"internal_part"`
 	Destination           *int           `json:"destination"`
 	Line                  string         `json:"line"`
 	Reference             string         `json:"reference"`
@@ -386,7 +388,8 @@ type Build struct {
 }
 
 // PartRelation is read-only in this client: it exists solely to let
-// delete_part report related-part links (informational, not blocking).
+// delete_part detect and block on related-part links, since InvenTree
+// itself does not protect a part from deletion while one exists.
 type PartRelation struct {
 	PK    int    `json:"pk"`
 	Part1 int    `json:"part_1"`
