@@ -59,12 +59,18 @@ func deletePurchaseOrderLine(deps Dependencies) mcp.ToolHandlerFor[DeletePurchas
 			}
 			order, err := loadPurchaseOrderLineDeleteOrder(ctx, client, record.Order)
 			if err != nil {
+				if isNotFound(err) {
+					return purchaseOrderLineDeleteClarification("This line references a purchase order that could not be found; how should this data inconsistency be resolved before deleting the line?", "order", "the purchase order referenced by this line does not exist or could not be verified", "id", true, nil, map[string]any{"id": input.ID})
+				}
 				return nil, PurchaseOrderLineDeleteOutput{}, err
 			}
 			partID := 0
 			if record.Part > 0 {
 				supplierPart, err := client.GetSupplierPart(ctx, record.Part)
 				if err != nil {
+					if isNotFound(err) {
+						return purchaseOrderLineDeleteClarification("This line references a supplier part that could not be found; how should this data inconsistency be resolved before deleting the line?", "supplier_part", "the supplier part referenced by this line does not exist or could not be verified", "id", true, nil, map[string]any{"id": input.ID})
+					}
 					return nil, PurchaseOrderLineDeleteOutput{}, err
 				}
 				if supplierPart.PK != record.Part {
@@ -108,16 +114,11 @@ func deletePurchaseOrderLine(deps Dependencies) mcp.ToolHandlerFor[DeletePurchas
 }
 
 func purchaseOrderLineHasLinkedStock(ctx context.Context, client PurchaseOrderLineDeleteClient, line inventree.PurchaseOrderLineItem) (bool, error) {
-	items, err := client.SearchStockItems(ctx, inventree.StockItemQuery{PurchaseOrderID: line.Order})
+	items, err := client.SearchStockItems(ctx, inventree.StockItemQuery{PurchaseOrderID: line.Order, SupplierPartID: line.Part})
 	if err != nil {
 		return false, safePurchaseOrderLineDeleteError("linked-stock provenance preflight")
 	}
-	for _, item := range items {
-		if item.SupplierPart != nil && *item.SupplierPart == line.Part {
-			return true, nil
-		}
-	}
-	return false, nil
+	return len(items) > 0, nil
 }
 
 func loadPurchaseOrderLineDeleteOrder(ctx context.Context, client PurchaseOrderLineDeleteClient, id int) (inventree.PurchaseOrder, error) {
