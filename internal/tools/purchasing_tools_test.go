@@ -859,6 +859,7 @@ type fakePurchasingClient struct {
 	stockItems                           []inventree.StockItem
 	locationErr                          error
 	getOrderErrAfterReceive              error
+	missingOrderIDs                      map[int]bool
 }
 
 func (f *fakePurchasingClient) IssuePurchaseOrder(_ context.Context, id int) error {
@@ -918,6 +919,9 @@ func (f *fakePurchasingClient) GetPurchaseOrder(_ context.Context, id int) (inve
 	f.getOrderCalls++
 	if f.receiveCalls > 0 && f.getOrderErrAfterReceive != nil {
 		return inventree.PurchaseOrder{}, f.getOrderErrAfterReceive
+	}
+	if f.missingOrderIDs[id] {
+		return inventree.PurchaseOrder{}, &inventree.APIError{StatusCode: 404, Kind: inventree.ErrorKindNotFound}
 	}
 	for _, order := range f.orders {
 		if order.PK == id {
