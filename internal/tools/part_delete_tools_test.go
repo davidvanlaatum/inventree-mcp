@@ -2,6 +2,7 @@ package tools
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/davidvanlaatum/dvgoutils/logging/testhandler"
@@ -26,9 +27,11 @@ type fakePartDeleteClient struct {
 	partRelations      []inventree.PartRelation
 	variantParts       []inventree.Part
 
-	deleteErr       error
-	keepAfterDelete bool
-	deleteCalls     int
+	deleteErr              error
+	keepAfterDelete        bool
+	ambiguousDeleteErr     error
+	ambiguousDeleteApplied bool
+	deleteCalls            int
 }
 
 func (f *fakePartDeleteClient) GetPart(_ context.Context, id int) (inventree.Part, error) {
@@ -163,6 +166,12 @@ func (f *fakePartDeleteClient) SearchPartRelations(_ context.Context, query inve
 
 func (f *fakePartDeleteClient) DeletePart(_ context.Context, id int) error {
 	f.deleteCalls++
+	if f.ambiguousDeleteErr != nil {
+		if f.ambiguousDeleteApplied {
+			delete(f.parts, id)
+		}
+		return f.ambiguousDeleteErr
+	}
 	if f.deleteErr != nil {
 		return f.deleteErr
 	}
@@ -533,6 +542,7 @@ func TestDeletePartPreviewThenConfirmedDelete(t *testing.T) {
 	r.NoError(err)
 	a.Equal(StatusOK, deleted.Status)
 	a.True(deleted.Verified)
+	a.False(deleted.Recovered, "an ordinary clean delete must not be reported as recovered from an ambiguous error")
 	r.NotNil(deleted.Record)
 	a.Equal(369, deleted.Record.PK)
 	a.Equal(1, fake.deleteCalls)
@@ -568,4 +578,91 @@ func TestDeletePartAmbiguousReadBackAfterDelete(t *testing.T) {
 	r.NotNil(out.Record)
 	a.Equal(369, out.Record.PK)
 	a.NotEmpty(out.RecoveryPlan)
+}
+
+// A non-validation, non-timeout DeletePart error (e.g. a dropped connection
+// or a 5xx) is ambiguous, not a proof of failure: InvenTree may have already
+// applied the deletion before the response was lost. This must be recovered
+// by read-back rather than reported as a clean failure.
+func TestDeletePartRecoversWhenAmbiguousMutationErrorAppliedAnyway(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	fake := newPartDeleteFixture()
+	fake.ambiguousDeleteErr = errors.New("connection reset by peer")
+	fake.ambiguousDeleteApplied = true
+
+	_, out, err := deletePart(partDeleteDeps(fake))(ctx, &mcp.CallToolRequest{}, DeletePartInput{ID: 369, Confirm: true})
+	r.NoError(err)
+	a.Equal(StatusOK, out.Status)
+	a.True(out.Verified)
+	a.True(out.Recovered, "a successful read-back after an ambiguous mutation error must be reported as recovered")
+	a.Equal(1, fake.deleteCalls)
+	_, stillThere := fake.parts[369]
+	a.False(stillThere)
+}
+
+// The same ambiguous error, but the deletion genuinely never applied, must
+// still surface as partial_failure with recovery guidance rather than a
+// false success.
+func TestDeletePartPartialFailureWhenAmbiguousMutationErrorDidNotApply(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	fake := newPartDeleteFixture()
+	fake.ambiguousDeleteErr = errors.New("connection reset by peer")
+	fake.ambiguousDeleteApplied = false
+
+	_, out, err := deletePart(partDeleteDeps(fake))(ctx, &mcp.CallToolRequest{}, DeletePartInput{ID: 369, Confirm: true})
+	r.NoError(err)
+	a.Equal(StatusPartialFailure, out.Status)
+	r.NotNil(out.Record)
+	a.Equal(369, out.Record.PK)
+	a.NotEmpty(out.RecoveryPlan)
+	_, stillThere := fake.parts[369]
+	a.True(stillThere)
+}
+
+// A definite rejection (a real 4xx status the upstream returned before ever
+// touching the record, distinct from a dropped/ambiguous response) must be
+// reported directly without a read-back verification attempt, since the
+// deletion is already known not to have applied.
+func TestDeletePartReturnsSafeErrorOnDefiniteMutationRejection(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	fake := newPartDeleteFixture()
+	fake.deleteErr = &inventree.APIError{StatusCode: 403, Kind: inventree.ErrorKindPermission}
+
+	_, _, err := deletePart(partDeleteDeps(fake))(ctx, &mcp.CallToolRequest{}, DeletePartInput{ID: 369, Confirm: true})
+	r.Error(err)
+	a.Equal(1, fake.deleteCalls)
+	_, stillThere := fake.parts[369]
+	a.True(stillThere)
+}
+
+// 429 is a 4xx status, but definiteStockMutationRejection deliberately
+// excludes it (along with 408 and 425) because a rate-limited or too-early
+// request may still have been applied upstream; this must go through
+// read-back verification rather than being treated as a definite rejection.
+func TestDeletePartTreatsRetryableStatusAsAmbiguous(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	fake := newPartDeleteFixture()
+	fake.ambiguousDeleteErr = &inventree.APIError{StatusCode: 429, Kind: inventree.ErrorKindRateLimit}
+	fake.ambiguousDeleteApplied = true
+
+	_, out, err := deletePart(partDeleteDeps(fake))(ctx, &mcp.CallToolRequest{}, DeletePartInput{ID: 369, Confirm: true})
+	r.NoError(err)
+	a.Equal(StatusOK, out.Status)
+	a.True(out.Verified)
+	a.True(out.Recovered, "a 429 must be verified by read-back, not treated as a definite rejection")
+	a.Equal(1, fake.deleteCalls)
+	_, stillThere := fake.parts[369]
+	a.False(stillThere)
 }

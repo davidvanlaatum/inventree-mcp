@@ -254,3 +254,19 @@ Parameter guidance:
 - Use `search_category_parameter_defaults` for exact-category administration; set `include_parent_defaults:true` only when an effective inherited view is required. Mutate the stable direct `link_id` owned by its source category.
 - Ask the operator when multiple templates match by name, units, choices, checkbox state, or category association.
 - Do not create new parameter templates from natural language unless the caller explicitly confirms that a new template is required.
+
+## Verified Part Deletion And Guard-Only Reads
+
+`DELETE /api/part/{id}/` is far more permissive than its blast radius suggests. Pinned live behavior against InvenTree 1.4.3 (`TestClientMethodsAgainstInvenTree/part_delete`), isolating one reference category per part rather than combining several:
+
+- InvenTree itself enforces exactly two conditions: the part must be **inactive** first (`non_field_errors: ["Cannot delete this part as it is still active"]`), and a part currently used as a **component in another part's BOM** is protected (`non_field_errors: ["Cannot delete this part as it is used in an assembly"]`).
+- Every other reference this schema exposes is **silently permitted** once the part is inactive, and the consequence differs by relation: deleting a part with an existing stock item also **destroys that stock item** (not merely orphans it); a referencing purchase-order line **survives, orphaned**; a part's own BOM (as assembly), a build where it is the top-level part, a sales-order line, a variant (`variant_of`), a supplier part, a manufacturer part, a parameter, an attachment, and a related-part link are all permitted with no independently verified child-record fate beyond "the part itself deletes."
+- `delete_part` therefore treats every one of these categories as blocking in its own preflight rather than relying on any upstream protection or cascade.
+
+Four resources had no Go client plumbing before `delete_part` needed them for read-only existence checks. Each is used solely by that tool's guard, not exposed as a standalone MCP tool:
+
+- `GET /api/bom/` -- `part` filters a part's own BOM (as assembly); `uses` filters where a part is consumed as a component elsewhere (including template/variant expansion; exact semantics pinned by the integration test rather than assumed).
+- `GET /api/order/so-line/` -- `part` is the direct `Part.PK` (unlike `/api/order/po-line/`, where the response's `part` field is actually the supplier-part PK; `delete_part` uses the dedicated `base_part` filter to query the base `Part.PK` directly instead of fanning out over supplier parts).
+- `GET /api/build/` -- `part` filters builds where the part is the top-level built part.
+- `GET /api/part/related/` -- `part` matches a relation where the part is on *either* side (`part_1` or `part_2`), pinned by deliberately placing the tested part as `part_2` in the integration test rather than assuming symmetry.
+- `GET /api/part/?variant_of=<id>` finds parts that are variants of a given template part; deleting a template with existing variants is blocked.

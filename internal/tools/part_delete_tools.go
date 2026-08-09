@@ -2,6 +2,7 @@ package tools
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/davidvanlaatum/inventree-mcp/internal/inventree"
@@ -63,6 +64,7 @@ type PartDeleteOutput struct {
 	RelatedParts      []inventree.PartRelation      `json:"related_parts,omitempty"`
 	Blocking          *PartDeleteBlockingReferences `json:"blocking,omitempty"`
 	Verified          bool                          `json:"verified,omitempty"`
+	Recovered         bool                          `json:"recovered,omitempty"`
 	Validation        *ValidationFailure            `json:"validation,omitempty"`
 	RecoveryPlan      string                        `json:"recovery_plan,omitempty"`
 	Clarification     *ClarificationResponse        `json:"clarification,omitempty"`
@@ -109,7 +111,7 @@ func deletePart(deps Dependencies) mcp.ToolHandlerFor[DeletePartInput, PartDelet
 				return TextResult(StatusNotFound), PartDeleteOutput{Status: StatusNotFound}, nil
 			}
 			if err != nil || record.PK != input.ID {
-				return nil, PartDeleteOutput{}, safePartDeleteError("part delete lookup")
+				return nil, PartDeleteOutput{}, safePartDeleteError("part delete lookup", err)
 			}
 
 			preview, err := loadPartDeletePreview(ctx, client, record)
@@ -130,24 +132,56 @@ func deletePart(deps Dependencies) mcp.ToolHandlerFor[DeletePartInput, PartDelet
 				return TextResult(StatusClarificationRequired), partDeletePreviewOutput(StatusClarificationRequired, record, preview, nil, &clarification), nil
 			}
 
-			if err := client.DeletePart(ctx, input.ID); err != nil {
-				if validation, ok := safeValidationFailure(err); ok {
+			mutationErr := client.DeletePart(ctx, input.ID)
+			if errors.Is(mutationErr, context.Canceled) {
+				return nil, PartDeleteOutput{}, context.Canceled
+			}
+			if errors.Is(mutationErr, context.DeadlineExceeded) {
+				return nil, PartDeleteOutput{}, context.DeadlineExceeded
+			}
+			if mutationErr != nil {
+				if validation, ok := safeValidationFailure(mutationErr); ok {
 					return TextResult(StatusValidationFailed), PartDeleteOutput{Status: StatusValidationFailed, Validation: validation}, nil
 				}
-				return nil, PartDeleteOutput{}, safePartDeleteError("part deletion")
+				var apiErr *inventree.APIError
+				if errors.As(mutationErr, &apiErr) && definiteStockMutationRejection(apiErr.StatusCode) {
+					return nil, PartDeleteOutput{}, safePartDeleteError("part deletion", mutationErr)
+				}
+				// Ambiguous failure (timeout, 5xx, network error, or a
+				// retryable 4xx such as 408/425/429): InvenTree may have
+				// already applied the deletion before the response was
+				// lost, so this must be verified by read-back rather than
+				// assumed to have failed cleanly.
+				return partDeleteVerify(ctx, client, record, preview, true)
 			}
-
-			_, err = client.GetPart(ctx, input.ID)
-			if err == nil {
-				return partDeletePartial(record, "part still exists after deletion; read the exact stable ID before retrying")
-			}
-			if !isNotFound(err) {
-				return partDeletePartial(record, "deletion read-back could not prove absence; read the exact stable ID before retrying")
-			}
-			output := partDeletePreviewOutput(StatusOK, record, preview, nil, nil)
-			output.Verified = true
-			return TextResult(StatusOK), output, nil
+			return partDeleteVerify(ctx, client, record, preview, false)
 		})
+}
+
+// partDeleteVerify reads the part back by its exact stable ID after a
+// delete attempt and classifies the result: verified absence (success,
+// optionally recovered from an ambiguous mutation response), confirmed
+// survival, or an unverifiable read-back -- both of the latter two return
+// partial_failure with read-before-retry guidance rather than a false
+// success or silent data loss.
+func partDeleteVerify(ctx context.Context, client PartDeleteClient, record inventree.Part, preview partDeletePreview, recovered bool) (*mcp.CallToolResult, PartDeleteOutput, error) {
+	_, err := client.GetPart(ctx, record.PK)
+	if isNotFound(err) {
+		output := partDeletePreviewOutput(StatusOK, record, preview, nil, nil)
+		output.Verified = true
+		output.Recovered = recovered
+		return TextResult(StatusOK), output, nil
+	}
+	if errors.Is(err, context.Canceled) {
+		return nil, PartDeleteOutput{}, context.Canceled
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		return nil, PartDeleteOutput{}, context.DeadlineExceeded
+	}
+	if err == nil {
+		return partDeletePartial(record, "part still exists after deletion; read the exact stable ID before retrying")
+	}
+	return partDeletePartial(record, "deletion read-back could not prove absence; read the exact stable ID before retrying")
 }
 
 type partDeletePreview struct {
@@ -165,38 +199,38 @@ func loadPartDeletePreview(ctx context.Context, client PartDeleteClient, record 
 	if record.Category != nil && *record.Category > 0 {
 		category, err := client.GetPartCategory(ctx, *record.Category)
 		if err != nil {
-			return partDeletePreview{}, safePartDeleteError("category context lookup")
+			return partDeletePreview{}, safePartDeleteError("category context lookup", err)
 		}
 		preview.Category = &category
 	}
 
 	supplierParts, err := client.SearchSupplierParts(ctx, inventree.SupplierPartQuery{Part: record.PK})
 	if err != nil {
-		return partDeletePreview{}, safePartDeleteError("supplier-part preflight")
+		return partDeletePreview{}, safePartDeleteError("supplier-part preflight", err)
 	}
 	preview.SupplierParts = supplierParts
 
 	manufacturerParts, err := client.SearchManufacturerParts(ctx, inventree.ManufacturerPartQuery{Part: record.PK})
 	if err != nil {
-		return partDeletePreview{}, safePartDeleteError("manufacturer-part preflight")
+		return partDeletePreview{}, safePartDeleteError("manufacturer-part preflight", err)
 	}
 	preview.ManufacturerParts = manufacturerParts
 
 	parameters, err := client.SearchPartParameters(ctx, inventree.PartParameterQuery{PartID: record.PK})
 	if err != nil {
-		return partDeletePreview{}, safePartDeleteError("parameter preflight")
+		return partDeletePreview{}, safePartDeleteError("parameter preflight", err)
 	}
 	preview.Parameters = parameters
 
 	attachments, err := client.ListAttachments(ctx, inventree.AttachmentQuery{ModelType: "part", ModelID: record.PK})
 	if err != nil {
-		return partDeletePreview{}, safePartDeleteError("attachment preflight")
+		return partDeletePreview{}, safePartDeleteError("attachment preflight", err)
 	}
 	preview.Attachments = attachments
 
 	relatedParts, err := client.SearchPartRelations(ctx, inventree.PartRelationQuery{Part: record.PK})
 	if err != nil {
-		return partDeletePreview{}, safePartDeleteError("related-part preflight")
+		return partDeletePreview{}, safePartDeleteError("related-part preflight", err)
 	}
 	preview.RelatedParts = relatedParts
 
@@ -219,25 +253,25 @@ func loadPartDeleteBlockingReferences(ctx context.Context, client PartDeleteClie
 
 	stockItems, err := client.SearchStockItems(ctx, inventree.StockItemQuery{PartID: record.PK})
 	if err != nil {
-		return PartDeleteBlockingReferences{}, safePartDeleteError("stock preflight")
+		return PartDeleteBlockingReferences{}, safePartDeleteError("stock preflight", err)
 	}
 	blocking.StockItemIDs = stockItemIDs(stockItems)
 
 	bomAsAssembly, err := client.SearchBomItems(ctx, inventree.BomItemQuery{Part: record.PK})
 	if err != nil {
-		return PartDeleteBlockingReferences{}, safePartDeleteError("bill-of-materials preflight")
+		return PartDeleteBlockingReferences{}, safePartDeleteError("bill-of-materials preflight", err)
 	}
 	blocking.BomAsAssemblyIDs = bomItemIDs(bomAsAssembly)
 
 	bomAsComponent, err := client.SearchBomItems(ctx, inventree.BomItemQuery{Uses: record.PK})
 	if err != nil {
-		return PartDeleteBlockingReferences{}, safePartDeleteError("bill-of-materials usage preflight")
+		return PartDeleteBlockingReferences{}, safePartDeleteError("bill-of-materials usage preflight", err)
 	}
 	blocking.BomAsComponentIDs = bomItemIDs(bomAsComponent)
 
 	builds, err := client.SearchBuilds(ctx, inventree.BuildQuery{Part: record.PK})
 	if err != nil {
-		return PartDeleteBlockingReferences{}, safePartDeleteError("build preflight")
+		return PartDeleteBlockingReferences{}, safePartDeleteError("build preflight", err)
 	}
 	blocking.BuildIDs = buildIDs(builds)
 
@@ -247,13 +281,13 @@ func loadPartDeleteBlockingReferences(ctx context.Context, client PartDeleteClie
 	// over every supplier-part of the part.
 	lines, err := client.SearchPurchaseOrderLines(ctx, inventree.PurchaseOrderLineQuery{BasePart: record.PK})
 	if err != nil {
-		return PartDeleteBlockingReferences{}, safePartDeleteError("purchase-order-line preflight")
+		return PartDeleteBlockingReferences{}, safePartDeleteError("purchase-order-line preflight", err)
 	}
 	blocking.PurchaseOrderLineIDs = purchaseOrderLineIDsFor(lines)
 
 	salesOrderLines, err := client.SearchSalesOrderLines(ctx, inventree.SalesOrderLineQuery{Part: record.PK})
 	if err != nil {
-		return PartDeleteBlockingReferences{}, safePartDeleteError("sales-order-line preflight")
+		return PartDeleteBlockingReferences{}, safePartDeleteError("sales-order-line preflight", err)
 	}
 	blocking.SalesOrderLineIDs = salesOrderLineIDs(salesOrderLines)
 
@@ -261,7 +295,7 @@ func loadPartDeleteBlockingReferences(ctx context.Context, client PartDeleteClie
 	// deleted without breaking those parts' variant relationship.
 	variants, err := client.SearchPartsByQuery(ctx, inventree.PartQuery{VariantOf: record.PK})
 	if err != nil {
-		return PartDeleteBlockingReferences{}, safePartDeleteError("variant-part preflight")
+		return PartDeleteBlockingReferences{}, safePartDeleteError("variant-part preflight", err)
 	}
 	blocking.VariantPartIDs = partIDs(variants)
 
@@ -297,7 +331,17 @@ func partDeletePartial(record inventree.Part, recovery string) (*mcp.CallToolRes
 	return TextResult(StatusPartialFailure), PartDeleteOutput{Status: StatusPartialFailure, Record: &record, RecoveryPlan: recovery}, nil
 }
 
-func safePartDeleteError(operation string) error {
+// safePartDeleteError preserves context.Canceled and context.DeadlineExceeded
+// as identifiable sentinels rather than masking every failure behind the
+// same generic message, matching the newer guarded mutation tools
+// (stock_transfer_tools.go, stock_depletion_tools.go).
+func safePartDeleteError(operation string, err error) error {
+	if errors.Is(err, context.Canceled) {
+		return context.Canceled
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		return context.DeadlineExceeded
+	}
 	return fmt.Errorf("%s failed; inspect InvenTree availability and permissions before retrying", operation)
 }
 
