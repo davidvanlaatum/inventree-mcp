@@ -39,6 +39,7 @@ type SearchCategoryParameterDefaultsInput struct {
 }
 
 type CategoryParameterDefaultRecord struct {
+	inventree.WebLinkFields
 	LinkID              int    `json:"link_id"`
 	CategoryID          int    `json:"category_id"`
 	CategoryName        string `json:"category_name"`
@@ -455,7 +456,7 @@ func categoryDefaultCandidate(record CategoryParameterDefaultRecord) Clarificati
 	if label == "" {
 		label = "template " + strconv.Itoa(record.TemplateID)
 	}
-	return ClarificationCandidate{ID: strconv.Itoa(record.LinkID), Label: label, Summary: fmt.Sprintf("category %d, default %q", record.CategoryID, record.DefaultValue), Fields: map[string]any{"link_id": record.LinkID, "category_id": record.CategoryID, "template_id": record.TemplateID, "default_value": record.DefaultValue}}
+	return ClarificationCandidate{ID: strconv.Itoa(record.LinkID), Label: label, Summary: fmt.Sprintf("category %d, default %q", record.CategoryID, record.DefaultValue), APIURL: fmt.Sprintf("/api/part/category/parameters/%d/", record.LinkID), Fields: map[string]any{"link_id": record.LinkID, "category_id": record.CategoryID, "template_id": record.TemplateID, "default_value": record.DefaultValue}}
 }
 
 func validCategoryDefaultValue(value string) bool {

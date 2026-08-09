@@ -24,6 +24,7 @@ import (
 	"github.com/davidvanlaatum/inventree-mcp/internal/systemdnotify"
 	"github.com/davidvanlaatum/inventree-mcp/internal/tools"
 	"github.com/davidvanlaatum/inventree-mcp/internal/upload"
+	"github.com/davidvanlaatum/inventree-mcp/internal/weblinks"
 	"github.com/spf13/afero"
 )
 
@@ -164,6 +165,14 @@ func notifyFatal(logger *slog.Logger, notifier systemdnotify.Notifier) {
 }
 
 func dependenciesForConfig(cfg config.Config) (tools.Dependencies, error) {
+	var webLinks *weblinks.Resolver
+	if cfg.InvenTreeURL != "" || cfg.InvenTreeWebURL != "" {
+		var err error
+		webLinks, err = cfg.WebLinkResolver()
+		if err != nil {
+			return tools.Dependencies{}, err
+		}
+	}
 	if cfg.Transport == config.TransportHTTP && cfg.Environment == config.EnvironmentProduction {
 		return tools.Dependencies{
 			EnableWriteTools:    true,
@@ -173,10 +182,11 @@ func dependenciesForConfig(cfg config.Config) (tools.Dependencies, error) {
 			UploadMaxBytes:      cfg.UploadMaxBytes,
 			UploadTimeout:       cfg.InvenTreeTimeout,
 			ClientFromContext:   server.OAuthClientFromContext(cfg.InvenTreeURL, inventreeHTTPClient(cfg)),
+			WebLinks:            webLinks,
 		}, nil
 	}
 	if cfg.Transport != config.TransportStdio {
-		return tools.Dependencies{}, nil
+		return tools.Dependencies{WebLinks: webLinks}, nil
 	}
 	client, err := inventree.NewClient(inventree.Config{
 		BaseURL: cfg.InvenTreeURL,
@@ -196,6 +206,7 @@ func dependenciesForConfig(cfg config.Config) (tools.Dependencies, error) {
 		UploadAllowRoots: cfg.UploadAllowRoots,
 		UploadMaxBytes:   cfg.UploadMaxBytes,
 		UploadTimeout:    cfg.InvenTreeTimeout,
+		WebLinks:         webLinks,
 		ClientFromContext: func(context.Context) (any, error) {
 			return client, nil
 		},

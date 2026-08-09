@@ -1,0 +1,34 @@
+source_repository=https://github.com/inventree/InvenTree
+source_tag=1.4.3
+source_commit=6b237de54e4cbfd7f51daff8403c17869898d965
+source_blob=ddeb3a21365761e999568c84d6417915817a9024
+source_path=src/frontend/src/router.tsx
+<Route path='part/'>
+  <Route path='category/:id?/*' element={<CategoryDetail />} />
+  <Route path=':id/*' element={<PartDetail />} />
+</Route>
+<Route path='stock/'>
+  <Route path='location/:id?/*' element={<LocationDetail />} />
+  <Route path='item/:id/*' element={<StockDetail />} />
+</Route>
+<Route path='purchasing/'>
+  <Route path='purchase-order/:id/*' element={<PurchaseOrderDetail />} />
+  <Route path='supplier/:id/*' element={<SupplierDetail />} />
+  <Route path='supplier-part/:id/*' element={<SupplierPartDetail />} />
+  <Route path='manufacturer/:id/*' element={<ManufacturerDetail />} />
+  <Route
+    path='manufacturer-part/:id/*'
+    element={<ManufacturerPartDetail />}
+  />
+</Route>
+<Route path='company/:id/*' element={<CompanyDetail />} />
+canonical_route part=part/:id/*
+canonical_route part_category=part/category/:id?/*
+canonical_route company=company/:id/*
+canonical_route supplier=purchasing/supplier/:id/*
+canonical_route manufacturer=purchasing/manufacturer/:id/*
+canonical_route supplier_part=purchasing/supplier-part/:id/*
+canonical_route manufacturer_part=purchasing/manufacturer-part/:id/*
+canonical_route stock_location=stock/location/:id?/*
+canonical_route stock_item=stock/item/:id/*
+canonical_route purchase_order=purchasing/purchase-order/:id/*

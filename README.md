@@ -19,6 +19,7 @@ go run ./cmd/inventree-mcp serve --transport stdio
 
 Useful STDIO options:
 
+- `--inventree-web-url https://inventory.example.test` or `INVENTREE_WEB_URL=https://inventory.example.test`; optional browser-facing base for returned object links. It falls back to `INVENTREE_URL` in every mode.
 - `--inventree-auth-scheme Token` or `--inventree-auth-scheme Bearer`; default is `Token`.
 - `--inventree-timeout 30s`; default is `30s`.
 - `--upload-allow-root /trusted/path` or `INVENTREE_UPLOAD_ALLOW_ROOTS=/trusted/path`; enables STDIO local-file uploads from trusted operator-controlled roots.
@@ -36,6 +37,7 @@ HTTP production mode requires MCP-owned OAuth settings and rejects raw `INVENTRE
 - `INVENTREE_MCP_OAUTH_CLIENT_IDS`: comma-separated allowed OAuth `client_id` metadata URLs.
 - `INVENTREE_MCP_TRUSTED_PROXY_CIDRS`: comma-separated CIDRs for reverse proxies allowed to supply `X-Forwarded-For` client hops.
 - `INVENTREE_URL`: HTTPS InvenTree base URL used for upstream API calls after the MCP OAuth envelope is validated.
+- Optional `INVENTREE_WEB_URL`: canonical public HTTPS InvenTree browser base for returned `web_url` and `parent_web_url` values. It may include a deployment path prefix; when omitted, `INVENTREE_URL` is used.
 - Optional `INVENTREE_MCP_OAUTH_ACCESS_LIFETIME`, `INVENTREE_MCP_OAUTH_REFRESH_LIFETIME`, and `INVENTREE_MCP_OAUTH_SESSION_LIFETIME`.
 
 The configured client metadata document must advertise `private_key_jwt`, the ChatGPT redirect URI shown by its app management page, and a same-origin HTTPS `jwks_uri`. The server validates each token request's signed client assertion against that JWKS and rejects assertion replay within one running process; shared replay state is required across restarts or multiple replicas. It does not accept an unsigned public-client downgrade.
@@ -48,7 +50,7 @@ Development-only HTTP startup remains available with `--environment development 
 
 HTTP mode bounds each MCP request with `--mcp-max-request-body-bytes 15000000` or `INVENTREE_MCP_MAX_REQUEST_BODY_BYTES=15000000`. The limit must cover inline upload base64 plus JSON overhead and does not constrain STDIO uploads.
 
-The debug traffic log option also applies to development HTTP mode. HTTP logging records request URIs, request bodies, response bodies, and streaming response chunks. Request bodies and non-streaming responses are captured up to 1 MiB with `body_truncated:true` when more data was forwarded; streaming response chunks are capped individually. Requests exceeding the configured MCP request limit fail closed.
+The debug traffic log option also applies to development HTTP mode. HTTP logging records request URIs, request bodies, response bodies, and streaming response chunks. Request bodies and non-streaming responses are captured up to 1 MiB with `body_truncated:true` when more data was forwarded; streaming response chunks are capped individually. Valid returned `web_url` and `parent_web_url` authorities, including internal fallback authorities, can appear in this sensitive response capture. Requests exceeding the configured MCP request limit fail closed.
 
 ## Install From A Release
 

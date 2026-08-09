@@ -12,6 +12,13 @@ const (
 // responses that encode the same field as either a JSON string or number.
 type DecimalString string
 
+// WebLinkFields are MCP projection fields populated from trusted process
+// configuration. InvenTree API responses do not supply these values.
+type WebLinkFields struct {
+	WebURL       string `json:"web_url,omitempty"`
+	ParentWebURL string `json:"parent_web_url,omitempty"`
+}
+
 func (value *DecimalString) UnmarshalJSON(data []byte) error {
 	var text string
 	if err := json.Unmarshal(data, &text); err == nil {
@@ -27,6 +34,7 @@ func (value *DecimalString) UnmarshalJSON(data []byte) error {
 }
 
 type Part struct {
+	WebLinkFields
 	PK              int     `json:"pk"`
 	Name            string  `json:"name"`
 	Description     string  `json:"description"`
@@ -54,6 +62,7 @@ type PartThumb struct {
 }
 
 type Category struct {
+	WebLinkFields
 	PK                    int        `json:"pk"`
 	Name                  string     `json:"name"`
 	Description           string     `json:"description"`
@@ -83,6 +92,7 @@ type CategoryPage struct {
 }
 
 type Company struct {
+	WebLinkFields
 	PK                int     `json:"pk"`
 	Name              string  `json:"name"`
 	Description       string  `json:"description"`
@@ -97,6 +107,7 @@ type Company struct {
 }
 
 type StockLocation struct {
+	WebLinkFields
 	PK                 int                `json:"pk"`
 	Name               string             `json:"name"`
 	Description        string             `json:"description"`
@@ -129,6 +140,7 @@ type StockLocationType struct {
 }
 
 type StockItem struct {
+	WebLinkFields
 	PK                     int            `json:"pk"`
 	Part                   int            `json:"part"`
 	Location               *int           `json:"location"`
@@ -168,6 +180,7 @@ type StockItem struct {
 }
 
 type Parameter struct {
+	WebLinkFields
 	PK        int    `json:"pk"`
 	Template  int    `json:"template"`
 	ModelType string `json:"model_type"`
@@ -194,6 +207,7 @@ type ParameterTemplate struct {
 }
 
 type CategoryParameterTemplate struct {
+	WebLinkFields
 	PK             int                `json:"pk"`
 	Category       int                `json:"category"`
 	CategoryDetail *Category          `json:"category_detail"`
@@ -203,6 +217,7 @@ type CategoryParameterTemplate struct {
 }
 
 type Attachment struct {
+	WebLinkFields
 	PK           int      `json:"pk"`
 	ModelType    string   `json:"model_type"`
 	ModelID      int      `json:"model_id"`
@@ -221,6 +236,7 @@ type Attachment struct {
 }
 
 type SupplierPart struct {
+	WebLinkFields
 	PK                 int     `json:"pk"`
 	Part               int     `json:"part"`
 	Supplier           int     `json:"supplier"`
@@ -233,6 +249,7 @@ type SupplierPart struct {
 }
 
 type ManufacturerPart struct {
+	WebLinkFields
 	PK           int    `json:"pk"`
 	Part         int    `json:"part"`
 	Manufacturer int    `json:"manufacturer"`
@@ -255,6 +272,7 @@ type CompanyDetail struct {
 }
 
 type SupplierPartDetail struct {
+	WebLinkFields
 	PK                 int     `json:"pk"`
 	Part               int     `json:"part"`
 	Supplier           int     `json:"supplier"`
@@ -271,6 +289,7 @@ type SupplierPartDetail struct {
 }
 
 type ManufacturerPartDetail struct {
+	WebLinkFields
 	PK           int     `json:"pk"`
 	Part         int     `json:"part"`
 	Manufacturer int     `json:"manufacturer"`
@@ -314,6 +333,7 @@ type UserToken struct {
 }
 
 type PurchaseOrder struct {
+	WebLinkFields
 	PK                int            `json:"pk"`
 	Reference         string         `json:"reference"`
 	Supplier          int            `json:"supplier"`
@@ -329,6 +349,7 @@ type PurchaseOrder struct {
 }
 
 type PurchaseOrderLineItem struct {
+	WebLinkFields
 	PK                    int            `json:"pk"`
 	Order                 int            `json:"order"`
 	Part                  int            `json:"part"`
@@ -346,6 +367,7 @@ type PurchaseOrderLineItem struct {
 }
 
 type PurchaseOrderExtraLine struct {
+	WebLinkFields
 	PK            int            `json:"pk"`
 	Order         int            `json:"order"`
 	Line          string         `json:"line"`

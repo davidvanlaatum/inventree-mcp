@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/davidvanlaatum/inventree-mcp/internal/upload"
+	"github.com/davidvanlaatum/inventree-mcp/internal/weblinks"
 	"github.com/spf13/afero"
 )
 
@@ -22,6 +23,7 @@ type Dependencies struct {
 	UploadMaxBytes      int64
 	UploadTimeout       time.Duration
 	URLFetcher          upload.URLFetcher
+	WebLinks            *weblinks.Resolver
 	stockPlanStore      *stockPlanStore
 	parameterPlanStore  *parameterPlanStore
 }

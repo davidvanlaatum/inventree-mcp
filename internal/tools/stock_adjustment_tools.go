@@ -205,6 +205,7 @@ type TransferStockItemInput struct {
 }
 
 type StockStateSnapshot struct {
+	inventree.WebLinkFields
 	StockItemID     int     `json:"stock_item_id"`
 	PartID          int     `json:"part_id"`
 	Quantity        float64 `json:"quantity"`
@@ -235,6 +236,7 @@ type StockDepletionContext struct {
 }
 
 type StockTransferLocation struct {
+	inventree.WebLinkFields
 	ID           int                  `json:"id"`
 	Name         string               `json:"name"`
 	ParentID     *int                 `json:"parent_id,omitempty"`

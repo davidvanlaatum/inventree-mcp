@@ -15,6 +15,7 @@ import (
 	"github.com/davidvanlaatum/inventree-mcp/internal/selfupdate"
 	"github.com/davidvanlaatum/inventree-mcp/internal/systemdnotify"
 	"github.com/davidvanlaatum/inventree-mcp/internal/tools"
+	"github.com/davidvanlaatum/inventree-mcp/internal/weblinks"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -352,6 +353,8 @@ func TestDependenciesForConfigBuildsProductionHTTPOAuthDependencies(t *testing.T
 	a.Equal(int64(1234), deps.UploadMaxBytes)
 	a.Equal(5*time.Second, deps.UploadTimeout)
 	r.NotNil(deps.ClientFromContext)
+	r.NotNil(deps.WebLinks)
+	a.Equal("https://inventory.example.test/part/7/", deps.WebLinks.URL(weblinks.Part, 7))
 	_, err = deps.ClientFromContext(context.Background())
 	a.ErrorContains(err, "OAuth credential unavailable")
 }
@@ -380,6 +383,20 @@ func TestDependenciesForConfigBuildsStdioClient(t *testing.T) {
 	client, err := deps.ClientFromContext(context.Background())
 	r.NoError(err)
 	r.IsType(&inventree.Client{}, client)
+	r.NotNil(deps.WebLinks)
+}
+
+func TestDependenciesForConfigRejectsUnsafeEffectiveWebBase(t *testing.T) {
+	t.Parallel()
+	_, err := dependenciesForConfig(config.Config{
+		Transport:        config.TransportHTTP,
+		Environment:      config.EnvironmentProduction,
+		InvenTreeURL:     "https://inventory.example.test",
+		InvenTreeWebURL:  "https://secret:password@browser.example.test",
+		InvenTreeTimeout: time.Second,
+	})
+	require.ErrorContains(t, err, "INVENTREE_WEB_URL must not include userinfo")
+	assert.NotContains(t, err.Error(), "secret")
 }
 
 func TestInvenTreeHTTPClientUsesConfiguredTimeout(t *testing.T) {

@@ -227,6 +227,7 @@ type ReceivePurchaseOrderItem struct {
 }
 
 type ReceivePurchaseOrderPlanItem struct {
+	inventree.WebLinkFields
 	LineItemID           int                      `json:"line_item_id"`
 	SupplierPartID       int                      `json:"supplier_part_id"`
 	PartID               int                      `json:"part_id"`

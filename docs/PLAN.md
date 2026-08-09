@@ -97,6 +97,7 @@ inventree-mcp serve --transport stdio
 Authentication in STDIO mode should come from process configuration:
 
 - `INVENTREE_URL`
+- optional `INVENTREE_WEB_URL`, falling back to `INVENTREE_URL` in every mode for canonical object links
 - `INVENTREE_TOKEN`
 - optional `INVENTREE_AUTH_SCHEME`, defaulting to `Token` for InvenTree API tokens and allowing `Bearer`
 - optional `INVENTREE_TIMEOUT`
@@ -328,7 +329,7 @@ tests/
 
 - Prefer explicit structured inputs over free-form strings.
 - Support human-readable lookup fields, but fail on ambiguous matches.
-- Return InvenTree object IDs and URLs for every created or updated object.
+- Return InvenTree object IDs and URLs for every created or updated object. F-S34 must make this contract explicit across reads and writes: absolute user-facing frontend `web_url` values are distinct from sanitized relative REST-path `api_url` values, media URLs, and operator-supplied external links. Build web links only from trusted process configuration through a centralized typed route map; OAuth token envelopes, request/proxy headers, and caller input must not control link authority or route selection. The operator-approved effective web base is optional `INVENTREE_WEB_URL` with fallback to `INVENTREE_URL` in every mode; both paths receive the same credential-free web-base validation, production requires HTTPS, and invalid effective bases fail startup with redacted diagnostics. The configured effective base remains operator-authoritative even if it is internal or not browser-reachable for every MCP user; returned links can disclose that authority to authorized callers and operator-enabled sensitive debug traffic logs that capture response bodies, while rejected raw configuration and request-derived authorities remain absent from diagnostics and ordinary logs. Objects without a stable dedicated frontend page omit `web_url` and use universal `parent_web_url` only for an immediate owning object with a stable frontend page and identity exposed in the same projection; they omit that field rather than walking to a more distant ancestor. Clarification candidates intentionally make a documented breaking change from ambiguous `url` to explicit absolute `web_url` and sanitized relative `api_url`, with no compatibility alias; F-S34 does not add `api_url` universally.
 - Make all high-risk write workflows support `dry_run`.
 - Dry-run workflows must expose every effective mutation field in an explicit plan. Action names alone are not a reviewable plan; keep selected existing records factual and map each unresolved foreign-key field to the earlier planned create that supplies it. A field-level preview without a confirmation token is advisory: execution must repeat preflight and callers must review again after intervening upstream changes.
 - Do not make irreversible changes without an explicit tool argument such as `confirm: true`.
@@ -497,7 +498,7 @@ Important behaviors:
 - `set_part_parameters` should search `/api/parameter/template/`, `/api/parameter/`, and `/api/part/category/parameters/` first and reuse matching enabled templates where possible. Do not blindly create parameter templates from natural language.
 - If multiple parameter templates could match by name, units, choices, checkbox state, or category association, ask the operator which existing template to use.
 - Candidate ranking should prefer enabled category-linked templates with matching name and units. Global or otherwise unlinked template matches may be reported as context, but the milestone `set_part_parameters` tool must not select or write them; it must refuse the request unless the template is linked to the part category. Disabled templates should be reported but not selected automatically.
-- Clarification candidates should include template ID, name, units, choices, checkbox state, category association, existing value if present, and URL.
+- Clarification candidates should include template ID, name, units, choices, checkbox state, category association, existing value if present, absolute `web_url` when a stable frontend page exists, and sanitized relative `api_url` when a REST identity is available.
 
 ### Company Tools
 
@@ -734,7 +735,7 @@ When a tool cannot proceed safely because input is ambiguous or incomplete, retu
 - `question`: the exact question the AI should ask the operator.
 - `field`: the field or relationship that is ambiguous or missing.
 - `reason`: why the tool cannot safely continue.
-- `candidates`: candidate IDs, names, and URLs when a lookup matched multiple objects.
+- `candidates`: candidate IDs, names, absolute `web_url` values when stable frontend pages exist, and sanitized relative `api_url` values when REST identities are available.
 - `retry`: the preferred stable field to provide on retry, such as part ID, category ID, company ID, stock location ID, or supplier-part ID.
 - `hard_error`: whether the API would reject the request, as distinct from a recommended-field warning.
 
@@ -1081,7 +1082,7 @@ Implementation notes:
 - Confirm-gate tests proving missing `confirm` and `confirm:false` both block irreversible actions.
 - Confirm-gate tests for operationally sensitive non-destructive writes, including quantity decreases, scrap/write-off status, stock consumption, and build allocation.
 - Milestone test proving `preview_purchase_order_with_lines` is annotated read-only and performs no writes.
-- Ambiguity tests proving duplicate matches return structured clarification responses with candidate IDs and URLs.
+- Ambiguity tests proving duplicate matches return structured clarification responses with candidate IDs, applicable absolute `web_url` values, and sanitized relative `api_url` values.
 - Attachment ambiguity tests for duplicate filenames, ambiguous target objects, multiple image candidates, existing matching attachments, and unclear primary-image requests.
 - Error mapping tests for InvenTree 400, 401, 403, 404, 409, 429, and 5xx responses.
 - Log/audit redaction tests proving auth tokens do not appear in logs, audit entries, tool errors, or panic recovery output.

@@ -99,6 +99,7 @@ type StockLocationPlan struct {
 }
 
 type StockLocationPlanState struct {
+	inventree.WebLinkFields
 	ID         int  `json:"id"`
 	ParentID   *int `json:"parent_id"`
 	Structural bool `json:"structural"`
@@ -106,6 +107,7 @@ type StockLocationPlanState struct {
 }
 
 type StockLocationPlanContext struct {
+	inventree.WebLinkFields
 	ID         int                  `json:"id"`
 	Name       string               `json:"name"`
 	PathString string               `json:"path"`
@@ -116,6 +118,7 @@ type StockLocationPlanContext struct {
 }
 
 type StockMetadataState struct {
+	inventree.WebLinkFields
 	ID              int                      `json:"id"`
 	PartID          int                      `json:"part_id"`
 	LocationID      *int                     `json:"location_id"`

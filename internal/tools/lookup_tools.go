@@ -451,6 +451,7 @@ type PurchasePreviewLineOutput struct {
 }
 
 type AttachmentMetadata struct {
+	inventree.WebLinkFields
 	PK            int      `json:"pk"`
 	ModelType     string   `json:"model_type"`
 	ModelID       int      `json:"model_id"`
@@ -947,31 +948,31 @@ func candidatesFor[T any](records []T) []ClarificationCandidate {
 func candidateFor(record any) ClarificationCandidate {
 	switch v := record.(type) {
 	case inventree.Part:
-		return ClarificationCandidate{ID: strconv.Itoa(v.PK), Label: v.Name, Summary: v.Description, URL: fmt.Sprintf("/api/part/%d/", v.PK)}
+		return ClarificationCandidate{ID: strconv.Itoa(v.PK), Label: v.Name, Summary: v.Description, APIURL: fmt.Sprintf("/api/part/%d/", v.PK)}
 	case inventree.Category:
-		return ClarificationCandidate{ID: strconv.Itoa(v.PK), Label: v.Name, Summary: v.Description, URL: fmt.Sprintf("/api/part/category/%d/", v.PK), Fields: map[string]any{"structural": v.Structural}}
+		return ClarificationCandidate{ID: strconv.Itoa(v.PK), Label: v.Name, Summary: v.Description, APIURL: fmt.Sprintf("/api/part/category/%d/", v.PK), Fields: map[string]any{"structural": v.Structural}}
 	case inventree.ParameterTemplate:
-		return ClarificationCandidate{ID: strconv.Itoa(v.PK), Label: v.Name, URL: fmt.Sprintf("/api/parameter/template/%d/", v.PK), Fields: map[string]any{"units": v.Units, "choices": v.Choices, "checkbox": v.Checkbox, "enabled": v.Enabled}}
+		return ClarificationCandidate{ID: strconv.Itoa(v.PK), Label: v.Name, APIURL: fmt.Sprintf("/api/parameter/template/%d/", v.PK), Fields: map[string]any{"units": v.Units, "choices": v.Choices, "checkbox": v.Checkbox, "enabled": v.Enabled}}
 	case inventree.Parameter:
-		return ClarificationCandidate{ID: strconv.Itoa(v.PK), Label: strconv.Itoa(v.Template), URL: fmt.Sprintf("/api/parameter/%d/", v.PK), Fields: map[string]any{"template": v.Template, "model_type": v.ModelType, "model_id": v.ModelID, "data": v.Data}}
+		return ClarificationCandidate{ID: strconv.Itoa(v.PK), Label: strconv.Itoa(v.Template), APIURL: fmt.Sprintf("/api/parameter/%d/", v.PK), Fields: map[string]any{"template": v.Template, "model_type": v.ModelType, "model_id": v.ModelID, "data": v.Data}}
 	case inventree.Company:
-		return ClarificationCandidate{ID: strconv.Itoa(v.PK), Label: v.Name, Summary: v.Description, URL: fmt.Sprintf("/api/company/%d/", v.PK), Fields: map[string]any{"supplier": v.IsSupplier, "manufacturer": v.IsManufacturer, "active": v.Active}}
+		return ClarificationCandidate{ID: strconv.Itoa(v.PK), Label: v.Name, Summary: v.Description, APIURL: fmt.Sprintf("/api/company/%d/", v.PK), Fields: map[string]any{"supplier": v.IsSupplier, "manufacturer": v.IsManufacturer, "active": v.Active}}
 	case inventree.SupplierPart:
-		return ClarificationCandidate{ID: strconv.Itoa(v.PK), Label: v.SKU, Summary: v.Description, URL: fmt.Sprintf("/api/company/part/%d/", v.PK), Fields: map[string]any{"part": v.Part, "supplier": v.Supplier, "active": v.Active, "primary": v.Primary}}
+		return ClarificationCandidate{ID: strconv.Itoa(v.PK), Label: v.SKU, Summary: v.Description, APIURL: fmt.Sprintf("/api/company/part/%d/", v.PK), Fields: map[string]any{"part": v.Part, "supplier": v.Supplier, "active": v.Active, "primary": v.Primary}}
 	case inventree.ManufacturerPart:
-		return ClarificationCandidate{ID: strconv.Itoa(v.PK), Label: v.MPN, Summary: v.Description, URL: fmt.Sprintf("/api/company/part/manufacturer/%d/", v.PK), Fields: map[string]any{"part": v.Part, "manufacturer": v.Manufacturer}}
+		return ClarificationCandidate{ID: strconv.Itoa(v.PK), Label: v.MPN, Summary: v.Description, APIURL: fmt.Sprintf("/api/company/part/manufacturer/%d/", v.PK), Fields: map[string]any{"part": v.Part, "manufacturer": v.Manufacturer}}
 	case inventree.StockLocation:
-		return ClarificationCandidate{ID: strconv.Itoa(v.PK), Label: v.Name, Summary: v.Description, URL: fmt.Sprintf("/api/stock/location/%d/", v.PK), Fields: map[string]any{"structural": v.Structural, "external": v.External}}
+		return ClarificationCandidate{ID: strconv.Itoa(v.PK), Label: v.Name, Summary: v.Description, APIURL: fmt.Sprintf("/api/stock/location/%d/", v.PK), Fields: map[string]any{"structural": v.Structural, "external": v.External}}
 	case inventree.StockLocationType:
-		return ClarificationCandidate{ID: strconv.Itoa(v.PK), Label: v.Name, Summary: v.Description, URL: fmt.Sprintf("/api/stock/location-type/%d/", v.PK)}
+		return ClarificationCandidate{ID: strconv.Itoa(v.PK), Label: v.Name, Summary: v.Description, APIURL: fmt.Sprintf("/api/stock/location-type/%d/", v.PK)}
 	case inventree.StockItem:
-		return ClarificationCandidate{ID: strconv.Itoa(v.PK), Label: fmt.Sprintf("stock item %d", v.PK), URL: fmt.Sprintf("/api/stock/%d/", v.PK), Fields: map[string]any{"part": v.Part, "location": v.Location, "quantity": v.Quantity, "status": v.Status, "serial": v.Serial, "batch": v.Batch}}
+		return ClarificationCandidate{ID: strconv.Itoa(v.PK), Label: fmt.Sprintf("stock item %d", v.PK), APIURL: fmt.Sprintf("/api/stock/%d/", v.PK), Fields: map[string]any{"part": v.Part, "location": v.Location, "quantity": v.Quantity, "status": v.Status, "serial": v.Serial, "batch": v.Batch}}
 	case inventree.PurchaseOrderLineItem:
 		fields := map[string]any{"order": v.Order, "supplier_part_id": v.Part, "quantity": v.Quantity, "received": v.Received, "destination": v.Destination, "purchase_price_currency": v.PurchasePriceCurrency}
 		if v.PurchasePrice != nil {
 			fields["purchase_price"] = *v.PurchasePrice
 		}
-		return ClarificationCandidate{ID: strconv.Itoa(v.PK), Label: v.Reference, Summary: v.Notes, URL: fmt.Sprintf("/api/order/po-line/%d/", v.PK), Fields: fields}
+		return ClarificationCandidate{ID: strconv.Itoa(v.PK), Label: v.Reference, Summary: v.Notes, APIURL: fmt.Sprintf("/api/order/po-line/%d/", v.PK), Fields: fields}
 	case inventree.PurchaseOrderExtraLine:
 		fields := map[string]any{"order": v.Order, "quantity": v.Quantity, "price_currency": v.PriceCurrency}
 		if v.Price != nil {
@@ -980,7 +981,7 @@ func candidateFor(record any) ClarificationCandidate {
 		if v.Link != "" {
 			fields["link"] = redactedMetadataURL(&v.Link)
 		}
-		return ClarificationCandidate{ID: strconv.Itoa(v.PK), Label: v.Reference, Summary: v.Description, URL: fmt.Sprintf("/api/order/po-extra-line/%d/", v.PK), Fields: fields}
+		return ClarificationCandidate{ID: strconv.Itoa(v.PK), Label: v.Reference, Summary: v.Description, APIURL: fmt.Sprintf("/api/order/po-extra-line/%d/", v.PK), Fields: fields}
 	case inventree.Attachment:
 		fields := map[string]any{
 			"model_type": v.ModelType,
@@ -991,7 +992,7 @@ func candidateFor(record any) ClarificationCandidate {
 		if v.FileSize != nil {
 			fields["file_size"] = *v.FileSize
 		}
-		return ClarificationCandidate{ID: strconv.Itoa(v.PK), Label: v.Filename, Summary: v.Comment, URL: fmt.Sprintf("/api/attachment/%d/", v.PK), Fields: fields}
+		return ClarificationCandidate{ID: strconv.Itoa(v.PK), Label: v.Filename, Summary: v.Comment, APIURL: fmt.Sprintf("/api/attachment/%d/", v.PK), Fields: fields}
 	default:
 		return ClarificationCandidate{ID: fmt.Sprint(record), Label: fmt.Sprint(record)}
 	}
