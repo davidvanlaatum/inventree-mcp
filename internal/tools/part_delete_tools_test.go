@@ -32,9 +32,18 @@ type fakePartDeleteClient struct {
 	ambiguousDeleteErr     error
 	ambiguousDeleteApplied bool
 	deleteCalls            int
+	stockSearchErr         error
+	// verifyGetPartErr, when set, is returned by GetPart instead of the
+	// normal lookup once a delete has been attempted (deleteCalls > 0),
+	// simulating an ambiguous post-delete read-back failure distinct from
+	// both a clean not-found and a clean success.
+	verifyGetPartErr error
 }
 
 func (f *fakePartDeleteClient) GetPart(_ context.Context, id int) (inventree.Part, error) {
+	if f.verifyGetPartErr != nil && f.deleteCalls > 0 {
+		return inventree.Part{}, f.verifyGetPartErr
+	}
 	part, ok := f.parts[id]
 	if !ok {
 		return inventree.Part{}, &inventree.APIError{StatusCode: 404, Kind: inventree.ErrorKindNotFound}
@@ -51,6 +60,9 @@ func (f *fakePartDeleteClient) GetPartCategory(_ context.Context, id int) (inven
 }
 
 func (f *fakePartDeleteClient) SearchStockItems(_ context.Context, query inventree.StockItemQuery) ([]inventree.StockItem, error) {
+	if f.stockSearchErr != nil {
+		return nil, f.stockSearchErr
+	}
 	result := make([]inventree.StockItem, 0, len(f.stockItems))
 	for _, item := range f.stockItems {
 		if query.PartID == 0 || item.Part == query.PartID {
@@ -644,7 +656,7 @@ func TestDeletePartReturnsSafeErrorOnDefiniteMutationRejection(t *testing.T) {
 	a.True(stillThere)
 }
 
-// 429 is a 4xx status, but definiteStockMutationRejection deliberately
+// 429 is a 4xx status, but definiteMutationRejection deliberately
 // excludes it (along with 408 and 425) because a rate-limited or too-early
 // request may still have been applied upstream; this must go through
 // read-back verification rather than being treated as a definite rejection.
@@ -665,4 +677,57 @@ func TestDeletePartTreatsRetryableStatusAsAmbiguous(t *testing.T) {
 	a.Equal(1, fake.deleteCalls)
 	_, stillThere := fake.parts[369]
 	a.False(stillThere)
+}
+
+// context.Canceled from the DeletePart mutation call must propagate as the
+// tool's own returned error unwrapped, not be replaced by the generic
+// safePartDeleteError message.
+func TestDeletePartPreservesContextCanceledOnMutation(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	fake := newPartDeleteFixture()
+	fake.deleteErr = context.Canceled
+
+	_, _, err := deletePart(partDeleteDeps(fake))(ctx, &mcp.CallToolRequest{}, DeletePartInput{ID: 369, Confirm: true})
+	r.Error(err)
+	a.ErrorIs(err, context.Canceled)
+}
+
+// The same sentinel-preservation requirement applies to every preflight
+// read, not just the mutation call; SearchStockItems is representative of
+// the ~13 other safePartDeleteError call sites.
+func TestDeletePartPreservesContextDeadlineExceededOnPreflight(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	fake := newPartDeleteFixture()
+	fake.stockSearchErr = context.DeadlineExceeded
+
+	_, _, err := deletePart(partDeleteDeps(fake))(ctx, &mcp.CallToolRequest{}, DeletePartInput{ID: 369, Confirm: true})
+	r.Error(err)
+	a.ErrorIs(err, context.DeadlineExceeded)
+	a.Zero(fake.deleteCalls, "a preflight failure must never reach the delete call")
+}
+
+// A genuinely ambiguous read-back failure (neither a clean not-found nor a
+// clean success) after a confirmed delete must surface as partial_failure
+// with recovery guidance, never a false success.
+func TestDeletePartPartialFailureWhenReadBackItselfErrors(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	fake := newPartDeleteFixture()
+	fake.verifyGetPartErr = &inventree.APIError{StatusCode: 500, Kind: inventree.ErrorKindServer}
+
+	_, out, err := deletePart(partDeleteDeps(fake))(ctx, &mcp.CallToolRequest{}, DeletePartInput{ID: 369, Confirm: true})
+	r.NoError(err)
+	a.Equal(StatusPartialFailure, out.Status)
+	r.NotNil(out.Record)
+	a.Equal(369, out.Record.PK)
+	a.NotEmpty(out.RecoveryPlan)
+	a.Equal(1, fake.deleteCalls)
 }

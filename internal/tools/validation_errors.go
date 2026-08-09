@@ -172,3 +172,17 @@ func safeToolError(err error) error {
 	}
 	return fmt.Errorf("InvenTree request failed with status %d", apiErr.StatusCode)
 }
+
+// definiteMutationRejection classifies a status code as a definite upstream
+// rejection -- one where the mutation is known not to have applied, so no
+// read-back verification is needed -- versus an ambiguous failure where the
+// mutation may have applied despite the error response. 408 (timeout), 425
+// (too early), and 429 (rate limited) are excluded from "definite" because a
+// retried or delayed request can still have succeeded server-side. Shared
+// by every guarded destructive/operational tool that must tell a definite
+// rejection apart from a lost or ambiguous response (stock adjustment,
+// depletion, transfer, and part deletion); it is not stock-specific despite
+// originating there.
+func definiteMutationRejection(statusCode int) bool {
+	return statusCode >= 400 && statusCode < 500 && statusCode != 408 && statusCode != 425 && statusCode != 429
+}

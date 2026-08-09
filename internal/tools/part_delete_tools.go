@@ -144,7 +144,7 @@ func deletePart(deps Dependencies) mcp.ToolHandlerFor[DeletePartInput, PartDelet
 					return TextResult(StatusValidationFailed), PartDeleteOutput{Status: StatusValidationFailed, Validation: validation}, nil
 				}
 				var apiErr *inventree.APIError
-				if errors.As(mutationErr, &apiErr) && definiteStockMutationRejection(apiErr.StatusCode) {
+				if errors.As(mutationErr, &apiErr) && definiteMutationRejection(apiErr.StatusCode) {
 					return nil, PartDeleteOutput{}, safePartDeleteError("part deletion", mutationErr)
 				}
 				// Ambiguous failure (timeout, 5xx, network error, or a

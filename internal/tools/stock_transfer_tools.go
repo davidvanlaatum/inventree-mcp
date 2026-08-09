@@ -184,7 +184,7 @@ func executeStockTransfer(ctx context.Context, store *stockPlanStore, client Sto
 	}
 	if mutationErr != nil {
 		var apiErr *inventree.APIError
-		if errors.As(mutationErr, &apiErr) && definiteStockMutationRejection(apiErr.StatusCode) {
+		if errors.As(mutationErr, &apiErr) && definiteMutationRejection(apiErr.StatusCode) {
 			return nil, out, safeToolError(mutationErr)
 		}
 		return verifyStockTransfer(ctx, client, out, true)
