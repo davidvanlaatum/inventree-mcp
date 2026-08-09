@@ -423,6 +423,14 @@ func (c *Client) UpdatePurchaseOrderLine(ctx context.Context, id int, fields Pat
 	return out, err
 }
 
+func (c *Client) DeletePurchaseOrderLine(ctx context.Context, id int) error {
+	req, err := c.NewRequest(ctx, http.MethodDelete, fmt.Sprintf("/api/order/po-line/%d/", id), nil, nil)
+	if err != nil {
+		return err
+	}
+	return c.DoJSON(req, nil)
+}
+
 func (c *Client) CreatePurchaseOrderExtraLine(ctx context.Context, input PurchaseOrderExtraLineCreate) (PurchaseOrderExtraLine, error) {
 	var out PurchaseOrderExtraLine
 	err := c.Post(ctx, "/api/order/po-extra-line/", input, &out)

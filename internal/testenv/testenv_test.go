@@ -394,6 +394,9 @@ func TestEnsureFixtureCreatesRequestedRunPrefixedFixtureAndDependencies(t *testi
 			if name == "" {
 				name = req.URL.Query().Get("reference")
 			}
+			if name == "" {
+				name = strings.TrimSuffix(strings.TrimPrefix(req.URL.Query().Get("name_regex"), "^"), "$")
+			}
 			if record, ok := records[name]; ok {
 				return http.StatusOK, fmtJSON(testenvListResponse{Results: []testenvRecord{record}})
 			}

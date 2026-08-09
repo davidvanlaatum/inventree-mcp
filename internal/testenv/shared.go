@@ -652,6 +652,14 @@ func getOrCreateRecord(
 		query.Set("SKU", name)
 	case "/api/bom/", "/api/order/po/":
 		query.Set("reference", name)
+	case "/api/part/":
+		// InvenTree's /api/part/ list endpoint has no exact "name" filter,
+		// only "name_regex"; an anchored exact regex keeps this lookup a
+		// true single-match query regardless of total part count, instead
+		// of silently returning an unfiltered, limit-capped result window
+		// that can miss an already-created part once enough other parts
+		// exist and cause a duplicate-name create attempt.
+		query.Set("name_regex", "^"+regexp.QuoteMeta(name)+"$")
 	default:
 		query.Set("name", name)
 	}

@@ -819,6 +819,87 @@ func TestMilestoneHappyPathToolsAgainstInvenTree(t *testing.T) {
 		r.Len(completed.StockItems, 2)
 	})
 
+	t.Run("purchase_order_line_delete_happy_path", func(t *testing.T) {
+		r := require.New(t)
+		a := assert.New(t)
+		ctx, _, _ := testhandler.SetupTestHandler(t)
+		fixture := newMilestoneToolFixture(t, shared)
+		supplier := fixture.ensure(t, testenv.FixtureSupplier)
+		supplierPart := fixture.ensure(t, testenv.FixtureSupplierPart)
+		destination := fixture.ensure(t, testenv.FixtureLocation)
+
+		supplierPartDetail, err := fixture.client.GetSupplierPart(ctx, supplierPart.ID)
+		r.NoError(err)
+
+		order, err := fixture.client.CreatePurchaseOrder(ctx, inventree.PurchaseOrderCreate{Supplier: supplier.ID, OrderCurrency: dvgoutils.Ptr("AUD")})
+		r.NoError(err)
+
+		mistakenReference, err := fixture.run.Name("po-line-delete-mistaken")
+		r.NoError(err)
+		mistakenLine, err := fixture.client.CreatePurchaseOrderLine(ctx, inventree.PurchaseOrderLineCreate{Order: order.PK, SupplierPart: supplierPart.ID, Reference: &mistakenReference, Quantity: 2, PurchasePrice: dvgoutils.Ptr("1.5"), PurchasePriceCurrency: dvgoutils.Ptr("AUD"), Destination: &destination.ID})
+		r.NoError(err)
+
+		orderBeforeDelete, err := fixture.client.GetPurchaseOrder(ctx, order.PK)
+		r.NoError(err)
+		r.NotNil(orderBeforeDelete.TotalPrice)
+
+		_, preview, err := deletePurchaseOrderLine(fixture.deps())(ctx, &mcp.CallToolRequest{}, DeletePurchaseOrderLineInput{ID: mistakenLine.PK})
+		r.NoError(err)
+		a.Equal(StatusClarificationRequired, preview.Status)
+		r.NotNil(preview.Record)
+		a.Equal(mistakenLine.PK, preview.Record.PK)
+		r.NotNil(preview.PurchaseOrder)
+		a.Equal(order.PK, preview.PurchaseOrder.PK)
+		a.Equal(supplierPartDetail.Part, preview.PartID)
+
+		_, deleted, err := deletePurchaseOrderLine(fixture.deps())(ctx, &mcp.CallToolRequest{}, DeletePurchaseOrderLineInput{ID: mistakenLine.PK, Confirm: true})
+		r.NoError(err)
+		a.Equal(StatusOK, deleted.Status)
+		a.True(deleted.Verified)
+		r.NotNil(deleted.PurchaseOrder)
+		r.NotNil(deleted.PurchaseOrder.TotalPrice)
+		a.NotEqual(*orderBeforeDelete.TotalPrice, *deleted.PurchaseOrder.TotalPrice, "removing the priced mistaken line must change the refreshed order total")
+		_, err = fixture.client.GetPurchaseOrderLine(ctx, mistakenLine.PK)
+		r.Error(err, "the deleted line must no longer exist")
+
+		correctedReference, err := fixture.run.Name("po-extra-line-corrected")
+		r.NoError(err)
+		_, correctedExtraLine, err := createPurchaseOrderExtraLine(fixture.deps())(ctx, &mcp.CallToolRequest{}, CreatePurchaseOrderExtraLineInput{OrderID: order.PK, Reference: correctedReference, Description: dvgoutils.Ptr("corrected non-stock line"), Quantity: 1, UnitPrice: dvgoutils.Ptr("3"), Currency: dvgoutils.Ptr("AUD")})
+		r.NoError(err)
+		a.Equal(StatusOK, correctedExtraLine.Status)
+
+		receivableReference, err := fixture.run.Name("po-line-delete-receivable")
+		r.NoError(err)
+		receivableLine, err := fixture.client.CreatePurchaseOrderLine(ctx, inventree.PurchaseOrderLineCreate{Order: order.PK, SupplierPart: supplierPart.ID, Reference: &receivableReference, Quantity: 3, PurchasePrice: dvgoutils.Ptr("1"), PurchasePriceCurrency: dvgoutils.Ptr("AUD"), Destination: &destination.ID})
+		r.NoError(err)
+
+		r.NoError(fixture.client.IssuePurchaseOrder(ctx, order.PK))
+		placedOrder, err := fixture.client.GetPurchaseOrder(ctx, order.PK)
+		r.NoError(err)
+		a.Equal(inventree.PurchaseOrderStatusPlaced, placedOrder.Status)
+
+		placedMistakeReference, err := fixture.run.Name("po-line-delete-placed-mistake")
+		r.NoError(err)
+		placedMistakeLine, err := fixture.client.CreatePurchaseOrderLine(ctx, inventree.PurchaseOrderLineCreate{Order: order.PK, SupplierPart: supplierPart.ID, Reference: &placedMistakeReference, Quantity: 1})
+		r.NoError(err, "adding a line to a PLACED order must still be possible")
+		_, deletedFromPlaced, err := deletePurchaseOrderLine(fixture.deps())(ctx, &mcp.CallToolRequest{}, DeletePurchaseOrderLineInput{ID: placedMistakeLine.PK, Confirm: true})
+		r.NoError(err)
+		a.Equal(StatusOK, deletedFromPlaced.Status, "an unreceived line on a PLACED order must still be deletable")
+
+		received, err := fixture.client.ReceivePurchaseOrder(ctx, order.PK, inventree.PurchaseOrderReceive{Items: []inventree.PurchaseOrderReceiveItem{{LineItem: receivableLine.PK, Location: &destination.ID, Quantity: "1"}}})
+		r.NoError(err)
+		r.NotEmpty(received)
+
+		_, refusedDelete, err := deletePurchaseOrderLine(fixture.deps())(ctx, &mcp.CallToolRequest{}, DeletePurchaseOrderLineInput{ID: receivableLine.PK, Confirm: true})
+		r.NoError(err)
+		a.Equal(StatusClarificationRequired, refusedDelete.Status, "the MCP tool must refuse deletion of a line with received quantity even though InvenTree itself would allow it")
+		r.NotNil(refusedDelete.Clarification)
+		a.Equal("received", refusedDelete.Clarification.Field)
+		stillReceivable, err := fixture.client.GetPurchaseOrderLine(ctx, receivableLine.PK)
+		r.NoError(err, "the refused line must still exist")
+		a.Equal(1.0, stillReceivable.Received)
+	})
+
 	t.Run("stock_adjustment_happy_path", func(t *testing.T) {
 		r := require.New(t)
 		a := assert.New(t)
