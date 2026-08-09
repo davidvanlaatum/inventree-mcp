@@ -40,6 +40,7 @@ type Part struct {
 	Trackable       bool    `json:"trackable"`
 	Virtual         bool    `json:"virtual"`
 	Image           *string `json:"image"`
+	VariantOf       *int    `json:"variant_of"`
 }
 
 type PartPage struct {
@@ -332,6 +333,7 @@ type PurchaseOrderLineItem struct {
 	Order                 int            `json:"order"`
 	Part                  int            `json:"part"`
 	SupplierPart          *int           `json:"supplier_part,omitempty"`
+	InternalPart          *int           `json:"internal_part"`
 	Destination           *int           `json:"destination"`
 	Line                  string         `json:"line"`
 	Reference             string         `json:"reference"`
@@ -355,4 +357,42 @@ type PurchaseOrderExtraLine struct {
 	Price         *DecimalString `json:"price"`
 	PriceCurrency string         `json:"price_currency"`
 	TargetDate    *string        `json:"target_date"`
+}
+
+// BomItem is read-only in this client: it exists solely to let delete_part
+// detect whether a part is used in a bill of materials, either as the
+// assembly (Part) or as a component of another assembly (SubPart).
+type BomItem struct {
+	PK       int     `json:"pk"`
+	Part     int     `json:"part"`
+	SubPart  int     `json:"sub_part"`
+	Quantity float64 `json:"quantity"`
+}
+
+// SalesOrderLineItem is read-only in this client: it exists solely to let
+// delete_part detect whether a part is referenced by a sales order.
+type SalesOrderLineItem struct {
+	PK       int     `json:"pk"`
+	Order    int     `json:"order"`
+	Part     *int    `json:"part"`
+	Quantity float64 `json:"quantity"`
+}
+
+// Build is read-only in this client: it exists solely to let delete_part
+// detect whether a part is the top-level assembly of a build order.
+type Build struct {
+	PK        int    `json:"pk"`
+	Part      int    `json:"part"`
+	Reference string `json:"reference"`
+	Status    int    `json:"status"`
+}
+
+// PartRelation is read-only in this client: it exists solely to let
+// delete_part detect and block on related-part links, since InvenTree
+// itself does not protect a part from deletion while one exists.
+type PartRelation struct {
+	PK    int    `json:"pk"`
+	Part1 int    `json:"part_1"`
+	Part2 int    `json:"part_2"`
+	Note  string `json:"note"`
 }

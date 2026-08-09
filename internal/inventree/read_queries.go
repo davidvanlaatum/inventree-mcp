@@ -22,6 +22,7 @@ type CategoryQuery struct {
 type PartQuery struct {
 	CategoryID int
 	Cascade    *bool
+	VariantOf  int
 	Limit      int
 	Offset     int
 }
@@ -113,6 +114,7 @@ type PurchaseOrderLineQuery struct {
 	Search       string
 	Order        int
 	SupplierPart int
+	BasePart     int
 	Pending      *bool
 	Received     *bool
 	Limit        int
@@ -122,6 +124,31 @@ type PurchaseOrderLineQuery struct {
 type PurchaseOrderExtraLineQuery struct {
 	Search string
 	Order  int
+	Limit  int
+	Offset int
+}
+
+type BomItemQuery struct {
+	Part   int
+	Uses   int
+	Limit  int
+	Offset int
+}
+
+type SalesOrderLineQuery struct {
+	Part   int
+	Limit  int
+	Offset int
+}
+
+type BuildQuery struct {
+	Part   int
+	Limit  int
+	Offset int
+}
+
+type PartRelationQuery struct {
+	Part   int
 	Limit  int
 	Offset int
 }
@@ -157,6 +184,9 @@ func (q PartQuery) values() url.Values {
 	}
 	if q.Cascade != nil {
 		values.Set("cascade", strconv.FormatBool(*q.Cascade))
+	}
+	if q.VariantOf != 0 {
+		values.Set("variant_of", strconv.Itoa(q.VariantOf))
 	}
 	setPagination(values, q.Limit, q.Offset)
 	return values
@@ -320,6 +350,9 @@ func (q PurchaseOrderLineQuery) values() url.Values {
 	if q.SupplierPart != 0 {
 		values.Set("part", strconv.Itoa(q.SupplierPart))
 	}
+	if q.BasePart != 0 {
+		values.Set("base_part", strconv.Itoa(q.BasePart))
+	}
 	if q.Pending != nil {
 		values.Set("pending", strconv.FormatBool(*q.Pending))
 	}
@@ -337,6 +370,45 @@ func (q PurchaseOrderExtraLineQuery) values() url.Values {
 	}
 	if q.Order != 0 {
 		values.Set("order", strconv.Itoa(q.Order))
+	}
+	setPagination(values, q.Limit, q.Offset)
+	return values
+}
+
+func (q BomItemQuery) values() url.Values {
+	values := url.Values{}
+	if q.Part != 0 {
+		values.Set("part", strconv.Itoa(q.Part))
+	}
+	if q.Uses != 0 {
+		values.Set("uses", strconv.Itoa(q.Uses))
+	}
+	setPagination(values, q.Limit, q.Offset)
+	return values
+}
+
+func (q SalesOrderLineQuery) values() url.Values {
+	values := url.Values{}
+	if q.Part != 0 {
+		values.Set("part", strconv.Itoa(q.Part))
+	}
+	setPagination(values, q.Limit, q.Offset)
+	return values
+}
+
+func (q BuildQuery) values() url.Values {
+	values := url.Values{}
+	if q.Part != 0 {
+		values.Set("part", strconv.Itoa(q.Part))
+	}
+	setPagination(values, q.Limit, q.Offset)
+	return values
+}
+
+func (q PartRelationQuery) values() url.Values {
+	values := url.Values{}
+	if q.Part != 0 {
+		values.Set("part", strconv.Itoa(q.Part))
 	}
 	setPagination(values, q.Limit, q.Offset)
 	return values

@@ -90,6 +90,10 @@ func (c *Client) SearchPartsPage(ctx context.Context, query PartQuery) (PartPage
 	return PartPage{Count: page.Count, Results: page.Results, HasMore: page.Next != nil && *page.Next != ""}, err
 }
 
+func (c *Client) SearchPartsByQuery(ctx context.Context, query PartQuery) ([]Part, error) {
+	return listAll[Part](ctx, c, "/api/part/", query.values())
+}
+
 func (c *Client) GetPart(ctx context.Context, id int) (Part, error) {
 	var out Part
 	err := c.get(ctx, fmt.Sprintf("/api/part/%d/", id), &out)
@@ -519,6 +523,22 @@ func (c *Client) GetPurchaseOrderExtraLine(ctx context.Context, id int) (Purchas
 	var out PurchaseOrderExtraLine
 	err := c.get(ctx, fmt.Sprintf("/api/order/po-extra-line/%d/", id), &out)
 	return out, err
+}
+
+func (c *Client) SearchBomItems(ctx context.Context, query BomItemQuery) ([]BomItem, error) {
+	return listAll[BomItem](ctx, c, "/api/bom/", query.values())
+}
+
+func (c *Client) SearchSalesOrderLines(ctx context.Context, query SalesOrderLineQuery) ([]SalesOrderLineItem, error) {
+	return listAll[SalesOrderLineItem](ctx, c, "/api/order/so-line/", query.values())
+}
+
+func (c *Client) SearchBuilds(ctx context.Context, query BuildQuery) ([]Build, error) {
+	return listAll[Build](ctx, c, "/api/build/", query.values())
+}
+
+func (c *Client) SearchPartRelations(ctx context.Context, query PartRelationQuery) ([]PartRelation, error) {
+	return listAll[PartRelation](ctx, c, "/api/part/related/", query.values())
 }
 
 func (c *Client) get(ctx context.Context, path string, out any) error {

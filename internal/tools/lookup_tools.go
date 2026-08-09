@@ -69,6 +69,7 @@ const (
 	GetPurchaseOrderExtraLineToolName       = "get_purchase_order_extra_line"
 	CreatePartToolName                      = "create_part"
 	UpdatePartToolName                      = "update_part"
+	DeletePartToolName                      = "delete_part"
 	CreatePartCategoryToolName              = "create_part_category"
 	UpdatePartCategoryToolName              = "update_part_category"
 	SetPartParametersToolName               = "set_part_parameters"
@@ -171,6 +172,7 @@ var lookupToolNames = []string{
 var writeToolNames = []string{
 	CreatePartToolName,
 	UpdatePartToolName,
+	DeletePartToolName,
 	CreatePartCategoryToolName,
 	UpdatePartCategoryToolName,
 	SetPartParametersToolName,
@@ -267,7 +269,7 @@ func init() {
 			scopes = []string{ScopeInventreeWrite, ScopeInventreeUpload}
 		case SetCompanyImageToolName, SetCompanyImageFromURLToolName:
 			scopes = []string{ScopeInventreeRead, ScopeInventreeWrite, ScopeInventreeUpload}
-		case DeletePartParameterToolName, DeleteParameterTemplateToolName, MergeParameterTemplatesToolName, DeleteCategoryParameterDefaultToolName, DeletePurchaseOrderExtraLineToolName, DeletePurchaseOrderLineToolName:
+		case DeletePartParameterToolName, DeleteParameterTemplateToolName, MergeParameterTemplatesToolName, DeleteCategoryParameterDefaultToolName, DeletePurchaseOrderExtraLineToolName, DeletePurchaseOrderLineToolName, DeletePartToolName:
 			scopes = []string{ScopeInventreeRead, ScopeInventreeWrite, ScopeInventreeDestructive}
 			mutationClass = "destructive"
 		case DeleteAttachmentToolName:
@@ -281,7 +283,7 @@ func init() {
 		if name == UploadAttachmentFromURLToolName || name == SetCompanyImageFromURLToolName {
 			annotations.OpenWorld = true
 		}
-		if name == DeleteAttachmentToolName || name == ClearCompanyImageToolName || name == DeletePartParameterToolName || name == DeleteParameterTemplateToolName || name == MergeParameterTemplatesToolName || name == DeleteCategoryParameterDefaultToolName || name == DeletePurchaseOrderExtraLineToolName || name == DeletePurchaseOrderLineToolName || name == BulkPropagatePartParametersToolName || name == DepleteStockItemToolName {
+		if name == DeleteAttachmentToolName || name == ClearCompanyImageToolName || name == DeletePartParameterToolName || name == DeleteParameterTemplateToolName || name == MergeParameterTemplatesToolName || name == DeleteCategoryParameterDefaultToolName || name == DeletePurchaseOrderExtraLineToolName || name == DeletePurchaseOrderLineToolName || name == BulkPropagatePartParametersToolName || name == DepleteStockItemToolName || name == DeletePartToolName {
 			annotations.Destructive = true
 		}
 		ToolAuthorizations[name] = ToolAuthorization{

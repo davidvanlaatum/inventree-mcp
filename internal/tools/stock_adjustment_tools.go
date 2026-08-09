@@ -471,7 +471,7 @@ func executeStockPlan(ctx context.Context, store *stockPlanStore, client StockAd
 	}
 	if err := mutate(); err != nil {
 		var apiErr *inventree.APIError
-		if errors.As(err, &apiErr) && definiteStockMutationRejection(apiErr.StatusCode) {
+		if errors.As(err, &apiErr) && definiteMutationRejection(apiErr.StatusCode) {
 			return nil, out, err
 		}
 		return stockUnknownResult(out, "stock adjustment result is unknown")
@@ -486,10 +486,6 @@ func executeStockPlan(ctx context.Context, store *stockPlanStore, client StockAd
 		return stockUnknownResult(out, "refreshed stock state does not match the reviewed plan")
 	}
 	return TextResult(StatusOK), out, nil
-}
-
-func definiteStockMutationRejection(statusCode int) bool {
-	return statusCode >= 400 && statusCode < 500 && statusCode != 408 && statusCode != 425 && statusCode != 429
 }
 
 func stockClarification(out StockAdjustmentOutput, question, subject, reason, retry string, fields map[string]any) (*mcp.CallToolResult, StockAdjustmentOutput, error) {

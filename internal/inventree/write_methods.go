@@ -232,6 +232,14 @@ func (c *Client) UpdatePart(ctx context.Context, id int, fields PatchFields) (Pa
 	return out, err
 }
 
+func (c *Client) DeletePart(ctx context.Context, id int) error {
+	req, err := c.NewRequest(ctx, http.MethodDelete, fmt.Sprintf("/api/part/%d/", id), nil, nil)
+	if err != nil {
+		return err
+	}
+	return c.DoJSON(req, nil)
+}
+
 func (c *Client) CreatePartCategory(ctx context.Context, input CategoryCreate) (Category, error) {
 	var out Category
 	err := c.Post(ctx, "/api/part/category/", input, &out)

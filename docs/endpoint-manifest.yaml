@@ -13,6 +13,9 @@ coverage_areas:
   - attachments
   - purchasing_preview
   - purchasing
+  - bom
+  - manufacturing
+  - sales_orders
 
 forbidden_paths:
   - /api/notes-image-upload/
@@ -70,6 +73,36 @@ endpoints:
     method: GET
     operation_id: part_retrieve
     response_schema: '#/components/schemas/Part'
+  - id: delete_part
+    area: parts
+    path: /api/part/{id}/
+    method: DELETE
+    operation_id: part_destroy
+    response_status: "204"
+  - id: search_part_relations
+    area: parts
+    path: /api/part/related/
+    method: GET
+    operation_id: part_related_list
+    response_schema: '#/components/schemas/PaginatedPartRelationList'
+  - id: search_bom_items
+    area: bom
+    path: /api/bom/
+    method: GET
+    operation_id: bom_list
+    response_schema: '#/components/schemas/PaginatedBomItemList'
+  - id: search_builds
+    area: manufacturing
+    path: /api/build/
+    method: GET
+    operation_id: build_list
+    response_schema: '#/components/schemas/PaginatedBuildList'
+  - id: search_sales_order_lines
+    area: sales_orders
+    path: /api/order/so-line/
+    method: GET
+    operation_id: order_so_line_list
+    response_schema: '#/components/schemas/PaginatedSalesOrderLineItemList'
   - id: search_part_categories
     area: categories
     path: /api/part/category/
