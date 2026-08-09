@@ -898,6 +898,20 @@ func TestMilestoneHappyPathToolsAgainstInvenTree(t *testing.T) {
 		stillReceivable, err := fixture.client.GetPurchaseOrderLine(ctx, receivableLine.PK)
 		r.NoError(err, "the refused line must still exist")
 		a.Equal(1.0, stillReceivable.Received)
+
+		linkedStockReference, err := fixture.run.Name("po-line-delete-linked-stock")
+		r.NoError(err)
+		linkedStockLine, err := fixture.client.CreatePurchaseOrderLine(ctx, inventree.PurchaseOrderLineCreate{Order: order.PK, SupplierPart: supplierPart.ID, Reference: &linkedStockReference, Quantity: 1})
+		r.NoError(err, "a second unreceived line sharing the receipted line's supplier part must still be addable")
+
+		_, refusedLinkedStockDelete, err := deletePurchaseOrderLine(fixture.deps())(ctx, &mcp.CallToolRequest{}, DeletePurchaseOrderLineInput{ID: linkedStockLine.PK, Confirm: true})
+		r.NoError(err)
+		a.Equal(StatusClarificationRequired, refusedLinkedStockDelete.Status, "the MCP tool must refuse deletion of an unreceived line once stock already references this order and supplier part, even with zero received quantity on this specific line")
+		r.NotNil(refusedLinkedStockDelete.Clarification)
+		a.Equal("stock", refusedLinkedStockDelete.Clarification.Field)
+		stillLinkedStock, err := fixture.client.GetPurchaseOrderLine(ctx, linkedStockLine.PK)
+		r.NoError(err, "the refused line must still exist")
+		a.Zero(stillLinkedStock.Received)
 	})
 
 	t.Run("stock_adjustment_happy_path", func(t *testing.T) {

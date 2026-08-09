@@ -264,6 +264,9 @@ func deletePurchaseOrderExtraLine(deps Dependencies) mcp.ToolHandlerFor[DeletePu
 			}
 			order, err := loadExtraLineOrder(ctx, client, record.Order)
 			if err != nil {
+				if isNotFound(err) {
+					return extraLineClarification(false, "Which existing purchase order should own this extra line?", "the extra line's purchase order no longer exists; re-check the stable ID before retrying", map[string]any{"id": input.ID})
+				}
 				return nil, PurchaseOrderExtraLineOutput{}, err
 			}
 			safeRecord := sanitizePurchaseOrderExtraLine(record)

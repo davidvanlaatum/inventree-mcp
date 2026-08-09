@@ -296,6 +296,21 @@ func TestPurchaseOrderExtraLineDeleteRequiresConfirmationAndVerifiesAbsence(t *t
 	a.Equal(3, fake.getOrderCalls, "confirmed deletion must refresh the order after the preview and pre-delete reads")
 }
 
+func TestPurchaseOrderExtraLineDeleteOrderNotFound(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	fake := &fakePurchasingClient{extraLines: []inventree.PurchaseOrderExtraLine{{PK: 201, Order: 120, Reference: "FREIGHT", Quantity: 1}}, missingOrderIDs: map[int]bool{120: true}}
+
+	_, output, err := deletePurchaseOrderExtraLine(purchasingDeps(fake))(ctx, &mcp.CallToolRequest{}, DeletePurchaseOrderExtraLineInput{ID: 201, Confirm: true})
+	r.NoError(err)
+	a.Equal(StatusClarificationRequired, output.Status)
+	r.NotNil(output.Clarification)
+	a.True(output.Clarification.HardError)
+	a.Len(fake.extraLines, 1, "the extra line must not be deleted when its parent order cannot be found")
+}
+
 func TestPurchaseOrderExtraLineDeleteReportsUncertainVerification(t *testing.T) {
 	t.Parallel()
 	r := require.New(t)

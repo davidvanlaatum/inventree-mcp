@@ -53,6 +53,7 @@ type StockItemQuery struct {
 	PartID          int
 	LocationID      int
 	PurchaseOrderID int
+	SupplierPartID  int
 	Limit           int
 	Offset          int
 }
@@ -238,6 +239,9 @@ func (q StockItemQuery) values() url.Values {
 	}
 	if q.PurchaseOrderID != 0 {
 		values.Set("purchase_order", strconv.Itoa(q.PurchaseOrderID))
+	}
+	if q.SupplierPartID != 0 {
+		values.Set("supplier_part", strconv.Itoa(q.SupplierPartID))
 	}
 	return values
 }
