@@ -841,6 +841,142 @@ func TestClientMethodsAgainstInvenTree(t *testing.T) {
 		a.Equal(1.5, stockAfterDelete[0].Quantity, "InvenTree does not adjust surviving stock quantity when its originating line is deleted")
 	})
 
+	t.Run("part_delete", func(t *testing.T) {
+		r := require.New(t)
+		ctx, _, _ := testhandler.SetupTestHandler(t)
+		fixture := newClientMethodFixture(t, shared)
+		category := fixture.ensure(t, testenv.FixtureCategory)
+		location := fixture.ensure(t, testenv.FixtureLocation)
+		supplier := fixture.ensure(t, testenv.FixtureSupplier)
+
+		targetName, err := fixture.run.Name("part-delete-target")
+		r.NoError(err)
+		target, err := fixture.client.CreatePart(ctx, inventree.PartCreate{Name: targetName, Category: &category.ID, Purchaseable: dvgoutils.Ptr(true), Component: dvgoutils.Ptr(true), Assembly: dvgoutils.Ptr(true)})
+		r.NoError(err)
+		r.NotZero(target.PK)
+		target, err = fixture.client.UpdatePart(ctx, target.PK, inventree.PatchFields{"salable": inventree.Set(true)})
+		r.NoError(err)
+		r.True(target.Salable)
+
+		assemblyName, err := fixture.run.Name("part-delete-assembly")
+		r.NoError(err)
+		assembly, err := fixture.client.CreatePart(ctx, inventree.PartCreate{Name: assemblyName, Category: &category.ID, Assembly: dvgoutils.Ptr(true)})
+		r.NoError(err)
+		r.NotZero(assembly.PK)
+
+		componentName, err := fixture.run.Name("part-delete-component")
+		r.NoError(err)
+		component, err := fixture.client.CreatePart(ctx, inventree.PartCreate{Name: componentName, Category: &category.ID, Component: dvgoutils.Ptr(true)})
+		r.NoError(err)
+		r.NotZero(component.PK)
+
+		// A part with zero references is exactly the safe case delete_part
+		// exists for; every relationship below is attached one at a time so
+		// each client-side Search query can be proven against a real
+		// InvenTree instance before the raw, unguarded DeletePart call at
+		// the end pins InvenTree 1.4.3's own referential-integrity behavior.
+		noReferenceBom, err := fixture.client.SearchBomItems(ctx, inventree.BomItemQuery{Part: target.PK})
+		r.NoError(err)
+		r.Empty(noReferenceBom)
+		noReferenceUses, err := fixture.client.SearchBomItems(ctx, inventree.BomItemQuery{Uses: target.PK})
+		r.NoError(err)
+		r.Empty(noReferenceUses)
+		noReferenceBuilds, err := fixture.client.SearchBuilds(ctx, inventree.BuildQuery{Part: target.PK})
+		r.NoError(err)
+		r.Empty(noReferenceBuilds)
+		noReferenceSalesLines, err := fixture.client.SearchSalesOrderLines(ctx, inventree.SalesOrderLineQuery{Part: target.PK})
+		r.NoError(err)
+		r.Empty(noReferenceSalesLines)
+
+		// BOM: target is used as a component of assembly ("uses" filter).
+		var usesBOMItem inventree.BomItem
+		r.NoError(fixture.client.Post(ctx, "/api/bom/", map[string]any{"part": assembly.PK, "sub_part": target.PK, "quantity": 1}, &usesBOMItem))
+		r.NotZero(usesBOMItem.PK)
+		usesBOM, err := fixture.client.SearchBomItems(ctx, inventree.BomItemQuery{Uses: target.PK})
+		r.NoError(err)
+		r.Contains(bomItemIDs(usesBOM), usesBOMItem.PK)
+
+		// BOM: target is itself an assembly with component in its own BOM.
+		var ownBOMItem inventree.BomItem
+		r.NoError(fixture.client.Post(ctx, "/api/bom/", map[string]any{"part": target.PK, "sub_part": component.PK, "quantity": 1}, &ownBOMItem))
+		r.NotZero(ownBOMItem.PK)
+		ownBOM, err := fixture.client.SearchBomItems(ctx, inventree.BomItemQuery{Part: target.PK})
+		r.NoError(err)
+		r.Contains(bomItemIDs(ownBOM), ownBOMItem.PK)
+
+		// Build: target is the top-level built part.
+		var build inventree.Build
+		r.NoError(fixture.client.Post(ctx, "/api/build/", map[string]any{"part": target.PK, "quantity": 1}, &build))
+		r.NotZero(build.PK)
+		builds, err := fixture.client.SearchBuilds(ctx, inventree.BuildQuery{Part: target.PK})
+		r.NoError(err)
+		r.Contains(buildIDs(builds), build.PK)
+
+		// Purchase-order line: fans out through a supplier-part, mirroring
+		// the naming trap where PurchaseOrderLineItem.Part is a supplier-part
+		// PK rather than the InvenTree Part PK.
+		supplierPart, err := fixture.client.CreateSupplierPart(ctx, inventree.SupplierPartCreate{Part: target.PK, Supplier: supplier.ID, SKU: targetName + "-sku"})
+		r.NoError(err)
+		r.NotZero(supplierPart.PK)
+		order, err := fixture.client.CreatePurchaseOrder(ctx, inventree.PurchaseOrderCreate{Supplier: supplier.ID})
+		r.NoError(err)
+		r.NotZero(order.PK)
+		poLine, err := fixture.client.CreatePurchaseOrderLine(ctx, inventree.PurchaseOrderLineCreate{Order: order.PK, SupplierPart: supplierPart.PK, Quantity: 1})
+		r.NoError(err)
+		r.NotZero(poLine.PK)
+		poLines, err := fixture.client.SearchPurchaseOrderLines(ctx, inventree.PurchaseOrderLineQuery{SupplierPart: supplierPart.PK})
+		r.NoError(err)
+		r.Contains(purchaseOrderLineIDs(poLines), poLine.PK)
+
+		// Sales-order line: SalesOrderLineItem.Part is the direct Part PK.
+		customerName, err := fixture.run.Name("part-delete-customer")
+		r.NoError(err)
+		var customer inventree.Company
+		r.NoError(fixture.client.Post(ctx, "/api/company/", map[string]any{"name": customerName, "is_customer": true}, &customer))
+		r.NotZero(customer.PK)
+		var salesOrder struct {
+			PK        int    `json:"pk"`
+			Reference string `json:"reference"`
+		}
+		r.NoError(fixture.client.Post(ctx, "/api/order/so/", map[string]any{"customer": customer.PK}, &salesOrder))
+		r.NotZero(salesOrder.PK)
+		var salesOrderLine inventree.SalesOrderLineItem
+		r.NoError(fixture.client.Post(ctx, "/api/order/so-line/", map[string]any{"order": salesOrder.PK, "part": target.PK, "quantity": 1}, &salesOrderLine))
+		r.NotZero(salesOrderLine.PK)
+		salesLines, err := fixture.client.SearchSalesOrderLines(ctx, inventree.SalesOrderLineQuery{Part: target.PK})
+		r.NoError(err)
+		r.Contains(salesOrderLineIDs(salesLines), salesOrderLine.PK)
+
+		// Stock: target has an on-hand stock item.
+		stockItem, err := fixture.client.CreateStockItem(ctx, inventree.StockItemCreate{Part: target.PK, Location: location.ID, Quantity: 5})
+		r.NoError(err)
+		r.NotZero(stockItem.PK)
+		stockItems, err := fixture.client.SearchStockItems(ctx, inventree.StockItemQuery{PartID: target.PK})
+		r.NoError(err)
+		r.Contains(stockItemIDs(stockItems), stockItem.PK)
+
+		// Related part: informational only, never blocking.
+		var relation inventree.PartRelation
+		r.NoError(fixture.client.Post(ctx, "/api/part/related/", map[string]any{"part_1": target.PK, "part_2": component.PK}, &relation))
+		r.NotZero(relation.PK)
+		relations, err := fixture.client.SearchPartRelations(ctx, inventree.PartRelationQuery{Part: target.PK})
+		r.NoError(err)
+		r.Contains(partRelationIDs(relations), relation.PK)
+
+		// Pin InvenTree 1.4.3's own referential-integrity behavior for the
+		// raw, unguarded delete: with stock, BOM (both directions), a build,
+		// a purchase-order line, and a sales-order line all outstanding, the
+		// delete_part tool's own preflight must refuse before ever reaching
+		// this call. This assertion documents what upstream itself does so
+		// the Go-level guard's necessity stays verified against the real API
+		// rather than assumed.
+		err = fixture.client.DeletePart(ctx, target.PK)
+		r.Error(err, "InvenTree 1.4.3 must reject deleting a part with outstanding stock, BOM, build, purchase-order, and sales-order references")
+		stillThere, err := fixture.client.GetPart(ctx, target.PK)
+		r.NoError(err)
+		r.Equal(target.PK, stillThere.PK)
+	})
+
 	t.Run("stock_adjustments", func(t *testing.T) {
 		r := require.New(t)
 		ctx, _, _ := testhandler.SetupTestHandler(t)
@@ -1137,6 +1273,46 @@ func stockLocationTypeIDs(types []inventree.StockLocationType) []int {
 	ids := make([]int, 0, len(types))
 	for _, locationType := range types {
 		ids = append(ids, locationType.PK)
+	}
+	return ids
+}
+
+func bomItemIDs(items []inventree.BomItem) []int {
+	ids := make([]int, 0, len(items))
+	for _, item := range items {
+		ids = append(ids, item.PK)
+	}
+	return ids
+}
+
+func buildIDs(builds []inventree.Build) []int {
+	ids := make([]int, 0, len(builds))
+	for _, build := range builds {
+		ids = append(ids, build.PK)
+	}
+	return ids
+}
+
+func salesOrderLineIDs(lines []inventree.SalesOrderLineItem) []int {
+	ids := make([]int, 0, len(lines))
+	for _, line := range lines {
+		ids = append(ids, line.PK)
+	}
+	return ids
+}
+
+func partRelationIDs(relations []inventree.PartRelation) []int {
+	ids := make([]int, 0, len(relations))
+	for _, relation := range relations {
+		ids = append(ids, relation.PK)
+	}
+	return ids
+}
+
+func stockItemIDs(items []inventree.StockItem) []int {
+	ids := make([]int, 0, len(items))
+	for _, item := range items {
+		ids = append(ids, item.PK)
 	}
 	return ids
 }

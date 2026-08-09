@@ -521,6 +521,22 @@ func (c *Client) GetPurchaseOrderExtraLine(ctx context.Context, id int) (Purchas
 	return out, err
 }
 
+func (c *Client) SearchBomItems(ctx context.Context, query BomItemQuery) ([]BomItem, error) {
+	return listAll[BomItem](ctx, c, "/api/bom/", query.values())
+}
+
+func (c *Client) SearchSalesOrderLines(ctx context.Context, query SalesOrderLineQuery) ([]SalesOrderLineItem, error) {
+	return listAll[SalesOrderLineItem](ctx, c, "/api/order/so-line/", query.values())
+}
+
+func (c *Client) SearchBuilds(ctx context.Context, query BuildQuery) ([]Build, error) {
+	return listAll[Build](ctx, c, "/api/build/", query.values())
+}
+
+func (c *Client) SearchPartRelations(ctx context.Context, query PartRelationQuery) ([]PartRelation, error) {
+	return listAll[PartRelation](ctx, c, "/api/part/related/", query.values())
+}
+
 func (c *Client) get(ctx context.Context, path string, out any) error {
 	req, err := c.NewRequest(ctx, http.MethodGet, path, nil, nil)
 	if err != nil {

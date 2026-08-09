@@ -125,6 +125,31 @@ type PurchaseOrderExtraLineQuery struct {
 	Offset int
 }
 
+type BomItemQuery struct {
+	Part   int
+	Uses   int
+	Limit  int
+	Offset int
+}
+
+type SalesOrderLineQuery struct {
+	Part   int
+	Limit  int
+	Offset int
+}
+
+type BuildQuery struct {
+	Part   int
+	Limit  int
+	Offset int
+}
+
+type PartRelationQuery struct {
+	Part   int
+	Limit  int
+	Offset int
+}
+
 func (q SearchQuery) values() url.Values {
 	values := url.Values{}
 	if q.Search != "" {
@@ -333,6 +358,45 @@ func (q PurchaseOrderExtraLineQuery) values() url.Values {
 	}
 	if q.Order != 0 {
 		values.Set("order", strconv.Itoa(q.Order))
+	}
+	setPagination(values, q.Limit, q.Offset)
+	return values
+}
+
+func (q BomItemQuery) values() url.Values {
+	values := url.Values{}
+	if q.Part != 0 {
+		values.Set("part", strconv.Itoa(q.Part))
+	}
+	if q.Uses != 0 {
+		values.Set("uses", strconv.Itoa(q.Uses))
+	}
+	setPagination(values, q.Limit, q.Offset)
+	return values
+}
+
+func (q SalesOrderLineQuery) values() url.Values {
+	values := url.Values{}
+	if q.Part != 0 {
+		values.Set("part", strconv.Itoa(q.Part))
+	}
+	setPagination(values, q.Limit, q.Offset)
+	return values
+}
+
+func (q BuildQuery) values() url.Values {
+	values := url.Values{}
+	if q.Part != 0 {
+		values.Set("part", strconv.Itoa(q.Part))
+	}
+	setPagination(values, q.Limit, q.Offset)
+	return values
+}
+
+func (q PartRelationQuery) values() url.Values {
+	values := url.Values{}
+	if q.Part != 0 {
+		values.Set("part", strconv.Itoa(q.Part))
 	}
 	setPagination(values, q.Limit, q.Offset)
 	return values
