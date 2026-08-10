@@ -44,6 +44,7 @@ type ClearCompanyImageInput struct {
 }
 
 type CompanyImageState struct {
+	inventree.WebLinkFields
 	CompanyID   int    `json:"company_id"`
 	HasImage    bool   `json:"has_image"`
 	ImageURL    string `json:"image_url,omitempty"`

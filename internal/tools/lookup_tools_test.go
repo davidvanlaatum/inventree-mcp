@@ -54,7 +54,7 @@ func TestSearchPartsReturnsClarificationForAmbiguousResults(t *testing.T) {
 	r.Len(output.Clarification.Candidates, 2)
 	a.Equal("10", output.Clarification.Candidates[0].ID)
 	a.Equal("10k resistor", output.Clarification.Candidates[0].Label)
-	a.Equal("/api/part/10/", output.Clarification.Candidates[0].URL)
+	a.Equal("/api/part/10/", output.Clarification.Candidates[0].APIURL)
 	a.Equal(inventree.SearchQuery{Search: "10k", Limit: 20}, fake.lastSearchPartsQuery)
 }
 

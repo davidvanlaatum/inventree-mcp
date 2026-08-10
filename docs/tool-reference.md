@@ -137,7 +137,7 @@ Clarification outputs must include:
 | `question` | Specific operator question to resolve the ambiguity. |
 | `field` | Field or relationship that is ambiguous or missing. |
 | `reason` | Why the tool cannot safely continue. |
-| `candidates` | Candidate records with stable IDs, labels, optional summaries, URLs, and extra fields needed for the operator decision. |
+| `candidates` | Candidate records with stable IDs, labels, optional summaries, explicit frontend/API links, and extra fields needed for the operator decision. |
 | `retry` | Stable field the caller should provide on retry, such as `part_id`, `company_id`, `location_id`, `template_id`, or `attachment_id`. |
 | `retry_tool` | Optional destination tool when resolution intentionally crosses tool boundaries; `retry` remains that tool's stable input field. Omitted means retry the original tool. |
 | `hard_error` | Whether the API would reject the request, distinct from a recommended-field warning. |
@@ -150,8 +150,12 @@ Clarification `candidates` entries use:
 | `id` | Stable object ID to provide on retry. |
 | `label` | Human-readable object name or identifier. |
 | `summary` | Optional short disambiguating detail. |
-| `url` | Optional InvenTree URL for operator inspection. |
+| `web_url` | Optional absolute URL for the candidate's stable InvenTree frontend page, built only from trusted process configuration. |
+| `parent_web_url` | Optional absolute immediate-owner page when the candidate has no stable dedicated frontend route. |
+| `api_url` | Optional sanitized relative InvenTree REST inspection path. This clarification-only field does not carry an authority. |
 | `fields` | Optional non-sensitive structured details needed for the decision. |
+
+The former ambiguous clarification-candidate `url` field is removed as an intentional breaking change. Normal object projections use `web_url` for their stable frontend page; subordinate projections without one omit it and use `parent_web_url` only when their existing relationship fields identify an immediate owner with a stable page. See [User-facing InvenTree web links](web-links.md) for the pinned route matrix and complete output classification.
 
 The registered-tools table below summarizes the current server surface and preserves each tool's milestone status in `docs/tool-manifest.json`, the checked machine-readable source for mutation classes, scopes, annotations, upload sources, and HTTP registration state.
 

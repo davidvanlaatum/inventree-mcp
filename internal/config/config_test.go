@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/davidvanlaatum/inventree-mcp/internal/weblinks"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -33,6 +34,101 @@ func TestParseServeUsesEnvAndFlagPrecedence(t *testing.T) {
 	r.Equal(5*time.Second, cfg.InvenTreeTimeout)
 	r.Equal(DefaultListen, cfg.Listen)
 	r.Equal(DefaultMCPMaxRequestBodyBytes, cfg.MCPMaxRequestBodyBytes)
+}
+
+func TestParseServeConfiguresExplicitWebURLAndAllModeFallback(t *testing.T) {
+	t.Parallel()
+	t.Run("explicit development web base", func(t *testing.T) {
+		t.Parallel()
+		r := require.New(t)
+		cfg, err := ParseServeWithEnv([]string{
+			"--transport", "stdio",
+			"--environment", "development",
+			"--inventree-url", "http://internal.example.test/api-prefix",
+			"--inventree-web-url", "http://browser.example.test/ui-prefix",
+		}, mapEnv(map[string]string{EnvInvenTreeToken: "token"}), nil)
+		r.NoError(err)
+		r.Equal("http://browser.example.test/ui-prefix", cfg.InvenTreeWebURL)
+		resolver, err := cfg.WebLinkResolver()
+		r.NoError(err)
+		r.Equal("http://browser.example.test/ui-prefix/part/7/", resolver.URL(weblinks.Part, 7))
+	})
+
+	t.Run("stdio fallback", func(t *testing.T) {
+		t.Parallel()
+		r := require.New(t)
+		cfg, err := ParseServeWithEnv([]string{
+			"--transport", "stdio",
+			"--inventree-url", "https://internal.example.test/prefix",
+		}, mapEnv(map[string]string{EnvInvenTreeToken: "token"}), nil)
+		r.NoError(err)
+		value, key := cfg.EffectiveInvenTreeWebURL()
+		r.Equal("https://internal.example.test/prefix", value)
+		r.Equal(EnvInvenTreeURL, key)
+	})
+}
+
+func TestParseServeRejectsUnsafeExplicitAndFallbackWebBasesWithRedactedErrors(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name string
+		env  map[string]string
+		key  string
+	}{
+		{name: "explicit userinfo", env: map[string]string{EnvInvenTreeURL: "https://api.example.test", EnvInvenTreeWebURL: "https://secret-user:secret-pass@browser.example.test", EnvInvenTreeToken: "token"}, key: EnvInvenTreeWebURL},
+		{name: "explicit empty query", env: map[string]string{EnvInvenTreeURL: "https://api.example.test", EnvInvenTreeWebURL: "https://browser.example.test/secret-explicit-empty-query?", EnvInvenTreeToken: "token"}, key: EnvInvenTreeWebURL},
+		{name: "fallback userinfo", env: map[string]string{EnvInvenTreeURL: "https://secret-user:secret-pass@api.example.test", EnvInvenTreeToken: "token"}, key: EnvInvenTreeURL},
+		{name: "fallback query", env: map[string]string{EnvInvenTreeURL: "https://api.example.test?token=secret-query", EnvInvenTreeToken: "token"}, key: EnvInvenTreeURL},
+		{name: "fallback empty query", env: map[string]string{EnvInvenTreeURL: "https://api.example.test/secret-fallback-empty-query?", EnvInvenTreeToken: "token"}, key: EnvInvenTreeURL},
+		{name: "fallback fragment", env: map[string]string{EnvInvenTreeURL: "https://api.example.test/#secret-fragment", EnvInvenTreeToken: "token"}, key: EnvInvenTreeURL},
+		{name: "fallback unsupported scheme", env: map[string]string{EnvInvenTreeURL: "ftp://api.example.test/secret-scheme", EnvInvenTreeToken: "token"}, key: EnvInvenTreeURL},
+		{name: "fallback invalid authority", env: map[string]string{EnvInvenTreeURL: "https:///secret-authority", EnvInvenTreeToken: "token"}, key: EnvInvenTreeURL},
+		{name: "fallback noncanonical path", env: map[string]string{EnvInvenTreeURL: "https://api.example.test/secret-a/../b", EnvInvenTreeToken: "token"}, key: EnvInvenTreeURL},
+		{name: "fallback escaped path", env: map[string]string{EnvInvenTreeURL: "https://api.example.test/secret-a%2Fb", EnvInvenTreeToken: "token"}, key: EnvInvenTreeURL},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			a := assert.New(t)
+			_, err := ParseServeWithEnv([]string{"--transport", "stdio"}, mapEnv(tc.env), nil)
+			require.Error(t, err)
+			a.Contains(err.Error(), tc.key)
+			a.NotContains(err.Error(), "secret-")
+		})
+	}
+}
+
+func TestEffectiveWebBaseSchemeIsModeSpecificAcrossTransports(t *testing.T) {
+	t.Parallel()
+	t.Run("production stdio rejects http fallback", func(t *testing.T) {
+		t.Parallel()
+		_, err := ParseServeWithEnv([]string{"--transport", "stdio"}, mapEnv(map[string]string{
+			EnvInvenTreeURL:   "http://internal.example.test",
+			EnvInvenTreeToken: "token",
+		}), nil)
+		require.ErrorContains(t, err, "INVENTREE_URL must use https in production")
+	})
+
+	t.Run("production rejects http explicit web base", func(t *testing.T) {
+		t.Parallel()
+		_, err := ParseServeWithEnv([]string{"--transport", "stdio"}, mapEnv(map[string]string{
+			EnvInvenTreeURL:    "https://api.example.test",
+			EnvInvenTreeWebURL: "http://browser.example.test",
+			EnvInvenTreeToken:  "token",
+		}), nil)
+		require.ErrorContains(t, err, "INVENTREE_WEB_URL must use https in production")
+	})
+
+	t.Run("development http accepts http fallback", func(t *testing.T) {
+		t.Parallel()
+		cfg, err := ParseServeWithEnv([]string{
+			"--transport", "http",
+			"--environment", "development",
+			"--dev-incomplete-oauth",
+		}, mapEnv(map[string]string{EnvInvenTreeURL: "http://internal.example.test"}), nil)
+		require.NoError(t, err)
+		assert.Empty(t, cfg.InvenTreeWebURL)
+	})
 }
 
 func TestParseServeConfiguresUploadPolicy(t *testing.T) {

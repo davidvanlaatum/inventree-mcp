@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/davidvanlaatum/inventree-mcp/internal/oauth"
+	"github.com/davidvanlaatum/inventree-mcp/internal/weblinks"
 )
 
 const (
@@ -22,6 +23,7 @@ const (
 	EnvListen                 = "INVENTREE_MCP_LISTEN"
 	EnvPath                   = "INVENTREE_MCP_PATH"
 	EnvInvenTreeURL           = "INVENTREE_URL"
+	EnvInvenTreeWebURL        = "INVENTREE_WEB_URL"
 	EnvInvenTreeToken         = "INVENTREE_TOKEN"
 	EnvInvenTreeAuthScheme    = "INVENTREE_AUTH_SCHEME"
 	EnvInvenTreeTimeout       = "INVENTREE_TIMEOUT"
@@ -74,6 +76,7 @@ type Config struct {
 	Listen                 string
 	Path                   string
 	InvenTreeURL           string
+	InvenTreeWebURL        string
 	InvenTreeToken         string
 	InvenTreeAuthScheme    AuthScheme
 	InvenTreeTimeout       time.Duration
@@ -111,6 +114,7 @@ func ParseServeWithEnv(args []string, getenv Env, output io.Writer) (Config, err
 		Listen:              envDefault(getenv, EnvListen, DefaultListen),
 		Path:                envDefault(getenv, EnvPath, "/mcp"),
 		InvenTreeURL:        getenv(EnvInvenTreeURL),
+		InvenTreeWebURL:     getenv(EnvInvenTreeWebURL),
 		InvenTreeToken:      getenv(EnvInvenTreeToken),
 		InvenTreeAuthScheme: AuthScheme(envDefault(getenv, EnvInvenTreeAuthScheme, string(AuthSchemeToken))),
 		InvenTreeTimeout:    durationDefault(getenv, EnvInvenTreeTimeout, 30*time.Second),
@@ -144,6 +148,7 @@ func ParseServeWithEnv(args []string, getenv Env, output io.Writer) (Config, err
 	fs.StringVar(&cfg.Listen, "listen", cfg.Listen, flagHelp("HTTP listen address", EnvListen))
 	fs.StringVar(&cfg.Path, "path", cfg.Path, flagHelp("HTTP MCP path", EnvPath))
 	fs.StringVar(&cfg.InvenTreeURL, "inventree-url", cfg.InvenTreeURL, flagHelp("InvenTree base URL", EnvInvenTreeURL))
+	fs.StringVar(&cfg.InvenTreeWebURL, "inventree-web-url", cfg.InvenTreeWebURL, flagHelp("optional user-facing InvenTree web base URL", EnvInvenTreeWebURL))
 	fs.StringVar((*string)(&cfg.InvenTreeAuthScheme), "inventree-auth-scheme", string(cfg.InvenTreeAuthScheme), flagHelp("InvenTree auth scheme: Token or Bearer", EnvInvenTreeAuthScheme))
 	fs.DurationVar(&cfg.InvenTreeTimeout, "inventree-timeout", cfg.InvenTreeTimeout, flagHelp("InvenTree request timeout", EnvInvenTreeTimeout))
 	fs.BoolVar(&cfg.InvenTreeTLSSkipVerify, "inventree-tls-skip-verify", boolEnv(getenv, EnvInvenTreeTLSSkipVerify), flagHelp("skip upstream InvenTree TLS verification", EnvInvenTreeTLSSkipVerify))
@@ -212,6 +217,10 @@ func (c Config) Validate() error {
 		validationErrors = append(validationErrors, errors.New("InvenTree URL must be an absolute URL"))
 	} else if parsed.Scheme != "http" && parsed.Scheme != "https" {
 		validationErrors = append(validationErrors, errors.New("InvenTree URL scheme must be http or https"))
+	}
+
+	if _, err := c.WebLinkResolver(); err != nil {
+		validationErrors = append(validationErrors, err)
 	}
 
 	switch c.InvenTreeAuthScheme {
@@ -283,6 +292,21 @@ func (c Config) Validate() error {
 	}
 
 	return errors.Join(validationErrors...)
+}
+
+// EffectiveInvenTreeWebURL returns the explicit user-facing base or the
+// approved all-mode fallback to INVENTREE_URL.
+func (c Config) EffectiveInvenTreeWebURL() (string, string) {
+	if strings.TrimSpace(c.InvenTreeWebURL) != "" {
+		return c.InvenTreeWebURL, EnvInvenTreeWebURL
+	}
+	return c.InvenTreeURL, EnvInvenTreeURL
+}
+
+// WebLinkResolver validates the effective process-scoped user-facing base.
+func (c Config) WebLinkResolver() (*weblinks.Resolver, error) {
+	raw, key := c.EffectiveInvenTreeWebURL()
+	return weblinks.New(raw, key, c.Environment == EnvironmentProduction)
 }
 
 func (c Config) validateProductionHTTP() []error {

@@ -50,11 +50,13 @@ type ClarificationResponse struct {
 }
 
 type ClarificationCandidate struct {
-	ID      string         `json:"id"`
-	Label   string         `json:"label"`
-	Summary string         `json:"summary,omitempty"`
-	URL     string         `json:"url,omitempty"`
-	Fields  map[string]any `json:"fields,omitempty"`
+	ID           string         `json:"id"`
+	Label        string         `json:"label"`
+	Summary      string         `json:"summary,omitempty"`
+	WebURL       string         `json:"web_url,omitempty"`
+	APIURL       string         `json:"api_url,omitempty"`
+	ParentWebURL string         `json:"parent_web_url,omitempty"`
+	Fields       map[string]any `json:"fields,omitempty"`
 }
 
 type LookupHandlerFunc[Client, In, Out any] func(context.Context, *mcp.CallToolRequest, Client, In) (*mcp.CallToolResult, Out, error)
@@ -78,6 +80,7 @@ func LookupHandler[Client, In, Out any](deps Dependencies, toolName string, hand
 		if err != nil {
 			return result, output, safeToolError(err)
 		}
+		projectWebLinks(deps.WebLinks, toolName, &output)
 		return result, output, nil
 	}
 }

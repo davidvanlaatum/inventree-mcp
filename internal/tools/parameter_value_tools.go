@@ -40,6 +40,7 @@ const (
 )
 
 type PartParameterSearchResult struct {
+	inventree.WebLinkFields
 	ParameterID  int     `json:"parameter_id"`
 	PartID       int     `json:"part_id"`
 	PartName     string  `json:"part_name,omitempty"`
@@ -289,7 +290,7 @@ func partParameterValueSearch(value *string) string {
 func deletePartParameterClarification(record PartParameterSearchResult, question, field, reason string, parameterID int) (*mcp.CallToolResult, DeletePartParameterOutput, error) {
 	candidates := []ClarificationCandidate(nil)
 	if record.ParameterID > 0 {
-		candidates = []ClarificationCandidate{{ID: fmt.Sprint(record.ParameterID), Label: record.TemplateName, URL: fmt.Sprintf("/api/parameter/%d/", record.ParameterID), Fields: map[string]any{"part_id": record.PartID, "category_id": record.CategoryID, "template_id": record.TemplateID, "value": record.Value}}}
+		candidates = []ClarificationCandidate{{ID: fmt.Sprint(record.ParameterID), Label: record.TemplateName, APIURL: fmt.Sprintf("/api/parameter/%d/", record.ParameterID), Fields: map[string]any{"part_id": record.PartID, "category_id": record.CategoryID, "template_id": record.TemplateID, "value": record.Value}}}
 	}
 	clarification := NewClarification(question, field, reason, field, true, candidates, map[string]any{"parameter_id": parameterID})
 	return TextResult(StatusClarificationRequired), DeletePartParameterOutput{Status: StatusClarificationRequired, Record: record, Clarification: &clarification}, nil

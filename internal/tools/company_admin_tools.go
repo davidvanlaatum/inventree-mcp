@@ -30,6 +30,7 @@ type CompanyAdminClient interface {
 }
 
 type CompanyView struct {
+	inventree.WebLinkFields
 	ID             int     `json:"id"`
 	Name           string  `json:"name"`
 	Description    string  `json:"description"`
@@ -43,6 +44,7 @@ type CompanyView struct {
 }
 
 type CompanyRecoveryView struct {
+	inventree.WebLinkFields
 	ID             int    `json:"id"`
 	Name           string `json:"name"`
 	Currency       string `json:"currency"`
@@ -53,6 +55,7 @@ type CompanyRecoveryView struct {
 }
 
 type SupplierPartView struct {
+	inventree.WebLinkFields
 	ID                 int     `json:"id"`
 	PartID             int     `json:"part_id"`
 	SupplierID         int     `json:"supplier_id"`
@@ -68,6 +71,7 @@ type SupplierPartView struct {
 }
 
 type SupplierPartRecoveryView struct {
+	inventree.WebLinkFields
 	ID                 int    `json:"id"`
 	PartID             int    `json:"part_id"`
 	SupplierID         int    `json:"supplier_id"`
@@ -78,6 +82,7 @@ type SupplierPartRecoveryView struct {
 }
 
 type ManufacturerPartView struct {
+	inventree.WebLinkFields
 	ID             int     `json:"id"`
 	PartID         int     `json:"part_id"`
 	ManufacturerID int     `json:"manufacturer_id"`
@@ -87,6 +92,7 @@ type ManufacturerPartView struct {
 }
 
 type ManufacturerPartRecoveryView struct {
+	inventree.WebLinkFields
 	ID             int     `json:"id"`
 	PartID         int     `json:"part_id"`
 	ManufacturerID int     `json:"manufacturer_id"`

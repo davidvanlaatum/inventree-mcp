@@ -115,6 +115,7 @@ type BulkPropagatePartParametersInput struct {
 }
 
 type BulkParameterAction struct {
+	inventree.WebLinkFields
 	PartID        int     `json:"part_id"`
 	PartName      string  `json:"part_name"`
 	CategoryID    *int    `json:"category_id,omitempty"`

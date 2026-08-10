@@ -81,6 +81,7 @@ type MergeParameterTemplatesInput struct {
 }
 
 type ParameterTemplateMergeAction struct {
+	inventree.WebLinkFields
 	ParameterID int    `json:"parameter_id,omitempty"`
 	ModelType   string `json:"model_type"`
 	ModelID     int    `json:"model_id"`
@@ -505,7 +506,7 @@ func templateReferences(parameters []inventree.Parameter, links []inventree.Cate
 }
 
 func templateCandidate(record inventree.ParameterTemplate) ClarificationCandidate {
-	return ClarificationCandidate{ID: fmt.Sprint(record.PK), Label: record.Name, URL: fmt.Sprintf("/api/parameter/template/%d/", record.PK), Fields: map[string]any{"units": record.Units, "choices": record.Choices, "checkbox": record.Checkbox, "enabled": record.Enabled}}
+	return ClarificationCandidate{ID: fmt.Sprint(record.PK), Label: record.Name, APIURL: fmt.Sprintf("/api/parameter/template/%d/", record.PK), Fields: map[string]any{"units": record.Units, "choices": record.Choices, "checkbox": record.Checkbox, "enabled": record.Enabled}}
 }
 
 func templateClarification(question, field, reason, retry string, retryValues map[string]any) (*mcp.CallToolResult, ParameterTemplateOutput, error) {

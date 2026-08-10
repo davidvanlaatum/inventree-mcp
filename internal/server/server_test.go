@@ -25,6 +25,7 @@ import (
 	"github.com/davidvanlaatum/inventree-mcp/internal/inventree"
 	"github.com/davidvanlaatum/inventree-mcp/internal/oauth"
 	"github.com/davidvanlaatum/inventree-mcp/internal/tools"
+	"github.com/davidvanlaatum/inventree-mcp/internal/weblinks"
 	"github.com/modelcontextprotocol/go-sdk/auth"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/modelcontextprotocol/go-sdk/oauthex"
@@ -726,10 +727,13 @@ func TestHTTPOAuthCredentialPropagationIsRequestScoped(t *testing.T) {
 	}))
 	defer upstream.Close()
 
+	resolver, err := weblinks.New("https://trusted.inventory.example/inventree", "INVENTREE_WEB_URL", true)
+	r.NoError(err)
 	deps := tools.Dependencies{
 		AuthorizationMode:   tools.AuthorizationModeOAuth,
 		ResourceMetadataURL: "https://mcp.example.com/.well-known/oauth-protected-resource",
 		ClientFromContext:   OAuthClientFromContext(upstream.URL, upstream.Client()),
+		WebLinks:            resolver,
 	}
 	protected := auth.RequireBearerToken(serverTokenVerifier(t), &auth.RequireBearerTokenOptions{
 		ResourceMetadataURL: deps.ResourceMetadataURL,
@@ -747,10 +751,22 @@ func TestHTTPOAuthCredentialPropagationIsRequestScoped(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			recorder := postMCPWithBearer(t, protected, tt.token, `{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"search_parts","arguments":{"search":"10k"}}}`)
+			req := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(`{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"search_parts","arguments":{"search":"https://argument.attacker.example"}}}`))
+			req.Host = "internal.service:28686"
+			req.Header.Set("Accept", "application/json, text/event-stream")
+			req.Header.Set("Authorization", "Bearer "+tt.token)
+			req.Header.Set("Content-Type", "application/json")
+			req.Header.Set("X-Forwarded-Host", "forwarded.attacker.example")
+			req.Header.Set("X-Forwarded-Proto", "http")
+			req.Header.Set("X-Forwarded-Prefix", "/attacker")
+			recorder := httptest.NewRecorder()
+			protected.ServeHTTP(recorder, req)
 			r.Equal(http.StatusOK, recorder.Code)
 			a.Contains(recorder.Body.String(), `"status":"ok"`)
 			a.Contains(recorder.Body.String(), tt.wantHeader)
+			a.Contains(recorder.Body.String(), `"web_url":"https://trusted.inventory.example/inventree/part/1/"`)
+			a.NotContains(recorder.Body.String(), "internal.service")
+			a.NotContains(recorder.Body.String(), "attacker.example")
 		}()
 	}
 	wg.Wait()
@@ -1643,6 +1659,27 @@ func TestTrafficLogMiddlewareCapturesHTTPBodies(t *testing.T) {
 	a.Equal("outbound", outbound.Direction)
 	a.Equal(http.StatusAccepted, outbound.Status)
 	a.Equal(`{"ok":true}`, outbound.Body)
+}
+
+func TestTrafficLogTreatsConfiguredWebLinkAuthoritiesAsSensitiveResponseCapture(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	const response = `{"status":"ok","record":{"pk":7,"web_url":"https://internal.inventory.example/part/7/"}}`
+
+	var output strings.Builder
+	traffic := &trafficLog{w: &output}
+	handler := traffic.middleware(string(config.TransportHTTP), config.DefaultMCPMaxRequestBodyBytes, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, err := w.Write([]byte(response))
+		r.NoError(err)
+	}))
+	handler.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(`{}`)))
+
+	lines := strings.Split(strings.TrimSpace(output.String()), "\n")
+	r.Len(lines, 2)
+	var outbound trafficLogEntry
+	r.NoError(json.Unmarshal([]byte(lines[1]), &outbound))
+	r.Equal(response, outbound.Body)
+	r.Contains(outbound.Body, "internal.inventory.example")
 }
 
 func TestTrafficLogMiddlewareRejectsUnreadableHTTPRequestBody(t *testing.T) {
