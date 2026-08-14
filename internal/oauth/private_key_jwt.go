@@ -17,6 +17,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/davidvanlaatum/inventree-mcp/internal/buildinfo"
 	"github.com/davidvanlaatum/inventree-mcp/internal/platform"
 	"github.com/golang-jwt/jwt/v5"
 )
@@ -142,6 +143,7 @@ func (v PrivateKeyJWTVerifier) fetchKeys(ctx context.Context, clientID string, r
 		return nil, err
 	}
 	req.Header.Set("Accept", "application/jwk-set+json, application/json")
+	req.Header.Set("User-Agent", buildinfo.UserAgent())
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, err

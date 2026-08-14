@@ -12,6 +12,7 @@ import (
 
 	"github.com/davidvanlaatum/dvgoutils"
 	"github.com/davidvanlaatum/dvgoutils/logging/testhandler"
+	"github.com/davidvanlaatum/inventree-mcp/internal/buildinfo"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -512,6 +513,7 @@ func TestDownloadAttachmentFetchesOnlyMetadataURLWithBounds(t *testing.T) {
 		HTTPClient: &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
 			requests = append(requests, req.Method+" "+req.URL.String())
 			a.Equal("Token secret", req.Header.Get("Authorization"))
+			a.Equal(buildinfo.UserAgent(), req.Header.Get("User-Agent"))
 			switch req.URL.Path {
 			case "/api/attachment/90/":
 				body := `{"pk":90,"model_type":"part","model_id":10,"attachment":"/media/attachments/datasheet.pdf?signature=secret","filename":"datasheet.pdf"}`
@@ -558,6 +560,7 @@ func TestDownloadPartImageFetchesOnlyPartImageURLWithBounds(t *testing.T) {
 		HTTPClient: &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
 			requests = append(requests, req.Method+" "+req.URL.String())
 			a.Equal("Token secret", req.Header.Get("Authorization"))
+			a.Equal(buildinfo.UserAgent(), req.Header.Get("User-Agent"))
 			switch req.URL.Path {
 			case "/api/part/10/":
 				body := `{"pk":10,"name":"resistor","image":"/media/part_images/resistor.png?signature=secret"}`

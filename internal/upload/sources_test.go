@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/davidvanlaatum/dvgoutils/logging/testhandler"
+	"github.com/davidvanlaatum/inventree-mcp/internal/buildinfo"
 	"github.com/spf13/afero"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -178,9 +179,11 @@ func TestURLFetcherFetchesWithoutForwardingAuthHeaders(t *testing.T) {
 	ctx, _, _ := testhandler.SetupTestHandler(t)
 	var receivedAuth string
 	var receivedCookie string
+	var receivedUserAgent string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		receivedAuth = req.Header.Get("Authorization")
 		receivedCookie = req.Header.Get("Cookie")
+		receivedUserAgent = req.Header.Get("User-Agent")
 		w.Header().Set("Content-Type", "text/plain")
 		w.Header().Set("Content-Disposition", `attachment; filename="remote.txt"`)
 		_, _ = w.Write([]byte("remote data"))
@@ -199,6 +202,7 @@ func TestURLFetcherFetchesWithoutForwardingAuthHeaders(t *testing.T) {
 	a.Equal("remote data", string(resolved.Content))
 	a.Empty(receivedAuth)
 	a.Empty(receivedCookie)
+	a.Equal(buildinfo.UserAgent(), receivedUserAgent)
 }
 
 func TestURLFetcherRejectsUnsafeURLs(t *testing.T) {
@@ -269,6 +273,31 @@ func TestURLFetcherRevalidatesRedirectsAndLimitsBytes(t *testing.T) {
 	}).Fetch(ctx, URLSource{URL: server.URL + "/file"}, ReadOptions{MaxBytes: 3})
 	r.Error(err)
 	a.Contains(err.Error(), "exceeds maxBytes 3")
+}
+
+func TestURLFetcherPreservesVersionedUserAgentAcrossAllowedRedirect(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	userAgents := make(chan string, 2)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		userAgents <- req.Header.Get("User-Agent")
+		if req.URL.Path == "/start" {
+			http.Redirect(w, req, "/final", http.StatusFound)
+			return
+		}
+		_, _ = w.Write([]byte("redirected"))
+	}))
+	t.Cleanup(server.Close)
+
+	resolved, err := (URLFetcher{
+		Resolver:  staticResolver("127.0.0.1"),
+		Allowlist: allowServer(server.URL),
+	}).Fetch(ctx, URLSource{URL: server.URL + "/start"}, ReadOptions{MaxBytes: 16})
+	r.NoError(err)
+	r.Equal("redirected", string(resolved.Content))
+	r.Equal(buildinfo.UserAgent(), <-userAgents)
+	r.Equal(buildinfo.UserAgent(), <-userAgents)
 }
 
 func TestReadBoundedHonorsTimeout(t *testing.T) {

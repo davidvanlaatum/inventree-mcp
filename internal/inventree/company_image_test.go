@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/davidvanlaatum/dvgoutils/logging/testhandler"
+	"github.com/davidvanlaatum/inventree-mcp/internal/buildinfo"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -70,6 +71,7 @@ func TestDownloadCompanyImageUsesOnlyExactSchemaExposedSameInstanceURL(t *testin
 		HTTPClient: &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
 			calls = append(calls, req.Method+" "+req.URL.String())
 			a.Equal("Bearer secret", req.Header.Get("Authorization"))
+			a.Equal(buildinfo.UserAgent(), req.Header.Get("User-Agent"))
 			switch req.URL.Path {
 			case "/api/company/30/":
 				return jsonResponse(req, http.StatusOK, `{"pk":30,"name":"Supplier","currency":"AUD","image":"/media/company_images/logo.png?signature=secret"}`), nil

@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/davidvanlaatum/dvgoutils/logging/testhandler"
+	"github.com/davidvanlaatum/inventree-mcp/internal/buildinfo"
 	"github.com/davidvanlaatum/inventree-mcp/internal/inventree"
 	"github.com/davidvanlaatum/inventree-mcp/internal/requestctx"
 	"github.com/golang-jwt/jwt/v5"
@@ -66,12 +67,14 @@ func TestPrivateKeyJWTVerifierValidatesJWKSClaimsAndReplay(t *testing.T) {
 func TestPrivateKeyJWTVerifierAcceptsSupportedPS256AndES256(t *testing.T) {
 	t.Parallel()
 	r := require.New(t)
+	a := assert.New(t)
 	rsaKey, err := rsa.GenerateKey(rand.Reader, 2048)
 	r.NoError(err)
 	ecKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	r.NoError(err)
 	now := time.Date(2026, 8, 2, 3, 0, 0, 0, time.UTC)
 	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		a.Equal(buildinfo.UserAgent(), req.Header.Get("User-Agent"))
 		switch req.URL.Path {
 		case "/ps256":
 			_ = json.NewEncoder(w).Encode(testRSAJWKS(&rsaKey.PublicKey, "ps-key", "PS256"))
@@ -118,6 +121,31 @@ func TestPrivateKeyJWTVerifierAcceptsSupportedPS256AndES256(t *testing.T) {
 			require.NoError(t, verifier.Verify(ctx, clientID, ClientMetadata{JWKSURI: server.URL + tt.path}, ClientAssertionTypeJWTBearer, signed))
 		})
 	}
+}
+
+func TestPrivateKeyJWTVerifierPreservesVersionedUserAgentAcrossAllowedRedirect(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	r.NoError(err)
+	userAgents := make(chan string, 2)
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		userAgents <- req.Header.Get("User-Agent")
+		if req.URL.Path == "/redirect" {
+			http.Redirect(w, req, "/jwks", http.StatusFound)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(testRSAJWKS(&key.PublicKey, "redirect-key", "PS256"))
+	}))
+	t.Cleanup(server.Close)
+
+	verifier := PrivateKeyJWTVerifier{HTTPClient: server.Client()}
+	keys, err := verifier.fetchKeys(ctx, server.URL+"/client", server.URL+"/redirect")
+	r.NoError(err)
+	r.Len(keys, 1)
+	r.Equal(buildinfo.UserAgent(), <-userAgents)
+	r.Equal(buildinfo.UserAgent(), <-userAgents)
 }
 
 func TestPrivateKeyJWTVerifierRejectsInvalidClaimsKeysAndAlgorithms(t *testing.T) {

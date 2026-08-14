@@ -286,7 +286,7 @@ func (c *Client) DownloadAttachment(ctx context.Context, id int, mode Attachment
 		return DownloadedAttachment{}, err
 	}
 	req.Header.Set("Accept", "*/*")
-	c.credential.Apply(req)
+	c.applyRequestIdentity(req)
 
 	httpClient := noRedirectClient(c.httpClient)
 	resp, err := httpClient.Do(req)
@@ -338,7 +338,7 @@ func (c *Client) DownloadPartImage(ctx context.Context, id int, mode AttachmentC
 		return DownloadedPartImage{}, err
 	}
 	req.Header.Set("Accept", "image/*,*/*")
-	c.credential.Apply(req)
+	c.applyRequestIdentity(req)
 
 	httpClient := noRedirectClient(c.httpClient)
 	resp, err := httpClient.Do(req)
@@ -393,7 +393,7 @@ func (c *Client) DownloadCompanyImage(ctx context.Context, id int, maxBytes int6
 		return DownloadedCompanyImage{}, err
 	}
 	req.Header.Set("Accept", "image/png,image/jpeg,image/webp")
-	c.credential.Apply(req)
+	c.applyRequestIdentity(req)
 
 	resp, err := noRedirectClient(c.httpClient).Do(req)
 	if err != nil {
