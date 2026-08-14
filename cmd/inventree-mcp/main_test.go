@@ -354,7 +354,7 @@ func TestDependenciesForConfigBuildsProductionHTTPOAuthDependencies(t *testing.T
 	a.Equal(5*time.Second, deps.UploadTimeout)
 	r.NotNil(deps.ClientFromContext)
 	r.NotNil(deps.WebLinks)
-	a.Equal("https://inventory.example.test/part/7/", deps.WebLinks.URL(weblinks.Part, 7))
+	a.Equal("https://inventory.example.test/web/part/7/", deps.WebLinks.URL(weblinks.Part, 7))
 	_, err = deps.ClientFromContext(context.Background())
 	a.ErrorContains(err, "OAuth credential unavailable")
 }
