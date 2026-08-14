@@ -19,7 +19,7 @@ go run ./cmd/inventree-mcp serve --transport stdio
 
 Useful STDIO options:
 
-- `--inventree-web-url https://inventory.example.test` or `INVENTREE_WEB_URL=https://inventory.example.test`; optional browser-facing base for returned object links. It falls back to `INVENTREE_URL` in every mode.
+- `--inventree-web-url https://inventory.example.test/web` or `INVENTREE_WEB_URL=https://inventory.example.test/web`; optional exact browser-frontend mount for returned object links. When omitted, every mode uses `INVENTREE_URL` plus InvenTree's stock `/web` frontend mount.
 - `--inventree-auth-scheme Token` or `--inventree-auth-scheme Bearer`; default is `Token`.
 - `--inventree-timeout 30s`; default is `30s`.
 - `--upload-allow-root /trusted/path` or `INVENTREE_UPLOAD_ALLOW_ROOTS=/trusted/path`; enables STDIO local-file uploads from trusted operator-controlled roots.
@@ -37,7 +37,7 @@ HTTP production mode requires MCP-owned OAuth settings and rejects raw `INVENTRE
 - `INVENTREE_MCP_OAUTH_CLIENT_IDS`: comma-separated allowed OAuth `client_id` metadata URLs.
 - `INVENTREE_MCP_TRUSTED_PROXY_CIDRS`: comma-separated CIDRs for reverse proxies allowed to supply `X-Forwarded-For` client hops.
 - `INVENTREE_URL`: HTTPS InvenTree base URL used for upstream API calls after the MCP OAuth envelope is validated.
-- Optional `INVENTREE_WEB_URL`: canonical public HTTPS InvenTree browser base for returned `web_url` and `parent_web_url` values. It may include a deployment path prefix; when omitted, `INVENTREE_URL` is used.
+- Optional `INVENTREE_WEB_URL`: exact canonical public HTTPS InvenTree frontend mount for returned `web_url` and `parent_web_url` values, normally ending in `/web` but supporting an operator-configured custom InvenTree basename. When omitted, links use `INVENTREE_URL` plus the stock `/web` mount; any deployment prefix in `INVENTREE_URL` is preserved.
 - Optional `INVENTREE_MCP_OAUTH_ACCESS_LIFETIME`, `INVENTREE_MCP_OAUTH_REFRESH_LIFETIME`, and `INVENTREE_MCP_OAUTH_SESSION_LIFETIME`.
 
 The configured client metadata document must advertise `private_key_jwt`, the ChatGPT redirect URI shown by its app management page, and a same-origin HTTPS `jwks_uri`. The server validates each token request's signed client assertion against that JWKS and rejects assertion replay within one running process; shared replay state is required across restarts or multiple replicas. It does not accept an unsigned public-client downgrade.

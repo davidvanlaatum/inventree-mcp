@@ -39,6 +39,18 @@ func TestResolverRouteMatrixPreservesBasePrefix(t *testing.T) {
 	}
 }
 
+func TestResolverAtDefaultMountPreservesDeploymentPrefix(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+
+	resolver, err := NewAtDefaultMount("https://inventory.example.test/inventree/", "INVENTREE_URL", true)
+	r.NoError(err)
+	r.Equal("https://inventory.example.test/inventree/web/purchasing/purchase-order/65/", resolver.URL(PurchaseOrder, 65))
+
+	_, err = NewAtDefaultMount("http://inventory.example.test", "INVENTREE_URL", true)
+	r.ErrorContains(err, "INVENTREE_URL must use https in production")
+}
+
 func TestResolverRejectsUnsafeBasesWithoutEchoingValues(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
@@ -76,6 +88,11 @@ func TestPinnedRouterEvidenceCoversEveryRoutePattern(t *testing.T) {
 	evidence := string(data)
 	r.Contains(evidence, "source_commit=6b237de54e4cbfd7f51daff8403c17869898d965")
 	r.Contains(evidence, "source_blob=ddeb3a21365761e999568c84d6417915817a9024")
+	r.Contains(evidence, "source_desktop_blob=ba921811446397503ef4d45f5476e504888882ef")
+	r.Contains(evidence, "source_navigation_blob=939dd0211522e4ebcb06cbf0d3b587ae3dbf2721")
+	r.Contains(evidence, "<BrowserRouter basename={getBaseUrl()}>")
+	r.Contains(evidence, "(window as any).INVENTREE_SETTINGS?.base_url || 'web'")
+	r.Contains(evidence, "canonical_default_mount="+DefaultMount)
 
 	wantDeclarations := []string{
 		"<Route path='part/'>", "category/:id?/*", ":id/*",

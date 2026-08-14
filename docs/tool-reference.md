@@ -161,7 +161,7 @@ Clarification `candidates` entries use:
 | `api_url` | Optional sanitized relative InvenTree REST inspection path. This clarification-only field does not carry an authority. |
 | `fields` | Optional non-sensitive structured details needed for the decision. |
 
-The former ambiguous clarification-candidate `url` field is removed as an intentional breaking change. Normal object projections use `web_url` for their stable frontend page; subordinate projections without one omit it and use `parent_web_url` only when their existing relationship fields identify an immediate owner with a stable page. See [User-facing InvenTree web links](web-links.md) for the pinned route matrix and complete output classification.
+The former ambiguous clarification-candidate `url` field is removed as an intentional breaking change. Normal object projections use `web_url` for their stable frontend page; subordinate projections without one omit it and use `parent_web_url` only when their existing relationship fields identify an immediate owner with a stable page. An explicit `INVENTREE_WEB_URL` is the exact frontend mount; otherwise the `INVENTREE_URL` site base gains InvenTree's stock `/web` mount. See [User-facing InvenTree web links](web-links.md) for the pinned route matrix and complete output classification.
 
 The registered-tools table below summarizes the current server surface and preserves each tool's milestone status in `docs/tool-manifest.json`, the checked machine-readable source for mutation classes, scopes, annotations, upload sources, and HTTP registration state.
 

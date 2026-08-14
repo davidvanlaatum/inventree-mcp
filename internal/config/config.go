@@ -148,7 +148,7 @@ func ParseServeWithEnv(args []string, getenv Env, output io.Writer) (Config, err
 	fs.StringVar(&cfg.Listen, "listen", cfg.Listen, flagHelp("HTTP listen address", EnvListen))
 	fs.StringVar(&cfg.Path, "path", cfg.Path, flagHelp("HTTP MCP path", EnvPath))
 	fs.StringVar(&cfg.InvenTreeURL, "inventree-url", cfg.InvenTreeURL, flagHelp("InvenTree base URL", EnvInvenTreeURL))
-	fs.StringVar(&cfg.InvenTreeWebURL, "inventree-web-url", cfg.InvenTreeWebURL, flagHelp("optional user-facing InvenTree web base URL", EnvInvenTreeWebURL))
+	fs.StringVar(&cfg.InvenTreeWebURL, "inventree-web-url", cfg.InvenTreeWebURL, flagHelp("optional exact user-facing InvenTree frontend mount URL", EnvInvenTreeWebURL))
 	fs.StringVar((*string)(&cfg.InvenTreeAuthScheme), "inventree-auth-scheme", string(cfg.InvenTreeAuthScheme), flagHelp("InvenTree auth scheme: Token or Bearer", EnvInvenTreeAuthScheme))
 	fs.DurationVar(&cfg.InvenTreeTimeout, "inventree-timeout", cfg.InvenTreeTimeout, flagHelp("InvenTree request timeout", EnvInvenTreeTimeout))
 	fs.BoolVar(&cfg.InvenTreeTLSSkipVerify, "inventree-tls-skip-verify", boolEnv(getenv, EnvInvenTreeTLSSkipVerify), flagHelp("skip upstream InvenTree TLS verification", EnvInvenTreeTLSSkipVerify))
@@ -294,8 +294,8 @@ func (c Config) Validate() error {
 	return errors.Join(validationErrors...)
 }
 
-// EffectiveInvenTreeWebURL returns the explicit user-facing base or the
-// approved all-mode fallback to INVENTREE_URL.
+// EffectiveInvenTreeWebURL returns the explicit user-facing frontend mount or
+// the site base used for the approved all-mode INVENTREE_URL fallback.
 func (c Config) EffectiveInvenTreeWebURL() (string, string) {
 	if strings.TrimSpace(c.InvenTreeWebURL) != "" {
 		return c.InvenTreeWebURL, EnvInvenTreeWebURL
@@ -304,8 +304,14 @@ func (c Config) EffectiveInvenTreeWebURL() (string, string) {
 }
 
 // WebLinkResolver validates the effective process-scoped user-facing base.
+// An explicit INVENTREE_WEB_URL is the exact frontend mount. The
+// INVENTREE_URL fallback is the InvenTree site/API base, so stock deployments
+// mount their frontend beneath its version-pinned default /web path.
 func (c Config) WebLinkResolver() (*weblinks.Resolver, error) {
 	raw, key := c.EffectiveInvenTreeWebURL()
+	if key == EnvInvenTreeURL {
+		return weblinks.NewAtDefaultMount(raw, key, c.Environment == EnvironmentProduction)
+	}
 	return weblinks.New(raw, key, c.Environment == EnvironmentProduction)
 }
 

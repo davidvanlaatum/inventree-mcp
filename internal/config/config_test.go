@@ -65,6 +65,22 @@ func TestParseServeConfiguresExplicitWebURLAndAllModeFallback(t *testing.T) {
 		value, key := cfg.EffectiveInvenTreeWebURL()
 		r.Equal("https://internal.example.test/prefix", value)
 		r.Equal(EnvInvenTreeURL, key)
+		resolver, err := cfg.WebLinkResolver()
+		r.NoError(err)
+		r.Equal("https://internal.example.test/prefix/web/part/7/", resolver.URL(weblinks.Part, 7))
+	})
+
+	t.Run("stdio fallback normalizes trailing slash before default mount", func(t *testing.T) {
+		t.Parallel()
+		r := require.New(t)
+		cfg, err := ParseServeWithEnv([]string{
+			"--transport", "stdio",
+			"--inventree-url", "https://internal.example.test/prefix/",
+		}, mapEnv(map[string]string{EnvInvenTreeToken: "token"}), nil)
+		r.NoError(err)
+		resolver, err := cfg.WebLinkResolver()
+		r.NoError(err)
+		r.Equal("https://internal.example.test/prefix/web/purchasing/purchase-order/65/", resolver.URL(weblinks.PurchaseOrder, 65))
 	})
 }
 

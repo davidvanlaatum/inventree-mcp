@@ -1,25 +1,25 @@
 # User-Facing InvenTree Web Links
 
-MCP object projections use a process-scoped, credential-free web base. Set `INVENTREE_WEB_URL` (or `--inventree-web-url`) when browser users reach InvenTree through a different public authority or path prefix than API clients. When omitted, every transport falls back to `INVENTREE_URL`. Both paths reject userinfo, query strings, fragments, unsupported schemes, invalid authorities, and non-canonical or escaped path prefixes. Production requires HTTPS; explicit development mode permits HTTP.
+MCP object projections use a process-scoped, credential-free web base. Set `INVENTREE_WEB_URL` (or `--inventree-web-url`) to the exact frontend mount when browser users reach InvenTree through a different public authority, path prefix, or custom InvenTree basename; a stock deployment normally uses `https://inventory.example.test/web`. When omitted, every transport preserves the `INVENTREE_URL` site/API base and adds InvenTree's version-pinned stock `/web` frontend mount. Both paths reject userinfo, query strings, fragments, unsupported schemes, invalid authorities, and non-canonical or escaped path prefixes. Production requires HTTPS; explicit development mode permits HTTP.
 
-The effective configured base is authoritative. Request headers, forwarded host/scheme/prefix values, OAuth token envelopes, tool arguments, and clarification input cannot change link authority or route selection. A valid internal fallback may therefore disclose internal DNS/topology to authorized MCP callers, may be unreachable from their browsers, and may appear in operator-enabled debug traffic logs that capture response bodies. Configure `INVENTREE_WEB_URL` when that is not acceptable.
+The configured authority and deployment prefix are authoritative. Request headers, forwarded host/scheme/prefix values, OAuth token envelopes, tool arguments, and clarification input cannot change link authority, frontend mount, or route selection. A valid internal fallback may therefore disclose internal DNS/topology to authorized MCP callers, may be unreachable from their browsers, and may appear in operator-enabled debug traffic logs that capture response bodies. Configure the exact `INVENTREE_WEB_URL` frontend mount when that is not acceptable or when InvenTree's configured basename is not `web`.
 
 ## Pinned Frontend Route Evidence
 
-The route contract is pinned to InvenTree `1.4.3`, commit [`6b237de54e4cbfd7f51daff8403c17869898d965`](https://github.com/inventree/InvenTree/commit/6b237de54e4cbfd7f51daff8403c17869898d965), router blob [`ddeb3a21365761e999568c84d6417915817a9024`](https://github.com/inventree/InvenTree/blob/6b237de54e4cbfd7f51daff8403c17869898d965/src/frontend/src/router.tsx). The checked excerpt in `internal/weblinks/testdata/inventree-1.4.3-router-routes.txt` and `internal/weblinks` tests tie these declarations to the typed resolver.
+The route contract is pinned to InvenTree `1.4.3`, commit [`6b237de54e4cbfd7f51daff8403c17869898d965`](https://github.com/inventree/InvenTree/commit/6b237de54e4cbfd7f51daff8403c17869898d965). Immutable evidence covers the nested [router blob `ddeb3a21365761e999568c84d6417915817a9024`](https://github.com/inventree/InvenTree/blob/6b237de54e4cbfd7f51daff8403c17869898d965/src/frontend/src/router.tsx), the [`BrowserRouter` blob `ba921811446397503ef4d45f5476e504888882ef`](https://github.com/inventree/InvenTree/blob/6b237de54e4cbfd7f51daff8403c17869898d965/src/frontend/src/views/DesktopAppView.tsx), and the [`getBaseUrl` blob `939dd0211522e4ebcb06cbf0d3b587ae3dbf2721`](https://github.com/inventree/InvenTree/blob/6b237de54e4cbfd7f51daff8403c17869898d965/src/frontend/lib/functions/Navigation.tsx). Together they prove that the nested routes are mounted beneath `getBaseUrl()` and its stock default is `web`. The checked excerpts in `internal/weblinks/testdata/inventree-1.4.3-router-routes.txt` and `internal/weblinks` tests tie both the mount and declarations to the typed resolver.
 
-| Object projection | Link field | Frontend route |
+| Object projection | Link field | Stock frontend route |
 | --- | --- | --- |
-| Part | `web_url` | `/part/{id}/` |
-| Part category | `web_url` | `/part/category/{id}/` |
-| Generic company | `web_url` | `/company/{id}/` |
-| Supplier company view | `web_url` | `/purchasing/supplier/{id}/` |
-| Manufacturer company view | `web_url` | `/purchasing/manufacturer/{id}/` |
-| Supplier part | `web_url` | `/purchasing/supplier-part/{id}/` |
-| Manufacturer part | `web_url` | `/purchasing/manufacturer-part/{id}/` |
-| Stock location | `web_url` | `/stock/location/{id}/` |
-| Stock item | `web_url` | `/stock/item/{id}/` |
-| Purchase order | `web_url` | `/purchasing/purchase-order/{id}/` |
+| Part | `web_url` | `/web/part/{id}/` |
+| Part category | `web_url` | `/web/part/category/{id}/` |
+| Generic company | `web_url` | `/web/company/{id}/` |
+| Supplier company view | `web_url` | `/web/purchasing/supplier/{id}/` |
+| Manufacturer company view | `web_url` | `/web/purchasing/manufacturer/{id}/` |
+| Supplier part | `web_url` | `/web/purchasing/supplier-part/{id}/` |
+| Manufacturer part | `web_url` | `/web/purchasing/manufacturer-part/{id}/` |
+| Stock location | `web_url` | `/web/stock/location/{id}/` |
+| Stock item | `web_url` | `/web/stock/item/{id}/` |
+| Purchase order | `web_url` | `/web/purchasing/purchase-order/{id}/` |
 
 ## Output Classification
 

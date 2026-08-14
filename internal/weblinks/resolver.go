@@ -14,6 +14,9 @@ import (
 type Kind string
 
 const (
+	// DefaultMount is the stock InvenTree frontend basename.
+	DefaultMount = "web"
+
 	Part             Kind = "part"
 	PartCategory     Kind = "part_category"
 	Company          Kind = "company"
@@ -37,6 +40,17 @@ var routePatterns = map[Kind]string{
 	StockLocation:    "stock/location/%d/",
 	StockItem:        "stock/item/%d/",
 	PurchaseOrder:    "purchasing/purchase-order/%d/",
+}
+
+// NewAtDefaultMount validates a credential-free InvenTree site base and
+// resolves links beneath the stock frontend mount.
+func NewAtDefaultMount(raw string, key string, requireHTTPS bool) (*Resolver, error) {
+	resolver, err := New(raw, key, requireHTTPS)
+	if err != nil {
+		return nil, err
+	}
+	resolver.base.Path += DefaultMount + "/"
+	return resolver, nil
 }
 
 // Resolver joins typed frontend routes to one validated process-scoped base.
