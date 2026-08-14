@@ -63,6 +63,20 @@ func TestResolveLocalFileRejectsHTTPModeBeforeFilesystemAccess(t *testing.T) {
 	a.False(fs.touched)
 }
 
+func TestResolveLocalFileRejectsMissingAllowlistBeforeOSPathResolution(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	nonexistent := filepath.Join(t.TempDir(), "not-yet-staged", "datasheet.txt")
+
+	_, err := ResolveLocalFile(ctx, LocalFileSource{Path: nonexistent}, LocalFileOptions{
+		Mode: ModeStdio,
+		Fs:   afero.NewOsFs(),
+	})
+
+	r.ErrorIs(err, ErrLocalUploadAllowlistRequired)
+}
+
 func TestResolveLocalFileUsesAferoAllowlistAndRegularFileChecks(t *testing.T) {
 	t.Parallel()
 	r := require.New(t)
@@ -104,6 +118,7 @@ func TestResolveLocalFileUsesAferoAllowlistAndRegularFileChecks(t *testing.T) {
 		AllowRoots: []string{"/allow"},
 	})
 	r.Error(err)
+	a.ErrorIs(err, ErrLocalUploadOutsideAllowlist)
 	a.Contains(err.Error(), "outside allowlisted roots")
 
 	_, err = ResolveLocalFile(ctx, LocalFileSource{Path: "/allow/dir"}, LocalFileOptions{
@@ -113,6 +128,22 @@ func TestResolveLocalFileUsesAferoAllowlistAndRegularFileChecks(t *testing.T) {
 	})
 	r.Error(err)
 	a.Contains(err.Error(), "regular file")
+}
+
+func TestCanonicalAllowRootsPreservesOrderAndRemovesDuplicates(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+	fs := afero.NewMemMapFs()
+	r.NoError(fs.MkdirAll("/allow/sub", 0o755))
+
+	roots, err := CanonicalAllowRoots(fs, []string{"/allow/../allow", "/allow", "/allow/sub"})
+	r.NoError(err)
+	a.Equal([]string{"/allow", "/allow/sub"}, roots)
+
+	roots, err = CanonicalAllowRoots(fs, nil)
+	r.NoError(err)
+	a.Empty(roots)
 }
 
 func TestResolveLocalFileRejectsSymlinkEscape(t *testing.T) {

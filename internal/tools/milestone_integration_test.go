@@ -1373,13 +1373,17 @@ func TestMilestoneHappyPathToolsAgainstInvenTree(t *testing.T) {
 
 		outsidePath := filepath.Join(t.TempDir(), "outside.txt")
 		r.NoError(os.WriteFile(outsidePath, []byte("outside"), 0o644))
-		_, _, err = uploadAttachment(deps)(ctx, &mcp.CallToolRequest{}, UploadAttachmentInput{
+		_, outsideUpload, err := uploadAttachment(deps)(ctx, &mcp.CallToolRequest{}, UploadAttachmentInput{
 			ModelType:   "part",
 			ModelID:     part.ID,
 			ContentType: "text/plain",
 			LocalPath:   outsidePath,
 		})
-		r.ErrorContains(err, "outside allowlisted roots")
+		r.NoError(err)
+		a.Equal(StatusClarificationRequired, outsideUpload.Status)
+		r.NotNil(outsideUpload.LocalUploadRecovery)
+		a.Equal(LocalUploadReasonOutsideAllowlist, outsideUpload.LocalUploadRecovery.Reason)
+		a.Equal(GetLocalUploadPolicyToolName, outsideUpload.LocalUploadRecovery.PolicyTool)
 
 		var fetchedAuthHeaders []string
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {

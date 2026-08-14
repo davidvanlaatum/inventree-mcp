@@ -57,15 +57,16 @@ type CompanyImageState struct {
 }
 
 type CompanyImageOutput struct {
-	Status        string                 `json:"status"`
-	Image         *CompanyImageState     `json:"image,omitempty"`
-	Current       *CompanyImageState     `json:"current,omitempty"`
-	Replaced      bool                   `json:"replaced"`
-	Recovered     bool                   `json:"recovered"`
-	Verified      bool                   `json:"verified"`
-	Validation    *ValidationFailure     `json:"validation,omitempty"`
-	Clarification *ClarificationResponse `json:"clarification,omitempty"`
-	RecoveryPlan  string                 `json:"recovery_plan,omitempty"`
+	Status              string                 `json:"status"`
+	Image               *CompanyImageState     `json:"image,omitempty"`
+	Current             *CompanyImageState     `json:"current,omitempty"`
+	Replaced            bool                   `json:"replaced"`
+	Recovered           bool                   `json:"recovered"`
+	Verified            bool                   `json:"verified"`
+	Validation          *ValidationFailure     `json:"validation,omitempty"`
+	Clarification       *ClarificationResponse `json:"clarification,omitempty"`
+	RecoveryPlan        string                 `json:"recovery_plan,omitempty"`
+	LocalUploadRecovery *LocalUploadRecovery   `json:"local_upload_recovery,omitempty"`
 }
 
 func registerCompanyImageWriteTools(server *mcp.Server, deps Dependencies) {
@@ -250,6 +251,9 @@ func resolveCompanyImageSource(ctx context.Context, deps Dependencies, input Set
 	source, err := upload.ResolveLocalFile(ctx, upload.LocalFileSource{Path: input.LocalPath, Filename: input.Filename, ContentType: input.ContentType}, upload.LocalFileOptions{
 		ReadOptions: companyImageReadOptions(deps), Mode: deps.UploadMode, Fs: deps.UploadFS, AllowRoots: deps.UploadAllowRoots,
 	})
+	if recovery, ok := localUploadRecovery(err); ok {
+		return upload.ResolvedSource{}, TextResult(StatusClarificationRequired), CompanyImageOutput{Status: StatusClarificationRequired, LocalUploadRecovery: recovery}, false, nil
+	}
 	return source, nil, CompanyImageOutput{}, err == nil, err
 }
 

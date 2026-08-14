@@ -77,13 +77,14 @@ type SetPrimaryImageInput struct {
 }
 
 type AttachmentWriteOutput struct {
-	Status        string                 `json:"status"`
-	Record        AttachmentMetadata     `json:"record,omitempty"`
-	Clarification *ClarificationResponse `json:"clarification,omitempty"`
-	SourceKind    string                 `json:"source_kind,omitempty"`
-	PartID        int                    `json:"part_id,omitempty"`
-	ImageURL      string                 `json:"image_url,omitempty"`
-	Replaced      bool                   `json:"replaced,omitempty"`
+	Status              string                 `json:"status"`
+	Record              AttachmentMetadata     `json:"record,omitempty"`
+	Clarification       *ClarificationResponse `json:"clarification,omitempty"`
+	SourceKind          string                 `json:"source_kind,omitempty"`
+	PartID              int                    `json:"part_id,omitempty"`
+	ImageURL            string                 `json:"image_url,omitempty"`
+	Replaced            bool                   `json:"replaced,omitempty"`
+	LocalUploadRecovery *LocalUploadRecovery   `json:"local_upload_recovery,omitempty"`
 }
 
 func registerAttachmentWriteTools(server *mcp.Server, deps Dependencies) {
@@ -318,6 +319,9 @@ func resolveUploadSource(ctx context.Context, deps Dependencies, input UploadAtt
 		Fs:          deps.UploadFS,
 		AllowRoots:  deps.UploadAllowRoots,
 	})
+	if recovery, ok := localUploadRecovery(err); ok {
+		return upload.ResolvedSource{}, TextResult(StatusClarificationRequired), AttachmentWriteOutput{Status: StatusClarificationRequired, LocalUploadRecovery: recovery}, false, nil
+	}
 	return source, nil, AttachmentWriteOutput{}, err == nil, err
 }
 

@@ -764,6 +764,8 @@ The internal client should provide:
 
 STDIO local file access should use `afero.Fs` directly unless a concrete implementation issue proves a small helper is needed. Centralize direct-Afero local upload logic in `internal/upload/local_file.go`: clean the requested path, canonicalize configured allowlist roots and requested paths before open, resolve symlinks where the filesystem exposes symlink metadata, verify the resolved or cleaned path is under an allowlisted root, open it, and reject non-regular files from `File.Stat()`. Unit tests may use Afero memory or temp-backed filesystems; production should use `afero.NewOsFs`. Document residual OS-level time-of-check/time-of-use risk for `OsFs`; do not add a broader filesystem wrapper unless tests expose duplicated or unsafe call sites.
 
+Local agents need a deterministic way to discover that process-owned policy before staging a file. Register `get_local_upload_policy` only in STDIO mode and return canonical configured roots, the effective attachment and company-image byte limits, and concise regular-file/containment requirements. Returned roots mean only that the MCP server may read a qualifying file; they do not assert caller write permission. HTTP mode must not register the tool or expose roots. Attachment and company-image allowlist rejections should return bounded reason-specific recovery: an outside path directs the agent to discovery and permitted staging, while a missing allowlist asks for operator configuration or inline content. Canonicalization, symlink, regular-file, and size enforcement remain authoritative in `internal/upload`.
+
 The client should not expose raw HTTP details to tool handlers except where a workflow genuinely needs response metadata.
 
 ## HTTP OAuth Design

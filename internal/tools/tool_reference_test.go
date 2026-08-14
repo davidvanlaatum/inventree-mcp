@@ -91,6 +91,8 @@ func TestToolReferenceDocumentsLookupFrameworkSchema(t *testing.T) {
 		reflect.TypeOf(ClearCompanyImageInput{}),
 		reflect.TypeOf(CompanyImageOutput{}),
 		reflect.TypeOf(CompanyImageState{}),
+		reflect.TypeOf(LocalUploadPolicyOutput{}),
+		reflect.TypeOf(LocalUploadRecovery{}),
 		reflect.TypeOf(ClarificationResponse{}),
 		reflect.TypeOf(ClarificationCandidate{}),
 	} {

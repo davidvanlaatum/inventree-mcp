@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -127,7 +128,40 @@ func TestUploadAttachmentValidatesInlineAndLocalSources(t *testing.T) {
 	a.Equal([]byte("local bytes"), fake.lastAttachmentCreate.Content)
 
 	fake = &fakeMilestoneLookupClient{}
+	deps = depsForFake(fake)
+	deps.UploadMode = upload.ModeStdio
+	deps.UploadFS = fs
+	deps.UploadAllowRoots = []string{"/uploads"}
+	_, output, err = uploadAttachment(deps)(ctx, &mcp.CallToolRequest{}, UploadAttachmentInput{
+		ModelType: "part", ModelID: 10, ContentType: "text/plain", LocalPath: "/outside/datasheet.txt",
+	})
+	r.NoError(err)
+	a.Equal(StatusClarificationRequired, output.Status)
+	r.NotNil(output.LocalUploadRecovery)
+	a.Equal(LocalUploadReasonOutsideAllowlist, output.LocalUploadRecovery.Reason)
+	a.Equal(GetLocalUploadPolicyToolName, output.LocalUploadRecovery.PolicyTool)
+	a.Contains(output.LocalUploadRecovery.RecoveryPlan, "caller permissions")
+	a.False(fake.uploadedAttachment)
+
+	fake = &fakeMilestoneLookupClient{}
+	deps = depsForFake(fake)
+	deps.UploadMode = upload.ModeStdio
+	deps.UploadFS = fs
+	_, output, err = uploadAttachment(deps)(ctx, &mcp.CallToolRequest{}, UploadAttachmentInput{
+		ModelType: "part", ModelID: 10, ContentType: "text/plain", LocalPath: "/uploads/datasheet.txt",
+	})
+	r.NoError(err)
+	a.Equal(StatusClarificationRequired, output.Status)
+	r.NotNil(output.LocalUploadRecovery)
+	a.Equal(LocalUploadReasonAllowlistRequired, output.LocalUploadRecovery.Reason)
+	a.Contains(output.LocalUploadRecovery.RecoveryPlan, "Ask the operator")
+	a.Contains(output.LocalUploadRecovery.RecoveryPlan, "inline content")
+	a.False(fake.uploadedAttachment)
+
+	fake = &fakeMilestoneLookupClient{}
 	deps.UploadMode = upload.ModeHTTP
+	secretRoot := "/secret/operator-only-root"
+	deps.UploadAllowRoots = []string{secretRoot}
 	deps.ClientFromContext = func(context.Context) (any, error) { return fake, nil }
 	_, _, err = uploadAttachment(deps)(ctx, &mcp.CallToolRequest{}, UploadAttachmentInput{
 		ModelType:   "part",
@@ -136,6 +170,7 @@ func TestUploadAttachmentValidatesInlineAndLocalSources(t *testing.T) {
 		LocalPath:   "/uploads/datasheet.txt",
 	})
 	r.ErrorContains(err, "HTTP mode rejects local upload paths")
+	a.NotContains(err.Error(), secretRoot)
 	a.False(fake.uploadedAttachment)
 }
 
@@ -410,6 +445,68 @@ func TestDeleteAttachmentMissingConfirmReturnsStructuredClarificationThroughMCP(
 	r.Len(candidates, 1)
 	fields := candidates[0].(map[string]any)["fields"].(map[string]any)
 	a.Equal(float64(34), fields["file_size"])
+}
+
+func TestUploadAttachmentAllowlistRecoveryReturnsStructuredOutputThroughMCP(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	clientTransport, serverTransport := mcp.NewInMemoryTransports()
+	serverDone := make(chan error, 1)
+	go func() {
+		server := mcp.NewServer(&mcp.Implementation{Name: "upload-recovery-test-server", Version: "v0.0.0"}, nil)
+		Register(server, Dependencies{
+			EnableWriteTools: true,
+			UploadMode:       upload.ModeStdio,
+			UploadFS:         afero.NewMemMapFs(),
+			ClientFromContext: func(context.Context) (any, error) {
+				return &fakeMilestoneLookupClient{}, nil
+			},
+		})
+		serverDone <- server.Run(ctx, serverTransport)
+	}()
+
+	client := mcp.NewClient(&mcp.Implementation{Name: "upload-recovery-test-client", Version: "v0.0.0"}, nil)
+	session, err := client.Connect(ctx, clientTransport, nil)
+	r.NoError(err)
+	defer func() {
+		r.NoError(session.Close())
+		cancel()
+		<-serverDone
+	}()
+
+	listed, err := session.ListTools(ctx, nil)
+	r.NoError(err)
+	foundUpload := false
+	for _, tool := range listed.Tools {
+		if tool.Name != UploadAttachmentToolName {
+			continue
+		}
+		foundUpload = true
+		schema, marshalErr := json.Marshal(tool.OutputSchema)
+		r.NoError(marshalErr)
+		a.Contains(string(schema), "local_upload_recovery")
+	}
+	r.True(foundUpload)
+
+	result, err := session.CallTool(ctx, &mcp.CallToolParams{
+		Name: UploadAttachmentToolName,
+		Arguments: map[string]any{
+			"model_type": "part", "model_id": 10, "content_type": "text/plain", "local_path": "/unstaged/datasheet.txt",
+		},
+	})
+	r.NoError(err)
+	a.False(result.IsError)
+	structured := result.StructuredContent.(map[string]any)
+	a.Equal(StatusClarificationRequired, structured["status"])
+	recovery := structured["local_upload_recovery"].(map[string]any)
+	a.Equal(LocalUploadReasonAllowlistRequired, recovery["reason"])
+	a.Equal(GetLocalUploadPolicyToolName, recovery["policy_tool"])
+	a.Contains(recovery["recovery_plan"], "Ask the operator")
 }
 
 func TestWriteToolAuthorizationsUseWriteScope(t *testing.T) {

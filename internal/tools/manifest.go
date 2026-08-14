@@ -104,6 +104,9 @@ func uploadSourcesForTool(name string) []string {
 }
 
 func httpRegistrationForTool(name string, mutationClass string) string {
+	if name == GetLocalUploadPolicyToolName {
+		return "stdio_only"
+	}
 	if name == HealthVersionToolName || mutationClass == "read_only" {
 		return "registered"
 	}

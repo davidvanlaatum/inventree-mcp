@@ -280,13 +280,27 @@ func TestSetCompanyImageUsesAllowlistedLocalFileOnlyInStdioMode(t *testing.T) {
 	a.Equal(StatusOK, output.Status)
 	a.Equal("logo.png", fake.filename)
 
+	outsideFake := newFakeCompanyImageClient(nil)
+	deps = companyImageDeps(outsideFake)
+	deps.UploadFS = fs
+	deps.UploadAllowRoots = []string{"/allowed"}
+	_, outside, err := setCompanyImage(deps)(ctx, &mcp.CallToolRequest{}, SetCompanyImageInput{CompanyID: 30, LocalPath: "/outside/logo.png", ContentType: "image/png"})
+	r.NoError(err)
+	a.Equal(StatusClarificationRequired, outside.Status)
+	r.NotNil(outside.LocalUploadRecovery)
+	a.Equal(LocalUploadReasonOutsideAllowlist, outside.LocalUploadRecovery.Reason)
+	a.Equal(GetLocalUploadPolicyToolName, outside.LocalUploadRecovery.PolicyTool)
+	a.Zero(outsideFake.setCalls)
+
 	httpFake := newFakeCompanyImageClient(nil)
 	deps = companyImageDeps(httpFake)
 	deps.UploadMode = upload.ModeHTTP
 	deps.UploadFS = fs
-	deps.UploadAllowRoots = []string{"/allowed"}
+	secretRoot := "/secret/operator-only-root"
+	deps.UploadAllowRoots = []string{secretRoot}
 	_, _, err = setCompanyImage(deps)(ctx, &mcp.CallToolRequest{}, SetCompanyImageInput{CompanyID: 30, LocalPath: "/allowed/logo.png", ContentType: "image/png"})
 	r.ErrorContains(err, "HTTP mode rejects local upload paths")
+	a.NotContains(err.Error(), secretRoot)
 	a.Zero(httpFake.setCalls)
 }
 
@@ -411,6 +425,8 @@ func TestSetCompanyImageThroughMCPBoundary(t *testing.T) {
 	fake := newFakeCompanyImageClient(nil)
 	deps := companyImageDeps(fake)
 	deps.EnableWriteTools = true
+	deps.UploadFS = afero.NewMemMapFs()
+	deps.UploadAllowRoots = []string{"/allowed"}
 	deps.URLFetcher = upload.URLFetcher{
 		Resolver: func(context.Context, string) ([]netip.Addr, error) {
 			return []netip.Addr{netip.MustParseAddr("127.0.0.1")}, nil
@@ -446,6 +462,17 @@ func TestSetCompanyImageThroughMCPBoundary(t *testing.T) {
 	image := structured["image"].(map[string]any)
 	a.Equal(float64(30), image["company_id"])
 	a.Equal(fmt.Sprintf("%x", sha256.Sum256(content)), image["sha256"])
+
+	recoveryResult, err := session.CallTool(ctx, &mcp.CallToolParams{Name: SetCompanyImageToolName, Arguments: map[string]any{
+		"company_id": 30, "local_path": "/outside/logo.png", "content_type": "image/png",
+	}})
+	r.NoError(err)
+	a.False(recoveryResult.IsError)
+	recoveryOutput := recoveryResult.StructuredContent.(map[string]any)
+	a.Equal(StatusClarificationRequired, recoveryOutput["status"])
+	recovery := recoveryOutput["local_upload_recovery"].(map[string]any)
+	a.Equal(LocalUploadReasonOutsideAllowlist, recovery["reason"])
+	a.Equal(GetLocalUploadPolicyToolName, recovery["policy_tool"])
 
 	clearedResult, err := session.CallTool(ctx, &mcp.CallToolParams{Name: ClearCompanyImageToolName, Arguments: map[string]any{"company_id": 30, "confirm": true}})
 	r.NoError(err)
