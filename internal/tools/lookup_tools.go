@@ -232,6 +232,13 @@ var ToolAuthorizations = map[string]ToolAuthorization{
 		Scopes:          nil,
 		Annotations:     ReadOnlyAnnotations,
 	},
+	GetLocalUploadPolicyToolName: {
+		Name:            GetLocalUploadPolicyToolName,
+		MilestoneStatus: ToolMilestone1,
+		MutationClass:   "read_only",
+		Scopes:          nil,
+		Annotations:     ReadOnlyAnnotations,
+	},
 }
 
 func init() {

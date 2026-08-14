@@ -724,6 +724,26 @@
       ]
     },
     {
+      "name": "get_local_upload_policy",
+      "milestone_status": "milestone_1",
+      "mutation_class": "read_only",
+      "scopes": null,
+      "annotations": {
+        "read_only": true,
+        "destructive": false,
+        "idempotent": true,
+        "open_world": false
+      },
+      "upload_sources": null,
+      "http_registration": "stdio_only",
+      "icons": [
+        {
+          "src": "https://docs.inventree.org/en/latest/assets/logo.png",
+          "mimeType": "image/png"
+        }
+      ]
+    },
+    {
       "name": "get_manufacturer_part",
       "milestone_status": "milestone_1",
       "mutation_class": "read_only",

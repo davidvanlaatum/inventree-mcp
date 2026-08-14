@@ -25,6 +25,7 @@ import (
 	"github.com/davidvanlaatum/inventree-mcp/internal/inventree"
 	"github.com/davidvanlaatum/inventree-mcp/internal/oauth"
 	"github.com/davidvanlaatum/inventree-mcp/internal/tools"
+	"github.com/davidvanlaatum/inventree-mcp/internal/upload"
 	"github.com/davidvanlaatum/inventree-mcp/internal/weblinks"
 	"github.com/modelcontextprotocol/go-sdk/auth"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -45,7 +46,7 @@ func TestStdioServerCanInitializeAndListTools(t *testing.T) {
 	clientTransport, serverTransport := mcp.NewInMemoryTransports()
 	serverDone := make(chan error, 1)
 	go func() {
-		serverDone <- New(tools.Dependencies{}).Run(ctx, serverTransport)
+		serverDone <- New(tools.Dependencies{UploadMode: upload.ModeStdio}).Run(ctx, serverTransport)
 	}()
 
 	client := mcp.NewClient(&mcp.Implementation{Name: "test-client", Version: "v0.0.0"}, nil)
@@ -92,7 +93,7 @@ func TestTrafficLogCapturesStdioJSONRPCMessages(t *testing.T) {
 	clientTransport, serverTransport := mcp.NewInMemoryTransports()
 	serverDone := make(chan error, 1)
 	go func() {
-		serverDone <- New(tools.Dependencies{}).Run(ctx, loggingTransport{
+		serverDone <- New(tools.Dependencies{UploadMode: upload.ModeStdio}).Run(ctx, loggingTransport{
 			transport: serverTransport,
 			log:       traffic,
 			name:      string(config.TransportStdio),
@@ -360,7 +361,7 @@ func TestServerListsWriteToolsOnlyWhenEnabled(t *testing.T) {
 	clientTransport, serverTransport := mcp.NewInMemoryTransports()
 	serverDone := make(chan error, 1)
 	go func() {
-		serverDone <- New(tools.Dependencies{EnableWriteTools: true}).Run(ctx, serverTransport)
+		serverDone <- New(tools.Dependencies{EnableWriteTools: true, UploadMode: upload.ModeStdio}).Run(ctx, serverTransport)
 	}()
 
 	client := mcp.NewClient(&mcp.Implementation{Name: "test-client", Version: "v0.0.0"}, nil)

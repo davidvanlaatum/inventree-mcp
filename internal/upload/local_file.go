@@ -24,12 +24,21 @@ type LocalFileOptions struct {
 	AllowRoots []string
 }
 
+// ErrLocalUploadAllowlistRequired means no trusted local upload root is configured.
+var ErrLocalUploadAllowlistRequired = errors.New("local upload allowlist requires at least one root")
+
+// ErrLocalUploadOutsideAllowlist means the resolved local source is outside every trusted root.
+var ErrLocalUploadOutsideAllowlist = errors.New("local upload path is outside allowlisted roots")
+
 func ResolveLocalFile(ctx context.Context, source LocalFileSource, opts LocalFileOptions) (ResolvedSource, error) {
 	if opts.Mode == ModeHTTP {
 		return ResolvedSource{}, errHTTPModeLocalPath
 	}
 	if strings.TrimSpace(source.Path) == "" {
 		return ResolvedSource{}, errors.New("local upload path is required")
+	}
+	if len(opts.AllowRoots) == 0 {
+		return ResolvedSource{}, ErrLocalUploadAllowlistRequired
 	}
 	fs := opts.Fs
 	if fs == nil {
@@ -78,18 +87,40 @@ func ResolveLocalFile(ctx context.Context, source LocalFileSource, opts LocalFil
 
 func requireAllowedPath(fs afero.Fs, candidate string, roots []string) error {
 	if len(roots) == 0 {
-		return errors.New("local upload allowlist requires at least one root")
+		return ErrLocalUploadAllowlistRequired
 	}
-	for _, root := range roots {
-		resolvedRoot, err := canonicalPath(fs, root)
-		if err != nil {
-			return err
-		}
+	resolvedRoots, err := CanonicalAllowRoots(fs, roots)
+	if err != nil {
+		return err
+	}
+	for _, resolvedRoot := range resolvedRoots {
 		if pathWithinRoot(candidate, resolvedRoot) {
 			return nil
 		}
 	}
-	return errors.New("local upload path is outside allowlisted roots")
+	return ErrLocalUploadOutsideAllowlist
+}
+
+// CanonicalAllowRoots returns the effective roots used by local upload policy.
+// It preserves configured order while removing canonical duplicates.
+func CanonicalAllowRoots(fs afero.Fs, roots []string) ([]string, error) {
+	if fs == nil {
+		fs = afero.NewOsFs()
+	}
+	canonical := make([]string, 0, len(roots))
+	seen := make(map[string]struct{}, len(roots))
+	for _, root := range roots {
+		resolvedRoot, err := canonicalPath(fs, root)
+		if err != nil {
+			return nil, err
+		}
+		if _, ok := seen[resolvedRoot]; ok {
+			continue
+		}
+		seen[resolvedRoot] = struct{}{}
+		canonical = append(canonical, resolvedRoot)
+	}
+	return canonical, nil
 }
 
 func pathWithinRoot(candidate string, root string) bool {

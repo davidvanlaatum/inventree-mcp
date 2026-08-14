@@ -11,6 +11,8 @@ import (
 
 const HealthVersionToolName = "health_version"
 
+const GetLocalUploadPolicyToolName = "get_local_upload_policy"
+
 type HealthVersionOutput struct {
 	Status  string `json:"status"`
 	Version string `json:"version"`
@@ -20,6 +22,7 @@ type HealthVersionOutput struct {
 
 func Register(server *mcp.Server, deps Dependencies) {
 	registerHealthVersion(server, deps)
+	registerLocalUploadPolicyTool(server, deps)
 	registerPrompts(server)
 	registerLookupTools(server, deps)
 	if deps.EnableWriteTools {
