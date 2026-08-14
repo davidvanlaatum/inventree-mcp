@@ -16,6 +16,8 @@ import (
 	"path"
 	"strings"
 	"time"
+
+	"github.com/davidvanlaatum/inventree-mcp/internal/buildinfo"
 )
 
 // HTTPDoer is the narrow HTTP seam used by the updater.
@@ -139,7 +141,7 @@ func (u *Updater) get(ctx context.Context, rawURL, token string, limit int64) ([
 		return nil, err
 	}
 	req.Header.Set("Accept", "application/vnd.github+json")
-	req.Header.Set("User-Agent", binaryName+"-self-update")
+	req.Header.Set("User-Agent", buildinfo.UserAgent())
 	if token != "" && req.URL.Scheme == "https" && req.URL.Host == "api.github.com" {
 		req.Header.Set("Authorization", "Bearer "+token)
 	}

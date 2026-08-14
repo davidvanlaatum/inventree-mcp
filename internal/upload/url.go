@@ -11,6 +11,8 @@ import (
 	"net/url"
 	"path"
 	"strings"
+
+	"github.com/davidvanlaatum/inventree-mcp/internal/buildinfo"
 )
 
 const defaultMaxRedirects = 3
@@ -81,6 +83,7 @@ func (f URLFetcher) Fetch(ctx context.Context, source URLSource, opts ReadOption
 		return ResolvedSource{}, err
 	}
 	req.Header.Set("Accept", "*/*")
+	req.Header.Set("User-Agent", buildinfo.UserAgent())
 
 	resp, err := client.Do(req)
 	if err != nil {

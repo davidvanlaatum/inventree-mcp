@@ -13,6 +13,8 @@ import (
 	"io"
 	"io/fs"
 	"net/http"
+	"net/http/httptest"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -21,6 +23,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/davidvanlaatum/inventree-mcp/internal/buildinfo"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -453,6 +456,32 @@ func TestHTTPRedirectPolicyStripsCredentialsAndRejectsOrigins(t *testing.T) {
 	a.Error(client.CheckRedirect(bad, []*http.Request{via}))
 }
 
+func TestHTTPGetPreservesVersionedUserAgentAcrossAllowedRedirect(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	userAgents := make(chan string, 2)
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		userAgents <- req.Header.Get("User-Agent")
+		if req.URL.Path == "/start" {
+			http.Redirect(w, req, "/final", http.StatusFound)
+			return
+		}
+		_, _ = w.Write([]byte("redirected"))
+	}))
+	t.Cleanup(server.Close)
+	serverURL, err := url.Parse(server.URL)
+	r.NoError(err)
+	client := server.Client()
+	client.CheckRedirect = newHTTPClient(time.Second, []string{serverURL.Host}).CheckRedirect
+
+	updater := New(Dependencies{Client: client})
+	data, err := updater.get(t.Context(), server.URL+"/start", "", 16)
+	r.NoError(err)
+	r.Equal([]byte("redirected"), data)
+	r.Equal(buildinfo.UserAgent(), <-userAgents)
+	r.Equal(buildinfo.UserAgent(), <-userAgents)
+}
+
 func TestResolveReleaseRequiresExactRequestedAssetURLs(t *testing.T) {
 	t.Parallel()
 	r := require.New(t)
@@ -536,6 +565,19 @@ func TestHTTPGetBoundsErrorsAndCancellation(t *testing.T) {
 			a.Error(err)
 		})
 	}
+}
+
+func TestHTTPGetUsesVersionedUserAgent(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	updater := New(Dependencies{Client: doerFunc(func(request *http.Request) (*http.Response, error) {
+		r.Equal(buildinfo.UserAgent(), request.Header.Get("User-Agent"))
+		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader("ok"))}, nil
+	})})
+
+	data, err := updater.get(t.Context(), "https://api.github.com/test", "", 8)
+	r.NoError(err)
+	r.Equal([]byte("ok"), data)
 }
 
 func TestRunCommandUsesIsolatedBoundedProcess(t *testing.T) {

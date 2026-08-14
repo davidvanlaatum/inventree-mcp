@@ -10,6 +10,8 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+
+	"github.com/davidvanlaatum/inventree-mcp/internal/buildinfo"
 )
 
 type Client struct {
@@ -75,8 +77,13 @@ func (c *Client) NewRequest(ctx context.Context, method string, path string, que
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
-	c.credential.Apply(req)
+	c.applyRequestIdentity(req)
 	return req, nil
+}
+
+func (c *Client) applyRequestIdentity(req *http.Request) {
+	req.Header.Set("User-Agent", buildinfo.UserAgent())
+	c.credential.Apply(req)
 }
 
 func (c *Client) DoJSON(req *http.Request, out any) error {

@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/davidvanlaatum/dvgoutils/logging/testhandler"
+	"github.com/davidvanlaatum/inventree-mcp/internal/buildinfo"
 	"github.com/davidvanlaatum/inventree-mcp/internal/inventree"
 	"github.com/davidvanlaatum/inventree-mcp/internal/platform"
 	"github.com/modelcontextprotocol/go-sdk/auth"
@@ -31,6 +32,7 @@ func TestClientMetadataFetcherValidatesCIMDAndRedirect(t *testing.T) {
 		redirectURI := "https://chatgpt.com/connector/oauth/callback_123"
 		var metadataPath string
 		server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			a.Equal(buildinfo.UserAgent(), req.Header.Get("User-Agent"))
 			a.Empty(req.Header.Get("Authorization"))
 			a.Empty(req.Header.Get("Cookie"))
 			switch req.URL.Path {

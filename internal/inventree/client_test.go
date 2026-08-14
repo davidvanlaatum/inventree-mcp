@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/davidvanlaatum/dvgoutils/logging/testhandler"
+	"github.com/davidvanlaatum/inventree-mcp/internal/buildinfo"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -56,6 +57,7 @@ func TestNewRequestAppliesTokenAndBearerAuth(t *testing.T) {
 			r.Equal("https://inventory.example.test/api/part/?search=resistor", req.URL.String())
 			r.Equal(tt.wantHeader, req.Header.Get("Authorization"))
 			r.Equal("application/json", req.Header.Get("Accept"))
+			r.Equal(buildinfo.UserAgent(), req.Header.Get("User-Agent"))
 		})
 	}
 }

@@ -11,6 +11,8 @@ import (
 	"slices"
 	"strings"
 	"time"
+
+	"github.com/davidvanlaatum/inventree-mcp/internal/buildinfo"
 )
 
 const (
@@ -70,7 +72,7 @@ func (f ClientMetadataFetcher) Fetch(ctx context.Context, clientID string) (Clie
 		return ClientMetadata{}, fmt.Errorf("%w: cannot build metadata request", ErrInvalidClientMetadata)
 	}
 	req.Header.Set("Accept", "application/json")
-	req.Header.Set("User-Agent", "inventree-mcp-oauth-cimd")
+	req.Header.Set("User-Agent", buildinfo.UserAgent())
 
 	resp, err := client.Do(req)
 	if err != nil {

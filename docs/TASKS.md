@@ -117,6 +117,7 @@ Before assigning a new story ID, inspect `git worktree list --porcelain`, search
 | [F-S33](#f-s33-guarded-part-deletion) | Add guarded deletion of one unreferenced ordinary part, refusing while the part is active or stock, BOM, build, purchase-order, sales-order, variant, supplier/manufacturer-part, parameter, attachment, or related-part references exist. | Done |
 | [F-S34](#f-s34-canonical-user-facing-inventree-object-web-urls) | Return canonical user-facing InvenTree web links across supported object outputs. | Done |
 | [F-S35](#f-s35-local-upload-policy-discovery) | Let local agents discover STDIO upload roots and recover safely from allowlist rejections. | Done |
+| [F-S36](#f-s36-versioned-outbound-http-user-agent) | Identify every outbound runtime HTTP request with the MCP server name and build version. | Done |
 
 ## Milestone 0: Repository And Planning
 
@@ -1964,3 +1965,29 @@ Tasks:
 - Validation: `go generate ./internal/tools`, `go mod tidy -diff`, `go build ./...`, `go vet ./...`, `golangci-lint run ./...` (0 issues), focused `go test -tags no_integration_tests ./internal/upload ./internal/tools ./internal/server`, final `GOFLAGS=-trimpath go test -race -p=1 ./...` including the default-on pinned InvenTree 1.4.3 Testcontainers suites, final no-integration coverage, and `git diff --check` pass. The first full-suite run exposed a stale integration assertion that expected the former raw allowlist error; it was updated to assert structured recovery, its focused pinned-live rerun passed, and both subsequent full race suites passed. Compared with exact base `origin/main` at `54d2870`, `internal/upload` rises from 78.2% to 78.5%, while `internal/tools` remains 83.1% and `internal/server` remains 76.2%; no package-level reduction was introduced.
 - Review: Senior Go Developer, Senior QA / Test Architect, Senior Product Manager, and Senior Infosec Reviewer passes completed because F-S35 changes the upload and public tool surfaces. Findings required separate effective attachment and company-image limits, reason-specific missing-allowlist recovery, MCP-boundary structured-output/schema assertions, explicit HTTP secret-root non-exposure checks, and deterministic missing-policy classification before production filesystem path resolution. All findings were addressed in code, tests, and docs; final focused Go, QA, product, and infosec reruns found no remaining actionable findings.
 - Residual risk: canonical configured roots are intentionally disclosed to connected STDIO MCP clients and may be captured in operator-enabled sensitive STDIO debug traffic logs. Returned roots describe server-read policy and do not guarantee caller write access. Roots must remain trusted and operator-controlled because production `OsFs` retains the existing time-of-check/time-of-use race between path resolution/policy checks and open if an untrusted party can swap filesystem entries.
+
+### F-S36: Versioned Outbound HTTP User-Agent
+
+- Status: `Done`
+- Depends on: M1B-S01, M1F-S02, F-S31
+- Progress: implementation completed on `codex/f-s36-inventree-user-agent`, rebased onto current `origin/main` (`72e9584`) after F-S35 merged.
+- Decisions: approved by the operator on 2026-08-14. Use the same versioned identity for every HTTP request initiated by the shipped server or CLI, including requests to InvenTree, caller-selected URL-upload targets, OAuth client metadata/JWKS origins, and GitHub self-update endpoints. Do not rewrite inbound client requests or test-only infrastructure probes.
+- Scope: identify every outbound HTTP request initiated by the shipped MCP server or CLI with the product name and build version.
+- Acceptance:
+  - InvenTree JSON API requests and authenticated attachment, part-image, and company-image downloads send `User-Agent: inventree-mcp/<build-version>`.
+  - Arbitrary URL-upload fetches, OAuth client-metadata and JWKS fetches, and self-update GitHub requests send the same identity.
+  - The version comes from the same build metadata used by the CLI `version` command and MCP `health_version` tool, with the development build reporting `inventree-mcp/dev`.
+  - Focused tests cover normal API requests, each same-instance media-download path, URL uploads, both OAuth fetch classes, and self-update requests.
+  - `docs/PLAN.md` remains aligned with the behavior; the InvenTree OpenAPI snapshot and MCP tool/operator contracts are unchanged.
+  - Per-package coverage is compared with the exact base branch, and Senior Go Developer, Senior QA / Test Architect, Senior Product Manager, and Senior Infosec Reviewer reviews complete with actionable findings resolved or documented.
+
+Tasks:
+
+- [x] Add one build-metadata-derived User-Agent identity shared by outbound runtime request paths.
+- [x] Apply it to InvenTree requests, URL-upload fetches, OAuth metadata/JWKS retrieval, and self-update traffic.
+- [x] Add focused direct and allowed-redirect request-header tests and align planning documentation.
+- [x] Compare per-package coverage, run validation, and resolve the Go, QA, product, and infosec review panel.
+
+- Validation: `go test -tags no_integration_tests ./internal/buildinfo ./internal/inventree ./internal/upload ./internal/oauth ./internal/selfupdate`, `go mod tidy -diff`, `go build ./...`, `go vet ./...`, `golangci-lint run ./...` (0 issues), final `go test -tags no_integration_tests -cover ./...`, final `GOFLAGS=-trimpath go test -race -p=1 ./...` including the default-on pinned InvenTree 1.4.3 Testcontainers suites, and `git diff --check` pass. Compared with exact base `origin/main` at `72e9584`, `internal/oauth` rises from 83.3% to 83.4%, `internal/selfupdate` from 78.0% to 78.2%, and `internal/upload` from 78.7% to 79.5%; the newly testable `internal/buildinfo` function is covered at 100%, all other packages remain unchanged, and no package-level reduction was introduced.
+- Review: Senior Go Developer review found no actionable implementation or package-boundary issues. Senior QA / Test Architect review required allowed-redirect User-Agent coverage for URL uploads, JWKS retrieval, and self-update traffic, and replacement of a fatal assertion inside an HTTP handler goroutine; the tests were corrected and the focused QA rerun found no remaining issues. Senior Product Manager review required an explicit shipped-runtime boundary excluding inbound requests and test-only probes; the planning/task docs were corrected and the focused product rerun found no remaining issues. Senior Infosec review required the exact-build fingerprinting and correlation exposure to be recorded; the residual-risk note was added and the focused infosec rerun found no remaining issues.
+- Residual risk: caller-selected URL-upload targets, operator-configured OAuth client metadata/JWKS origins, and their allowed redirect targets can fingerprint the product and exact build version and correlate its requests. This operator-approved identity contains no credential. Existing SSRF, same-origin, allowlist, and redirect controls bound which destinations may receive requests but intentionally do not conceal the identity.
