@@ -238,7 +238,7 @@ func TestDeletePartNotFound(t *testing.T) {
 	a.Equal(StatusNotFound, out.Status)
 }
 
-// InvenTree 1.4.3 itself refuses to delete any active part ("Cannot delete
+// InvenTree 1.5.0 itself refuses to delete any active part ("Cannot delete
 // this part as it is still active"), independent of every other blocking
 // category; this tool refuses on the same condition up front instead of
 // letting an otherwise-clean confirmed deletion fail with a generic
@@ -428,7 +428,7 @@ func TestDeletePartRefusesSalesOrderLine(t *testing.T) {
 	a.Zero(fake.deleteCalls)
 }
 
-// InvenTree 1.4.3's own DELETE /api/part/{id}/ silently permits deleting a
+// InvenTree 1.5.0's own DELETE /api/part/{id}/ silently permits deleting a
 // part while a supplier part, manufacturer part, parameter, attachment, or
 // related-part link still exists (pinned by the "part_delete" client-method
 // integration subtest) -- there is no upstream protection to rely on for

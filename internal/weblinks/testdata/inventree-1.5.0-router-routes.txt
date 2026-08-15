@@ -1,7 +1,7 @@
 source_repository=https://github.com/inventree/InvenTree
-source_tag=1.4.3
-source_commit=6b237de54e4cbfd7f51daff8403c17869898d965
-source_blob=ddeb3a21365761e999568c84d6417915817a9024
+source_tag=1.5.0
+source_commit=6a6736b8d6afea24625a67f5f55024cc2f6317b0
+source_blob=6c8596712a1bad558fde8275d8524480c5cdc430
 source_path=src/frontend/src/router.tsx
 source_desktop_blob=ba921811446397503ef4d45f5476e504888882ef
 source_desktop_path=src/frontend/src/views/DesktopAppView.tsx

@@ -13,7 +13,7 @@ import (
 // known dependency before it will consider deleting a part, and refuses
 // outright while any of the blocking categories below are non-empty.
 //
-// Pinned against InvenTree 1.4.3 (see the "part_delete" integration
+// Pinned against InvenTree 1.5.0 (see the "part_delete" integration
 // subtest), DELETE /api/part/{id}/ is far more permissive than the shape of
 // this guard might suggest, and that permissiveness is exactly why the
 // guard exists rather than being redundant with upstream. Upstream itself
@@ -239,7 +239,7 @@ func loadPartDeletePreview(ctx context.Context, client PartDeleteClient, record 
 
 func loadPartDeleteBlockingReferences(ctx context.Context, client PartDeleteClient, record inventree.Part, preview partDeletePreview) (PartDeleteBlockingReferences, error) {
 	blocking := PartDeleteBlockingReferences{
-		// InvenTree 1.4.3 itself refuses to delete any active part; this
+		// InvenTree 1.5.0 itself refuses to delete any active part; this
 		// tool refuses on the same condition rather than letting an
 		// otherwise-clean confirmed deletion fail with a generic upstream
 		// validation error.

@@ -120,6 +120,7 @@ Before assigning a new story ID, inspect `git worktree list --porcelain`, search
 | [F-S36](#f-s36-versioned-outbound-http-user-agent) | Identify every outbound runtime HTTP request with the MCP server name and build version. | Done |
 | [F-S37](#f-s37-restore-default-web-prefix-in-canonical-object-links) | Restore InvenTree's default `/web` frontend mount in fallback-generated object links. | Done |
 | [F-S38](#f-s38-explicit-purchase-order-completion-after-receiving) | Complete fully received purchase orders explicitly during receipt or later. | Done |
+| [F-S61](#f-s61-adopt-inventree-150-api-530-baseline) | Adopt InvenTree 1.5.0 and API 530 as the blocking compatibility baseline. | Done |
 
 ## Milestone 0: Repository And Planning
 
@@ -2052,3 +2053,33 @@ Tasks:
 - Validation: `go generate ./internal/tools`, `go mod tidy -diff`, `go build ./...`, `go vet ./...`, `golangci-lint run ./...` (0 issues), `go test -tags no_integration_tests ./...`, `GOFLAGS=-trimpath go test -race -p=1 ./...`, and `git diff --check` pass. Focused pinned InvenTree 1.4.3 runs pass for `TestClientMethodsAgainstInvenTree/po` and `TestMilestoneHappyPathToolsAgainstInvenTree/purchase_order_completion_with_auto_complete_disabled`. Compared with exact base `dd8f588`, `internal/inventree` remains 88.2% and `internal/tools` rises from 83.1% to 83.2%; no package-level coverage reduction remains.
 - Review: Senior Go Developer, Senior QA / Test Architect, Senior Product Manager, and Senior Infosec Reviewer passes completed, including focused reruns after resolving two findings. Product identified that a failed refresh after a known-success receipt with `complete_order:true` could incorrectly invite receipt recovery; the path now preserves returned stock and permits completion-only recovery, with regression coverage. QA identified that pinned tests restored the global auto-complete setting to a presumed default; both suites now capture, restore, and read-back verify the exact original value. Focused Go, QA, product, and infosec reruns found no remaining actionable findings.
 - Residual risk: receipt and explicit completion are separate upstream mutations, so completion can fail after stock was received; the response preserves returned stock and mandates completion-only recovery. Completion preflight and mutation are not atomic against concurrent upstream writers, though the MCP never sends `accept_incomplete:true` and exact read-back is required for verified success.
+
+### F-S61: Adopt InvenTree 1.5.0 API 530 Baseline
+
+- Status: `Done`
+- Issue: [#143](https://github.com/davidvanlaatum/inventree-mcp/issues/143)
+- Depends on: F-S34, F-S37, F-S38
+- Progress: implementation completed on `codex/f-s61-inventree-1-5-baseline` from current `origin/main` (`3daee4e`). The operator approved the story and issue creation on 2026-08-15 after a disposable compatibility probe established that InvenTree 1.5.0 reports API revision 530 and the complete race-enabled repository suite passes when only the test-harness version expectations are changed. The checked schema, endpoint manifest, blocking Testcontainers pin, immutable frontend route evidence, focused contract tests, and public/operator documentation now use the verified 1.5.0/API 530 baseline.
+- Decisions: adopt the explicit released `inventree/inventree:1.5.0` image rather than a floating blocking tag; refresh from an official API 530 schema source with reproducible provenance; audit every implemented endpoint and version-pinned frontend route before changing the baseline. Preserve current MCP behavior unless verified incompatibility requires a separately surfaced product/workflow decision. This story does not claim 1.5.0 is the minimum supported version and does not expose new upstream capabilities solely because they appear in the refreshed schema.
+- Scope: refresh the blocking InvenTree version/API pin, checked OpenAPI schema and provenance, endpoint manifest, immutable frontend route evidence, tests, and aligned project/operator documentation for InvenTree 1.5.0.
+- Acceptance:
+  - Blocking Testcontainers uses explicit `inventree/inventree:1.5.0`, runtime version `1.5.0`, and API revision `530`; no floating blocking tag is introduced.
+  - `docs/api-schema.yaml` is refreshed from an official API 530 schema source with reproducible provenance, release/commit identity, fetch time, and SHA-256 recorded in `docs/api-schema.md`.
+  - `docs/endpoint-manifest.yaml` matches the refreshed schema hash/version and every implemented endpoint entry is revalidated against the new operation, request, response, query, and status contracts.
+  - API 511 to 530 drift and the InvenTree 1.5.0 breaking changes are reviewed for all implemented clients and tools; any required behavior change receives focused tests, while unclear product/workflow decisions are reported rather than guessed.
+  - Immutable frontend router, `BrowserRouter`, and default-base evidence is refreshed to the InvenTree 1.5.0 release and typed web-link route assertions remain valid or are corrected with aligned documentation.
+  - `docs/PLAN.md`, `docs/TASKS.md`, `docs/api-schema.md`, `docs/web-links.md`, `docs/tool-reference.md`, and `docs/operator-recipes.md` remain aligned with the adopted baseline and verified behavior differences.
+  - Focused schema, manifest, version, and route tests plus `GOFLAGS=-trimpath go test -race -p=1 ./...` pass against InvenTree 1.5.0.
+  - Per-package coverage is compared with exact base; Senior Go Developer, Senior QA / Test Architect, Senior Product Manager, and Senior Infosec Reviewer passes complete with every actionable finding resolved or documented.
+
+Tasks:
+
+- [x] Fetch and verify the official API 530 schema and InvenTree 1.5.0 source identities; audit schema and release drift against implemented contracts.
+- [x] Update the explicit Testcontainers baseline, schema snapshot/provenance, endpoint manifest, and focused version/schema tests.
+- [x] Refresh immutable 1.5.0 frontend route evidence and web-link assertions.
+- [x] Align planning, schema-capability, task, tool-reference, web-link, and operator documentation.
+- [x] Compare coverage, run full validation, and resolve the Go, QA, product, and infosec review panel.
+
+- Validation: `go generate ./internal/tools`, `go mod tidy -diff`, `go build ./...`, `go vet ./...`, `golangci-lint run ./...` (0 issues), `go test -tags no_integration_tests ./...`, focused schema/test-environment/web-link tests, `GOFLAGS=-trimpath go test -race -p=1 ./...` against pinned InvenTree 1.5.0, SHA-256 verification, and `git diff --check` pass. The API 511 to 530 audit found no removed manifest-referenced property or new required property and revalidated every manifest path, method, operation, request, response, required query, and status contract. Compared with exact base `origin/main` at `3daee4e`, every no-integration package coverage percentage is unchanged.
+- Review: Senior Go Developer, Senior QA / Test Architect, Senior Product Manager, and Senior Infosec Reviewer passes completed. Go and product identified the mutable schema-refresh URL; it is now commit-pinned with an immediate SHA-256 check. QA additionally required a cross-package contract test coupling the checked OpenAPI version to the explicit Testcontainers API, runtime, and image pins, and identified one stale purchase-price baseline label; both were corrected. Infosec confirmed endpoint auth/scope declarations are unchanged, newly visible auth endpoints and optional fields are not exposed, and existing media/SSRF/token boundaries remain intact. Focused Go, QA, and product reruns found no remaining actionable findings; infosec found none.
+- Residual risk: API 530 adds optional fields and representation changes that this story intentionally does not expose. The official API 530 export was generated from an earlier InvenTree commit than the 1.5.0 release tag, so manifest validation proves the checked contract while the complete pinned-live suite proves exercised release behavior; it cannot prove unimplemented upstream surfaces. Frontend routes remain outside OpenAPI and can drift in a later InvenTree release, so both schema and router evidence must be deliberately refreshed before the next blocking baseline change. This story does not establish the minimum supported InvenTree version.
