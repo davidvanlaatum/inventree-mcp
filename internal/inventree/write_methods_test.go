@@ -78,6 +78,28 @@ func TestWriteMethodsUseExpectedEndpoints(t *testing.T) {
 			},
 		},
 		{
+			name: "create part relation",
+			call: func(ctx context.Context, client *Client) error {
+				_, err := client.CreatePartRelation(ctx, PartRelationCreate{Part1: 10, Part2: 20, Note: "mate"})
+				return err
+			},
+			method: http.MethodPost, path: "/api/part/related/", response: `{"pk":70,"part_1":10,"part_2":20,"note":"mate"}`,
+			assert: func(a *assert.Assertions, body map[string]any) {
+				a.Equal(float64(10), body["part_1"])
+				a.Equal(float64(20), body["part_2"])
+				a.Equal("mate", body["note"])
+			},
+		},
+		{
+			name: "update part relation note only",
+			call: func(ctx context.Context, client *Client) error {
+				_, err := client.UpdatePartRelation(ctx, 70, PatchFields{"note": Set("")})
+				return err
+			},
+			method: http.MethodPatch, path: "/api/part/related/70/", response: `{"pk":70,"part_1":10,"part_2":20,"note":""}`,
+			assert: func(a *assert.Assertions, body map[string]any) { a.Equal("", body["note"]); a.Len(body, 1) },
+		},
+		{
 			name: "create part category preserves explicit fields",
 			call: func(ctx context.Context, client *Client) error {
 				_, err := client.CreatePartCategory(ctx, CategoryCreate{Name: "Passives", Parent: dvgoutils.Ptr(20), DefaultLocation: dvgoutils.Ptr(40), DefaultKeywords: dvgoutils.Ptr(""), Structural: dvgoutils.Ptr(false), Icon: dvgoutils.Ptr("")})
@@ -598,6 +620,25 @@ func TestDeletePurchaseOrderExtraLineUsesStableDetailEndpoint(t *testing.T) {
 	})
 	r.NoError(err)
 	r.NoError(client.DeletePurchaseOrderExtraLine(ctx, 140))
+}
+
+func TestDeletePartRelationUsesStableDetailEndpoint(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	client, err := NewClient(Config{
+		BaseURL:    "https://inventory.example.test",
+		Credential: Credential{Scheme: AuthSchemeToken, Token: "secret"},
+		HTTPClient: &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			a.Equal(http.MethodDelete, req.Method)
+			a.Equal("/api/part/related/70/", req.URL.Path)
+			a.Equal("Token secret", req.Header.Get("Authorization"))
+			return jsonResponse(req, http.StatusNoContent, ""), nil
+		})},
+	})
+	r.NoError(err)
+	r.NoError(client.DeletePartRelation(ctx, 70))
 }
 
 func TestDeletePartParameterUsesStableDetailEndpoint(t *testing.T) {

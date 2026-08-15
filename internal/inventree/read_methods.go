@@ -547,6 +547,23 @@ func (c *Client) SearchPartRelations(ctx context.Context, query PartRelationQuer
 	return listAll[PartRelation](ctx, c, "/api/part/related/", query.values())
 }
 
+type PartRelationPage struct {
+	Count   int
+	Results []PartRelation
+	HasMore bool
+}
+
+func (c *Client) SearchPartRelationsPage(ctx context.Context, query PartRelationQuery) (PartRelationPage, error) {
+	page, err := listPage[PartRelation](ctx, c, "/api/part/related/", query.values())
+	return PartRelationPage{Count: page.Count, Results: page.Results, HasMore: page.Next != nil && *page.Next != ""}, err
+}
+
+func (c *Client) GetPartRelation(ctx context.Context, id int) (PartRelation, error) {
+	var out PartRelation
+	err := c.get(ctx, fmt.Sprintf("/api/part/related/%d/", id), &out)
+	return out, err
+}
+
 func (c *Client) get(ctx context.Context, path string, out any) error {
 	req, err := c.NewRequest(ctx, http.MethodGet, path, nil, nil)
 	if err != nil {

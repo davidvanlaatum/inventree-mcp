@@ -123,7 +123,7 @@ Before assigning a new story ID, inspect `git worktree list --porcelain`, search
 | [F-S39](#f-s39-preserve-complete-external-urls) | Preserve complete functional external URLs while rejecting credentials and retaining safe error redaction. | Done |
 | [F-S40](#f-s40-complete-part-exact-reads-and-scalar-maintenance) | Expose complete exact part records and align ordinary scalar create/update fields with verified serializer behavior. | Done |
 | [F-S41](#f-s41-guarded-part-revision-and-variant-relationships) | Add guarded assignment, replacement, and clearing of part revision and variant family relationships. | Done |
-| [F-S42](#f-s42-related-part-link-administration) | Expose normal related-part reads and guarded create, update, and delete operations. | Ready |
+| [F-S42](#f-s42-related-part-link-administration) | Expose normal related-part reads and guarded create, update, and delete operations. | Done |
 | [F-S43](#f-s43-sourcing-link-detail-completeness) | Complete supplier/manufacturer-part exact reads and long-note maintenance while retaining concise searches. | Ready |
 | [F-S44](#f-s44-company-detail-and-role-completeness) | Complete exact company reads and guarded contact, tax, link, and customer-role maintenance. | Ready |
 | [F-S45](#f-s45-stock-item-detail-completeness) | Expose complete high-value stock-item exact-read fields while retaining concise searches and guarded mutation boundaries. | Ready |
@@ -2155,7 +2155,7 @@ Tasks:
 
 ### F-S42: Related-Part Link Administration
 
-- Status: `Ready`
+- Status: `Done`
 - Issue: [#123](https://github.com/davidvanlaatum/inventree-mcp/issues/123)
 - Depends on: F-S40
 - Decisions: approved by the operator on 2026-08-15. Related-part links must be usable outside `delete_part` preflight and removable without falling back to the InvenTree UI. Relation updates are note-only; changing either linked part requires guarded deletion and creation of a new relation.
@@ -2163,11 +2163,19 @@ Tasks:
 - Acceptance:
   - `list_part_relations` requires a stable part filter and returns bounded results for links where the part appears on either side; `get_part_relation` reads one stable relation.
   - Records expose relation ID, both stable part IDs, and note.
-  - Create rejects self-relations and verified duplicates; update is note-only, supports note clearing, and requires a state-bound token covering the current note so stale plans cannot overwrite concurrent edits. Duplicate checks on both directions use deterministic deduplication, shared request/record budgets, and fail closed when completeness cannot be proven.
+  - Create rejects self-relations and verified duplicates; update is note-only, supports note clearing, and requires a state-bound token covering the current note so changes visible during confirmation preflight invalidate stale plans. Duplicate checks on both directions use deterministic deduplication, shared request/record budgets, and fail closed when completeness cannot be proven.
   - Delete previews the exact relation and returns a token bound to its current endpoints and note; execution requires confirmation plus the matching token, rejects stale plans, verifies removal, and safely handles ambiguous results.
   - Reads require `inventree.read`; create/note update require `inventree.read` and `inventree.write`, remain closed-world and non-idempotent, and are non-destructive. Delete additionally requires `inventree.destructive` and publishes `destructiveHint:true`.
   - Pinned integration coverage verifies endpoint filter semantics, duplicate/direction behavior, CRUD, delete-part unblock behavior, and public documentation.
-- Residual risk: whether relation direction is semantically meaningful and how InvenTree treats reversed duplicates must be pinned before finalizing create recovery identity.
+- Tasks:
+  - [x] Pin upstream generic and directional filter semantics plus undirected reversed-duplicate behavior.
+  - [x] Add bounded list/exact reads and typed related-part client CRUD methods.
+  - [x] Add guarded create, note-only update/clear, and confirmed deletion with exact read-back and bounded recovery.
+  - [x] Align scopes, annotations, manifests, schema notes, tool reference, operator recipe, and prompt guidance.
+  - [x] Complete pinned integration coverage, package coverage comparison, and the required Go, QA, product, and infosec review panel.
+- Validation: `go generate ./internal/tools`, `go mod tidy -diff`, `go build ./...`, `go vet ./...`, `golangci-lint run ./...` (0 issues), focused `go test -tags no_integration_tests ./internal/tools -run 'PartRelation|RelatedPart' -count=1`, pinned `GOFLAGS=-trimpath go test -race ./internal/inventree -run '^TestClientMethodsAgainstInvenTree$/part_relation_crud$' -count=1`, pinned `GOFLAGS=-trimpath go test -race ./internal/tools -run '^TestMilestoneHappyPathToolsAgainstInvenTree$/part_relation_administration$' -count=1`, full `GOFLAGS=-trimpath go test -race -p=1 ./...`, and `git diff --check` pass. Against exact base `origin/main` at `ec35b039`, `internal/inventree` rises from 88.4% to 89.2% and `internal/tools` remains 83.8%; no package-level coverage reduction remains.
+- Review: Senior Go Developer, Senior QA / Test Architect, Senior Product Manager, and Senior Infosec Reviewer passes completed. Findings on exact created-ID read-back, cancellation propagation, truthful partial/recovered outputs, exact shared-budget boundaries, deterministic deduplication, MCP wire contracts, delete-part unblock coverage, stale residual-risk wording, and the non-atomic mutation window were resolved. Focused reruns of all four roles found no remaining actionable findings.
+- Residual risk: pinned InvenTree 1.5.0 treats relation identity as undirected and rejects reversed duplicates, but duplicate/confirmation preflight and mutation are separate requests with no upstream compare-and-swap. A concurrent UI, API, or other MCP replica write in that gap can be overwritten or deleted even though postflight verifies the final MCP state. Keep relation administration single-writer, fail closed when either directional scan exceeds its shared budget, and reconcile exact stable-ID read-back before retrying an ambiguous write.
 
 ### F-S43: Sourcing-Link Detail Completeness
 

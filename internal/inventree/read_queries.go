@@ -150,6 +150,8 @@ type BuildQuery struct {
 
 type PartRelationQuery struct {
 	Part   int
+	Part1  int
+	Part2  int
 	Limit  int
 	Offset int
 }
@@ -413,6 +415,12 @@ func (q PartRelationQuery) values() url.Values {
 	values := url.Values{}
 	if q.Part != 0 {
 		values.Set("part", strconv.Itoa(q.Part))
+	}
+	if q.Part1 != 0 {
+		values.Set("part_1", strconv.Itoa(q.Part1))
+	}
+	if q.Part2 != 0 {
+		values.Set("part_2", strconv.Itoa(q.Part2))
 	}
 	setPagination(values, q.Limit, q.Offset)
 	return values

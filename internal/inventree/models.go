@@ -468,12 +468,17 @@ type Build struct {
 	Status    int    `json:"status"`
 }
 
-// PartRelation is read-only in this client: it exists solely to let
-// delete_part detect and block on related-part links, since InvenTree
-// itself does not protect a part from deletion while one exists.
+// PartRelation is an undirected link between two stable part IDs. InvenTree
+// preserves the submitted endpoint order but treats the pair as bidirectional.
 type PartRelation struct {
 	PK    int    `json:"pk"`
 	Part1 int    `json:"part_1"`
 	Part2 int    `json:"part_2"`
 	Note  string `json:"note"`
+}
+
+type PartRelationCreate struct {
+	Part1 int    `json:"part_1"`
+	Part2 int    `json:"part_2"`
+	Note  string `json:"note,omitempty"`
 }

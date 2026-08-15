@@ -256,6 +256,26 @@ func (c *Client) DeletePart(ctx context.Context, id int) error {
 	return c.DoJSON(req, nil)
 }
 
+func (c *Client) CreatePartRelation(ctx context.Context, input PartRelationCreate) (PartRelation, error) {
+	var out PartRelation
+	err := c.Post(ctx, "/api/part/related/", input, &out)
+	return out, err
+}
+
+func (c *Client) UpdatePartRelation(ctx context.Context, id int, fields PatchFields) (PartRelation, error) {
+	var out PartRelation
+	err := c.Patch(ctx, fmt.Sprintf("/api/part/related/%d/", id), fields, &out)
+	return out, err
+}
+
+func (c *Client) DeletePartRelation(ctx context.Context, id int) error {
+	req, err := c.NewRequest(ctx, http.MethodDelete, fmt.Sprintf("/api/part/related/%d/", id), nil, nil)
+	if err != nil {
+		return err
+	}
+	return c.DoJSON(req, nil)
+}
+
 func (c *Client) CreatePartCategory(ctx context.Context, input CategoryCreate) (Category, error) {
 	var out Category
 	err := c.Post(ctx, "/api/part/category/", input, &out)

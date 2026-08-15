@@ -261,6 +261,73 @@ func TestMilestoneHappyPathToolsAgainstInvenTree(t *testing.T) {
 		a.Nil(cleared.Record.VariantOf)
 	})
 
+	t.Run("part_relation_administration", func(t *testing.T) {
+		r := require.New(t)
+		a := assert.New(t)
+		ctx, _, _ := testhandler.SetupTestHandler(t)
+		fixture := newMilestoneToolFixture(t, shared)
+		category := fixture.ensure(t, testenv.FixtureCategory)
+		newPart := func(suffix string) inventree.Part {
+			name, err := fixture.run.Name(suffix)
+			r.NoError(err)
+			part, err := fixture.client.CreatePart(ctx, inventree.PartCreate{Name: name, Category: &category.ID, Active: dvgoutils.Ptr(true)})
+			r.NoError(err)
+			return part
+		}
+		part1, part2 := newPart("relation-tool-one"), newPart("relation-tool-two")
+		_, created, err := createPartRelation(fixture.deps())(ctx, &mcp.CallToolRequest{}, CreatePartRelationInput{Part1ID: part1.PK, Part2ID: part2.PK, Note: "tool-created"})
+		r.NoError(err)
+		a.Equal(StatusOK, created.Status)
+		r.NotNil(created.Record)
+		a.True(created.Verified)
+
+		_, duplicate, err := createPartRelation(fixture.deps())(ctx, &mcp.CallToolRequest{}, CreatePartRelationInput{Part1ID: part2.PK, Part2ID: part1.PK})
+		r.NoError(err)
+		a.Equal(StatusClarificationRequired, duplicate.Status)
+		r.Len(duplicate.Candidates, 1)
+		a.Equal(created.Record.PK, duplicate.Candidates[0].PK)
+
+		_, listed, err := listPartRelations(fixture.deps())(ctx, &mcp.CallToolRequest{}, ListPartRelationsInput{PartID: part2.PK})
+		r.NoError(err)
+		a.Equal(StatusOK, listed.Status)
+		r.Len(listed.Results, 1)
+		a.Equal(created.Record.PK, listed.Results[0].PK)
+		_, exact, err := getPartRelation(fixture.deps())(ctx, &mcp.CallToolRequest{}, IDInput{ID: created.Record.PK})
+		r.NoError(err)
+		a.Equal(StatusOK, exact.Status)
+		a.Equal("tool-created", exact.Record.Note)
+
+		note := "updated note"
+		_, updatePlan, err := updatePartRelation(fixture.deps())(ctx, &mcp.CallToolRequest{}, UpdatePartRelationInput{ID: created.Record.PK, Note: &note})
+		r.NoError(err)
+		a.Equal(StatusClarificationRequired, updatePlan.Status)
+		_, updated, err := updatePartRelation(fixture.deps())(ctx, &mcp.CallToolRequest{}, UpdatePartRelationInput{ID: created.Record.PK, Note: &note, Confirm: true, PlanHash: updatePlan.PlanHash})
+		r.NoError(err)
+		a.Equal(StatusOK, updated.Status)
+		a.Equal(note, updated.Record.Note)
+
+		_, deletePlan, err := deletePartRelation(fixture.deps())(ctx, &mcp.CallToolRequest{}, DeletePartRelationInput{ID: created.Record.PK})
+		r.NoError(err)
+		a.Equal(StatusClarificationRequired, deletePlan.Status)
+		_, deleted, err := deletePartRelation(fixture.deps())(ctx, &mcp.CallToolRequest{}, DeletePartRelationInput{ID: created.Record.PK, Confirm: true, PlanHash: deletePlan.PlanHash})
+		r.NoError(err)
+		a.Equal(StatusOK, deleted.Status)
+		a.True(deleted.Verified)
+
+		part1, err = fixture.client.UpdatePart(ctx, part1.PK, inventree.PatchFields{"active": inventree.Set(false)})
+		r.NoError(err)
+		a.False(part1.Active)
+		_, deletePartPreview, err := deletePart(fixture.deps())(ctx, &mcp.CallToolRequest{}, DeletePartInput{ID: part1.PK})
+		r.NoError(err)
+		a.Equal(StatusClarificationRequired, deletePartPreview.Status)
+		a.Empty(deletePartPreview.RelatedParts, "verified relation deletion must clear the MCP dependency preflight")
+		a.Nil(deletePartPreview.Blocking)
+		_, deletedPart, err := deletePart(fixture.deps())(ctx, &mcp.CallToolRequest{}, DeletePartInput{ID: part1.PK, Confirm: true})
+		r.NoError(err)
+		a.Equal(StatusOK, deletedPart.Status)
+		a.True(deletedPart.Verified)
+	})
+
 	t.Run("part_category_administration", func(t *testing.T) {
 		r := require.New(t)
 		a := assert.New(t)
@@ -2128,13 +2195,14 @@ func TestMilestoneHappyPathToolsAgainstInvenTree(t *testing.T) {
 }
 
 type milestoneToolFixture struct {
-	shared              *testenv.SharedInvenTree
-	run                 *testenv.Run
-	account             *testenv.Account
-	client              *inventree.Client
-	stockPlanStore      *stockPlanStore
-	parameterPlanStore  *parameterPlanStore
-	partFamilyPlanStore *partFamilyPlanStore
+	shared                *testenv.SharedInvenTree
+	run                   *testenv.Run
+	account               *testenv.Account
+	client                *inventree.Client
+	stockPlanStore        *stockPlanStore
+	parameterPlanStore    *parameterPlanStore
+	partFamilyPlanStore   *partFamilyPlanStore
+	partRelationPlanStore *partRelationPlanStore
 }
 
 type attachmentTarget struct {
@@ -2175,13 +2243,14 @@ func newMilestoneToolFixture(t *testing.T, shared *testenv.SharedInvenTree) mile
 	r.NoError(err)
 
 	return milestoneToolFixture{
-		shared:              shared,
-		run:                 run,
-		account:             account,
-		client:              client,
-		stockPlanStore:      newStockPlanStore(time.Now, randomStockPlanToken),
-		parameterPlanStore:  newParameterPlanStore(time.Now, randomStockPlanToken),
-		partFamilyPlanStore: newPartFamilyPlanStore(time.Now, randomStockPlanToken),
+		shared:                shared,
+		run:                   run,
+		account:               account,
+		client:                client,
+		stockPlanStore:        newStockPlanStore(time.Now, randomStockPlanToken),
+		parameterPlanStore:    newParameterPlanStore(time.Now, randomStockPlanToken),
+		partFamilyPlanStore:   newPartFamilyPlanStore(time.Now, randomStockPlanToken),
+		partRelationPlanStore: newPartRelationPlanStore(time.Now, randomStockPlanToken),
 	}
 }
 
@@ -2190,11 +2259,12 @@ func (f milestoneToolFixture) deps() Dependencies {
 		ClientFromContext: func(context.Context) (any, error) {
 			return f.client, nil
 		},
-		UploadMode:          upload.ModeStdio,
-		UploadMaxBytes:      upload.DefaultMaxBytes,
-		stockPlanStore:      f.stockPlanStore,
-		parameterPlanStore:  f.parameterPlanStore,
-		partFamilyPlanStore: f.partFamilyPlanStore,
+		UploadMode:            upload.ModeStdio,
+		UploadMaxBytes:        upload.DefaultMaxBytes,
+		stockPlanStore:        f.stockPlanStore,
+		parameterPlanStore:    f.parameterPlanStore,
+		partFamilyPlanStore:   f.partFamilyPlanStore,
+		partRelationPlanStore: f.partRelationPlanStore,
 	}
 }
 
