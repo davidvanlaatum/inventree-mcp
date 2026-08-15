@@ -200,10 +200,13 @@ func TestMilestoneHappyPathToolsAgainstInvenTree(t *testing.T) {
 		_, err = fixture.client.UpdatePart(ctx, cycleB.PK, inventree.PatchFields{"revision": inventree.Set("B"), "variant_of": inventree.Set(template.PK), "revision_of": inventree.Set(cycleA.PK)})
 		r.NoError(err)
 		_, err = fixture.client.UpdatePart(ctx, cycleA.PK, inventree.PatchFields{"revision_of": inventree.Set(cycleB.PK)})
-		r.Error(err)
-		var cycleErr *inventree.APIError
-		r.ErrorAs(err, &cycleErr)
-		a.Equal(http.StatusBadRequest, cycleErr.StatusCode)
+		r.NoError(err, "pinned InvenTree accepts revision cycles, so the MCP must enforce this guard")
+		_, existingCycle, err := updatePartFamilyRelationships(fixture.deps())(ctx, &mcp.CallToolRequest{}, UpdatePartFamilyRelationshipsInput{ID: cycleA.PK, ClearVariantOf: true, DryRun: true})
+		r.NoError(err)
+		a.Equal(StatusClarificationRequired, existingCycle.Status)
+		r.NotNil(existingCycle.Clarification)
+		a.Equal("revision_of_id", existingCycle.Clarification.Field)
+		a.Contains(existingCycle.Clarification.Reason, "cycle")
 
 		_, err = fixture.client.UpdatePart(ctx, root.PK, inventree.PatchFields{"variant_of": inventree.Set(template.PK)})
 		r.NoError(err)
