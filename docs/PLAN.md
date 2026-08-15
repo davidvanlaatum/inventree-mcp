@@ -495,6 +495,8 @@ Important behaviors:
 - Support variant/template relationships if enabled by the InvenTree instance.
 - Validate units, category, default location, and supplier/manufacturer references before write.
 - `update_part` should use PATCH and serialize only supplied fields.
+- Keep `search_parts` concise and use `get_part` as the exhaustive approved API 530 scalar projection. A checked field inventory must classify every default serializer field so nested detail, deferred workflows, write-only commands, and raw barcode data cannot leak into the exact surface through schema drift.
+- Part scalar create/update supports consumable/template/lock/salable/testable flags, default expiry, keywords, complete credential-free HTTP(S) link, minimum/maximum stock, revision text, and Markdown notes. Preserve omission versus false/zero, use explicit null-clearing controls for nullable additions, reject invalid effective stock bounds, treat `creation_user` as read-only, and perform exact stable-ID read-back under `inventree.read` plus `inventree.write`.
 - Part-category administration trims names, refuses case-insensitive same-parent duplicates within a fail-closed 1,000-record scan, validates stable parent/default-location IDs, and uses PATCH with explicit null-clearing controls.
 - Category reparenting may include direct parts and descendants only after `confirm:true` hierarchy review; self/descendant cycles are refused. Structural-state changes also require confirmation, and promotion to structural is refused while direct parts exist.
 - Return recommended-but-missing field warnings for conventions such as IPN format, units, revision, default location, purchaseability, assembly flags, templates, and custom parameters when they can be detected.

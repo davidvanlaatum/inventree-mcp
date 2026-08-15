@@ -100,6 +100,12 @@ func (c *Client) GetPart(ctx context.Context, id int) (Part, error) {
 	return out, err
 }
 
+func (c *Client) GetPartDetail(ctx context.Context, id int) (PartDetail, error) {
+	var out PartDetail
+	err := c.get(ctx, fmt.Sprintf("/api/part/%d/", id), &out)
+	return out, err
+}
+
 func (c *Client) SearchPartCategories(ctx context.Context, query SearchQuery) ([]Category, error) {
 	return listAll[Category](ctx, c, "/api/part/category/", query.values())
 }

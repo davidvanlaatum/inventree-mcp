@@ -15,18 +15,30 @@ import (
 )
 
 type PartCreate struct {
-	Name            string  `json:"name"`
-	Description     string  `json:"description,omitempty"`
-	Category        *int    `json:"category,omitempty"`
-	IPN             string  `json:"IPN,omitempty"`
-	Units           *string `json:"units,omitempty"`
-	Active          *bool   `json:"active,omitempty"`
-	Assembly        *bool   `json:"assembly,omitempty"`
-	Component       *bool   `json:"component,omitempty"`
-	Purchaseable    *bool   `json:"purchaseable,omitempty"`
-	Trackable       *bool   `json:"trackable,omitempty"`
-	Virtual         *bool   `json:"virtual,omitempty"`
-	DefaultLocation *int    `json:"default_location,omitempty"`
+	Name            string   `json:"name"`
+	Description     string   `json:"description,omitempty"`
+	Category        *int     `json:"category,omitempty"`
+	IPN             string   `json:"IPN,omitempty"`
+	Units           *string  `json:"units,omitempty"`
+	Active          *bool    `json:"active,omitempty"`
+	Assembly        *bool    `json:"assembly,omitempty"`
+	Component       *bool    `json:"component,omitempty"`
+	Purchaseable    *bool    `json:"purchaseable,omitempty"`
+	Trackable       *bool    `json:"trackable,omitempty"`
+	Virtual         *bool    `json:"virtual,omitempty"`
+	DefaultLocation *int     `json:"default_location,omitempty"`
+	Consumable      *bool    `json:"consumable,omitempty"`
+	DefaultExpiry   *int     `json:"default_expiry,omitempty"`
+	IsTemplate      *bool    `json:"is_template,omitempty"`
+	Keywords        *string  `json:"keywords,omitempty"`
+	Link            *string  `json:"link,omitempty"`
+	Locked          *bool    `json:"locked,omitempty"`
+	MinimumStock    *float64 `json:"minimum_stock,omitempty"`
+	MaximumStock    *float64 `json:"maximum_stock,omitempty"`
+	Revision        *string  `json:"revision,omitempty"`
+	Salable         *bool    `json:"salable,omitempty"`
+	Testable        *bool    `json:"testable,omitempty"`
+	Notes           *string  `json:"notes,omitempty"`
 }
 
 type CompanyCreate struct {

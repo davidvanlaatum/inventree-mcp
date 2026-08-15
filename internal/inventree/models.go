@@ -51,6 +51,62 @@ type Part struct {
 	VariantOf       *int    `json:"variant_of"`
 }
 
+// PartDetail is the approved complete scalar projection returned by the exact
+// part endpoint. Embedded/nested records and deferred workflow fields are
+// intentionally omitted; see PartFieldInventory for the pinned classification.
+type PartDetail struct {
+	WebLinkFields
+	PK                      int            `json:"pk"`
+	Name                    string         `json:"name"`
+	FullName                string         `json:"full_name"`
+	Description             string         `json:"description"`
+	IPN                     string         `json:"IPN"`
+	Category                *int           `json:"category"`
+	CategoryName            string         `json:"category_name"`
+	CategoryDefaultLocation *int           `json:"category_default_location"`
+	DefaultLocation         *int           `json:"default_location"`
+	DefaultExpiry           int            `json:"default_expiry"`
+	Active                  bool           `json:"active"`
+	Assembly                bool           `json:"assembly"`
+	Component               bool           `json:"component"`
+	Purchaseable            bool           `json:"purchaseable"`
+	Salable                 bool           `json:"salable"`
+	Trackable               bool           `json:"trackable"`
+	Virtual                 bool           `json:"virtual"`
+	Consumable              bool           `json:"consumable"`
+	IsTemplate              bool           `json:"is_template"`
+	Locked                  bool           `json:"locked"`
+	Testable                bool           `json:"testable"`
+	Starred                 bool           `json:"starred"`
+	Image                   *string        `json:"image"`
+	Thumbnail               string         `json:"thumbnail"`
+	Keywords                *string        `json:"keywords"`
+	Link                    *string        `json:"link"`
+	MinimumStock            float64        `json:"minimum_stock"`
+	MaximumStock            float64        `json:"maximum_stock"`
+	Notes                   *string        `json:"notes"`
+	Revision                *string        `json:"revision"`
+	Units                   *string        `json:"units"`
+	CreationDate            *string        `json:"creation_date"`
+	CreationUser            *int           `json:"creation_user"`
+	PricingMin              *DecimalString `json:"pricing_min"`
+	PricingMax              *DecimalString `json:"pricing_max"`
+	PricingUpdated          *string        `json:"pricing_updated"`
+	AllocatedToBuildOrders  *float64       `json:"allocated_to_build_orders"`
+	AllocatedToSalesOrders  *float64       `json:"allocated_to_sales_orders"`
+	Building                *float64       `json:"building"`
+	ScheduledToBuild        *float64       `json:"scheduled_to_build"`
+	InStock                 *float64       `json:"in_stock"`
+	Ordering                *float64       `json:"ordering"`
+	RequiredForBuildOrders  *int           `json:"required_for_build_orders"`
+	RequiredForSalesOrders  *int           `json:"required_for_sales_orders"`
+	StockItemCount          *int           `json:"stock_item_count"`
+	TotalInStock            *float64       `json:"total_in_stock"`
+	ExternalStock           *float64       `json:"external_stock"`
+	UnallocatedStock        *float64       `json:"unallocated_stock"`
+	VariantStock            *float64       `json:"variant_stock"`
+}
+
 type PartPage struct {
 	Count   int
 	Results []Part

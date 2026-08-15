@@ -2,6 +2,7 @@ package tools
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"testing"
@@ -9,6 +10,7 @@ import (
 	"github.com/davidvanlaatum/dvgoutils"
 	"github.com/davidvanlaatum/dvgoutils/logging/testhandler"
 	"github.com/davidvanlaatum/inventree-mcp/internal/inventree"
+	"github.com/davidvanlaatum/inventree-mcp/internal/weblinks"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -74,6 +76,100 @@ func TestGetPartReturnsStructuredNotFoundForMissingRecord(t *testing.T) {
 	r.NotNil(result)
 	a.Equal(StatusNotFound, result.Content[0].(*mcp.TextContent).Text)
 	a.Equal(StatusNotFound, output.Status)
+	a.Nil(output.Record)
+	wire, marshalErr := json.Marshal(output)
+	r.NoError(marshalErr)
+	var encoded map[string]any
+	r.NoError(json.Unmarshal(wire, &encoded))
+	_, hasRecord := encoded["record"]
+	a.False(hasRecord)
+}
+
+func TestGetPartNotFoundOmitsRecordThroughTypedMCPBoundary(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	clientTransport, serverTransport := mcp.NewInMemoryTransports()
+	serverDone := make(chan error, 1)
+	go func() {
+		server := mcp.NewServer(&mcp.Implementation{Name: "part-not-found-test-server", Version: "v0.0.0"}, nil)
+		Register(server, Dependencies{ClientFromContext: func(context.Context) (any, error) {
+			return &fakeMilestoneLookupClient{getPartErr: &inventree.APIError{StatusCode: http.StatusNotFound, Kind: inventree.ErrorKindNotFound}}, nil
+		}})
+		serverDone <- server.Run(ctx, serverTransport)
+	}()
+
+	client := mcp.NewClient(&mcp.Implementation{Name: "part-not-found-test-client", Version: "v0.0.0"}, nil)
+	session, err := client.Connect(ctx, clientTransport, nil)
+	r.NoError(err)
+	defer func() {
+		r.NoError(session.Close())
+		cancel()
+		<-serverDone
+	}()
+
+	result, err := session.CallTool(ctx, &mcp.CallToolParams{Name: GetPartToolName, Arguments: map[string]any{"id": 404}})
+	r.NoError(err)
+	r.NotNil(result)
+	a.False(result.IsError)
+	structured := result.StructuredContent.(map[string]any)
+	a.Equal(StatusNotFound, structured["status"])
+	_, hasRecord := structured["record"]
+	a.False(hasRecord)
+}
+
+func TestGetPartReturnsCompleteApprovedDetailAndSanitizesExternalLink(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	complete := "https://example.test/parts/10?view=full#notes"
+	pricing := inventree.DecimalString("1.250000")
+	stock := 4.5
+	fake := &fakeMilestoneLookupClient{partDetail: inventree.PartDetail{
+		PK: 10, Name: "resistor", IPN: "R-10K", Link: &complete, Notes: dvgoutils.Ptr("markdown"),
+		PricingMin: &pricing, InStock: &stock, CreationUser: dvgoutils.Ptr(7), Consumable: true,
+	}}
+
+	resolver, err := weblinks.New("https://inventory.example.test", "INVENTREE_WEB_URL", true)
+	r.NoError(err)
+	deps := depsForFake(fake)
+	deps.WebLinks = resolver
+	_, output, err := getPart(deps)(ctx, &mcp.CallToolRequest{}, IDInput{ID: 10})
+	r.NoError(err)
+	a.Equal(StatusOK, output.Status)
+	a.Equal("R-10K", output.Record.IPN)
+	a.Equal(complete, output.Record.Link)
+	a.Equal(dvgoutils.Ptr("markdown"), output.Record.Notes)
+	a.Equal(&pricing, output.Record.PricingMin)
+	a.Equal(&stock, output.Record.InStock)
+	a.Equal(dvgoutils.Ptr(7), output.Record.CreationUser)
+	a.True(output.Record.Consumable)
+	a.Equal("https://inventory.example.test/part/10/", output.Record.WebURL)
+
+	credentialed := "https://user:pass@example.test/secret"
+	fake.partDetail.Link = &credentialed
+	_, output, err = getPart(deps)(ctx, &mcp.CallToolRequest{}, IDInput{ID: 10})
+	r.NoError(err)
+	a.Empty(output.Record.Link)
+	encoded, err := json.Marshal(output.Record)
+	r.NoError(err)
+	a.NotContains(string(encoded), "user:pass")
+	a.NotContains(string(encoded), "secret")
+}
+
+func TestGetPartRejectsMismatchedExactIdentity(t *testing.T) {
+	t.Parallel()
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	fake := &fakeMilestoneLookupClient{partDetail: inventree.PartDetail{PK: 11}}
+
+	_, _, err := getPart(depsForFake(fake))(ctx, &mcp.CallToolRequest{}, IDInput{ID: 10})
+
+	require.ErrorContains(t, err, "mismatched part identity")
 }
 
 func TestGetPartCategoryRejectsMismatchedIdentity(t *testing.T) {
@@ -512,6 +608,10 @@ type fakeMilestoneLookupClient struct {
 	downloadedPartImage         inventree.DownloadedPartImage
 	downloadPartImageErr        error
 	getPartErr                  error
+	getPartDetailErr            error
+	getPartDetailAfterFirstErr  error
+	partDetailAfterFirst        *inventree.PartDetail
+	getPartDetailCalls          int
 	getCompanyErr               error
 	companyDetail               *inventree.CompanyDetail
 	companyDetailErr            error
@@ -520,6 +620,7 @@ type fakeMilestoneLookupClient struct {
 	manufacturerPartDetail      *inventree.ManufacturerPartDetail
 	manufacturerPartDetailErr   error
 	part                        inventree.Part
+	partDetail                  inventree.PartDetail
 	partCategory                inventree.Category
 	partCategoryErr             error
 	createdPart                 bool
@@ -537,6 +638,7 @@ type fakeMilestoneLookupClient struct {
 	deletedAttachment           bool
 	setPartPrimaryImage         bool
 	createPartErr               error
+	createPartResult            *inventree.Part
 	updatePartErr               error
 	createCompanyErr            error
 	searchManufacturersErr      error
@@ -591,6 +693,31 @@ func (f *fakeMilestoneLookupClient) GetPart(_ context.Context, id int) (inventre
 		return f.part, nil
 	}
 	return inventree.Part{PK: id, Name: "part"}, nil
+}
+
+func (f *fakeMilestoneLookupClient) GetPartDetail(_ context.Context, id int) (inventree.PartDetail, error) {
+	f.getPartDetailCalls++
+	if f.getPartDetailCalls > 1 {
+		if f.getPartDetailAfterFirstErr != nil {
+			return inventree.PartDetail{}, f.getPartDetailAfterFirstErr
+		}
+		if f.partDetailAfterFirst != nil {
+			return *f.partDetailAfterFirst, nil
+		}
+	}
+	if f.getPartDetailErr != nil {
+		return inventree.PartDetail{}, f.getPartDetailErr
+	}
+	if f.getPartErr != nil {
+		return inventree.PartDetail{}, f.getPartErr
+	}
+	if f.partDetail.PK != 0 {
+		return f.partDetail, nil
+	}
+	if f.part.PK != 0 {
+		return inventree.PartDetail{PK: f.part.PK, Name: f.part.Name, MinimumStock: 0, MaximumStock: 0}, nil
+	}
+	return inventree.PartDetail{PK: id, Name: "part"}, nil
 }
 
 func (f *fakeMilestoneLookupClient) GetCompany(_ context.Context, id int) (inventree.Company, error) {
@@ -783,6 +910,9 @@ func (f *fakeMilestoneLookupClient) CreatePart(_ context.Context, input inventre
 	f.lastCreatePart = input
 	if f.createPartErr != nil {
 		return inventree.Part{}, f.createPartErr
+	}
+	if f.createPartResult != nil {
+		return *f.createPartResult, nil
 	}
 	return inventree.Part{PK: 10, Name: input.Name, Category: input.Category, Purchaseable: input.Purchaseable != nil && *input.Purchaseable}, nil
 }

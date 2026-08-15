@@ -31,9 +31,14 @@ func TestWriteMethodsUseExpectedEndpoints(t *testing.T) {
 			name: "create part",
 			call: func(ctx context.Context, client *Client) error {
 				_, err := client.CreatePart(ctx, PartCreate{
-					Name:         "10k resistor",
-					Category:     dvgoutils.Ptr(20),
-					Purchaseable: dvgoutils.Ptr(false),
+					Name:          "10k resistor",
+					Category:      dvgoutils.Ptr(20),
+					Purchaseable:  dvgoutils.Ptr(false),
+					Consumable:    dvgoutils.Ptr(false),
+					DefaultExpiry: dvgoutils.Ptr(0),
+					MinimumStock:  dvgoutils.Ptr(0.0),
+					MaximumStock:  dvgoutils.Ptr(10.5),
+					Notes:         dvgoutils.Ptr("markdown"),
 				})
 				return err
 			},
@@ -44,6 +49,11 @@ func TestWriteMethodsUseExpectedEndpoints(t *testing.T) {
 				a.Equal("10k resistor", body["name"])
 				a.Equal(float64(20), body["category"])
 				a.Equal(false, body["purchaseable"])
+				a.Equal(false, body["consumable"])
+				a.Equal(float64(0), body["default_expiry"])
+				a.Equal(float64(0), body["minimum_stock"])
+				a.Equal(10.5, body["maximum_stock"])
+				a.Equal("markdown", body["notes"])
 				_, hasCustomerRole := body["is_customer"]
 				a.False(hasCustomerRole)
 			},

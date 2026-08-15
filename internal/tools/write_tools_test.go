@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"net/netip"
@@ -516,6 +517,66 @@ func TestUploadAttachmentAllowlistRecoveryReturnsStructuredOutputThroughMCP(t *t
 	a.Contains(recovery["recovery_plan"], "Ask the operator")
 }
 
+func TestPartWriteRecoveryPassesTypedMCPOutputValidation(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	createFake := &fakeMilestoneLookupClient{getPartDetailErr: errors.New("read failed")}
+	updateFake := &fakeMilestoneLookupClient{
+		partDetail:                 inventree.PartDetail{PK: 10},
+		getPartDetailAfterFirstErr: errors.New("read failed"),
+	}
+	clientCalls := 0
+	clientTransport, serverTransport := mcp.NewInMemoryTransports()
+	serverDone := make(chan error, 1)
+	go func() {
+		server := mcp.NewServer(&mcp.Implementation{Name: "part-recovery-test-server", Version: "v0.0.0"}, nil)
+		Register(server, Dependencies{
+			EnableWriteTools: true,
+			ClientFromContext: func(context.Context) (any, error) {
+				clientCalls++
+				if clientCalls == 1 {
+					return createFake, nil
+				}
+				return updateFake, nil
+			},
+		})
+		serverDone <- server.Run(ctx, serverTransport)
+	}()
+
+	client := mcp.NewClient(&mcp.Implementation{Name: "part-recovery-test-client", Version: "v0.0.0"}, nil)
+	session, err := client.Connect(ctx, clientTransport, nil)
+	r.NoError(err)
+	defer func() {
+		r.NoError(session.Close())
+		cancel()
+		<-serverDone
+	}()
+
+	for _, call := range []struct {
+		name      string
+		arguments map[string]any
+	}{
+		{name: CreatePartToolName, arguments: map[string]any{"name": "new", "category_id": 20}},
+		{name: UpdatePartToolName, arguments: map[string]any{"id": 10, "name": "replacement"}},
+	} {
+		result, callErr := session.CallTool(ctx, &mcp.CallToolParams{Name: call.name, Arguments: call.arguments})
+		r.NoError(callErr)
+		r.NotNil(result)
+		a.False(result.IsError)
+		structured := result.StructuredContent.(map[string]any)
+		a.Equal(StatusPartialFailure, structured["status"])
+		_, hasRecord := structured["record"]
+		a.False(hasRecord)
+		a.Equal(map[string]any{"pk": float64(10)}, structured["recovery"])
+		a.NotEmpty(structured["recovery_plan"])
+	}
+}
+
 func TestWriteToolAuthorizationsUseWriteScope(t *testing.T) {
 	t.Parallel()
 	r := require.New(t)
@@ -525,7 +586,7 @@ func TestWriteToolAuthorizationsUseWriteScope(t *testing.T) {
 		auth, ok := ToolAuthorizations[name]
 		r.True(ok, "missing authorization for %s", name)
 		switch name {
-		case CreateCompanyToolName, CreateSupplierPartToolName, CreateManufacturerPartToolName, UpsertPartWorkflowToolName, CreateParameterTemplateToolName, UpdateParameterTemplateToolName, CreateCategoryParameterDefaultToolName, UpdateCategoryParameterDefaultToolName, CreatePartCategoryToolName, CreateStockLocationToolName, CreatePurchaseOrderExtraLineToolName, CreatePurchaseOrderWorkflowToolName, IssuePurchaseOrderToolName, CompletePurchaseOrderToolName:
+		case CreatePartToolName, UpdatePartToolName, CreateCompanyToolName, CreateSupplierPartToolName, CreateManufacturerPartToolName, UpsertPartWorkflowToolName, CreateParameterTemplateToolName, UpdateParameterTemplateToolName, CreateCategoryParameterDefaultToolName, UpdateCategoryParameterDefaultToolName, CreatePartCategoryToolName, CreateStockLocationToolName, CreatePurchaseOrderExtraLineToolName, CreatePurchaseOrderWorkflowToolName, IssuePurchaseOrderToolName, CompletePurchaseOrderToolName:
 			a.Equal("write", auth.MutationClass)
 			a.Equal([]string{ScopeInventreeRead, ScopeInventreeWrite}, auth.Scopes)
 			a.Equal(WriteAnnotations, auth.Annotations)
@@ -646,10 +707,26 @@ func TestWriteToolInputsExcludeSalesAndCustomerWorkflowFields(t *testing.T) {
 			jsonName := jsonFieldName(field.Tag.Get("json"))
 			a.NotContains(strings.ToLower(field.Name), "customer")
 			a.NotContains(strings.ToLower(jsonName), "customer")
-			a.NotContains(strings.ToLower(field.Name), "salable")
-			a.NotContains(strings.ToLower(jsonName), "salable")
+			if jsonName != "salable" {
+				a.NotContains(strings.ToLower(field.Name), "salable")
+				a.NotContains(strings.ToLower(jsonName), "salable")
+			}
 			a.NotContains(strings.ToLower(field.Name), "sales")
 			a.NotContains(strings.ToLower(jsonName), "sales")
+		}
+	}
+}
+
+func TestPartWriteInputsExcludeReadOnlyAndDeferredSerializerFields(t *testing.T) {
+	t.Parallel()
+	a := assert.New(t)
+	for _, schemaType := range []reflect.Type{reflect.TypeOf(CreatePartInput{}), reflect.TypeOf(UpdatePartInput{}), reflect.TypeOf(inventree.PartCreate{})} {
+		fields := map[string]bool{}
+		for _, field := range reflect.VisibleFields(schemaType) {
+			fields[jsonFieldName(field.Tag.Get("json"))] = true
+		}
+		for _, excluded := range []string{"creation_user", "responsible", "revision_of", "variant_of", "barcode_hash", "existing_image", "duplicate", "initial_stock", "initial_supplier", "copy_category_parameters", "tags", "price_breaks"} {
+			a.False(fields[excluded], "%s must not expose %s", schemaType.Name(), excluded)
 		}
 	}
 }
@@ -1472,6 +1549,40 @@ func TestCreatePartPassesExplicitFalseValues(t *testing.T) {
 	a.Equal(inventree.PartCreate{Name: "10k resistor", Category: dvgoutils.Ptr(20), Purchaseable: dvgoutils.Ptr(false)}, fake.lastCreatePart)
 }
 
+func TestCreatePartPassesApprovedScalarFieldsAndValidatesStockBounds(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	link := " https://example.test/parts/10?source=mcp#detail "
+	fake := &fakeMilestoneLookupClient{}
+
+	_, output, err := createPart(depsForFake(fake))(ctx, &mcp.CallToolRequest{}, CreatePartInput{
+		Name: "10k resistor", CategoryID: 20, Consumable: dvgoutils.Ptr(false), DefaultExpiry: dvgoutils.Ptr(0),
+		IsTemplate: dvgoutils.Ptr(false), Keywords: dvgoutils.Ptr("resistor 10k"), Link: &link,
+		Locked: dvgoutils.Ptr(false), MinimumStock: dvgoutils.Ptr(2.5), MaximumStock: dvgoutils.Ptr(10.0),
+		Revision: dvgoutils.Ptr("A"), Salable: dvgoutils.Ptr(false), Testable: dvgoutils.Ptr(true), Notes: dvgoutils.Ptr("markdown"),
+	})
+	r.NoError(err)
+	a.Equal(StatusOK, output.Status)
+	r.NotNil(fake.lastCreatePart.Link)
+	a.Equal("https://example.test/parts/10?source=mcp#detail", *fake.lastCreatePart.Link)
+	a.Equal(dvgoutils.Ptr(0), fake.lastCreatePart.DefaultExpiry)
+	a.Equal(dvgoutils.Ptr(2.5), fake.lastCreatePart.MinimumStock)
+	a.Equal(dvgoutils.Ptr(10.0), fake.lastCreatePart.MaximumStock)
+	a.Equal(dvgoutils.Ptr(false), fake.lastCreatePart.Consumable)
+	a.Equal(dvgoutils.Ptr(false), fake.lastCreatePart.Salable)
+	a.Equal(dvgoutils.Ptr(true), fake.lastCreatePart.Testable)
+
+	fake = &fakeMilestoneLookupClient{}
+	_, rejected, err := createPart(depsForFake(fake))(ctx, &mcp.CallToolRequest{}, CreatePartInput{Name: "bad", CategoryID: 20, MinimumStock: dvgoutils.Ptr(5.0), MaximumStock: dvgoutils.Ptr(4.0)})
+	r.NoError(err)
+	a.Equal(StatusValidationFailed, rejected.Status)
+	r.NotNil(rejected.Validation)
+	a.Equal("maximum_stock", rejected.Validation.Fields[0].Field)
+	a.False(fake.createdPart)
+}
+
 func TestUpdatePartPatchPreservesExplicitEmptyAndFalse(t *testing.T) {
 	t.Parallel()
 	r := require.New(t)
@@ -1486,6 +1597,196 @@ func TestUpdatePartPatchPreservesExplicitEmptyAndFalse(t *testing.T) {
 	r.NoError(err)
 	a.Equal(StatusOK, output.Status)
 	a.Equal(inventree.PatchFields{"description": inventree.Set(""), "active": inventree.Set(false)}, fake.lastUpdatePartFields)
+}
+
+func TestCreatePartExactReadbackFailuresReturnURLFreeRecovery(t *testing.T) {
+	t.Parallel()
+	link := "https://example.test/part?token=secret#private"
+	for _, tc := range []struct {
+		name string
+		fake *fakeMilestoneLookupClient
+	}{
+		{name: "read error", fake: &fakeMilestoneLookupClient{getPartDetailErr: errors.New("read failed")}},
+		{name: "identity mismatch", fake: &fakeMilestoneLookupClient{partDetail: inventree.PartDetail{PK: 11}}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx, _, _ := testhandler.SetupTestHandler(t)
+			result, output, err := createPart(depsForFake(tc.fake))(ctx, &mcp.CallToolRequest{}, CreatePartInput{Name: "new", CategoryID: 20, Link: &link})
+			require.NoError(t, err)
+			require.NotNil(t, result)
+			assert.Equal(t, StatusPartialFailure, output.Status)
+			require.NotNil(t, output.Recovery)
+			assert.Equal(t, 10, output.Recovery.PK)
+			assert.NotEmpty(t, output.RecoveryPlan)
+			assert.Nil(t, output.Record)
+			wire, marshalErr := json.Marshal(output)
+			require.NoError(t, marshalErr)
+			assert.NotContains(t, string(wire), "token=secret")
+			assert.NotContains(t, string(wire), "#private")
+			var encoded struct {
+				Recovery map[string]any `json:"recovery"`
+			}
+			require.NoError(t, json.Unmarshal(wire, &encoded))
+			assert.Equal(t, map[string]any{"pk": float64(10)}, encoded.Recovery)
+		})
+	}
+}
+
+func TestCreatePartMissingStableIDReturnsHonestRecovery(t *testing.T) {
+	t.Parallel()
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	fake := &fakeMilestoneLookupClient{createPartResult: &inventree.Part{}}
+
+	result, output, err := createPart(depsForFake(fake))(ctx, &mcp.CallToolRequest{}, CreatePartInput{Name: "new", CategoryID: 20})
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	assert.Equal(t, StatusPartialFailure, output.Status)
+	assert.Nil(t, output.Record)
+	assert.Nil(t, output.Recovery)
+	assert.Contains(t, output.RecoveryPlan, "did not include a stable part ID")
+	assert.NotContains(t, output.RecoveryPlan, "Call get_part")
+	assert.Zero(t, fake.getPartDetailCalls)
+	wire, marshalErr := json.Marshal(output)
+	require.NoError(t, marshalErr)
+	var encoded map[string]any
+	require.NoError(t, json.Unmarshal(wire, &encoded))
+	_, hasRecord := encoded["record"]
+	assert.False(t, hasRecord)
+}
+
+func TestUpdatePartPostPatchReadbackFailuresReturnURLFreeRecovery(t *testing.T) {
+	t.Parallel()
+	name := "replacement"
+	link := "https://example.test/existing?token=secret#private"
+	for _, tc := range []struct {
+		name string
+		fake *fakeMilestoneLookupClient
+	}{
+		{name: "read error", fake: &fakeMilestoneLookupClient{partDetail: inventree.PartDetail{PK: 10, Link: &link}, getPartDetailAfterFirstErr: errors.New("read failed")}},
+		{name: "identity mismatch", fake: &fakeMilestoneLookupClient{partDetail: inventree.PartDetail{PK: 10, Link: &link}, partDetailAfterFirst: &inventree.PartDetail{PK: 11, Link: &link}}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx, _, _ := testhandler.SetupTestHandler(t)
+			result, output, err := updatePart(depsForFake(tc.fake))(ctx, &mcp.CallToolRequest{}, UpdatePartInput{ID: 10, Name: &name})
+			require.NoError(t, err)
+			require.NotNil(t, result)
+			assert.Equal(t, StatusPartialFailure, output.Status)
+			require.NotNil(t, output.Recovery)
+			assert.Equal(t, 10, output.Recovery.PK)
+			assert.NotEmpty(t, output.RecoveryPlan)
+			assert.Nil(t, output.Record)
+			wire, marshalErr := json.Marshal(output)
+			require.NoError(t, marshalErr)
+			assert.NotContains(t, string(wire), "token=secret")
+			assert.NotContains(t, string(wire), "#private")
+			var encoded struct {
+				Recovery map[string]any `json:"recovery"`
+			}
+			require.NoError(t, json.Unmarshal(wire, &encoded))
+			assert.Equal(t, map[string]any{"pk": float64(10)}, encoded.Recovery)
+		})
+	}
+}
+
+func TestCreatePartScalarValidationIsStructuredAndPreventsMutation(t *testing.T) {
+	t.Parallel()
+	negative := -1.0
+	negativeExpiry := -1
+	for _, tc := range []struct {
+		name  string
+		input CreatePartInput
+		field string
+	}{
+		{name: "negative expiry", input: CreatePartInput{DefaultExpiry: &negativeExpiry}, field: "default_expiry"},
+		{name: "negative minimum", input: CreatePartInput{MinimumStock: &negative}, field: "minimum_stock"},
+		{name: "nan minimum", input: CreatePartInput{MinimumStock: dvgoutils.Ptr(math.NaN())}, field: "minimum_stock"},
+		{name: "negative maximum", input: CreatePartInput{MaximumStock: &negative}, field: "maximum_stock"},
+		{name: "infinite maximum", input: CreatePartInput{MaximumStock: dvgoutils.Ptr(math.Inf(1))}, field: "maximum_stock"},
+		{name: "invalid link", input: CreatePartInput{Link: dvgoutils.Ptr("ftp://example.test/part")}, field: "link"},
+		{name: "credentialed link", input: CreatePartInput{Link: dvgoutils.Ptr("https://user:pass@example.test/part")}, field: "link"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx, _, _ := testhandler.SetupTestHandler(t)
+			fake := &fakeMilestoneLookupClient{}
+			tc.input.Name = "new"
+			tc.input.CategoryID = 20
+			_, output, err := createPart(depsForFake(fake))(ctx, &mcp.CallToolRequest{}, tc.input)
+			require.NoError(t, err)
+			assert.Equal(t, StatusValidationFailed, output.Status)
+			require.NotNil(t, output.Validation)
+			require.Len(t, output.Validation.Fields, 1)
+			assert.Equal(t, tc.field, output.Validation.Fields[0].Field)
+			assert.False(t, fake.createdPart)
+		})
+	}
+}
+
+func TestUpdatePartSupportsNullableClearsAndEffectiveStockValidation(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	fake := &fakeMilestoneLookupClient{partDetail: inventree.PartDetail{PK: 10, MinimumStock: 2, MaximumStock: 10}}
+
+	_, output, err := updatePart(depsForFake(fake))(ctx, &mcp.CallToolRequest{}, UpdatePartInput{
+		ID: 10, ClearKeywords: true, ClearLink: true, ClearRevision: true, ClearNotes: true,
+		DefaultExpiry: dvgoutils.Ptr(0), MinimumStock: dvgoutils.Ptr(3.0), MaximumStock: dvgoutils.Ptr(0.0),
+		Consumable: dvgoutils.Ptr(false), IsTemplate: dvgoutils.Ptr(false), Locked: dvgoutils.Ptr(false), Salable: dvgoutils.Ptr(false), Testable: dvgoutils.Ptr(false),
+	})
+	r.NoError(err)
+	a.Equal(StatusOK, output.Status)
+	a.Equal(inventree.Null(), fake.lastUpdatePartFields["keywords"])
+	a.Equal(inventree.Null(), fake.lastUpdatePartFields["link"])
+	a.Equal(inventree.Null(), fake.lastUpdatePartFields["revision"])
+	a.Equal(inventree.Null(), fake.lastUpdatePartFields["notes"])
+	a.Equal(inventree.Set(0), fake.lastUpdatePartFields["default_expiry"])
+	a.Equal(inventree.Set(3.0), fake.lastUpdatePartFields["minimum_stock"])
+	a.Equal(inventree.Set(0.0), fake.lastUpdatePartFields["maximum_stock"])
+	a.Equal(inventree.Set(false), fake.lastUpdatePartFields["consumable"])
+
+	fake.lastUpdatePartFields = nil
+	_, rejected, err := updatePart(depsForFake(fake))(ctx, &mcp.CallToolRequest{}, UpdatePartInput{ID: 10, MaximumStock: dvgoutils.Ptr(1.0)})
+	r.NoError(err)
+	a.Equal(StatusValidationFailed, rejected.Status)
+	r.NotNil(rejected.Validation)
+	a.Equal("maximum_stock", rejected.Validation.Fields[0].Field)
+	a.Nil(fake.lastUpdatePartFields)
+
+	keywords := "replacement"
+	_, rejected, err = updatePart(depsForFake(fake))(ctx, &mcp.CallToolRequest{}, UpdatePartInput{ID: 10, Keywords: &keywords, ClearKeywords: true})
+	r.NoError(err)
+	a.Equal(StatusValidationFailed, rejected.Status)
+	r.NotNil(rejected.Validation)
+	a.Equal("keywords", rejected.Validation.Fields[0].Field)
+}
+
+func TestUpdatePartAllNullableValueClearConflictsAreStructured(t *testing.T) {
+	t.Parallel()
+	value := "replacement"
+	for _, tc := range []struct {
+		name  string
+		input UpdatePartInput
+		field string
+	}{
+		{name: "keywords", input: UpdatePartInput{Keywords: &value, ClearKeywords: true}, field: "keywords"},
+		{name: "link", input: UpdatePartInput{Link: dvgoutils.Ptr("https://example.test/part"), ClearLink: true}, field: "link"},
+		{name: "revision", input: UpdatePartInput{Revision: &value, ClearRevision: true}, field: "revision"},
+		{name: "notes", input: UpdatePartInput{Notes: &value, ClearNotes: true}, field: "notes"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx, _, _ := testhandler.SetupTestHandler(t)
+			fake := &fakeMilestoneLookupClient{partDetail: inventree.PartDetail{PK: 10}}
+			tc.input.ID = 10
+			_, output, err := updatePart(depsForFake(fake))(ctx, &mcp.CallToolRequest{}, tc.input)
+			require.NoError(t, err)
+			assert.Equal(t, StatusValidationFailed, output.Status)
+			require.NotNil(t, output.Validation)
+			require.Len(t, output.Validation.Fields, 1)
+			assert.Equal(t, tc.field, output.Validation.Fields[0].Field)
+			assert.Nil(t, fake.lastUpdatePartFields)
+		})
+	}
 }
 
 func TestUpdatePartAsksWhenNoPatchFieldsProvided(t *testing.T) {
@@ -1503,6 +1804,20 @@ func TestUpdatePartAsksWhenNoPatchFieldsProvided(t *testing.T) {
 	r.NotNil(output.Clarification)
 	a.Equal("part", output.Clarification.Field)
 	a.Equal("id", output.Clarification.Retry)
+	a.Nil(fake.lastUpdatePartFields)
+}
+
+func TestUpdatePartRejectsExactReadIdentityMismatch(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	name := "replacement"
+	fake := &fakeMilestoneLookupClient{partDetail: inventree.PartDetail{PK: 11}}
+
+	_, _, err := updatePart(depsForFake(fake))(ctx, &mcp.CallToolRequest{}, UpdatePartInput{ID: 10, Name: &name})
+
+	r.ErrorContains(err, "identity mismatch")
 	a.Nil(fake.lastUpdatePartFields)
 }
 

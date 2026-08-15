@@ -44,6 +44,10 @@ func decorateWebLink(resolver *weblinks.Resolver, toolName string, target any) {
 	switch value := target.(type) {
 	case *inventree.Part:
 		value.WebURL = resolver.URL(weblinks.Part, value.PK)
+	case *PartDetailView:
+		if value.complete {
+			value.WebURL = resolver.URL(weblinks.Part, value.PK)
+		}
 	case *inventree.Category:
 		value.WebURL = resolver.URL(weblinks.PartCategory, value.PK)
 	case *inventree.Company:

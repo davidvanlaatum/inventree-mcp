@@ -115,6 +115,10 @@ func TestClientMethodsAgainstInvenTree(t *testing.T) {
 		gotPart, err := fixture.client.GetPart(ctx, part.ID)
 		r.NoError(err)
 		r.Equal(part.Name, gotPart.Name)
+		gotPartDetail, err := fixture.client.GetPartDetail(ctx, part.ID)
+		r.NoError(err)
+		r.Equal(part.ID, gotPartDetail.PK)
+		r.Equal(part.Name, gotPartDetail.Name)
 
 		categories, err := fixture.client.SearchPartCategories(ctx, inventree.SearchQuery{Search: category.Name})
 		r.NoError(err)
@@ -143,6 +147,47 @@ func TestClientMethodsAgainstInvenTree(t *testing.T) {
 		readbackCategory, err := fixture.client.GetPartCategory(ctx, child.PK)
 		r.NoError(err)
 		r.Equal("", *readbackCategory.DefaultKeywords)
+
+		detailName, err := fixture.run.Name("client-part-detail")
+		r.NoError(err)
+		link := "https://example.test/parts/detail?source=integration#notes"
+		createdDetail, err := fixture.client.CreatePart(ctx, inventree.PartCreate{
+			Name: detailName, Category: &category.ID, Consumable: dvgoutils.Ptr(true), DefaultExpiry: dvgoutils.Ptr(30),
+			IsTemplate: dvgoutils.Ptr(false), Keywords: dvgoutils.Ptr("client detail"), Link: &link,
+			Locked: dvgoutils.Ptr(false), MinimumStock: dvgoutils.Ptr(2.5), MaximumStock: dvgoutils.Ptr(5.5),
+			Revision: dvgoutils.Ptr("A"), Salable: dvgoutils.Ptr(true), Testable: dvgoutils.Ptr(true), Notes: dvgoutils.Ptr("integration markdown"),
+		})
+		r.NoError(err)
+		detail, err := fixture.client.GetPartDetail(ctx, createdDetail.PK)
+		r.NoError(err)
+		r.True(detail.Consumable)
+		r.Equal(30, detail.DefaultExpiry)
+		r.Equal("client detail", *detail.Keywords)
+		r.Equal(link, *detail.Link)
+		r.Equal(2.5, detail.MinimumStock)
+		r.Equal(5.5, detail.MaximumStock)
+		r.Equal("A", *detail.Revision)
+		r.Equal("integration markdown", *detail.Notes)
+		r.NotNil(detail.CreationUser)
+
+		_, err = fixture.client.UpdatePart(ctx, createdDetail.PK, inventree.PatchFields{
+			"keywords": inventree.Null(), "link": inventree.Null(), "revision": inventree.Null(), "notes": inventree.Null(),
+			"default_expiry": inventree.Set(0), "minimum_stock": inventree.Set(3.0), "maximum_stock": inventree.Set(0.0),
+			"consumable": inventree.Set(false), "salable": inventree.Set(false), "testable": inventree.Set(false),
+		})
+		r.NoError(err)
+		detail, err = fixture.client.GetPartDetail(ctx, createdDetail.PK)
+		r.NoError(err)
+		r.Nil(detail.Keywords)
+		r.Nil(detail.Link)
+		r.Nil(detail.Revision)
+		r.Nil(detail.Notes)
+		r.Zero(detail.DefaultExpiry)
+		r.Equal(3.0, detail.MinimumStock)
+		r.Zero(detail.MaximumStock)
+		r.False(detail.Consumable)
+		r.False(detail.Salable)
+		r.False(detail.Testable)
 	})
 
 	t.Run("company_supplier", func(t *testing.T) {

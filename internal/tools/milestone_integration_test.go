@@ -104,6 +104,55 @@ func TestMilestoneHappyPathToolsAgainstInvenTree(t *testing.T) {
 		a.Empty(orders, "purchase preview must not create purchase orders")
 	})
 
+	t.Run("part_exact_detail_and_scalar_maintenance", func(t *testing.T) {
+		r := require.New(t)
+		a := assert.New(t)
+		ctx, _, _ := testhandler.SetupTestHandler(t)
+		fixture := newMilestoneToolFixture(t, shared)
+		category := fixture.ensure(t, testenv.FixtureCategory)
+		name, err := fixture.run.Name("part-exact-detail")
+		r.NoError(err)
+		link := "https://example.test/parts/integration?source=mcp#detail"
+
+		_, created, err := createPart(fixture.deps())(ctx, &mcp.CallToolRequest{}, CreatePartInput{
+			Name: name, CategoryID: category.ID, Consumable: dvgoutils.Ptr(true), DefaultExpiry: dvgoutils.Ptr(30),
+			IsTemplate: dvgoutils.Ptr(false), Keywords: dvgoutils.Ptr("integration keywords"), Link: &link,
+			Locked: dvgoutils.Ptr(false), MinimumStock: dvgoutils.Ptr(2.5), MaximumStock: dvgoutils.Ptr(5.5),
+			Revision: dvgoutils.Ptr("A"), Salable: dvgoutils.Ptr(true), Testable: dvgoutils.Ptr(true), Notes: dvgoutils.Ptr("integration markdown"),
+		})
+		r.NoError(err)
+		a.Equal(StatusOK, created.Status)
+		a.Equal(link, created.Record.Link)
+		a.Equal("integration markdown", *created.Record.Notes)
+		r.NotNil(created.Record.CreationUser)
+
+		_, exact, err := getPart(fixture.deps())(ctx, &mcp.CallToolRequest{}, IDInput{ID: created.Record.PK})
+		r.NoError(err)
+		a.Equal(StatusOK, exact.Status)
+		a.Equal(link, exact.Record.Link)
+		a.Equal(2.5, exact.Record.MinimumStock)
+		a.Equal(5.5, exact.Record.MaximumStock)
+		a.True(exact.Record.Consumable)
+
+		_, updated, err := updatePart(fixture.deps())(ctx, &mcp.CallToolRequest{}, UpdatePartInput{
+			ID: created.Record.PK, ClearKeywords: true, ClearLink: true, ClearRevision: true, ClearNotes: true,
+			DefaultExpiry: dvgoutils.Ptr(0), MinimumStock: dvgoutils.Ptr(3.0), MaximumStock: dvgoutils.Ptr(0.0),
+			Consumable: dvgoutils.Ptr(false), Salable: dvgoutils.Ptr(false), Testable: dvgoutils.Ptr(false),
+		})
+		r.NoError(err)
+		a.Equal(StatusOK, updated.Status)
+		a.Nil(updated.Record.Keywords)
+		a.Empty(updated.Record.Link)
+		a.Nil(updated.Record.Revision)
+		a.Nil(updated.Record.Notes)
+		a.Zero(updated.Record.DefaultExpiry)
+		a.Equal(3.0, updated.Record.MinimumStock)
+		a.Zero(updated.Record.MaximumStock)
+		a.False(updated.Record.Consumable)
+		a.False(updated.Record.Salable)
+		a.False(updated.Record.Testable)
+	})
+
 	t.Run("part_category_administration", func(t *testing.T) {
 		r := require.New(t)
 		a := assert.New(t)

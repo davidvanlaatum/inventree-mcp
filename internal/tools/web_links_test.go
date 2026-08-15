@@ -105,6 +105,7 @@ func TestProjectWebLinksCoversDetailRecoveryPlanAndSubordinateViews(t *testing.T
 	require.NoError(t, err)
 	partModelType := "part.part"
 	targets := []any{
+		func() *PartDetailView { value := partDetailView(inventree.PartDetail{PK: 25}); return &value }(),
 		&inventree.SupplierPartDetail{PK: 1},
 		&inventree.ManufacturerPartDetail{PK: 2},
 		&inventree.PurchaseOrderLineItem{PK: 3, Order: 30},
@@ -140,6 +141,11 @@ func TestProjectWebLinksCoversDetailRecoveryPlanAndSubordinateViews(t *testing.T
 		_, parent := record["parent_web_url"]
 		assert.True(t, direct || parent, "target %d (%T) did not receive a link", index, target)
 	}
+
+	incomplete := &PartDetailView{PartDetail: inventree.PartDetail{PK: 99}}
+	projectWebLinks(resolver, GetPartToolName, incomplete)
+	a := assert.New(t)
+	a.Empty(incomplete.WebURL, "partial-failure part records must remain URL-free")
 
 	modelParents := []struct {
 		modelType string
