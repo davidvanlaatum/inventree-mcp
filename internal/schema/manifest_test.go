@@ -6,6 +6,7 @@ import (
 
 	"github.com/davidvanlaatum/inventree-mcp/docs"
 	"github.com/davidvanlaatum/inventree-mcp/internal/schema"
+	"github.com/davidvanlaatum/inventree-mcp/internal/testenv"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -36,6 +37,19 @@ func TestSchemaProvenanceDocumentsCurrentDigest(t *testing.T) {
 	a.Contains(schemaDocs, "SHA256: `"+schema.SHA256Hex(data)+"`")
 	a.Contains(schemaDocs, "- OpenAPI: `"+openapi.OpenAPI+"`")
 	a.Contains(schemaDocs, "- API version: `"+openapi.Info.Version+"`")
+}
+
+func TestBlockingRuntimeMatchesOpenAPISchema(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+
+	openapi, err := schema.ParseOpenAPI(docs.APISchemaYAML())
+	r.NoError(err)
+
+	a.Equal(testenv.DefaultAPIVersion, openapi.Info.Version)
+	a.Equal("inventree/inventree:"+testenv.DefaultVersion, testenv.DefaultInvenTreeImage)
+	a.Contains(docs.APISchemaMarkdown(), "- Runtime InvenTree version: `"+testenv.DefaultVersion+"`")
 }
 
 func TestManifestBlocksDeferredFileSurfaces(t *testing.T) {

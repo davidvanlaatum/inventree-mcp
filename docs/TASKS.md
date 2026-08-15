@@ -142,12 +142,13 @@ Before assigning a new story ID, inspect `git worktree list --porcelain`, search
 | [F-S58](#f-s58-pricing-and-price-break-workflow-discovery) | Investigate part pricing, supplier price breaks, internal prices, sale prices, currencies, and safe tool boundaries. | Future |
 | [F-S59](#f-s59-part-requirements-visibility-discovery) | Investigate build and order demand visibility through the part requirements API. | Future |
 | [F-S60](#f-s60-stocktake-generation-and-reporting-discovery) | Investigate guarded generation of part stocktake snapshots and reports after history reads exist. | Future |
+| [F-S61](#f-s61-adopt-inventree-150-api-530-baseline) | Adopt InvenTree 1.5.0 and API 530 as the blocking compatibility baseline. | Done |
 | [F-S62](#f-s62-guarded-purchase-order-hold-resume-and-cancellation) | Add explicit current-state-planned hold, resume, and cancellation workflows without generic status editing or whole-order deletion. | Planned |
 | [F-S63](#f-s63-guarded-purchase-order-duplication-discovery) | Investigate a deferred, low-frequency workflow for safely duplicating selected purchase-order state. | Future |
-| [F-S64](#f-s64-purchase-order-and-stock-location-parameter-values) | Add bounded generic parameter-value reads and maintenance for purchase orders and stock locations. | Planned |
+| [F-S64](#f-s64-cross-object-generic-parameter-values-and-uniqueness) | Add bounded generic parameter values across supported non-part-row object types and administer template uniqueness. | Planned |
 | [F-S65](#f-s65-guarded-stock-custom-status-management) | Extend the guarded stock-status workflow to assign or clear compatible custom status keys. | Planned |
 | [F-S66](#f-s66-guarded-stock-item-merge-discovery) | Investigate a deferred, fail-closed merge workflow for explicitly selected compatible stock items. | Future |
-| [F-S67](#f-s67-stock-location-detail-and-type-administration) | Complete stock-location icon detail and add guarded stock-location-type administration. | Planned |
+| [F-S67](#f-s67-stock-location-detail-and-type-administration) | Complete stock-location icon detail and add guarded stock-location-type administration. | Ready |
 | [F-S68](#f-s68-guarded-stock-location-deletion) | Delete one empty, unreferenced stock location only through a complete fail-closed dependency plan. | Planned |
 | [F-S69](#f-s69-guarded-part-category-deletion) | Delete one empty, unreferenced leaf part category only through a complete fail-closed dependency plan. | Planned |
 
@@ -2104,16 +2105,16 @@ Tasks:
 - Status: `Planned`
 - Issue: [#121](https://github.com/davidvanlaatum/inventree-mcp/issues/121)
 - Depends on: F-S39
-- Decisions: approved by the operator on 2026-08-15. Exact reads expose all approved default scalar fields already returned by the API, while searches remain concise. `creation_user` is read-only. Category/location/path details and parameters remain separate lookups. Raw `barcode_hash` remains excluded pending F-S55.
+- Decisions: approved by the operator on 2026-08-15. Exact reads expose all approved default scalar fields already returned by the API, while searches remain concise. `creation_user` is read-only. API 530's nested category/location detail, category path, and parameters remain separate lookups; tags and price breaks remain deferred to F-S56 and F-S58. Raw `barcode_hash` remains excluded pending F-S55.
 - Scope: expand `get_part`, `create_part`, and `update_part` for complete default reads and the approved ordinary writable fields without absorbing guarded family relationships, ownership, tags, barcode workflows, pricing, requirements, or test-result administration.
 - Acceptance:
   - `get_part` exposes all approved default readable scalar fields, including IPN, external link, revision metadata, stock and allocation aggregates, pricing bounds, creation metadata, template/lock/test flags, units, and notes; `search_parts` retains only high-value selection fields and raw `barcode_hash` is excluded pending F-S55.
   - A checked-in pinned field inventory classifies every default serializer/response field as exposed, separate lookup, deferred, write-only, or excluded; contract tests compare representative raw keys against that inventory so unclassified omissions and schema drift fail.
-  - Create/update supports `default_expiry`, `is_template`, keywords, link, locked, minimum/maximum stock, revision text, salable, testable, and Markdown notes with explicit clear/reset semantics where applicable.
+  - Create/update supports `consumable`, `default_expiry`, `is_template`, keywords, link, locked, minimum/maximum stock, revision text, salable, testable, and Markdown notes with explicit clear/reset semantics where applicable.
   - The existing create/update surfaces retain `inventree.read` plus `inventree.write`, remain closed-world and non-destructive, and preserve their reviewed per-tool idempotency annotations in the authorization and generated-tool manifests.
   - `creation_user` remains read-only and is verified against pinned serializer behavior; primary-image mutation remains in dedicated image tools.
   - Minimum/maximum stock are non-negative decimals and a nonzero maximum below the minimum is rejected; default expiry is non-negative and `0` resets the default.
-  - Pinned integration and JSON contract tests verify complete reads, writes, clears, omitted-vs-explicit values, and the generated-schema omission of part notes; public docs remain aligned.
+  - Pinned integration and JSON contract tests verify complete reads, writes, clears, omitted-vs-explicit values, API 530 schema/read-back presence for part notes, and field-inventory drift; public docs remain aligned.
 - Residual risk: some computed part values are user- or configuration-dependent and nullable; exact reads must preserve factual nulls without treating unavailable aggregates as zero.
 
 ### F-S41: Guarded Part Revision And Variant Relationships
@@ -2157,12 +2158,13 @@ Tasks:
 - Decisions: approved by the operator on 2026-08-15. Exact supplier/manufacturer-part reads expose all approved fields; list/search projections remain concise and embedded company detail remains a separate `get_company` call. Raw `barcode_hash` remains excluded pending F-S55.
 - Scope: add missing sourcing-link read fields and long Markdown note writes without expanding into barcode or pricing workflows.
 - Acceptance:
-  - `get_supplier_part` exposes approved default API fields including computed in-stock quantity, derived MPN, updated timestamp, short note, and long Markdown notes.
+  - `get_supplier_part` exposes approved default API fields including computed in-stock quantity, derived MPN, updated timestamp, short note, long Markdown notes, upstream availability and its update timestamp, and on-order quantity.
   - `get_manufacturer_part` exposes all approved ordinary fields including long Markdown notes while retaining manufacturer ID instead of embedding company detail.
   - Checked-in supplier/manufacturer field inventories classify every pinned default response field as exposed, separate lookup, deferred, write-only, or excluded; raw-key contract tests fail on unclassified omissions or drift.
-  - Supplier/manufacturer long notes are writable and explicitly clearable with exact read-back; existing short supplier note remains distinct.
+  - API 530's write-only supplier/manufacturer `duplicate` inputs remain excluded from ordinary create/update tools pending separately approved guarded duplication workflows.
+  - Supplier/manufacturer long notes are writable and explicitly clearable with exact read-back; existing short supplier note remains distinct. Supplier `available` is writable with verified decimal and explicit-zero semantics plus exact read-back, while computed `availability_updated` and `on_order` remain read-only.
   - Existing sourcing create/update surfaces retain `inventree.read` plus `inventree.write`, remain closed-world and non-destructive, and preserve their reviewed per-tool idempotency annotations in authorization and generated-tool manifests.
-  - Search results retain only high-value selection fields; barcode behavior is deferred to its dedicated story and price breaks to pricing discovery.
+  - API 530 nested part, company, and manufacturer-link details remain separate exact lookups; parameters, tags, and price breaks remain in their dedicated parameter, tag, and pricing workflows. Search results retain only high-value selection fields; barcode behavior is deferred to its dedicated story.
   - External links follow F-S39 and tests/docs cover nullable fields, note distinction, sanitization boundaries, and pinned API behavior.
 - Residual risk: derived MPN and in-stock values can change independently of the sourcing-link record; callers must treat them as read-time context rather than stable identity.
 
@@ -2172,11 +2174,12 @@ Tasks:
 - Issue: [#125](https://github.com/davidvanlaatum/inventree-mcp/issues/125)
 - Depends on: F-S20, F-S31, F-S39
 - Decisions: approved by the operator on 2026-08-15. Phone, email, free-text contact, business tax ID, external link, image URL, supplied/manufactured counts, and customer role are in scope. Tax ID is for business identifiers such as ABN/ACN, not personal TFNs.
-- Scope: expand exact company reads and ordinary metadata updates while preserving separate primary-image workflows and deferring structured contacts/addresses, ownership, and tags. Customer support is limited to role-flag administration and dependency safety; it adds no sales-order tools, customer contact/billing workflow, CRM behavior, or customer defaults.
+- Scope: expand exact company reads and ordinary metadata updates while preserving separate primary-image workflows and deferring structured contacts/addresses, ownership, parameters, and tags. Customer support is limited to role-flag administration and dependency safety; it adds no sales-order tools, customer contact/billing workflow, CRM behavior, or customer defaults.
 - Acceptance:
-  - `get_company` exposes complete approved exact fields including phone, email, contact, tax ID, external link, primary-image URL, customer role, and supplied/manufactured counts; searches remain concise.
+  - `get_company` exposes complete approved exact fields including phone, email, contact, tax ID, external link, primary-image URL, Markdown notes, customer role, and supplied/manufactured counts; searches remain concise. API 530 `primary_address` remains a separate structured-address lookup and parameters/tags remain in their dedicated stories.
   - A checked-in pinned field inventory classifies every default company response field as exposed, separate lookup, deferred, write-only, or excluded; raw-key contract tests fail on unclassified omissions or drift.
-  - Phone, email, contact, tax ID, and external link are writable and explicitly clearable with exact read-back.
+  - API 530's write-only company `duplicate` input remains excluded from ordinary create/update and role tools pending a separately approved guarded company-duplication workflow.
+  - Phone, email, contact, tax ID, external link, and Markdown notes are writable and explicitly clearable with exact read-back.
   - Adding/removing customer role is supported; removal requires a state-bound plan token covering the role and a bounded complete dependency audit, refuses if any dependency remains, and fails closed when permissions, pagination, or unsupported surfaces prevent proving completeness.
   - Exact reads require `inventree.read`; ordinary metadata and role addition require `inventree.read` and `inventree.write`. Role removal additionally requires `inventree.destructive`, publishes `destructiveHint:true`, remains closed-world and non-idempotent, and rejects stale plans.
   - Tax IDs and contact data remain absent from logs, errors, clarification candidates, and minimal recovery projections; image mutation remains in dedicated tools.
@@ -2191,12 +2194,12 @@ Tasks:
 - Decisions: approved by the operator on 2026-08-15. Exact stock reads add API-derived SKU, MPN, expired/stale state, and read-only sales-order traceability. Embedded part detail remains a separate `get_part` call and searches stay concise. Raw `barcode_hash` remains excluded pending F-S55.
 - Scope: complete `get_stock_item` response coverage without broadening generic stock PATCH into identity, quantity, location, status, provenance, installation, or lifecycle mutation.
 - Acceptance:
-  - `get_stock_item` exposes SKU, MPN, expired, stale, and sales-order reference alongside existing quantity, metadata, relationship, pricing, and provenance fields.
+  - `get_stock_item` exposes SKU, MPN, expired, stale, sales-order reference, and API 530 `location_path` alongside existing quantity, metadata, relationship, pricing, and provenance fields. Nested location and supplier-part detail remain separate exact lookups; tags and tests remain in F-S56 and F-S57.
   - A checked-in pinned field inventory classifies every default stock-item response field as exposed, separate lookup, deferred, write-only, or excluded; raw-key contract tests fail on unclassified omissions or drift.
   - `search_stock_items` retains only high-value selection and recovery fields; expanded part detail remains separate.
   - External stock links follow F-S39; barcode presence and operations remain deferred to the barcode story.
   - Nullable and derived values preserve upstream semantics and sensitive URLs/notes remain absent from errors and recovery projections.
-  - Pinned integration and JSON tests plus plan/schema/tool/operator documentation cover the complete exact-read contract.
+  - Pinned integration and JSON tests plus plan/schema/tool/operator documentation cover the complete exact-read contract, including null, omitted, empty, and populated location-path behavior.
 - Residual risk: derived identifiers and stale/expired state can change between reads; they are informational context and must not become mutation preconditions unless explicitly bound by a guarded workflow.
 
 ### F-S46: Stock Tracking And Stocktake History
@@ -2209,6 +2212,7 @@ Tasks:
 - Acceptance:
   - `list_stock_tracking_entries` requires `stock_item_id` or `part_id`, passes that filter server-side, fetches a bounded complete matching snapshot, sorts deterministically by stable event ID, and only then paginates. Concise list results omit full notes; exact detail includes them.
   - `get_stock_tracking_entry` retrieves one exact stable event without exposing unrelated history.
+  - API 530 nested item, part, and user detail is projected as stable IDs plus approved safe display fields only; full stock, part, and owner/user records remain separate exact lookups.
   - `list_part_stocktakes` requires a stable part ID, fetches a bounded complete matching snapshot, sorts by stable stocktake ID before pagination, and returns historical snapshots; `get_part_stocktake` retrieves one stable snapshot.
   - Stocktake records expose date, item count, total quantity, minimum/maximum cost, and currencies; tools are read-only and do not generate entries or reports.
   - Before publishing the tool schema, a pinned spike inventories real event-specific `deltas` shapes and selects either an explicit typed union or a documented depth/key/byte-bounded opaque JSON representation; unknown or oversized shapes fail safely instead of being silently truncated.
@@ -2219,15 +2223,17 @@ Tasks:
 
 - Status: `Planned`
 - Issue: [#128](https://github.com/davidvanlaatum/inventree-mcp/issues/128)
-- Depends on: F-S03, F-S23, F-S38, F-S39, F-S61 ([#143](https://github.com/davidvanlaatum/inventree-mcp/issues/143), reserved in another active worktree)
+- Depends on: F-S03, F-S23, F-S38, F-S39, F-S61
 - Decisions: approved by the operator on 2026-08-15. Exact order and line reads expose all approved fields while searches remain concise. Embedded user, address, contact, project, destination, build, and part records remain separate lookups. Raw `barcode_hash` remains excluded pending F-S55. Existing-order supplier and internal InvenTree reference remain immutable, and `status_custom_key` remains read-only.
 - Scope: expand purchase-order and ordinary-line detail projections; add standalone exact-ID order metadata updates and top-level/line external-link update and clear support without broadening supplier identity, internal reference, status, build, project-code, contact, or ownership mutations.
 - Acceptance:
-  - `get_purchase_order` exposes issue/completion/update dates, line/completed counts, overdue, status text/custom key, supplier name, creator user ID, and complete ordinary scalar state.
-  - `get_purchase_order_line` exposes SKU, MPN, IPN, internal part name, total price, overdue, build-order ID, and effective `auto_pricing`/`merge_items` flags.
+  - `get_purchase_order` exposes issue/completion/update dates, line/completed counts, overdue, status text/custom key, supplier name, creator user ID, Markdown notes, and complete ordinary scalar state. API 530 supplier detail remains a separate company lookup; order parameters and tags remain in F-S64 and F-S56.
+  - `get_purchase_order_line` exposes SKU, MPN, IPN, internal part name, unit and total price, discount, overdue, build-order ID, and effective `auto_pricing`/`merge_items` flags; API 530's optional nullable total preserves null rather than becoming zero. Nested order, part, and supplier-part detail remains separate exact lookups.
+  - Existing purchase-order extra-line reads expose API 530 discount and nullable total price while keeping nested order detail separate.
   - Checked-in order and line field inventories classify every pinned default response field as exposed, separate lookup, deferred, write-only, or excluded; raw-key contract tests fail on unclassified omissions or drift.
-  - Standalone `update_purchase_order` supports description, supplier reference, creation/start/target dates, currency, destination, and external link by exact stable ID, with explicit clearing for every nullable field where pinned serializer behavior permits it.
-  - `update_purchase_order_line` adds an optional typed external-link field with omission distinct from explicit clear, F-S39 validation/redaction, and exact read-back; existing line mutation behavior remains otherwise unchanged.
+  - Standalone `update_purchase_order` supports description, Markdown notes, supplier reference, creation/start/target dates, currency, destination, and external link by exact stable ID, with explicit clearing for every nullable field where pinned serializer behavior permits it.
+  - `update_purchase_order_line` adds optional typed external-link and discount fields with omission distinct from explicit clear or zero as applicable, F-S39 validation/redaction, verified API 530 numeric semantics, and exact read-back; existing line mutation behavior remains otherwise unchanged.
+  - Existing purchase-order extra-line update supports API 530 discount with the same omission, explicit-zero, numeric, and exact-read-back contract.
   - Supplier and internal InvenTree reference are never accepted by update inputs; searches remain concise.
   - Existing order and line update surfaces retain `inventree.read` plus `inventree.write`, remain closed-world and non-destructive, and preserve their reviewed idempotency annotations in authorization and generated-tool manifests.
   - Build-order ID and custom status remain read-only; lifecycle changes continue through explicit tools, whole-order deletion remains unsupported, and MCP writes continue forcing `auto_pricing:false` and `merge_items:false`.
@@ -2436,11 +2442,41 @@ Tasks:
   - Return an operator-approved implementation proposal with scopes, tests, dependencies, documentation, and residual risks.
 - Residual risk: generation may create many records and asynchronous report artifacts from a changing inventory snapshot; no atomic whole-inventory view should be implied.
 
+### F-S61: Adopt InvenTree 1.5.0 API 530 Baseline
+
+- Status: `Done`
+- Issue: [#143](https://github.com/davidvanlaatum/inventree-mcp/issues/143)
+- Depends on: F-S34, F-S37, F-S38
+- Progress: implementation completed on `codex/f-s61-inventree-1-5-baseline` from `origin/main` (`3daee4e`) and merged by PR [#152](https://github.com/davidvanlaatum/inventree-mcp/pull/152) as commit `638bdf2`. The operator approved the story and issue creation on 2026-08-15 after a disposable compatibility probe established that InvenTree 1.5.0 reports API revision 530 and the complete race-enabled repository suite passes when only the test-harness version expectations are changed. The checked schema, endpoint manifest, blocking Testcontainers pin, immutable frontend route evidence, focused contract tests, and public/operator documentation now use the verified 1.5.0/API 530 baseline.
+- Decisions: adopt the explicit released `inventree/inventree:1.5.0` image rather than a floating blocking tag; refresh from an official API 530 schema source with reproducible provenance; audit every implemented endpoint and version-pinned frontend route before changing the baseline. Preserve current MCP behavior unless verified incompatibility requires a separately surfaced product/workflow decision. This story does not claim 1.5.0 is the minimum supported version and does not expose new upstream capabilities solely because they appear in the refreshed schema.
+- Scope: refresh the blocking InvenTree version/API pin, checked OpenAPI schema and provenance, endpoint manifest, immutable frontend route evidence, tests, and aligned project/operator documentation for InvenTree 1.5.0.
+- Acceptance:
+  - Blocking Testcontainers uses explicit `inventree/inventree:1.5.0`, runtime version `1.5.0`, and API revision `530`; no floating blocking tag is introduced.
+  - `docs/api-schema.yaml` is refreshed from an official API 530 schema source with reproducible provenance, release/commit identity, fetch time, and SHA-256 recorded in `docs/api-schema.md`.
+  - `docs/endpoint-manifest.yaml` matches the refreshed schema hash/version and every implemented endpoint entry is revalidated against the new operation, request, response, query, and status contracts.
+  - API 511 to 530 drift and the InvenTree 1.5.0 breaking changes are reviewed for all implemented clients and tools; any required behavior change receives focused tests, while unclear product/workflow decisions are reported rather than guessed.
+  - Immutable frontend router, `BrowserRouter`, and default-base evidence is refreshed to the InvenTree 1.5.0 release and typed web-link route assertions remain valid or are corrected with aligned documentation.
+  - `docs/PLAN.md`, `docs/TASKS.md`, `docs/api-schema.md`, `docs/web-links.md`, `docs/tool-reference.md`, and `docs/operator-recipes.md` remain aligned with the adopted baseline and verified behavior differences.
+  - Focused schema, manifest, version, and route tests plus `GOFLAGS=-trimpath go test -race -p=1 ./...` pass against InvenTree 1.5.0.
+  - Per-package coverage is compared with exact base; Senior Go Developer, Senior QA / Test Architect, Senior Product Manager, and Senior Infosec Reviewer passes complete with every actionable finding resolved or documented.
+
+Tasks:
+
+- [x] Fetch and verify the official API 530 schema and InvenTree 1.5.0 source identities; audit schema and release drift against implemented contracts.
+- [x] Update the explicit Testcontainers baseline, schema snapshot/provenance, endpoint manifest, and focused version/schema tests.
+- [x] Refresh immutable 1.5.0 frontend route evidence and web-link assertions.
+- [x] Align planning, schema-capability, task, tool-reference, web-link, and operator documentation.
+- [x] Compare coverage, run full validation, and resolve the Go, QA, product, and infosec review panel.
+
+- Validation: `go generate ./internal/tools`, `go mod tidy -diff`, `go build ./...`, `go vet ./...`, `golangci-lint run ./...` (0 issues), `go test -tags no_integration_tests ./...`, focused schema/test-environment/web-link tests, `GOFLAGS=-trimpath go test -race -p=1 ./...` against pinned InvenTree 1.5.0, SHA-256 verification, and `git diff --check` pass. The API 511 to 530 audit found no removed manifest-referenced property or new required property and revalidated every manifest path, method, operation, request, response, required query, and status contract. Compared with exact base `origin/main` at `3daee4e`, every no-integration package coverage percentage is unchanged.
+- Review: Senior Go Developer, Senior QA / Test Architect, Senior Product Manager, and Senior Infosec Reviewer passes completed. Go and product identified the mutable schema-refresh URL; it is now commit-pinned with an immediate SHA-256 check. QA additionally required a cross-package contract test coupling the checked OpenAPI version to the explicit Testcontainers API, runtime, and image pins, and identified one stale purchase-price baseline label; both were corrected. Infosec confirmed endpoint auth/scope declarations are unchanged, newly visible auth endpoints and optional fields are not exposed, and existing media/SSRF/token boundaries remain intact. Focused Go, QA, and product reruns found no remaining actionable findings; infosec found none.
+- Residual risk: API 530 adds optional fields and representation changes that this story intentionally does not expose. The official API 530 export was generated from an earlier InvenTree commit than the 1.5.0 release tag, so manifest validation proves the checked contract while the complete pinned-live suite proves exercised release behavior; it cannot prove unimplemented upstream surfaces. Frontend routes remain outside OpenAPI and can drift in a later InvenTree release, so both schema and router evidence must be deliberately refreshed before the next blocking baseline change. This story does not establish the minimum supported InvenTree version.
+
 ### F-S62: Guarded Purchase-Order Hold, Resume, And Cancellation
 
 - Status: `Planned`
 - Issue: [#144](https://github.com/davidvanlaatum/inventree-mcp/issues/144)
-- Depends on: F-S47, F-S61 ([#143](https://github.com/davidvanlaatum/inventree-mcp/issues/143), reserved in another active worktree)
+- Depends on: F-S47, F-S61
 - Decisions: approved by the operator on 2026-08-15. Purchase-order hold, resume, and cancellation are dedicated lifecycle workflows. Hold support must not ship unless the native resume transition is also verified and exposed. Generic status editing, custom-status mutation, whole-order deletion, and automatic cancellation are excluded.
 - Scope: add current-state-planned hold, resume, and cancel operations for one stable purchase order, pinning the InvenTree 1.5/API 530 transition and recovery semantics before implementation.
 - Acceptance:
@@ -2457,7 +2493,7 @@ Tasks:
 
 - Status: `Future`
 - Issue: [#145](https://github.com/davidvanlaatum/inventree-mcp/issues/145)
-- Depends on: F-S47, F-S61 ([#143](https://github.com/davidvanlaatum/inventree-mcp/issues/143), reserved in another active worktree)
+- Depends on: F-S47, F-S61
 - Decisions: approved by the operator on 2026-08-15 as a deferred, low-frequency workflow. Duplication is never folded into ordinary purchase-order creation or update.
 - Scope: investigate purchase-order duplication behavior and produce a separately approved implementation proposal for copying an explicitly selected subset of one existing order into a new pending order with a new supplier reference; this discovery story does not implement the workflow.
 - Acceptance:
@@ -2468,27 +2504,32 @@ Tasks:
   - Produce final scopes, annotations, tests, and public documentation for operator approval before implementation.
 - Residual risk: duplication is a multi-record non-atomic operation and upstream serializer behavior may change; the workflow must preserve partial-result IDs and never invite blind retry.
 
-### F-S64: Purchase-Order And Stock-Location Parameter Values
+### F-S64: Cross-Object Generic Parameter Values And Uniqueness
 
 - Status: `Planned`
 - Issue: [#146](https://github.com/davidvanlaatum/inventree-mcp/issues/146)
-- Depends on: F-S11, F-S12, F-S21, F-S47, F-S61 ([#143](https://github.com/davidvanlaatum/inventree-mcp/issues/143), reserved in another active worktree)
-- Decisions: approved by the operator on 2026-08-15. Generic parameter values are in scope for purchase orders and stock locations using existing compatible templates; part-category parameter-default behavior remains in F-S13.
-- Scope: extend generic parameter lookup and maintenance to `order.purchaseorder` and `stock.stocklocation` records without creating templates implicitly or opening deferred object domains.
+- Depends on: F-S11, F-S12, F-S13, F-S20, F-S21, F-S47, F-S61
+- Decisions: approved by the operator on 2026-08-15 as one generic cross-object story. API 530 makes generic parameter values visible on purchase orders, stock locations, companies, supplier parts, manufacturer parts, and part categories; all supported non-part families use existing compatible templates. Part-row values remain in F-S12 and category parameter-template/default links remain in F-S13. API 530 parameter-template `unique` is exposed and writable here because value writes must understand and preserve its uniqueness policy.
+- Scope: extend generic parameter lookup and maintenance to `order.purchaseorder`, `stock.stocklocation`, `company.company`, `company.supplierpart`, `company.manufacturerpart`, and `part.partcategory`, and extend existing parameter-template reads/writes for `unique`, without creating templates implicitly or opening deferred object domains.
 - Acceptance:
-  - Add bounded object-scoped list and stable exact reads for parameter values on one purchase order or stock location.
+  - Add bounded object-scoped list and stable exact reads for parameter values on one purchase order, stock location, company, supplier part, manufacturer part, or part category; embedded API 530 parameter arrays are classified as separate lookups and preserve null/omitted/empty behavior in raw-key contracts.
+  - Existing parameter-template search/get exposes `unique` as the verified enum `0` (none), `1` (model type), or `2` (global); template creation supports omission versus each explicit value with exact read-back and no implicit policy reset.
+  - Changing an existing template's uniqueness policy is a dedicated guarded update: preview scans every linked parameter row through an exact template filter within shared request/record bounds, fails closed on incomplete or unauthorized coverage, computes target-policy conflicts, and returns only privacy-safe counts and stable row/object IDs.
+  - The uniqueness-policy plan token binds the current complete template definition, target policy, and complete linked-row/conflict snapshot. Confirmed execution requires the matching principal-bound token, rejects stale state, immediately repeats the bounded scan, refuses while any target-policy conflict remains, patches only `unique`, and performs exact read-back with explicit ambiguous-result recovery.
+  - Template uniqueness-policy mutation requires `inventree.read`, `inventree.write`, and `inventree.operational`, remains closed-world and non-idempotent, and publishes `destructiveHint:false` because it neither removes nor overwrites parameter values; ordinary template creation retains its existing read/write classification.
   - Create/update resolves an existing enabled template compatible with the target model, validates typed/choice/checkbox semantics, refuses ambiguous or incompatible templates, and preserves omitted versus explicit value forms.
+  - Value create/update honors the selected template's uniqueness policy, performs bounded fail-closed conflict discovery where the API supports complete verification, and treats upstream uniqueness enforcement as authoritative without leaking unrelated record values.
   - Exact server-side target/template filters prove zero or one current value; where unavailable, deterministic bounded pagination fails closed on incomplete scans. Zero creates, one updates/reuses, and multiple matches refuse without mutation; templates and category/default links are never created implicitly.
   - Stable-value deletion returns a principal-bound token covering target, template definition, and current value; execution requires confirmation plus the matching token, rejects stale plans, revalidates immediately before delete, verifies exact-ID absence, and returns only privacy-safe context.
   - Reads require `inventree.read`; create/update require `inventree.read` plus `inventree.write`; delete additionally requires `inventree.destructive` and `destructiveHint:true`.
-  - Pinned integration tests cover both model types, permissions, template compatibility, zero/one/multiple and later-page matches, typed values, concurrent target/template/value changes, stale plans, clears/deletes, response loss, exact-ID absence, and aligned public docs.
+  - Pinned integration tests cover all six model types, permissions, template compatibility, uniqueness modes and conflicts, every uniqueness-policy transition, later-page conflicts, policy-transition races, stale plans, ambiguous policy-update response loss, zero/one/multiple value matches, typed values, null/omitted/empty expansions, concurrent target/template/value changes, clears/deletes, exact-ID absence, and aligned public docs/manifests.
 - Residual risk: parameter-template restrictions and permissions are installation-specific; preflight and writes are non-atomic and must fail closed when compatible-template or duplicate completeness cannot be proven.
 
 ### F-S65: Guarded Stock Custom-Status Management
 
 - Status: `Planned`
 - Issue: [#147](https://github.com/davidvanlaatum/inventree-mcp/issues/147)
-- Depends on: F-S05, F-S45, F-S61 ([#143](https://github.com/davidvanlaatum/inventree-mcp/issues/143), reserved in another active worktree)
+- Depends on: F-S05, F-S45, F-S61
 - Decisions: approved by the operator on 2026-08-15. Stock `status_custom_key` is maintained only through the existing guarded status workflow; `is_building` remains read-only while build workflows are deferred.
 - Scope: extend `set_stock_status` planning and execution to assign or explicitly clear a compatible custom status key without exposing generic stock PATCH.
 - Acceptance:
@@ -2504,7 +2545,7 @@ Tasks:
 
 - Status: `Future`
 - Issue: [#148](https://github.com/davidvanlaatum/inventree-mcp/issues/148)
-- Depends on: F-S28, F-S29, F-S45, F-S46, F-S61 ([#143](https://github.com/davidvanlaatum/inventree-mcp/issues/143), reserved in another active worktree)
+- Depends on: F-S28, F-S29, F-S45, F-S46, F-S61
 - Decisions: approved by the operator on 2026-08-15 as a deferred workflow. Direct stock duplication remains unsupported.
 - Scope: discover and define a guarded native stock merge workflow for explicitly selected compatible stock items.
 - Acceptance:
@@ -2518,13 +2559,13 @@ Tasks:
 
 ### F-S67: Stock-Location Detail And Type Administration
 
-- Status: `Planned`
+- Status: `Ready`
 - Issue: [#149](https://github.com/davidvanlaatum/inventree-mcp/issues/149)
-- Depends on: F-S21, F-S61 ([#143](https://github.com/davidvanlaatum/inventree-mcp/issues/143), reserved in another active worktree)
+- Depends on: F-S21, F-S61
 - Decisions: approved by the operator on 2026-08-15. Exact stock-location reads expose both configured `custom_icon` and computed effective `icon`. Location types support create/update and guarded deletion; raw location barcode hash remains deferred to F-S55 without blocking this story.
 - Scope: complete the approved stock-location exact projection and add ordinary stock-location-type administration without changing location hierarchy or stock.
 - Acceptance:
-  - `get_stock_location` exposes effective `icon` alongside `custom_icon`; searches remain concise and raw `barcode_hash` remains excluded pending F-S55.
+  - `get_stock_location` exposes effective `icon` alongside `custom_icon` and the API 530 hierarchy path; searches remain concise and raw `barcode_hash` remains excluded pending F-S55. API 530 parameters and tags remain in F-S64 and F-S56.
   - A pinned field inventory classifies every default location and location-type response field and raw-key contract tests fail on unclassified drift.
   - Create/update location types supports name, description, and icon with explicit clears where permitted, bounded case-insensitive duplicate preflight, stable-ID recovery, and exact read-back.
   - Type deletion returns a principal-bound token covering the type and a bounded complete location-reference snapshot; execution requires confirmation plus the matching token, rejects stale plans, immediately rechecks references, and verifies exact-ID absence.
@@ -2554,14 +2595,15 @@ Tasks:
 
 - Status: `Planned`
 - Issue: [#151](https://github.com/davidvanlaatum/inventree-mcp/issues/151)
-- Depends on: F-S13, F-S19, F-S40, F-S61 ([#143](https://github.com/davidvanlaatum/inventree-mcp/issues/143), reserved in another active worktree)
+- Depends on: F-S13, F-S19, F-S40, F-S61, F-S64
 - Decisions: approved by the operator on 2026-08-15. Part-category deletion is allowed only for an empty leaf category with no parameter-default links or other verified references.
 - Scope: add preview and confirmed deletion of one stable part category without cascading, moving parts/children, deleting parameter defaults, or rewriting references.
 - Acceptance:
-  - Preflight inventories direct parts, direct child categories, category-parameter-template/default links, and every other reference exposed by the pinned InvenTree 1.5/API 530 schema or verified behavior.
+  - Preflight inventories direct parts, direct child categories, category-parameter-template/default links, generic `part.partcategory` parameter-value rows, and every other reference exposed by the pinned InvenTree 1.5/API 530 schema or verified behavior.
   - A checked-in pinned dependency inventory maps every reference surface to its endpoint/filter, record bound, permission behavior, and blocker test; schema/endpoint-manifest drift tests fail on any unclassified new reference.
   - Reference scans use exact server-side filters where available, deterministic bounded pagination otherwise, and fail closed on permissions or incomplete coverage.
   - Dry run returns the exact category path/state, minimal blocker counts and stable IDs, and a principal-bound token covering the complete dependency snapshot.
+  - The plan consumes API 530 category `path` through the existing exact category read and pinned JSON contracts preserve null/omitted/empty/populated path semantics without inventing hierarchy data.
   - Execution requires explicit confirmation and the matching token, rejects stale plans, rechecks all blockers, deletes only the stable ID, and verifies exact-ID absence.
   - No cascade, part move, child reparent, parameter-link deletion, or default-location mutation is permitted.
   - Require `inventree.read`, `inventree.write`, and `inventree.destructive`; publish `destructiveHint:true`, closed-world, and non-idempotent annotations.

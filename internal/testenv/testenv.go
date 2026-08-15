@@ -22,9 +22,9 @@ import (
 )
 
 const (
-	DefaultInvenTreeImage = "inventree/inventree:1.4.3"
-	DefaultAPIVersion     = "511"
-	DefaultVersion        = "1.4.3"
+	DefaultInvenTreeImage = "inventree/inventree:1.5.0"
+	DefaultAPIVersion     = "530"
+	DefaultVersion        = "1.5.0"
 
 	EnvSkipDocker = "INVENTREE_TEST_SKIP_DOCKER"
 )
