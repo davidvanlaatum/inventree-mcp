@@ -172,7 +172,8 @@ func TestUpdateStockItemMetadataBindsCompleteStateAndApprovedFields(t *testing.T
 	a := assert.New(t)
 	fake := newStockAdminFake()
 	fake.stockItems[50] = inventree.StockItem{PK: 50, Part: 5, Location: dvgoutils.Ptr(40), Quantity: 8, Serial: dvgoutils.Ptr("S-1"), Status: 10, DeleteOnDeplete: true, Batch: dvgoutils.Ptr("old"), Packaging: dvgoutils.Ptr("reel"), Notes: dvgoutils.Ptr("old note")}
-	input := UpdateStockItemMetadataInput{ID: 50, Batch: dvgoutils.Ptr("B-2"), ExpiryDate: dvgoutils.Ptr("2027-01-02"), ClearPackaging: true, Notes: dvgoutils.Ptr("checked"), Link: dvgoutils.Ptr("https://example.test/item"), DryRun: true}
+	completeLink := "https://example.test/item?account=42#details"
+	input := UpdateStockItemMetadataInput{ID: 50, Batch: dvgoutils.Ptr("B-2"), ExpiryDate: dvgoutils.Ptr("2027-01-02"), ClearPackaging: true, Notes: dvgoutils.Ptr("checked"), Link: &completeLink, DryRun: true}
 
 	_, plan, err := updateStockItemMetadata(stockAdminDeps(fake))(ctx, &mcp.CallToolRequest{}, input)
 	r.NoError(err)
@@ -190,6 +191,8 @@ func TestUpdateStockItemMetadataBindsCompleteStateAndApprovedFields(t *testing.T
 	r.NoError(err)
 	a.Equal(StatusOK, out.Status)
 	a.Equal(1, fake.updateStockCalls)
+	r.NotNil(out.Record)
+	a.Equal(completeLink, out.Record.Link)
 	a.True(fake.lastPatchHas("batch"))
 	a.True(fake.lastPatchHas("expiry_date"))
 	a.True(fake.lastPatchNull("packaging"))
@@ -228,16 +231,16 @@ func TestUpdateStockItemMetadataRejectsUnsafeLinkAndRecoversUnknownResult(t *tes
 	})
 }
 
-func TestSanitizedStockItemRemovesLinkCredentialsQueryAndFragment(t *testing.T) {
+func TestSanitizedStockItemPreservesValidCompleteLinkAndOmitsCredentials(t *testing.T) {
 	t.Parallel()
 	item := sanitizedStockItem(inventree.StockItem{PK: 50, Link: "https://user:pass@example.test/path?token=secret#fragment"})
-	assert.Equal(t, "https://example.test/path", item.Link)
-	plan := sanitizedStockMetadataPlan(StockMetadataPlan{
+	assert.Empty(t, item.Link)
+	plan := projectStockMetadataPlan(StockMetadataPlan{
 		Before: StockMetadataState{Link: "https://user:pass@example.test/before?token=secret#fragment"},
 		After:  StockMetadataState{Link: "https://example.test/after?token=secret#fragment"},
 	})
-	assert.Equal(t, "https://example.test/before", plan.Before.Link)
-	assert.Equal(t, "https://example.test/after", plan.After.Link)
+	assert.Empty(t, plan.Before.Link)
+	assert.Equal(t, "https://example.test/after?token=secret#fragment", plan.After.Link)
 }
 
 func TestStockAdministrationExactLookupHandlers(t *testing.T) {
@@ -263,7 +266,7 @@ func TestStockAdministrationExactLookupHandlers(t *testing.T) {
 	r.Len(types.Results, 1)
 	_, stock, err := getStockItem(stockAdminDeps(fake))(ctx, &mcp.CallToolRequest{}, IDInput{ID: 50})
 	r.NoError(err)
-	a.Equal("https://example.test/item", stock.Record.Link)
+	a.Equal("https://example.test/item?secret=value", stock.Record.Link)
 }
 
 func TestStockAdministrationPlanAndReadbackFailuresDoNotWriteBlindly(t *testing.T) {
@@ -293,7 +296,7 @@ func TestStockAdministrationPlanAndReadbackFailuresDoNotWriteBlindly(t *testing.
 		require.NoError(t, err)
 		assert.Equal(t, StatusClarificationRequired, out.Status)
 		assert.Zero(t, fake.updateStockCalls)
-		assert.Equal(t, "https://example.test/item", out.Plan.Before.Link)
+		assert.Empty(t, out.Plan.Before.Link)
 	})
 	t.Run("raw link state invalidates metadata plan", func(t *testing.T) {
 		ctx, _, _ := testhandler.SetupTestHandler(t)
@@ -310,7 +313,8 @@ func TestStockAdministrationPlanAndReadbackFailuresDoNotWriteBlindly(t *testing.
 		require.NoError(t, err)
 		assert.Equal(t, StatusClarificationRequired, out.Status)
 		assert.Zero(t, fake.updateStockCalls)
-		assert.Equal(t, plan.Plan.Before.Link, out.Plan.Before.Link)
+		assert.NotEmpty(t, plan.Plan.Before.Link)
+		assert.Empty(t, out.Plan.Before.Link)
 	})
 	t.Run("location readback divergence", func(t *testing.T) {
 		ctx, _, _ := testhandler.SetupTestHandler(t)

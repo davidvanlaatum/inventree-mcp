@@ -143,7 +143,7 @@ type UpdateCompanyInput struct {
 	ID             int     `json:"id" jsonschema:"Stable company primary key."`
 	Name           *string `json:"name,omitempty"`
 	Description    *string `json:"description,omitempty"`
-	Website        *string `json:"website,omitempty"`
+	Website        *string `json:"website,omitempty" jsonschema:"Complete HTTP(S) company website URL without userinfo; query parameters and fragments are preserved. An explicit empty string clears it."`
 	Currency       *string `json:"currency,omitempty"`
 	Active         *bool   `json:"active,omitempty"`
 	IsSupplier     *bool   `json:"is_supplier,omitempty"`
@@ -160,7 +160,7 @@ type UpdateSupplierPartInput struct {
 	SKU                   *string `json:"sku,omitempty"`
 	Description           *string `json:"description,omitempty"`
 	ClearDescription      bool    `json:"clear_description,omitempty"`
-	Link                  *string `json:"link,omitempty"`
+	Link                  *string `json:"link,omitempty" jsonschema:"Complete HTTP(S) supplier-part URL without userinfo; query parameters and fragments are preserved."`
 	ClearLink             bool    `json:"clear_link,omitempty"`
 	Active                *bool   `json:"active,omitempty"`
 	Primary               *bool   `json:"primary,omitempty"`
@@ -181,7 +181,7 @@ type UpdateManufacturerPartInput struct {
 	ClearMPN         bool    `json:"clear_mpn,omitempty"`
 	Description      *string `json:"description,omitempty"`
 	ClearDescription bool    `json:"clear_description,omitempty"`
-	Link             *string `json:"link,omitempty"`
+	Link             *string `json:"link,omitempty" jsonschema:"Complete HTTP(S) manufacturer-part URL without userinfo; query parameters and fragments are preserved."`
 	ClearLink        bool    `json:"clear_link,omitempty"`
 }
 
@@ -456,7 +456,11 @@ func companyPatch(input UpdateCompanyInput) (inventree.PatchFields, error) {
 		fields["description"] = inventree.Set(*input.Description)
 	}
 	if input.Website != nil {
-		fields["website"] = inventree.Set(*input.Website)
+		website, err := validateExternalURL(*input.Website)
+		if err != nil {
+			return nil, err
+		}
+		fields["website"] = inventree.Set(website)
 	}
 	if input.Currency != nil {
 		currency := strings.TrimSpace(*input.Currency)
@@ -516,9 +520,13 @@ func supplierPartPatch(input UpdateSupplierPartInput, before inventree.SupplierP
 	} else if input.ClearDescription {
 		target.Description = nil
 	}
-	setNullableString(fields, "link", input.Link, input.ClearLink)
+	link, err := validateExternalURLPointer(input.Link)
+	if err != nil {
+		return nil, before, err
+	}
+	setNullableString(fields, "link", link, input.ClearLink)
 	if input.Link != nil {
-		target.Link = input.Link
+		target.Link = link
 	} else if input.ClearLink {
 		target.Link = nil
 	}
@@ -593,9 +601,13 @@ func manufacturerPartPatch(input UpdateManufacturerPartInput, before inventree.M
 	} else if input.ClearDescription {
 		target.Description = nil
 	}
-	setNullableString(fields, "link", input.Link, input.ClearLink)
+	link, err := validateExternalURLPointer(input.Link)
+	if err != nil {
+		return nil, before, err
+	}
+	setNullableString(fields, "link", link, input.ClearLink)
 	if input.Link != nil {
-		target.Link = input.Link
+		target.Link = link
 	} else if input.ClearLink {
 		target.Link = nil
 	}
@@ -797,7 +809,8 @@ func recoverCompanyUpdate(ctx context.Context, client CompanyAdminClient, id int
 		if integrityErr := companyRoleIntegrity(ctx, client, current, fields); integrityErr != nil {
 			return TextResult(StatusPartialFailure), CompanyMutationOutput[CompanyView, CompanyRecoveryView]{Status: StatusPartialFailure, Current: &recovery, Before: &before, Recovered: true, RecoveryPlan: "The PATCH was recovered, but postflight did not prove that removed company roles remain free of sourcing links. Inspect the company and its sourcing links before another write."}, nil
 		}
-		return TextResult(StatusOK), CompanyMutationOutput[CompanyView, CompanyRecoveryView]{Status: StatusOK, Current: &recovery, Before: &before, Recovered: true}, nil
+		view := companyView(current)
+		return TextResult(StatusOK), CompanyMutationOutput[CompanyView, CompanyRecoveryView]{Status: StatusOK, Record: &view, Current: &recovery, Before: &before, Recovered: true}, nil
 	}
 	return TextResult(StatusPartialFailure), CompanyMutationOutput[CompanyView, CompanyRecoveryView]{Status: StatusPartialFailure, Before: &before, RecoveryPlan: fmt.Sprintf("Read company_id %d and compare the requested fields before retrying.", id)}, nil
 }
@@ -835,7 +848,8 @@ func recoverSupplierPartUpdate(ctx context.Context, client CompanyAdminClient, i
 			return TextResult(StatusPartialFailure), CompanyMutationOutput[SupplierPartView, SupplierPartRecoveryView]{Status: StatusPartialFailure, Before: &before, Current: ptrSupplierRecovery(current), Candidates: supplierRecoveryViews(matches), Recovered: true, RecoveryPlan: "The PATCH was recovered, but normalized duplicate postflight did not prove a unique supplier+SKU identity. Inspect the current record and candidates before another write."}, nil
 		}
 		recovery := supplierPartRecovery(current)
-		return TextResult(StatusOK), CompanyMutationOutput[SupplierPartView, SupplierPartRecoveryView]{Status: StatusOK, Current: &recovery, Before: &before, Recovered: true}, nil
+		view := supplierPartView(current)
+		return TextResult(StatusOK), CompanyMutationOutput[SupplierPartView, SupplierPartRecoveryView]{Status: StatusOK, Record: &view, Current: &recovery, Before: &before, Recovered: true}, nil
 	}
 	return TextResult(StatusPartialFailure), CompanyMutationOutput[SupplierPartView, SupplierPartRecoveryView]{Status: StatusPartialFailure, Before: &before, RecoveryPlan: fmt.Sprintf("Read supplier_part_id %d and compare requested fields before retrying.", id)}, nil
 }
@@ -881,7 +895,8 @@ func recoverManufacturerPartUpdate(ctx context.Context, client CompanyAdminClien
 			}
 		}
 		recovery := manufacturerPartRecovery(current)
-		return TextResult(StatusOK), CompanyMutationOutput[ManufacturerPartView, ManufacturerPartRecoveryView]{Status: StatusOK, Current: &recovery, Before: &before, Recovered: true}, nil
+		view := manufacturerPartView(current)
+		return TextResult(StatusOK), CompanyMutationOutput[ManufacturerPartView, ManufacturerPartRecoveryView]{Status: StatusOK, Record: &view, Current: &recovery, Before: &before, Recovered: true}, nil
 	}
 	return TextResult(StatusPartialFailure), CompanyMutationOutput[ManufacturerPartView, ManufacturerPartRecoveryView]{Status: StatusPartialFailure, Before: &before, RecoveryPlan: fmt.Sprintf("Read manufacturer_part_id %d and compare requested fields before retrying.", id)}, nil
 }
@@ -923,19 +938,19 @@ func comparablePatchValue(value any) any {
 }
 
 func companyView(record inventree.CompanyDetail) CompanyView {
-	return CompanyView{ID: record.PK, Name: record.Name, Description: record.Description, Website: redactedMetadataURL(stringPointer(record.Website)), Currency: record.Currency, Active: record.Active, IsSupplier: record.IsSupplier, IsManufacturer: record.IsManufacturer, IsCustomer: record.IsCustomer, Notes: record.Notes}
+	return CompanyView{ID: record.PK, Name: record.Name, Description: record.Description, Website: projectExternalURL(stringPointer(record.Website)), Currency: record.Currency, Active: record.Active, IsSupplier: record.IsSupplier, IsManufacturer: record.IsManufacturer, IsCustomer: record.IsCustomer, Notes: record.Notes}
 }
 func companyRecovery(record inventree.CompanyDetail) CompanyRecoveryView {
 	return CompanyRecoveryView{ID: record.PK, Name: record.Name, Currency: record.Currency, Active: record.Active, IsSupplier: record.IsSupplier, IsManufacturer: record.IsManufacturer, IsCustomer: record.IsCustomer}
 }
 func supplierPartView(record inventree.SupplierPartDetail) SupplierPartView {
-	return SupplierPartView{ID: record.PK, PartID: record.Part, SupplierID: record.Supplier, SKU: record.SKU, Description: record.Description, Link: redactedMetadataURL(record.Link), Active: record.Active, Primary: record.Primary, ManufacturerPartID: record.ManufacturerPart, Packaging: record.Packaging, PackQuantity: record.PackQuantity, Note: record.Note}
+	return SupplierPartView{ID: record.PK, PartID: record.Part, SupplierID: record.Supplier, SKU: record.SKU, Description: record.Description, Link: projectExternalURL(record.Link), Active: record.Active, Primary: record.Primary, ManufacturerPartID: record.ManufacturerPart, Packaging: record.Packaging, PackQuantity: record.PackQuantity, Note: record.Note}
 }
 func supplierPartRecovery(record inventree.SupplierPartDetail) SupplierPartRecoveryView {
 	return SupplierPartRecoveryView{ID: record.PK, PartID: record.Part, SupplierID: record.Supplier, SKU: record.SKU, Active: record.Active, Primary: record.Primary, ManufacturerPartID: record.ManufacturerPart}
 }
 func manufacturerPartView(record inventree.ManufacturerPartDetail) ManufacturerPartView {
-	return ManufacturerPartView{ID: record.PK, PartID: record.Part, ManufacturerID: record.Manufacturer, MPN: record.MPN, Description: record.Description, Link: redactedMetadataURL(record.Link)}
+	return ManufacturerPartView{ID: record.PK, PartID: record.Part, ManufacturerID: record.Manufacturer, MPN: record.MPN, Description: record.Description, Link: projectExternalURL(record.Link)}
 }
 func manufacturerPartRecovery(record inventree.ManufacturerPartDetail) ManufacturerPartRecoveryView {
 	return ManufacturerPartRecoveryView{ID: record.PK, PartID: record.Part, ManufacturerID: record.Manufacturer, MPN: record.MPN}

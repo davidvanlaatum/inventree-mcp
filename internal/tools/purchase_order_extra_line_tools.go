@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"math"
 	"math/big"
-	"net/url"
 	"regexp"
 	"sort"
 	"strconv"
@@ -50,7 +49,7 @@ type CreatePurchaseOrderExtraLineInput struct {
 	Reference   string  `json:"reference" jsonschema:"Required reference, unique within this purchase order for duplicate and retry recovery."`
 	Description *string `json:"description,omitempty" jsonschema:"Optional informational line description."`
 	Line        *string `json:"line,omitempty" jsonschema:"Optional supplier invoice line number."`
-	Link        *string `json:"link,omitempty" jsonschema:"Optional HTTP(S) supplier product link without userinfo."`
+	Link        *string `json:"link,omitempty" jsonschema:"Optional complete HTTP(S) supplier product link without userinfo; query parameters and fragments are preserved."`
 	Notes       *string `json:"notes,omitempty" jsonschema:"Optional invoice or operator context."`
 	Quantity    float64 `json:"quantity" jsonschema:"Nonnegative extra-line quantity."`
 	UnitPrice   *string `json:"unit_price,omitempty" jsonschema:"Optional exact signed unit price with at most six decimal places."`
@@ -65,7 +64,7 @@ type UpdatePurchaseOrderExtraLineInput struct {
 	Reference       *string  `json:"reference,omitempty" jsonschema:"Optional replacement nonblank reference, unique within the target purchase order."`
 	Description     *string  `json:"description,omitempty" jsonschema:"Optional replacement description, including an explicit empty string."`
 	Line            *string  `json:"line,omitempty" jsonschema:"Optional replacement supplier invoice line number, including an explicit empty string."`
-	Link            *string  `json:"link,omitempty" jsonschema:"Optional replacement HTTP(S) link; an explicit empty string clears it."`
+	Link            *string  `json:"link,omitempty" jsonschema:"Optional replacement complete HTTP(S) link without userinfo; query parameters and fragments are preserved, and an explicit empty string clears it."`
 	Notes           *string  `json:"notes,omitempty" jsonschema:"Optional replacement notes, including an explicit empty string."`
 	Quantity        *float64 `json:"quantity,omitempty" jsonschema:"Optional replacement nonnegative quantity."`
 	UnitPrice       *string  `json:"unit_price,omitempty" jsonschema:"Optional replacement exact signed unit price."`
@@ -271,6 +270,7 @@ func deletePurchaseOrderExtraLine(deps Dependencies) mcp.ToolHandlerFor[DeletePu
 			}
 			safeRecord := sanitizePurchaseOrderExtraLine(record)
 			if !input.Confirm {
+				safeRecord = purchaseOrderExtraLineRecovery(safeRecord)
 				clarification := NewClarification("Delete this non-receivable purchase-order extra line?", "confirm", "delete_purchase_order_extra_line requires confirm:true after reviewing the stable line", "confirm", true, candidatesFor([]inventree.PurchaseOrderExtraLine{safeRecord}), map[string]any{"id": input.ID, "confirm": true})
 				return TextResult(StatusClarificationRequired), PurchaseOrderExtraLineOutput{Status: StatusClarificationRequired, Record: &safeRecord, PurchaseOrder: &order, Clarification: &clarification}, nil
 			}
@@ -393,18 +393,11 @@ func validateExtraLineFields(orderID int, reference string, description, line, l
 	}
 	var normalizedLink *string
 	if link != nil {
-		trimmed := strings.TrimSpace(*link)
-		if trimmed != "" {
-			parsed, err := url.Parse(trimmed)
-			if err != nil || parsed.Hostname() == "" || parsed.Scheme != "http" && parsed.Scheme != "https" {
-				return nil, nil, nil, errors.New("link must be an absolute HTTP(S) URL")
-			}
-			if parsed.User != nil {
-				return nil, nil, nil, errors.New("link must not include userinfo")
-			}
-			trimmed = parsed.String()
+		validated, err := validateExternalURL(*link)
+		if err != nil {
+			return nil, nil, nil, errors.New("link must be an absolute HTTP(S) URL without userinfo or credentials")
 		}
-		normalizedLink = &trimmed
+		normalizedLink = &validated
 	}
 	if price == nil {
 		if currency != nil && strings.TrimSpace(*currency) != "" {
@@ -629,7 +622,7 @@ func extraLineCreateFields(input inventree.PurchaseOrderExtraLineCreate) map[str
 	setOptionalField(fields, "description", input.Description)
 	setOptionalField(fields, "line", input.Line)
 	if input.Link != nil {
-		fields["link"] = redactedMetadataURL(input.Link)
+		fields["link"] = projectExternalURL(input.Link)
 	}
 	setOptionalField(fields, "notes", input.Notes)
 	setOptionalField(fields, "price", input.Price)
@@ -641,7 +634,7 @@ func extraLineCreateFields(input inventree.PurchaseOrderExtraLineCreate) map[str
 func extraLinePatchFieldValues(fields inventree.PatchFields) map[string]any {
 	values := patchFieldValues(fields)
 	if link, ok := values["link"].(string); ok {
-		values["link"] = redactedMetadataURL(&link)
+		values["link"] = projectExternalURL(&link)
 	}
 	return values
 }
@@ -662,8 +655,13 @@ func loadExtraLineOrder(ctx context.Context, client PurchaseOrderExtraLineReadCl
 
 func sanitizePurchaseOrderExtraLine(record inventree.PurchaseOrderExtraLine) inventree.PurchaseOrderExtraLine {
 	if record.Link != "" {
-		record.Link = redactedMetadataURL(&record.Link)
+		record.Link = projectExternalURL(&record.Link)
 	}
+	return record
+}
+
+func purchaseOrderExtraLineRecovery(record inventree.PurchaseOrderExtraLine) inventree.PurchaseOrderExtraLine {
+	record.Link = ""
 	return record
 }
 
@@ -687,15 +685,15 @@ func extraLineLookupClarification(question, reason string) (*mcp.CallToolResult,
 }
 
 func extraLinePartial(record inventree.PurchaseOrderExtraLine, recovery string) (*mcp.CallToolResult, PurchaseOrderExtraLineOutput, error) {
-	safe := sanitizePurchaseOrderExtraLine(record)
+	safe := purchaseOrderExtraLineRecovery(record)
 	return TextResult(StatusPartialFailure), PurchaseOrderExtraLineOutput{Status: StatusPartialFailure, Record: &safe, RecoveryPlan: recovery}, nil
 }
 
 func extraLineRecoveryPartial(record inventree.PurchaseOrderExtraLine, matches []inventree.PurchaseOrderExtraLine, recovery string) (*mcp.CallToolResult, PurchaseOrderExtraLineOutput, error) {
-	safe := sanitizePurchaseOrderExtraLine(record)
+	safe := purchaseOrderExtraLineRecovery(record)
 	safeMatches := make([]inventree.PurchaseOrderExtraLine, len(matches))
 	for i := range matches {
-		safeMatches[i] = sanitizePurchaseOrderExtraLine(matches[i])
+		safeMatches[i] = purchaseOrderExtraLineRecovery(matches[i])
 	}
 	clarification := extraLineRecoveryClarification(record.Order, record.Reference, safeMatches)
 	return TextResult(StatusPartialFailure), PurchaseOrderExtraLineOutput{Status: StatusPartialFailure, Record: &safe, RecoveryPlan: recovery, Clarification: &clarification}, nil

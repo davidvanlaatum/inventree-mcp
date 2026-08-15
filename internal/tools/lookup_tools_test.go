@@ -121,7 +121,7 @@ func TestAttachmentMetadataToolsGateScopeAndRedactURLs(t *testing.T) {
 	ctx, _, _ := testhandler.SetupTestHandler(t)
 	fileURL := "/media/file.pdf?signature=secret#fragment"
 	thumbURL := "https://inventory.example.test/media/thumb.png?signature=secret"
-	linkURL := "https://user:pass@example.test/datasheet.pdf?token=secret#fragment"
+	linkURL := "https://example.test/datasheet.pdf?token=secret#fragment"
 	fake := &fakeMilestoneLookupClient{
 		attachments: []inventree.Attachment{{
 			PK:         90,
@@ -150,13 +150,13 @@ func TestAttachmentMetadataToolsGateScopeAndRedactURLs(t *testing.T) {
 	r.Len(listOutput.Results, 1)
 	a.Equal("/media/file.pdf", listOutput.Results[0].AttachmentURL)
 	a.Equal("https://inventory.example.test/media/thumb.png", listOutput.Results[0].ThumbnailURL)
-	a.Equal("https://example.test/datasheet.pdf", listOutput.Results[0].LinkURL)
+	a.Equal(linkURL, listOutput.Results[0].LinkURL)
 
 	getHandler := getAttachmentMetadata(depsForFake(fake))
 	_, recordOutput, err := getHandler(ctx, &mcp.CallToolRequest{}, IDInput{ID: 90})
 	r.NoError(err)
 	a.Equal("/media/file.pdf", recordOutput.Record.AttachmentURL)
-	a.Equal("https://example.test/datasheet.pdf", recordOutput.Record.LinkURL)
+	a.Equal(linkURL, recordOutput.Record.LinkURL)
 
 	_, _, err = listHandler(ctx, &mcp.CallToolRequest{}, ObjectLookupInput{ModelType: "salesorder", ModelID: 10})
 	r.ErrorContains(err, `model type "salesorder" is out of scope`)
@@ -491,48 +491,57 @@ func depsForFake(fake *fakeMilestoneLookupClient) Dependencies {
 }
 
 type fakeMilestoneLookupClient struct {
-	parts                      []inventree.Part
-	categories                 []inventree.Category
-	companies                  []inventree.Company
-	suppliers                  []inventree.Company
-	manufacturers              []inventree.Company
-	manufacturerSearchResults  [][]inventree.Company
-	manufacturerSearchCalls    int
-	stockLocations             []inventree.StockLocation
-	stockItems                 []inventree.StockItem
-	parameters                 []inventree.Parameter
-	parameterTemplates         []inventree.ParameterTemplate
-	categoryParameterTemplates []inventree.CategoryParameterTemplate
-	attachments                []inventree.Attachment
-	supplierParts              []inventree.SupplierPart
-	manufacturerParts          []inventree.ManufacturerPart
-	supplierPart               inventree.SupplierPart
-	attachment                 inventree.Attachment
-	downloadedAttachment       inventree.DownloadedAttachment
-	downloadedPartImage        inventree.DownloadedPartImage
-	downloadPartImageErr       error
-	getPartErr                 error
-	getCompanyErr              error
-	part                       inventree.Part
-	partCategory               inventree.Category
-	partCategoryErr            error
-	createdPart                bool
-	createdPartParameter       bool
-	createPartParameterCount   int
-	createdCompany             bool
-	createdSupplierPart        bool
-	createdManufacturerPart    bool
-	createdStockItem           bool
-	uploadedAttachment         bool
-	createdLinkAttachment      bool
-	deletedAttachment          bool
-	setPartPrimaryImage        bool
-	createPartErr              error
-	updatePartErr              error
-	createCompanyErr           error
-	searchManufacturersErr     error
-	createSupplierPartErr      error
-	createManufacturerPartErr  error
+	parts                       []inventree.Part
+	categories                  []inventree.Category
+	companies                   []inventree.Company
+	suppliers                   []inventree.Company
+	manufacturers               []inventree.Company
+	manufacturerSearchResults   [][]inventree.Company
+	manufacturerSearchCalls     int
+	stockLocations              []inventree.StockLocation
+	stockItems                  []inventree.StockItem
+	parameters                  []inventree.Parameter
+	parameterTemplates          []inventree.ParameterTemplate
+	categoryParameterTemplates  []inventree.CategoryParameterTemplate
+	attachments                 []inventree.Attachment
+	supplierParts               []inventree.SupplierPart
+	manufacturerParts           []inventree.ManufacturerPart
+	supplierPart                inventree.SupplierPart
+	attachment                  inventree.Attachment
+	downloadedAttachment        inventree.DownloadedAttachment
+	downloadedPartImage         inventree.DownloadedPartImage
+	downloadPartImageErr        error
+	getPartErr                  error
+	getCompanyErr               error
+	companyDetail               *inventree.CompanyDetail
+	companyDetailErr            error
+	supplierPartDetail          *inventree.SupplierPartDetail
+	supplierPartDetailErr       error
+	manufacturerPartDetail      *inventree.ManufacturerPartDetail
+	manufacturerPartDetailErr   error
+	part                        inventree.Part
+	partCategory                inventree.Category
+	partCategoryErr             error
+	createdPart                 bool
+	createdPartParameter        bool
+	createPartParameterCount    int
+	createdCompany              bool
+	createdSupplierPart         bool
+	createdManufacturerPart     bool
+	createCompanyCalls          int
+	createSupplierPartCalls     int
+	createManufacturerPartCalls int
+	createdStockItem            bool
+	uploadedAttachment          bool
+	createdLinkAttachment       bool
+	deletedAttachment           bool
+	setPartPrimaryImage         bool
+	createPartErr               error
+	updatePartErr               error
+	createCompanyErr            error
+	searchManufacturersErr      error
+	createSupplierPartErr       error
+	createManufacturerPartErr   error
 
 	lastSearchPartsQuery                      inventree.SearchQuery
 	lastSearchPartCategoriesQuery             inventree.SearchQuery
@@ -650,12 +659,29 @@ func (f *fakeMilestoneLookupClient) SearchCompanies(_ context.Context, query inv
 }
 
 func (f *fakeMilestoneLookupClient) CreateCompany(_ context.Context, input inventree.CompanyCreate) (inventree.Company, error) {
+	f.createCompanyCalls++
 	f.createdCompany = true
 	f.lastCreateCompany = input
 	if f.createCompanyErr != nil {
 		return inventree.Company{}, f.createCompanyErr
 	}
 	return inventree.Company{PK: 30, Name: input.Name, Currency: input.Currency, IsSupplier: input.IsSupplier, IsManufacturer: input.IsManufacturer}, nil
+}
+
+func (f *fakeMilestoneLookupClient) GetCompanyDetail(_ context.Context, id int) (inventree.CompanyDetail, error) {
+	if f.companyDetailErr != nil {
+		return inventree.CompanyDetail{}, f.companyDetailErr
+	}
+	if f.companyDetail != nil {
+		return *f.companyDetail, nil
+	}
+	for _, company := range f.companies {
+		if company.PK == id {
+			return inventree.CompanyDetail{Company: company}, nil
+		}
+	}
+	input := f.lastCreateCompany
+	return inventree.CompanyDetail{Company: inventree.Company{PK: id, Name: input.Name, Description: input.Description, Currency: input.Currency, IsSupplier: input.IsSupplier, IsManufacturer: input.IsManufacturer}, Website: input.Website}, nil
 }
 
 func (f *fakeMilestoneLookupClient) SearchSuppliers(_ context.Context, query inventree.SearchQuery) ([]inventree.Company, error) {
@@ -801,6 +827,7 @@ func (f *fakeMilestoneLookupClient) GetSupplierPart(_ context.Context, id int) (
 }
 
 func (f *fakeMilestoneLookupClient) CreateSupplierPart(_ context.Context, input inventree.SupplierPartCreate) (inventree.SupplierPart, error) {
+	f.createSupplierPartCalls++
 	f.createdSupplierPart = true
 	f.lastCreateSupplierPart = input
 	if f.createSupplierPartErr != nil {
@@ -809,12 +836,30 @@ func (f *fakeMilestoneLookupClient) CreateSupplierPart(_ context.Context, input 
 	return inventree.SupplierPart{PK: 40, Part: input.Part, Supplier: input.Supplier, SKU: input.SKU}, nil
 }
 
+func (f *fakeMilestoneLookupClient) GetSupplierPartDetail(_ context.Context, id int) (inventree.SupplierPartDetail, error) {
+	if f.supplierPartDetailErr != nil {
+		return inventree.SupplierPartDetail{}, f.supplierPartDetailErr
+	}
+	if f.supplierPartDetail != nil {
+		return *f.supplierPartDetail, nil
+	}
+	for _, record := range f.supplierParts {
+		if record.PK == id {
+			description := record.Description
+			return inventree.SupplierPartDetail{PK: record.PK, Part: record.Part, Supplier: record.Supplier, SKU: record.SKU, Description: &description, Active: record.Active, Primary: record.Primary, Packaging: record.Packaging, PackQuantityNative: record.PackQuantityNative}, nil
+		}
+	}
+	input := f.lastCreateSupplierPart
+	return inventree.SupplierPartDetail{PK: id, Part: input.Part, Supplier: input.Supplier, SKU: input.SKU, Description: input.Description, Link: input.Link, ManufacturerPart: input.ManufacturerPart, Packaging: input.Packaging, Note: input.Note}, nil
+}
+
 func (f *fakeMilestoneLookupClient) SearchManufacturerParts(_ context.Context, query inventree.ManufacturerPartQuery) ([]inventree.ManufacturerPart, error) {
 	f.lastSearchManufacturerPartsQuery = query
 	return f.manufacturerParts, nil
 }
 
 func (f *fakeMilestoneLookupClient) CreateManufacturerPart(_ context.Context, input inventree.ManufacturerPartCreate) (inventree.ManufacturerPart, error) {
+	f.createManufacturerPartCalls++
 	f.createdManufacturerPart = true
 	f.lastCreateManufacturerPart = input
 	if f.createManufacturerPartErr != nil {
@@ -825,6 +870,24 @@ func (f *fakeMilestoneLookupClient) CreateManufacturerPart(_ context.Context, in
 		mpn = *input.MPN
 	}
 	return inventree.ManufacturerPart{PK: 50, Part: input.Part, Manufacturer: input.Manufacturer, MPN: mpn}, nil
+}
+
+func (f *fakeMilestoneLookupClient) GetManufacturerPartDetail(_ context.Context, id int) (inventree.ManufacturerPartDetail, error) {
+	if f.manufacturerPartDetailErr != nil {
+		return inventree.ManufacturerPartDetail{}, f.manufacturerPartDetailErr
+	}
+	if f.manufacturerPartDetail != nil {
+		return *f.manufacturerPartDetail, nil
+	}
+	for _, record := range f.manufacturerParts {
+		if record.PK == id {
+			mpn := record.MPN
+			description := record.Description
+			return inventree.ManufacturerPartDetail{PK: record.PK, Part: record.Part, Manufacturer: record.Manufacturer, MPN: &mpn, Description: &description}, nil
+		}
+	}
+	input := f.lastCreateManufacturerPart
+	return inventree.ManufacturerPartDetail{PK: id, Part: input.Part, Manufacturer: input.Manufacturer, MPN: input.MPN, Description: input.Description, Link: input.Link}, nil
 }
 
 func (f *fakeMilestoneLookupClient) CreateStockItem(_ context.Context, input inventree.StockItemCreate) (inventree.StockItem, error) {

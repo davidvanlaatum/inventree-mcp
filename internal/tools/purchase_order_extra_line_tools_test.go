@@ -26,7 +26,7 @@ func TestPurchaseOrderExtraLineCreateDryRunAndSignedPriceExecution(t *testing.T)
 	r.NoError(err)
 	a.Equal(StatusOK, planned.Status)
 	r.Len(planned.PlannedChanges, 1)
-	a.Equal(map[string]any{"order": 120, "reference": "CE05129", "description": "100 Pack of Diodes", "link": "https://supplier.test/item", "quantity": float64(1), "price": "-1.250000", "price_currency": "AUD"}, planned.PlannedChanges[0].Fields)
+	a.Equal(map[string]any{"order": 120, "reference": "CE05129", "description": "100 Pack of Diodes", "link": "https://supplier.test/item?tracking=secret#details", "quantity": float64(1), "price": "-1.250000", "price_currency": "AUD"}, planned.PlannedChanges[0].Fields)
 	a.Zero(fake.createExtraLineCalls)
 
 	input.DryRun = false
@@ -36,7 +36,7 @@ func TestPurchaseOrderExtraLineCreateDryRunAndSignedPriceExecution(t *testing.T)
 	a.True(created.Verified)
 	r.NotNil(created.Record)
 	a.Equal("CE05129", created.Record.Reference)
-	a.Equal("https://supplier.test/item", created.Record.Link, "public read-back must remove query and fragment")
+	a.Equal("https://supplier.test/item?tracking=secret#details", created.Record.Link)
 	r.NotNil(created.Record.Price)
 	a.Equal(inventree.DecimalString("-1.250000"), *created.Record.Price)
 	a.Equal("AUD", created.Record.PriceCurrency)
@@ -61,7 +61,7 @@ func TestPurchaseOrderExtraLineLookupAndValidationGuards(t *testing.T) {
 	r.NoError(err)
 	a.Equal(StatusOK, found.Status)
 	r.Len(found.Results, 1)
-	a.Equal("https://supplier.test/item", found.Results[0].Link)
+	a.Equal("https://supplier.test/item?token=secret#section", found.Results[0].Link)
 	_, invalidSearch, err := searchPurchaseOrderExtraLines(purchasingDeps(fake))(ctx, &mcp.CallToolRequest{}, PurchaseOrderExtraLineSearchInput{Offset: -1})
 	r.NoError(err)
 	a.Equal(StatusClarificationRequired, invalidSearch.Status)
@@ -127,7 +127,7 @@ func TestPurchaseOrderExtraLineUpdateAllFieldsAndDuplicateGuard(t *testing.T) {
 	a.Equal("NEW", updated.Record.Reference)
 	a.Equal("handling", updated.Record.Description)
 	a.Equal("INV-4", updated.Record.Line)
-	a.Equal("https://supplier.test/handling", updated.Record.Link)
+	a.Equal("https://supplier.test/handling?secret=value", updated.Record.Link)
 	a.Equal("invoice note", updated.Record.Notes)
 	a.Equal(2.5, updated.Record.Quantity)
 	a.Equal("AUD", updated.Record.PriceCurrency)
@@ -180,13 +180,14 @@ func TestPurchaseOrderExtraLineDuplicateScanPaginatesAndReturnsStableCandidates(
 		},
 	}
 
-	_, output, err := createPurchaseOrderExtraLine(purchasingDeps(fake))(ctx, &mcp.CallToolRequest{}, CreatePurchaseOrderExtraLineInput{OrderID: 120, Reference: "FREIGHT", Quantity: 1})
+	_, output, err := createPurchaseOrderExtraLine(purchasingDeps(fake))(ctx, &mcp.CallToolRequest{}, CreatePurchaseOrderExtraLineInput{OrderID: 120, Reference: "FREIGHT", Link: dvgoutils.Ptr("https://supplier.test/freight?token=secret#details"), Quantity: 1})
 	r.NoError(err)
 	a.Equal(StatusClarificationRequired, output.Status)
 	r.NotNil(output.Clarification)
 	r.Len(output.Clarification.Candidates, 2)
 	a.Equal("201", output.Clarification.Candidates[0].ID)
 	a.Equal("202", output.Clarification.Candidates[1].ID)
+	a.NotContains(output.Clarification.Candidates[0].Fields, "link")
 	a.Equal("FREIGHT", output.Clarification.Candidates[0].Label)
 	a.Zero(fake.createExtraLineCalls)
 }
@@ -218,7 +219,7 @@ func TestPurchaseOrderExtraLineAmbiguousRecoveryPreservesStableCandidates(t *tes
 	ctx, _, _ := testhandler.SetupTestHandler(t)
 	fake := &fakePurchasingClient{orders: []inventree.PurchaseOrder{{PK: 120}}, createExtraLineErrAfterPersist: errors.New("timeout after write"), createExtraLineDuplicateAfterPersist: true}
 
-	_, output, err := createPurchaseOrderExtraLine(purchasingDeps(fake))(ctx, &mcp.CallToolRequest{}, CreatePurchaseOrderExtraLineInput{OrderID: 120, Reference: "FREIGHT", Quantity: 1})
+	_, output, err := createPurchaseOrderExtraLine(purchasingDeps(fake))(ctx, &mcp.CallToolRequest{}, CreatePurchaseOrderExtraLineInput{OrderID: 120, Reference: "FREIGHT", Link: dvgoutils.Ptr("https://supplier.test/freight?token=secret#details"), Quantity: 1})
 	r.NoError(err)
 	a.Equal(StatusPartialFailure, output.Status)
 	a.Contains(output.RecoveryPlan, "inspect every candidate")
@@ -227,6 +228,9 @@ func TestPurchaseOrderExtraLineAmbiguousRecoveryPreservesStableCandidates(t *tes
 	a.Equal(GetPurchaseOrderExtraLineToolName, output.Clarification.RetryTool)
 	a.Equal("201", output.Clarification.Candidates[0].ID)
 	a.Equal("202", output.Clarification.Candidates[1].ID)
+	a.NotContains(output.Clarification.Candidates[0].Fields, "link")
+	r.NotNil(output.Record)
+	a.Empty(output.Record.Link)
 }
 
 func TestPurchaseOrderExtraLineAmbiguousRecoveryWithoutCandidateRoutesToSearch(t *testing.T) {
@@ -277,12 +281,13 @@ func TestPurchaseOrderExtraLineDeleteRequiresConfirmationAndVerifiesAbsence(t *t
 	r := require.New(t)
 	a := assert.New(t)
 	ctx, _, _ := testhandler.SetupTestHandler(t)
-	fake := &fakePurchasingClient{orders: []inventree.PurchaseOrder{{PK: 120, Reference: "PO-120", Supplier: 30}}, extraLines: []inventree.PurchaseOrderExtraLine{{PK: 201, Order: 120, Reference: "CE05129", Quantity: 1}}}
+	fake := &fakePurchasingClient{orders: []inventree.PurchaseOrder{{PK: 120, Reference: "PO-120", Supplier: 30}}, extraLines: []inventree.PurchaseOrderExtraLine{{PK: 201, Order: 120, Reference: "CE05129", Link: "https://supplier.test/item?token=secret#details", Quantity: 1}}}
 
 	_, preview, err := deletePurchaseOrderExtraLine(purchasingDeps(fake))(ctx, &mcp.CallToolRequest{}, DeletePurchaseOrderExtraLineInput{ID: 201})
 	r.NoError(err)
 	a.Equal(StatusClarificationRequired, preview.Status)
 	r.NotNil(preview.Record)
+	a.Empty(preview.Record.Link)
 	r.NotNil(preview.Clarification)
 	a.Equal("confirm", preview.Clarification.Retry)
 	r.Len(fake.extraLines, 1)
@@ -390,7 +395,7 @@ func TestCreatePurchaseOrderWithLinesPreservesNormalLinesWhenExtraLineFails(t *t
 	a := assert.New(t)
 	ctx, _, _ := testhandler.SetupTestHandler(t)
 	fake := &fakePurchasingClient{company: inventree.Company{PK: 30, IsSupplier: true}, supplierParts: []inventree.SupplierPart{{PK: 40, Part: 10, Supplier: 30}}, createExtraLineErr: &inventree.APIError{StatusCode: 400, Kind: inventree.ErrorKindValidation}, failCreateExtraLineAt: 2}
-	input := PurchaseOrderWorkflowInput{SupplierID: 30, SupplierReference: "CORE-43", Lines: []PurchaseOrderWorkflowLine{{SupplierPartID: 40, Quantity: 8}}, ExtraLines: []PurchaseOrderWorkflowExtraLine{{Reference: "FREIGHT", Quantity: 1, UnitPrice: dvgoutils.Ptr("0"), Currency: dvgoutils.Ptr("AUD")}, {Reference: "CE05129", Quantity: 1, UnitPrice: dvgoutils.Ptr("0"), Currency: dvgoutils.Ptr("AUD")}}}
+	input := PurchaseOrderWorkflowInput{SupplierID: 30, SupplierReference: "CORE-43", Lines: []PurchaseOrderWorkflowLine{{SupplierPartID: 40, Quantity: 8}}, ExtraLines: []PurchaseOrderWorkflowExtraLine{{Reference: "FREIGHT", Link: dvgoutils.Ptr("https://supplier.test/freight?token=secret#details"), Quantity: 1, UnitPrice: dvgoutils.Ptr("0"), Currency: dvgoutils.Ptr("AUD")}, {Reference: "CE05129", Quantity: 1, UnitPrice: dvgoutils.Ptr("0"), Currency: dvgoutils.Ptr("AUD")}}}
 
 	_, output, err := createPurchaseOrderWithLines(purchasingDeps(fake))(ctx, &mcp.CallToolRequest{}, input)
 	r.NoError(err)
@@ -399,6 +404,7 @@ func TestCreatePurchaseOrderWithLinesPreservesNormalLinesWhenExtraLineFails(t *t
 	r.Len(output.Lines, 1)
 	r.Len(output.ExtraLines, 1)
 	a.Equal("FREIGHT", output.ExtraLines[0].Reference)
+	a.Empty(output.ExtraLines[0].Link)
 	r.NotNil(output.Failure)
 	a.Equal("create_purchase_order_extra_line", output.Failure.Action)
 	a.Nil(output.Clarification, "definite pre-write failures must not be labeled as ambiguous recovery")

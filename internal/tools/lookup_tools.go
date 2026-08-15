@@ -257,7 +257,7 @@ func init() {
 		scopes := []string{ScopeInventreeWrite}
 		mutationClass := "write"
 		switch name {
-		case CreateParameterTemplateToolName, UpdateParameterTemplateToolName, CreateCategoryParameterDefaultToolName, UpdateCategoryParameterDefaultToolName, CreatePartCategoryToolName, UpdatePartCategoryToolName, UpdateCompanyToolName, UpdateSupplierPartToolName, UpdateManufacturerPartToolName, CreateStockLocationToolName, UpdateStockLocationToolName, CreatePurchaseOrderExtraLineToolName, UpdatePurchaseOrderExtraLineToolName, CreatePurchaseOrderWorkflowToolName, IssuePurchaseOrderToolName, CompletePurchaseOrderToolName:
+		case CreateCompanyToolName, CreateSupplierPartToolName, CreateManufacturerPartToolName, UpsertPartWorkflowToolName, CreateParameterTemplateToolName, UpdateParameterTemplateToolName, CreateCategoryParameterDefaultToolName, UpdateCategoryParameterDefaultToolName, CreatePartCategoryToolName, UpdatePartCategoryToolName, UpdateCompanyToolName, UpdateSupplierPartToolName, UpdateManufacturerPartToolName, CreateStockLocationToolName, UpdateStockLocationToolName, CreatePurchaseOrderExtraLineToolName, UpdatePurchaseOrderExtraLineToolName, CreatePurchaseOrderWorkflowToolName, IssuePurchaseOrderToolName, CompletePurchaseOrderToolName:
 			scopes = []string{ScopeInventreeRead, ScopeInventreeWrite}
 		case BulkPropagatePartParametersToolName:
 			scopes = []string{ScopeInventreeRead, ScopeInventreeWrite, ScopeInventreeDestructive}
@@ -987,9 +987,6 @@ func candidateFor(record any) ClarificationCandidate {
 		if v.Price != nil {
 			fields["price"] = *v.Price
 		}
-		if v.Link != "" {
-			fields["link"] = redactedMetadataURL(&v.Link)
-		}
 		return ClarificationCandidate{ID: strconv.Itoa(v.PK), Label: v.Reference, Summary: v.Description, APIURL: fmt.Sprintf("/api/order/po-extra-line/%d/", v.PK), Fields: fields}
 	case inventree.Attachment:
 		fields := map[string]any{
@@ -1039,7 +1036,7 @@ func sanitizeAttachment(record inventree.Attachment) AttachmentMetadata {
 		HasThumbnail:  record.Thumbnail != nil && *record.Thumbnail != "",
 		AttachmentURL: redactedMetadataURL(record.Attachment),
 		ThumbnailURL:  redactedMetadataURL(record.Thumbnail),
-		LinkURL:       redactedMetadataURL(record.Link),
+		LinkURL:       projectExternalURL(record.Link),
 	}
 }
 

@@ -188,7 +188,9 @@ func TestDepleteStockItemRecoversLostSuccessAndReturnsPartialForUnknownResult(t 
 		r := require.New(t)
 		a := assert.New(t)
 		ctx, _, _ := testhandler.SetupTestHandler(t)
-		fake := &fakeStockAdjustmentClient{item: safeDepletionStockItem(5), mutateErr: errors.New("timeout")}
+		item := safeDepletionStockItem(5)
+		item.Link = "https://supplier.test/stock?token=secret#details"
+		fake := &fakeStockAdjustmentClient{item: item, mutateErr: errors.New("timeout")}
 		input := DepleteStockItemInput{DryRun: true, StockItemID: 50, Reason: "cleanup"}
 		_, planned, err := depleteStockItem(stockAdjustmentDeps(fake))(ctx, &mcp.CallToolRequest{}, input)
 		r.NoError(err)
@@ -199,6 +201,7 @@ func TestDepleteStockItemRecoversLostSuccessAndReturnsPartialForUnknownResult(t 
 		r.NoError(err)
 		a.Equal(StatusPartialFailure, output.Status)
 		r.NotNil(output.Record)
+		a.Empty(output.Record.Link)
 		a.Contains(output.Failure.RecoveryPlan, "do not retry blindly")
 	})
 }

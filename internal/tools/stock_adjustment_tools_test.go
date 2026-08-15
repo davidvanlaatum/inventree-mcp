@@ -388,7 +388,7 @@ func TestStockAdjustmentReturnsRecoveryAfterRefreshFailureOrStateMismatch(t *tes
 		r := require.New(t)
 		a := assert.New(t)
 		ctx, _, _ := testhandler.SetupTestHandler(t)
-		fake := &fakeStockAdjustmentClient{item: inventree.StockItem{PK: 50, Part: 10, Quantity: 3, Status: stockStatusOK}}
+		fake := &fakeStockAdjustmentClient{item: inventree.StockItem{PK: 50, Part: 10, Quantity: 3, Status: stockStatusOK, Link: "https://supplier.test/stock?token=secret#details"}}
 		input := AdjustStockQuantityInput{DryRun: true, StockItemID: 50, Delta: 1, Reason: "found one unit"}
 		_, plan, err := adjustStockQuantity(stockAdjustmentDeps(fake))(ctx, &mcp.CallToolRequest{}, input)
 		r.NoError(err)
@@ -401,6 +401,8 @@ func TestStockAdjustmentReturnsRecoveryAfterRefreshFailureOrStateMismatch(t *tes
 		a.Equal(StatusPartialFailure, output.Status)
 		a.Contains(output.Failure.Message, "does not match")
 		a.Contains(output.Failure.RecoveryPlan, "Do not retry")
+		r.NotNil(output.Record)
+		a.Empty(output.Record.Link)
 		a.Equal(1, fake.addCalls)
 	})
 }

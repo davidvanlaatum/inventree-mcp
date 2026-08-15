@@ -41,6 +41,27 @@ func TestPurchaseOrderLookupToolsUseTypedQueries(t *testing.T) {
 	a.Equal(inventree.PurchaseOrderLineQuery{Search: "SKU", Order: 120, SupplierPart: 40, Pending: &pending, Limit: 8}, fake.lastLineQuery)
 }
 
+func TestPurchaseOrderWorkflowFailureRedactsAccumulatedExternalLinks(t *testing.T) {
+	t.Parallel()
+	complete := "https://supplier.test/freight?token=secret#details"
+	out := PurchaseOrderWorkflowOutput{
+		Status:     StatusOK,
+		ExtraLines: []inventree.PurchaseOrderExtraLine{{PK: 140, Order: 120, Reference: "FREIGHT", Link: complete}},
+		PlannedChanges: []PlannedChange{{Action: "create_purchase_order_extra_line", RecordType: "purchaseorderextraline", Fields: map[string]any{
+			"reference": "FREIGHT",
+			"link":      complete,
+		}}},
+	}
+
+	_, failed, err := workflowFailure(out, "create_purchase_order_extra_line", "write failed", "read by stable ID")
+	require.NoError(t, err)
+	assert.Equal(t, StatusPartialFailure, failed.Status)
+	require.Len(t, failed.ExtraLines, 1)
+	assert.Empty(t, failed.ExtraLines[0].Link)
+	require.Len(t, failed.PlannedChanges, 1)
+	assert.NotContains(t, failed.PlannedChanges[0].Fields, "link")
+}
+
 func TestCreatePurchaseOrderWithLinesDryRunPreflightsWithoutWrites(t *testing.T) {
 	t.Parallel()
 	r := require.New(t)
@@ -659,7 +680,7 @@ func TestIssuePurchaseOrderRequiresConfirmationAndPlacesPendingOrder(t *testing.
 	a.NotEmpty(dryRun.PlanHash)
 	a.Equal(fake.lines, dryRun.Lines)
 	r.Len(dryRun.ExtraLines, 1)
-	a.Equal("https://supplier.test/freight", dryRun.ExtraLines[0].Link)
+	a.Equal("https://supplier.test/freight?token=secret#details", dryRun.ExtraLines[0].Link)
 	a.Equal([]PlannedChange{{
 		Action: "issue_purchase_order", RecordType: "purchase_order", ID: 120,
 		Fields: map[string]any{"status": inventree.PurchaseOrderStatusPlaced},
@@ -727,7 +748,7 @@ func TestIssuePurchaseOrderRejectsStaleExtraLinePlan(t *testing.T) {
 	fake.extraLines[0].Link = "https://supplier.test/freight-one?token=changed"
 	_, queryOnlyPlan, err := handler(ctx, &mcp.CallToolRequest{}, IssuePurchaseOrderInput{DryRun: true, OrderID: 120})
 	r.NoError(err)
-	a.Equal(plan.PlanHash, queryOnlyPlan.PlanHash, "hidden URL metadata must not create a public hash oracle")
+	a.NotEqual(plan.PlanHash, queryOnlyPlan.PlanHash, "functional query changes must invalidate the reviewed issue plan")
 	fake.extraLines[0].Link = "https://supplier.test/freight-two?token=secret"
 
 	_, stale, err := handler(ctx, &mcp.CallToolRequest{}, IssuePurchaseOrderInput{OrderID: 120, ConfirmIssue: true, PlanHash: plan.PlanHash})

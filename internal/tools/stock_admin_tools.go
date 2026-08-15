@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net/url"
 	"slices"
 	"strings"
 
@@ -84,7 +83,7 @@ type UpdateStockItemMetadataInput struct {
 	ClearPackaging  bool    `json:"clear_packaging,omitempty" jsonschema:"Explicitly clear packaging; mutually exclusive with packaging."`
 	Notes           *string `json:"notes,omitempty" jsonschema:"Optional replacement notes; an explicit empty string is preserved."`
 	ClearNotes      bool    `json:"clear_notes,omitempty" jsonschema:"Explicitly clear notes; mutually exclusive with notes."`
-	Link            *string `json:"link,omitempty" jsonschema:"Optional HTTP(S) external link; an explicit empty string clears it."`
+	Link            *string `json:"link,omitempty" jsonschema:"Optional complete HTTP(S) external link without userinfo; query parameters and fragments are preserved, and an explicit empty string clears it."`
 	DryRun          bool    `json:"dry_run,omitempty" jsonschema:"Return a current-state-bound metadata plan without writing."`
 	Confirm         bool    `json:"confirm,omitempty" jsonschema:"Required true to execute the reviewed metadata plan."`
 	PlanHash        string  `json:"plan_hash,omitempty" jsonschema:"Exact hash returned by dry_run:true for the current stock state."`
@@ -342,7 +341,7 @@ func updateStockItemMetadata(deps Dependencies) mcp.ToolHandlerFor[UpdateStockIt
 			if hashErr != nil {
 				return nil, StockMetadataMutationOutput{}, safeStockAdminError("stock metadata plan")
 			}
-			publicPlan := sanitizedStockMetadataPlan(plan)
+			publicPlan := projectStockMetadataPlan(plan)
 			out := StockMetadataMutationOutput{Status: StatusOK, DryRun: input.DryRun, Plan: &publicPlan, PlanHash: hash}
 			if input.DryRun {
 				return TextResult(StatusOK), out, nil
@@ -357,13 +356,15 @@ func updateStockItemMetadata(deps Dependencies) mcp.ToolHandlerFor[UpdateStockIt
 			current, readErr := client.GetStockItem(ctx, input.ID)
 			if readErr != nil || current.PK != input.ID {
 				out.Status = StatusPartialFailure
+				redactStockMetadataOutputURLs(&out)
 				out.RecoveryPlan = fmt.Sprintf("Stock item %d may have changed; call get_stock_item before preparing a new plan", input.ID)
 				return TextResult(StatusPartialFailure), out, nil
 			}
 			if !stockMetadataStateEqual(stockMetadataState(current), plan.After) {
 				out.Status = StatusPartialFailure
-				sanitized := sanitizedStockItem(current)
-				out.Record = &sanitized
+				recovery := stockItemRecoveryProjection(current)
+				out.Record = &recovery
+				redactStockMetadataOutputURLs(&out)
 				out.RecoveryPlan = fmt.Sprintf("Stock item %d read-back does not match the reviewed plan; inspect it before another write", input.ID)
 				return TextResult(StatusPartialFailure), out, nil
 			}
@@ -539,14 +540,11 @@ func stockMetadataPatch(input UpdateStockItemMetadataInput, before inventree.Sto
 		return nil, before, errors.New("expiry_date must use YYYY-MM-DD")
 	}
 	if input.Link != nil {
-		link := strings.TrimSpace(*input.Link)
-		if link != "" {
-			parsed, err := url.Parse(link)
-			if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" || parsed.User != nil {
-				return nil, before, errors.New("link must be an HTTP(S) URL without credentials or an explicit empty string")
-			}
-			*input.Link = link
+		link, err := validateExternalURL(*input.Link)
+		if err != nil {
+			return nil, before, errors.New("link must be an HTTP(S) URL without credentials or an explicit empty string")
 		}
+		*input.Link = link
 	}
 	fields := inventree.PatchFields{}
 	after := before
@@ -635,15 +633,30 @@ func stockLocationPlanState(location inventree.StockLocation) StockLocationPlanS
 
 func sanitizedStockItem(item inventree.StockItem) inventree.StockItem {
 	if item.Link != "" {
-		item.Link = redactedMetadataURL(&item.Link)
+		item.Link = projectExternalURL(&item.Link)
 	}
 	return item
 }
 
-func sanitizedStockMetadataPlan(plan StockMetadataPlan) StockMetadataPlan {
-	plan.Before.Link = redactedMetadataURL(&plan.Before.Link)
-	plan.After.Link = redactedMetadataURL(&plan.After.Link)
+func projectStockMetadataPlan(plan StockMetadataPlan) StockMetadataPlan {
+	plan.Before.Link = projectExternalURL(&plan.Before.Link)
+	plan.After.Link = projectExternalURL(&plan.After.Link)
 	return plan
+}
+
+func stockItemRecoveryProjection(item inventree.StockItem) inventree.StockItem {
+	item.Link = ""
+	return item
+}
+
+func redactStockMetadataOutputURLs(out *StockMetadataMutationOutput) {
+	if out.Plan != nil {
+		out.Plan.Before.Link = ""
+		out.Plan.After.Link = ""
+	}
+	if out.Record != nil {
+		out.Record.Link = ""
+	}
 }
 
 func stockMetadataStateEqual(a, b StockMetadataState) bool {
@@ -716,6 +729,7 @@ func stockMetadataPlanClarification(out StockMetadataMutationOutput, reason stri
 	clarification := NewClarification("Apply this reviewed stock metadata update?", "confirmation", reason, "plan_hash", false, nil, map[string]any{"dry_run": true})
 	out.Status = StatusClarificationRequired
 	out.Clarification = &clarification
+	redactStockMetadataOutputURLs(&out)
 	return TextResult(StatusClarificationRequired), out, nil
 }
 

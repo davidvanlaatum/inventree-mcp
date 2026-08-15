@@ -251,20 +251,23 @@ func TestAttachmentLinkUpdateAndDeleteToolsValidateIntent(t *testing.T) {
 	r := require.New(t)
 	a := assert.New(t)
 	ctx, _, _ := testhandler.SetupTestHandler(t)
+	completeLink := "https://example.test/datasheet.pdf?download=1#specification"
 	fake := &fakeMilestoneLookupClient{
-		attachment: inventree.Attachment{PK: 90, ModelType: "part", ModelID: 10, Filename: "datasheet"},
+		attachment: inventree.Attachment{PK: 90, ModelType: "part", ModelID: 10, Filename: "datasheet", Link: &completeLink, IsLink: true},
 	}
 
 	_, output, err := createLinkAttachment(depsForFake(fake))(ctx, &mcp.CallToolRequest{}, CreateLinkAttachmentInput{
 		ModelType: "part",
 		ModelID:   10,
-		URL:       "https://example.test/datasheet.pdf",
+		URL:       "https://example.test/datasheet.pdf?download=1#specification",
 		Filename:  "datasheet",
 	})
 	r.NoError(err)
 	a.Equal(StatusOK, output.Status)
 	a.True(fake.createdLinkAttachment)
-	a.Equal("https://example.test/datasheet.pdf", fake.lastAttachmentCreate.Link)
+	a.Equal("https://example.test/datasheet.pdf?download=1#specification", fake.lastAttachmentCreate.Link)
+	r.NotNil(output.Record)
+	a.Equal("https://example.test/datasheet.pdf?download=1#specification", output.Record.LinkURL)
 
 	duplicateFake := &fakeMilestoneLookupClient{
 		attachments: []inventree.Attachment{{PK: 91, ModelType: "part", ModelID: 10, Filename: "datasheet.pdf"}},
@@ -285,7 +288,7 @@ func TestAttachmentLinkUpdateAndDeleteToolsValidateIntent(t *testing.T) {
 		ModelID:   10,
 		URL:       "https://user:pass@example.test/datasheet.pdf",
 	})
-	r.ErrorContains(err, "must not include userinfo")
+	r.ErrorContains(err, "without userinfo or credentials")
 
 	comment := ""
 	_, output, err = updateAttachmentMetadata(depsForFake(fake))(ctx, &mcp.CallToolRequest{}, UpdateAttachmentMetadataInput{ID: 90, Comment: &comment})
@@ -296,6 +299,7 @@ func TestAttachmentLinkUpdateAndDeleteToolsValidateIntent(t *testing.T) {
 	_, output, err = deleteAttachment(depsForFake(fake))(ctx, &mcp.CallToolRequest{}, DeleteAttachmentInput{ID: 90})
 	r.NoError(err)
 	a.Equal(StatusClarificationRequired, output.Status)
+	a.Empty(output.Record.LinkURL)
 	a.False(fake.deletedAttachment)
 
 	_, output, err = deleteAttachment(depsForFake(fake))(ctx, &mcp.CallToolRequest{}, DeleteAttachmentInput{ID: 90, Confirm: true})
@@ -312,6 +316,7 @@ func TestSetPrimaryImageRequiresPartImageAttachmentAndConfirmForReplacement(t *t
 	ctx, _, _ := testhandler.SetupTestHandler(t)
 	imageURL := "/media/part_images/resistor.png"
 	existingURL := "/media/part_images/old.png"
+	completeLink := "https://example.test/image?token=secret#details"
 	fake := &fakeMilestoneLookupClient{
 		part: inventree.Part{PK: 10, Name: "resistor", Image: &existingURL},
 		attachment: inventree.Attachment{
@@ -320,6 +325,7 @@ func TestSetPrimaryImageRequiresPartImageAttachmentAndConfirmForReplacement(t *t
 			ModelID:    10,
 			Filename:   "resistor.png",
 			Attachment: &imageURL,
+			Link:       &completeLink,
 			IsImage:    true,
 		},
 		downloadedAttachment: inventree.DownloadedAttachment{
@@ -333,6 +339,7 @@ func TestSetPrimaryImageRequiresPartImageAttachmentAndConfirmForReplacement(t *t
 	r.NoError(err)
 	a.Equal(StatusClarificationRequired, output.Status)
 	a.Equal("confirm", output.Clarification.Retry)
+	a.Empty(output.Record.LinkURL)
 	a.False(fake.setPartPrimaryImage)
 
 	_, output, err = setPrimaryImage(depsForFake(fake))(ctx, &mcp.CallToolRequest{}, SetPrimaryImageInput{PartID: 10, AttachmentID: 90, Confirm: true})
@@ -518,7 +525,7 @@ func TestWriteToolAuthorizationsUseWriteScope(t *testing.T) {
 		auth, ok := ToolAuthorizations[name]
 		r.True(ok, "missing authorization for %s", name)
 		switch name {
-		case CreateParameterTemplateToolName, UpdateParameterTemplateToolName, CreateCategoryParameterDefaultToolName, UpdateCategoryParameterDefaultToolName, CreatePartCategoryToolName, CreateStockLocationToolName, CreatePurchaseOrderExtraLineToolName, CreatePurchaseOrderWorkflowToolName, IssuePurchaseOrderToolName, CompletePurchaseOrderToolName:
+		case CreateCompanyToolName, CreateSupplierPartToolName, CreateManufacturerPartToolName, UpsertPartWorkflowToolName, CreateParameterTemplateToolName, UpdateParameterTemplateToolName, CreateCategoryParameterDefaultToolName, UpdateCategoryParameterDefaultToolName, CreatePartCategoryToolName, CreateStockLocationToolName, CreatePurchaseOrderExtraLineToolName, CreatePurchaseOrderWorkflowToolName, IssuePurchaseOrderToolName, CompletePurchaseOrderToolName:
 			a.Equal("write", auth.MutationClass)
 			a.Equal([]string{ScopeInventreeRead, ScopeInventreeWrite}, auth.Scopes)
 			a.Equal(WriteAnnotations, auth.Annotations)
@@ -874,6 +881,7 @@ func TestUpsertPartWorkflowCreatesUnambiguousMissingRecords(t *testing.T) {
 	fake := &fakeMilestoneLookupClient{}
 	units := "pcs"
 	purchaseable := true
+	completeLink := "https://supplier.test/item?account=42&view=full#pricing"
 
 	_, output, err := upsertPartWorkflow(depsForFake(fake))(ctx, &mcp.CallToolRequest{}, UpsertPartWorkflowInput{
 		Name:                 "10k resistor",
@@ -886,6 +894,7 @@ func TestUpsertPartWorkflowCreatesUnambiguousMissingRecords(t *testing.T) {
 		ManufacturerName:     "PartsCo",
 		ManufacturerCurrency: "AUD",
 		MPN:                  dvgoutils.Ptr("RC0603-10K"),
+		Link:                 &completeLink,
 	})
 
 	r.NoError(err)
@@ -896,8 +905,36 @@ func TestUpsertPartWorkflowCreatesUnambiguousMissingRecords(t *testing.T) {
 	a.True(fake.createdSupplierPart)
 	a.Equal(inventree.PartCreate{Name: "10k resistor", Category: dvgoutils.Ptr(20), Units: &units, Purchaseable: &purchaseable}, fake.lastCreatePart)
 	a.Equal(inventree.CompanyCreate{Name: "Acme", Currency: "AUD", IsSupplier: true}, fake.lastCreateCompany)
-	a.Equal(inventree.ManufacturerPartCreate{Part: 10, Manufacturer: 30, MPN: dvgoutils.Ptr("RC0603-10K")}, fake.lastCreateManufacturerPart)
-	a.Equal(inventree.SupplierPartCreate{Part: 10, Supplier: 30, SKU: "ACME-10K", ManufacturerPart: dvgoutils.Ptr(50)}, fake.lastCreateSupplierPart)
+	a.Equal(inventree.ManufacturerPartCreate{Part: 10, Manufacturer: 30, MPN: dvgoutils.Ptr("RC0603-10K"), Link: &completeLink}, fake.lastCreateManufacturerPart)
+	a.Equal(inventree.SupplierPartCreate{Part: 10, Supplier: 30, SKU: "ACME-10K", ManufacturerPart: dvgoutils.Ptr(50), Link: &completeLink}, fake.lastCreateSupplierPart)
+	r.NotNil(output.ManufacturerPart)
+	a.Equal(completeLink, output.ManufacturerPart.Link)
+	r.NotNil(output.SupplierPart)
+	a.Equal(completeLink, output.SupplierPart.Link)
+}
+
+func TestRunPartUpsertWorkflowRedactsCreatedLinkWhenLaterSupplierWriteFails(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	completeLink := "https://supplier.test/item?account=42&view=full#pricing"
+	fake := &fakeMilestoneLookupClient{
+		parts:                 []inventree.Part{{PK: 10, Name: "10k resistor"}},
+		suppliers:             []inventree.Company{{PK: 30, Name: "Acme", IsSupplier: true}},
+		manufacturers:         []inventree.Company{{PK: 31, Name: "PartsCo", IsManufacturer: true}},
+		createSupplierPartErr: &inventree.APIError{StatusCode: http.StatusBadRequest, Kind: inventree.ErrorKindValidation},
+	}
+
+	_, output, err := runPartUpsertWorkflow(ctx, fake, UpsertPartWorkflowInput{Name: "10k resistor", SupplierName: "Acme", SupplierSKU: "ACME-10K", ManufacturerName: "PartsCo", MPN: dvgoutils.Ptr("RC0603-10K"), Link: &completeLink})
+	r.NoError(err)
+	a.Equal(StatusPartialFailure, output.Status)
+	r.NotNil(output.ManufacturerPart)
+	a.Empty(output.ManufacturerPart.Link)
+	for _, change := range output.PlannedChanges {
+		_, exists := change.Fields["link"]
+		a.False(exists)
+	}
 }
 
 func TestUpsertPartWorkflowSkipsManufacturerPartWithoutMPN(t *testing.T) {
@@ -1542,6 +1579,87 @@ func TestCreateCompanyAsksForSupportedRoleAndCurrency(t *testing.T) {
 	a.Equal("currency", output.Clarification.Field)
 	a.True(output.Clarification.HardError)
 	a.False(fake.createdCompany)
+}
+
+func TestDirectExternalLinkCreatesPreserveExactReadBackAndRejectCredentials(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	complete := "https://supplier.test/item?account=42&view=full#pricing"
+
+	companyFake := &fakeMilestoneLookupClient{}
+	_, company, err := createCompany(depsForFake(companyFake))(ctx, &mcp.CallToolRequest{}, CreateCompanyInput{Name: "Linked Co", Currency: "AUD", Website: complete, IsSupplier: true})
+	r.NoError(err)
+	a.Equal(StatusOK, company.Status)
+	a.Equal(complete, company.Record.Website)
+	a.Equal(complete, companyFake.lastCreateCompany.Website)
+
+	supplierFake := &fakeMilestoneLookupClient{}
+	_, supplier, err := createSupplierPart(depsForFake(supplierFake))(ctx, &mcp.CallToolRequest{}, CreateSupplierPartInput{PartID: 10, SupplierID: 30, SKU: "SKU-LINK", Link: &complete})
+	r.NoError(err)
+	a.Equal(StatusOK, supplier.Status)
+	a.Equal(complete, supplier.Record.Link)
+	a.Equal(complete, *supplierFake.lastCreateSupplierPart.Link)
+
+	manufacturerFake := &fakeMilestoneLookupClient{}
+	_, manufacturer, err := createManufacturerPart(depsForFake(manufacturerFake))(ctx, &mcp.CallToolRequest{}, CreateManufacturerPartInput{PartID: 10, ManufacturerID: 31, MPN: dvgoutils.Ptr("MPN-LINK"), Link: &complete})
+	r.NoError(err)
+	a.Equal(StatusOK, manufacturer.Status)
+	a.Equal(complete, manufacturer.Record.Link)
+	a.Equal(complete, *manufacturerFake.lastCreateManufacturerPart.Link)
+
+	credentialURL := "https://user:password@supplier.test/private?token=secret#fragment"
+	companyCalls, supplierCalls, manufacturerCalls := companyFake.createCompanyCalls, supplierFake.createSupplierPartCalls, manufacturerFake.createManufacturerPartCalls
+	for _, call := range []func() error{
+		func() error {
+			_, _, callErr := createCompany(depsForFake(companyFake))(ctx, &mcp.CallToolRequest{}, CreateCompanyInput{Name: "Unsafe", Currency: "AUD", Website: credentialURL, IsSupplier: true})
+			return callErr
+		},
+		func() error {
+			_, _, callErr := createSupplierPart(depsForFake(supplierFake))(ctx, &mcp.CallToolRequest{}, CreateSupplierPartInput{PartID: 10, SupplierID: 30, SKU: "UNSAFE", Link: &credentialURL})
+			return callErr
+		},
+		func() error {
+			_, _, callErr := createManufacturerPart(depsForFake(manufacturerFake))(ctx, &mcp.CallToolRequest{}, CreateManufacturerPartInput{PartID: 10, ManufacturerID: 31, Link: &credentialURL})
+			return callErr
+		},
+	} {
+		r.ErrorContains(call(), "must not include userinfo or credentials")
+	}
+	a.Equal(companyCalls, companyFake.createCompanyCalls)
+	a.Equal(supplierCalls, supplierFake.createSupplierPartCalls)
+	a.Equal(manufacturerCalls, manufacturerFake.createManufacturerPartCalls)
+}
+
+func TestDirectExternalLinkCreatesReturnURLFreePartialFailureWhenReadBackCannotVerify(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	requested := "https://supplier.test/item?account=42#pricing"
+	different := "https://supplier.test/item?account=43#pricing"
+
+	companyFake := &fakeMilestoneLookupClient{companyDetail: &inventree.CompanyDetail{Company: inventree.Company{PK: 30}, Website: different}}
+	_, company, err := createCompany(depsForFake(companyFake))(ctx, &mcp.CallToolRequest{}, CreateCompanyInput{Name: "Linked Co", Currency: "AUD", Website: requested, IsSupplier: true})
+	r.NoError(err)
+	a.Equal(StatusPartialFailure, company.Status)
+	a.Empty(company.Record.Website)
+	a.NotEmpty(company.RecoveryPlan)
+
+	supplierFake := &fakeMilestoneLookupClient{supplierPartDetail: &inventree.SupplierPartDetail{PK: 40, Link: &different}}
+	_, supplier, err := createSupplierPart(depsForFake(supplierFake))(ctx, &mcp.CallToolRequest{}, CreateSupplierPartInput{PartID: 10, SupplierID: 30, SKU: "SKU-LINK", Link: &requested})
+	r.NoError(err)
+	a.Equal(StatusPartialFailure, supplier.Status)
+	a.Empty(supplier.Record.Link)
+	a.NotEmpty(supplier.RecoveryPlan)
+
+	manufacturerFake := &fakeMilestoneLookupClient{manufacturerPartDetail: &inventree.ManufacturerPartDetail{PK: 50, Link: &different}}
+	_, manufacturer, err := createManufacturerPart(depsForFake(manufacturerFake))(ctx, &mcp.CallToolRequest{}, CreateManufacturerPartInput{PartID: 10, ManufacturerID: 31, Link: &requested})
+	r.NoError(err)
+	a.Equal(StatusPartialFailure, manufacturer.Status)
+	a.Empty(manufacturer.Record.Link)
+	a.NotEmpty(manufacturer.RecoveryPlan)
 }
 
 func TestCreateSupplierAndManufacturerPartsAskBeforeDuplicate(t *testing.T) {
