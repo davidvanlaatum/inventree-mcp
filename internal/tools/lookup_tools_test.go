@@ -133,6 +133,7 @@ func TestGetPartReturnsCompleteApprovedDetailAndSanitizesExternalLink(t *testing
 	fake := &fakeMilestoneLookupClient{partDetail: inventree.PartDetail{
 		PK: 10, Name: "resistor", IPN: "R-10K", Link: &complete, Notes: dvgoutils.Ptr("markdown"),
 		PricingMin: &pricing, InStock: &stock, CreationUser: dvgoutils.Ptr(7), Consumable: true,
+		RevisionOf: dvgoutils.Ptr(8), RevisionCount: dvgoutils.Ptr(2), VariantOf: dvgoutils.Ptr(9),
 	}}
 
 	resolver, err := weblinks.New("https://inventory.example.test", "INVENTREE_WEB_URL", true)
@@ -149,6 +150,9 @@ func TestGetPartReturnsCompleteApprovedDetailAndSanitizesExternalLink(t *testing
 	a.Equal(&stock, output.Record.InStock)
 	a.Equal(dvgoutils.Ptr(7), output.Record.CreationUser)
 	a.True(output.Record.Consumable)
+	a.Equal(dvgoutils.Ptr(8), output.Record.RevisionOf)
+	a.Equal(dvgoutils.Ptr(2), output.Record.RevisionCount)
+	a.Equal(dvgoutils.Ptr(9), output.Record.VariantOf)
 	a.Equal("https://inventory.example.test/part/10/", output.Record.WebURL)
 
 	credentialed := "https://user:pass@example.test/secret"

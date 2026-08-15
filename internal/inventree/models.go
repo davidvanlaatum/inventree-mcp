@@ -86,7 +86,10 @@ type PartDetail struct {
 	MaximumStock            float64        `json:"maximum_stock"`
 	Notes                   *string        `json:"notes"`
 	Revision                *string        `json:"revision"`
+	RevisionOf              *int           `json:"revision_of"`
+	RevisionCount           *int           `json:"revision_count"`
 	Units                   *string        `json:"units"`
+	VariantOf               *int           `json:"variant_of"`
 	CreationDate            *string        `json:"creation_date"`
 	CreationUser            *int           `json:"creation_user"`
 	PricingMin              *DecimalString `json:"pricing_min"`

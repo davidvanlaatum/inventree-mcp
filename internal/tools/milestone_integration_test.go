@@ -153,6 +153,114 @@ func TestMilestoneHappyPathToolsAgainstInvenTree(t *testing.T) {
 		a.False(updated.Record.Testable)
 	})
 
+	t.Run("part_family_relationships", func(t *testing.T) {
+		r := require.New(t)
+		a := assert.New(t)
+		ctx, _, _ := testhandler.SetupTestHandler(t)
+		fixture := newMilestoneToolFixture(t, shared)
+		category := fixture.ensure(t, testenv.FixtureCategory)
+		newPart := func(suffix string, template bool) inventree.Part {
+			name, err := fixture.run.Name(suffix)
+			r.NoError(err)
+			part, err := fixture.client.CreatePart(ctx, inventree.PartCreate{Name: name, Category: &category.ID, IsTemplate: dvgoutils.Ptr(template)})
+			r.NoError(err)
+			r.NotZero(part.PK)
+			return part
+		}
+		template := newPart("part-family-template", true)
+		root := newPart("part-family-root", false)
+		middle := newPart("part-family-middle", false)
+		leaf := newPart("part-family-leaf", false)
+		nonTemplateTarget := newPart("part-family-non-template-target", false)
+		otherTemplate := newPart("part-family-other-template", true)
+		assertRejected := func(fields inventree.PatchFields) {
+			_, updateErr := fixture.client.UpdatePart(ctx, leaf.PK, fields)
+			r.Error(updateErr)
+			var apiErr *inventree.APIError
+			r.ErrorAs(updateErr, &apiErr)
+			a.Equal(http.StatusBadRequest, apiErr.StatusCode)
+		}
+
+		assertRejected(inventree.PatchFields{"revision_of": inventree.Set(nonTemplateTarget.PK)})
+		_, err := fixture.client.UpdatePart(ctx, leaf.PK, inventree.PatchFields{"revision": inventree.Set("C")})
+		r.NoError(err)
+		assertRejected(inventree.PatchFields{"revision_of": inventree.Set(template.PK)})
+		_, err = fixture.client.UpdatePart(ctx, leaf.PK, inventree.PatchFields{"variant_of": inventree.Set(otherTemplate.PK)})
+		r.NoError(err)
+		_, err = fixture.client.UpdatePart(ctx, nonTemplateTarget.PK, inventree.PatchFields{"variant_of": inventree.Set(template.PK)})
+		r.NoError(err)
+		assertRejected(inventree.PatchFields{"revision_of": inventree.Set(nonTemplateTarget.PK)})
+		assertRejected(inventree.PatchFields{"variant_of": inventree.Set(nonTemplateTarget.PK)})
+		assertRejected(inventree.PatchFields{"revision_of": inventree.Set(2147483647)})
+
+		cycleA := newPart("part-family-cycle-a", false)
+		cycleB := newPart("part-family-cycle-b", false)
+		_, err = fixture.client.UpdatePart(ctx, cycleA.PK, inventree.PatchFields{"revision": inventree.Set("A"), "variant_of": inventree.Set(template.PK)})
+		r.NoError(err)
+		_, err = fixture.client.UpdatePart(ctx, cycleB.PK, inventree.PatchFields{"revision": inventree.Set("B"), "variant_of": inventree.Set(template.PK), "revision_of": inventree.Set(cycleA.PK)})
+		r.NoError(err)
+		_, err = fixture.client.UpdatePart(ctx, cycleA.PK, inventree.PatchFields{"revision_of": inventree.Set(cycleB.PK)})
+		r.NoError(err, "pinned InvenTree accepts revision cycles, so the MCP must enforce this guard")
+		_, existingCycle, err := updatePartFamilyRelationships(fixture.deps())(ctx, &mcp.CallToolRequest{}, UpdatePartFamilyRelationshipsInput{ID: cycleA.PK, ClearVariantOf: true, DryRun: true})
+		r.NoError(err)
+		a.Equal(StatusClarificationRequired, existingCycle.Status)
+		r.NotNil(existingCycle.Clarification)
+		a.Equal("revision_of_id", existingCycle.Clarification.Field)
+		a.Contains(existingCycle.Clarification.Reason, "cycle")
+
+		_, err = fixture.client.UpdatePart(ctx, root.PK, inventree.PatchFields{"variant_of": inventree.Set(template.PK)})
+		r.NoError(err)
+		_, err = fixture.client.UpdatePart(ctx, middle.PK, inventree.PatchFields{"revision": inventree.Set("B"), "revision_of": inventree.Set(root.PK), "variant_of": inventree.Set(template.PK)})
+		r.NoError(err)
+		_, err = fixture.client.UpdatePart(ctx, leaf.PK, inventree.PatchFields{"revision": inventree.Set("C")})
+		r.NoError(err)
+
+		input := UpdatePartFamilyRelationshipsInput{ID: leaf.PK, RevisionOfID: &middle.PK, VariantOfID: &template.PK, DryRun: true}
+		_, preview, err := updatePartFamilyRelationships(fixture.deps())(ctx, &mcp.CallToolRequest{}, input)
+		r.NoError(err)
+		a.Equal(StatusOK, preview.Status)
+		r.NotNil(preview.Plan)
+		a.Equal(&middle.PK, preview.Plan.After.RevisionOf)
+		a.Equal(&template.PK, preview.Plan.After.VariantOf)
+		input.DryRun = false
+		input.Confirm = true
+		input.PlanHash = preview.PlanHash
+		_, updated, err := updatePartFamilyRelationships(fixture.deps())(ctx, &mcp.CallToolRequest{}, input)
+		r.NoError(err)
+		a.Equal(StatusOK, updated.Status)
+		r.NotNil(updated.Record)
+		a.Equal(&middle.PK, updated.Record.RevisionOf)
+		a.Equal(&template.PK, updated.Record.VariantOf)
+
+		revisions, err := fixture.client.SearchPartsByQuery(ctx, inventree.PartQuery{RevisionOf: middle.PK})
+		r.NoError(err)
+		a.Contains(partIDs(revisions), leaf.PK)
+		variants, err := fixture.client.SearchPartsByQuery(ctx, inventree.PartQuery{VariantOf: template.PK})
+		r.NoError(err)
+		a.Contains(partIDs(variants), leaf.PK)
+		middleDetail, err := fixture.client.GetPartDetail(ctx, middle.PK)
+		r.NoError(err)
+		r.NotNil(middleDetail.RevisionCount)
+		a.GreaterOrEqual(*middleDetail.RevisionCount, 1)
+
+		_, cycle, err := updatePartFamilyRelationships(fixture.deps())(ctx, &mcp.CallToolRequest{}, UpdatePartFamilyRelationshipsInput{ID: root.PK, RevisionOfID: &leaf.PK, DryRun: true})
+		r.NoError(err)
+		a.Equal(StatusClarificationRequired, cycle.Status)
+		a.Contains(cycle.Clarification.Reason, "cycle")
+
+		clear := UpdatePartFamilyRelationshipsInput{ID: leaf.PK, ClearRevisionOf: true, ClearVariantOf: true, DryRun: true}
+		_, clearPreview, err := updatePartFamilyRelationships(fixture.deps())(ctx, &mcp.CallToolRequest{}, clear)
+		r.NoError(err)
+		clear.DryRun = false
+		clear.Confirm = true
+		clear.PlanHash = clearPreview.PlanHash
+		_, cleared, err := updatePartFamilyRelationships(fixture.deps())(ctx, &mcp.CallToolRequest{}, clear)
+		r.NoError(err)
+		a.Equal(StatusOK, cleared.Status)
+		a.Nil(cleared.Record.RevisionOf)
+		a.Nil(cleared.Record.VariantOf)
+	})
+
 	t.Run("part_category_administration", func(t *testing.T) {
 		r := require.New(t)
 		a := assert.New(t)
@@ -2020,12 +2128,13 @@ func TestMilestoneHappyPathToolsAgainstInvenTree(t *testing.T) {
 }
 
 type milestoneToolFixture struct {
-	shared             *testenv.SharedInvenTree
-	run                *testenv.Run
-	account            *testenv.Account
-	client             *inventree.Client
-	stockPlanStore     *stockPlanStore
-	parameterPlanStore *parameterPlanStore
+	shared              *testenv.SharedInvenTree
+	run                 *testenv.Run
+	account             *testenv.Account
+	client              *inventree.Client
+	stockPlanStore      *stockPlanStore
+	parameterPlanStore  *parameterPlanStore
+	partFamilyPlanStore *partFamilyPlanStore
 }
 
 type attachmentTarget struct {
@@ -2066,12 +2175,13 @@ func newMilestoneToolFixture(t *testing.T, shared *testenv.SharedInvenTree) mile
 	r.NoError(err)
 
 	return milestoneToolFixture{
-		shared:             shared,
-		run:                run,
-		account:            account,
-		client:             client,
-		stockPlanStore:     newStockPlanStore(time.Now, randomStockPlanToken),
-		parameterPlanStore: newParameterPlanStore(time.Now, randomStockPlanToken),
+		shared:              shared,
+		run:                 run,
+		account:             account,
+		client:              client,
+		stockPlanStore:      newStockPlanStore(time.Now, randomStockPlanToken),
+		parameterPlanStore:  newParameterPlanStore(time.Now, randomStockPlanToken),
+		partFamilyPlanStore: newPartFamilyPlanStore(time.Now, randomStockPlanToken),
 	}
 }
 
@@ -2080,10 +2190,11 @@ func (f milestoneToolFixture) deps() Dependencies {
 		ClientFromContext: func(context.Context) (any, error) {
 			return f.client, nil
 		},
-		UploadMode:         upload.ModeStdio,
-		UploadMaxBytes:     upload.DefaultMaxBytes,
-		stockPlanStore:     f.stockPlanStore,
-		parameterPlanStore: f.parameterPlanStore,
+		UploadMode:          upload.ModeStdio,
+		UploadMaxBytes:      upload.DefaultMaxBytes,
+		stockPlanStore:      f.stockPlanStore,
+		parameterPlanStore:  f.parameterPlanStore,
+		partFamilyPlanStore: f.partFamilyPlanStore,
 	}
 }
 

@@ -59,14 +59,14 @@ func TestReadMethodsUseExpectedEndpoints(t *testing.T) {
 		{
 			name: "search parts page by category",
 			call: func(ctx context.Context, client *Client) error {
-				page, err := client.SearchPartsPage(ctx, PartQuery{CategoryID: 20, Cascade: dvgoutils.Ptr(true), Limit: 101, Offset: 2})
+				page, err := client.SearchPartsPage(ctx, PartQuery{CategoryID: 20, Cascade: dvgoutils.Ptr(true), RevisionOf: 30, VariantOf: 40, Limit: 101, Offset: 2})
 				if err == nil && !page.HasMore {
 					return errors.New("expected another part page")
 				}
 				return err
 			},
 			wantPath:  "/api/part/",
-			wantQuery: url.Values{"category": []string{"20"}, "cascade": []string{"true"}, "limit": []string{"101"}, "offset": []string{"2"}},
+			wantQuery: url.Values{"category": []string{"20"}, "cascade": []string{"true"}, "revision_of": []string{"30"}, "variant_of": []string{"40"}, "limit": []string{"101"}, "offset": []string{"2"}},
 			response:  `{"count":200,"next":"https://inventory.example.test/api/part/?limit=101&offset=103","previous":null,"results":[{"pk":10,"name":"resistor","category":20}]}`,
 		},
 		{
@@ -82,13 +82,13 @@ func TestReadMethodsUseExpectedEndpoints(t *testing.T) {
 			name: "get part detail",
 			call: func(ctx context.Context, client *Client) error {
 				record, err := client.GetPartDetail(ctx, 10)
-				if err == nil && (record.PK != 10 || record.Notes == nil || *record.Notes != "detail") {
+				if err == nil && (record.PK != 10 || record.Notes == nil || *record.Notes != "detail" || record.RevisionOf == nil || *record.RevisionOf != 8 || record.RevisionCount == nil || *record.RevisionCount != 2 || record.VariantOf == nil || *record.VariantOf != 9) {
 					return errors.New("part detail did not preserve exact fields")
 				}
 				return err
 			},
 			wantPath: "/api/part/10/",
-			response: `{"pk":10,"name":"resistor","notes":"detail","creation_user":7,"minimum_stock":1.5}`,
+			response: `{"pk":10,"name":"resistor","notes":"detail","creation_user":7,"minimum_stock":1.5,"revision_of":8,"revision_count":2,"variant_of":9}`,
 		},
 		{
 			name: "search categories",
