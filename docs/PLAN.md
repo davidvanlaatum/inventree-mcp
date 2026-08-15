@@ -939,6 +939,8 @@ Live order-entry hardening normalizes omitted, null, blank, and whitespace-only 
 - F-S39 through F-S47 close approved external-URL, part, family-relation, related-part, sourcing, company, stock-detail/history, and purchasing exact-read or maintenance gaps while retaining concise search projections.
 - F-S48 through F-S54 add separately reviewed owner, contact/address, project-code, delete-on-deplete policy, serial, stock-provenance, and install/uninstall workflows instead of broad generic PATCH surfaces.
 - F-S55 through F-S60 are discovery-only stories for barcode, tags, testing, pricing, requirements, and stocktake generation/reporting; each requires explicit operator approval of its resulting implementation contract.
+- F-S61 is reserved in a separate active worktree for the InvenTree 1.5/API 530 baseline. F-S62 through F-S69 extend the operational inventory focus with purchase-order hold/resume/cancel and metadata maintenance, deferred PO duplication, PO/location parameters, stock custom status, deferred stock merge, location detail/type administration, and guarded location/category deletion.
+- Build orders, BOM mutation, sales orders, return orders, and related sales/customer workflows remain deferred and are not implied by the PO, stock, location, and category coverage stories.
 
 Future workflows require a new product review pass before implementation.
 
