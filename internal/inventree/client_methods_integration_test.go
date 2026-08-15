@@ -791,7 +791,7 @@ func TestClientMethodsAgainstInvenTree(t *testing.T) {
 		updatedLine, err := fixture.client.UpdatePurchaseOrderLine(ctx, line.PK, inventree.PatchFields{"order": inventree.Set(order.PK), "part": inventree.Set(supplierPart.ID), "quantity": inventree.Set(4.0)})
 		r.NoError(err)
 		r.Equal(4.0, updatedLine.Quantity)
-		// InvenTree 1.4.3's DELETE /api/order/po-line/{id}/ does not itself
+		// InvenTree 1.5.0's DELETE /api/order/po-line/{id}/ does not itself
 		// restrict deletion by order status or by received quantity; the
 		// tools package layers its own zero-received/no-linked-stock guard
 		// on top of this permissive upstream behavior. These client-method
@@ -926,7 +926,7 @@ func TestClientMethodsAgainstInvenTree(t *testing.T) {
 
 		// Each subsection below isolates exactly one blocking category on
 		// its own part, proves the Search query finds it, then calls the
-		// raw, unguarded DeletePart directly to pin whether InvenTree 1.4.3
+		// raw, unguarded DeletePart directly to pin whether InvenTree 1.5.0
 		// itself rejects that single category alone. This is the granular
 		// per-condition pinning style the sibling "po" subtest above uses,
 		// rather than one part carrying every category simultaneously,
@@ -943,12 +943,12 @@ func TestClientMethodsAgainstInvenTree(t *testing.T) {
 		r.Contains(stockItemIDs(stockItems), stockItem.PK)
 		deactivatePart(t, ctx, fixture.client, stockPart.PK)
 		err = fixture.client.DeletePart(ctx, stockPart.PK)
-		// InvenTree 1.4.3 does not merely orphan a referencing stock item: it
+		// InvenTree 1.5.0 does not merely orphan a referencing stock item: it
 		// destroys it along with the part. This is exactly the silent-loss
 		// risk delete_part's own stock guard exists to prevent.
-		r.NoError(err, "InvenTree 1.4.3 permits deleting an inactive part that still has a stock item")
+		r.NoError(err, "InvenTree 1.5.0 permits deleting an inactive part that still has a stock item")
 		_, stockErr := fixture.client.GetStockItem(ctx, stockItem.PK)
-		r.Error(stockErr, "InvenTree 1.4.3 destroys the stock item along with its part rather than orphaning it")
+		r.Error(stockErr, "InvenTree 1.5.0 destroys the stock item along with its part rather than orphaning it")
 
 		t.Log("bom_as_assembly")
 		bomAssemblyPart := newTestPart("part-delete-bom-assembly", inventree.PartCreate{Assembly: dvgoutils.Ptr(true)})
@@ -960,7 +960,7 @@ func TestClientMethodsAgainstInvenTree(t *testing.T) {
 		r.Contains(bomItemIDs(ownBOM), ownBOMItem.PK)
 		deactivatePart(t, ctx, fixture.client, bomAssemblyPart.PK)
 		err = fixture.client.DeletePart(ctx, bomAssemblyPart.PK)
-		r.NoError(err, "InvenTree 1.4.3 permits deleting an inactive part that has its own BOM")
+		r.NoError(err, "InvenTree 1.5.0 permits deleting an inactive part that has its own BOM")
 
 		t.Log("bom_as_component")
 		bomComponentPart := newTestPart("part-delete-bom-component", inventree.PartCreate{Component: dvgoutils.Ptr(true)})
@@ -970,13 +970,13 @@ func TestClientMethodsAgainstInvenTree(t *testing.T) {
 		usesBOM, err := fixture.client.SearchBomItems(ctx, inventree.BomItemQuery{Uses: bomComponentPart.PK})
 		r.NoError(err)
 		r.Contains(bomItemIDs(usesBOM), usesBOMItem.PK)
-		// This is the one category InvenTree 1.4.3 genuinely protects at the
+		// This is the one category InvenTree 1.5.0 genuinely protects at the
 		// database level, independent of the active-state rule above:
 		// deleting a part while it is still used as a component elsewhere
 		// is rejected outright.
 		deactivatePart(t, ctx, fixture.client, bomComponentPart.PK)
 		err = fixture.client.DeletePart(ctx, bomComponentPart.PK)
-		r.Error(err, "InvenTree 1.4.3 must reject deleting a part used as a component in another part's BOM")
+		r.Error(err, "InvenTree 1.5.0 must reject deleting a part used as a component in another part's BOM")
 		var componentAPIErr *inventree.APIError
 		r.True(errors.As(err, &componentAPIErr))
 		r.Equal([]string{"Cannot delete this part as it is used in an assembly"}, componentAPIErr.FieldErrors["non_field_errors"])
@@ -991,7 +991,7 @@ func TestClientMethodsAgainstInvenTree(t *testing.T) {
 		r.Contains(buildIDs(builds), build.PK)
 		deactivatePart(t, ctx, fixture.client, buildPart.PK)
 		err = fixture.client.DeletePart(ctx, buildPart.PK)
-		r.NoError(err, "InvenTree 1.4.3 permits deleting an inactive part that is the top-level part of a build")
+		r.NoError(err, "InvenTree 1.5.0 permits deleting an inactive part that is the top-level part of a build")
 
 		t.Log("purchase_order_line")
 		poPart := newTestPart("part-delete-po-line", inventree.PartCreate{Purchaseable: dvgoutils.Ptr(true)})
@@ -1012,9 +1012,9 @@ func TestClientMethodsAgainstInvenTree(t *testing.T) {
 		r.Contains(purchaseOrderLineIDs(poLines), poLine.PK)
 		deactivatePart(t, ctx, fixture.client, poPart.PK)
 		err = fixture.client.DeletePart(ctx, poPart.PK)
-		r.NoError(err, "InvenTree 1.4.3 permits deleting an inactive part referenced by a purchase-order line")
+		r.NoError(err, "InvenTree 1.5.0 permits deleting an inactive part referenced by a purchase-order line")
 		_, lineErr := fixture.client.GetPurchaseOrderLine(ctx, poLine.PK)
-		r.NoError(lineErr, "unlike stock, InvenTree 1.4.3 leaves the purchase-order line behind, orphaned, rather than destroying it")
+		r.NoError(lineErr, "unlike stock, InvenTree 1.5.0 leaves the purchase-order line behind, orphaned, rather than destroying it")
 
 		t.Log("sales_order_line")
 		soPart := newTestPart("part-delete-so-line", inventree.PartCreate{Purchaseable: dvgoutils.Ptr(true)})
@@ -1029,7 +1029,7 @@ func TestClientMethodsAgainstInvenTree(t *testing.T) {
 		r.Contains(salesOrderLineIDs(salesLines), salesOrderLine.PK)
 		deactivatePart(t, ctx, fixture.client, soPart.PK)
 		err = fixture.client.DeletePart(ctx, soPart.PK)
-		r.NoError(err, "InvenTree 1.4.3 permits deleting an inactive part referenced by a sales-order line")
+		r.NoError(err, "InvenTree 1.5.0 permits deleting an inactive part referenced by a sales-order line")
 
 		t.Log("variant")
 		templatePart := newTestPart("part-delete-variant-template", inventree.PartCreate{})
@@ -1046,13 +1046,13 @@ func TestClientMethodsAgainstInvenTree(t *testing.T) {
 		r.Contains(partIDs(variants), variantPart.PK)
 		deactivatePart(t, ctx, fixture.client, templatePart.PK)
 		err = fixture.client.DeletePart(ctx, templatePart.PK)
-		r.NoError(err, "InvenTree 1.4.3 permits deleting an inactive part template that has variants")
+		r.NoError(err, "InvenTree 1.5.0 permits deleting an inactive part template that has variants")
 
 		// The issue that requested delete_part suggested treating supplier
 		// parts, manufacturer parts, parameters, attachments, and
 		// related-part links as informational-only, non-blocking context
 		// that InvenTree cascades away on its own. Pinned directly here:
-		// InvenTree 1.4.3 does no such thing -- but not in the direction
+		// InvenTree 1.5.0 does no such thing -- but not in the direction
 		// that suggestion implied. DELETE /api/part/{id}/ silently permits
 		// deleting a part while any of these five references still exists,
 		// once the part is inactive; there is no upstream protection to
@@ -1072,7 +1072,7 @@ func TestClientMethodsAgainstInvenTree(t *testing.T) {
 		r.Len(supplierPartsFound, 1)
 		deactivatePart(t, ctx, fixture.client, infoSupplierOnlyPart.PK)
 		err = fixture.client.DeletePart(ctx, infoSupplierOnlyPart.PK)
-		r.NoError(err, "InvenTree 1.4.3 permits deleting an inactive part with only a supplier-part link")
+		r.NoError(err, "InvenTree 1.5.0 permits deleting an inactive part with only a supplier-part link")
 
 		t.Log("manufacturer_part_only")
 		infoManufacturerOnlyPart := newTestPart("part-delete-info-manufacturer", inventree.PartCreate{})
@@ -1086,7 +1086,7 @@ func TestClientMethodsAgainstInvenTree(t *testing.T) {
 		r.Len(manufacturerPartsFound, 1)
 		deactivatePart(t, ctx, fixture.client, infoManufacturerOnlyPart.PK)
 		err = fixture.client.DeletePart(ctx, infoManufacturerOnlyPart.PK)
-		r.NoError(err, "InvenTree 1.4.3 permits deleting an inactive part with only a manufacturer-part link")
+		r.NoError(err, "InvenTree 1.5.0 permits deleting an inactive part with only a manufacturer-part link")
 
 		t.Log("related_part_only")
 		infoRelatedOnlyPart := newTestPart("part-delete-info-related", inventree.PartCreate{})
@@ -1101,7 +1101,7 @@ func TestClientMethodsAgainstInvenTree(t *testing.T) {
 		r.Contains(partRelationIDs(relationsFound), relation.PK, "the ?part= filter must match a relation where the part is part_2, not only part_1")
 		deactivatePart(t, ctx, fixture.client, infoRelatedOnlyPart.PK)
 		err = fixture.client.DeletePart(ctx, infoRelatedOnlyPart.PK)
-		r.NoError(err, "InvenTree 1.4.3 permits deleting an inactive part with only a related-part link")
+		r.NoError(err, "InvenTree 1.5.0 permits deleting an inactive part with only a related-part link")
 
 		t.Log("parameter_only")
 		infoParamPart := newTestPart("part-delete-info-parameter", inventree.PartCreate{})
@@ -1114,7 +1114,7 @@ func TestClientMethodsAgainstInvenTree(t *testing.T) {
 		r.Len(parametersFound, 1)
 		deactivatePart(t, ctx, fixture.client, infoParamPart.PK)
 		err = fixture.client.DeletePart(ctx, infoParamPart.PK)
-		r.NoError(err, "InvenTree 1.4.3 permits deleting an inactive part with only a parameter row")
+		r.NoError(err, "InvenTree 1.5.0 permits deleting an inactive part with only a parameter row")
 
 		t.Log("attachment_only")
 		infoAttachmentPart := newTestPart("part-delete-info-attachment", inventree.PartCreate{})
@@ -1132,15 +1132,15 @@ func TestClientMethodsAgainstInvenTree(t *testing.T) {
 		r.Contains(attachmentIDs(attachmentsFound), attachment.PK)
 		deactivatePart(t, ctx, fixture.client, infoAttachmentPart.PK)
 		err = fixture.client.DeletePart(ctx, infoAttachmentPart.PK)
-		r.NoError(err, "InvenTree 1.4.3 permits deleting an inactive part with only an attachment")
+		r.NoError(err, "InvenTree 1.5.0 permits deleting an inactive part with only an attachment")
 
-		// InvenTree 1.4.3 refuses to delete any *active* part regardless of
+		// InvenTree 1.5.0 refuses to delete any *active* part regardless of
 		// references, independent of every category above -- confirmed by
 		// inspecting the field error on a part with zero other references.
 		t.Log("clean_active_part_is_rejected")
 		activeCleanPart := newTestPart("part-delete-active-clean", inventree.PartCreate{})
 		err = fixture.client.DeletePart(ctx, activeCleanPart.PK)
-		r.Error(err, "InvenTree 1.4.3 must reject deleting any active part, regardless of other references")
+		r.Error(err, "InvenTree 1.5.0 must reject deleting any active part, regardless of other references")
 		var apiErr *inventree.APIError
 		r.True(errors.As(err, &apiErr))
 		r.Equal([]string{"Cannot delete this part as it is still active"}, apiErr.FieldErrors["non_field_errors"])
@@ -1149,7 +1149,7 @@ func TestClientMethodsAgainstInvenTree(t *testing.T) {
 		cleanPart := newTestPart("part-delete-clean", inventree.PartCreate{})
 		deactivatePart(t, ctx, fixture.client, cleanPart.PK)
 		err = fixture.client.DeletePart(ctx, cleanPart.PK)
-		r.NoError(err, "InvenTree 1.4.3 must allow deleting an inactive part with no other references")
+		r.NoError(err, "InvenTree 1.5.0 must allow deleting an inactive part with no other references")
 		_, err = fixture.client.GetPart(ctx, cleanPart.PK)
 		r.Error(err, "the deleted part must no longer be readable")
 	})
@@ -1276,7 +1276,7 @@ func TestClientMethodsAgainstInvenTree(t *testing.T) {
 	})
 }
 
-// deactivatePart controls for InvenTree 1.4.3's independent "Cannot delete
+// deactivatePart controls for InvenTree 1.5.0's independent "Cannot delete
 // this part as it is still active" rule, pinned by the part_delete
 // subtest's "clean_active_part_is_rejected" case, so every other blocking
 // category in that subtest is exercised against an otherwise-deletable
