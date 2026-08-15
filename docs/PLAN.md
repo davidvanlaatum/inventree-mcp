@@ -330,6 +330,7 @@ tests/
 
 - Prefer explicit structured inputs over free-form strings.
 - Support human-readable lookup fields, but fail on ambiguous matches.
+- Keep list and search projections bounded to high-value selection fields. Exact `get_*` tools are the canonical approved complete-record surface, backed by pinned inventories that classify every default response field; sensitive, deferred, write-only, and separately retrieved fields remain explicit exclusions. Optional nested expansions remain separate lookups unless a reviewed workflow needs them atomically for validation.
 - Return InvenTree object IDs and URLs for every created or updated object. F-S34 and its F-S37 default-mount correction make this contract explicit across reads and writes: absolute user-facing frontend `web_url` values are distinct from sanitized relative REST-path `api_url` values, media URLs, and operator-supplied external links. Build web links only from trusted process configuration through a centralized typed route map; OAuth token envelopes, request/proxy headers, and caller input must not control link authority or route selection. Optional `INVENTREE_WEB_URL` is the exact operator-configured frontend mount; when omitted, every mode preserves the `INVENTREE_URL` site/API base and adds InvenTree's version-pinned stock `/web` frontend mount. Both paths receive the same credential-free web-base validation, production requires HTTPS, and invalid effective bases fail startup with redacted diagnostics. The configured authority and deployment prefix remain operator-authoritative even if internal or not browser-reachable for every MCP user; returned links can disclose that authority to authorized callers and operator-enabled sensitive debug traffic logs that capture response bodies, while rejected raw configuration and request-derived authorities remain absent from diagnostics and ordinary logs. Objects without a stable dedicated frontend page omit `web_url` and use universal `parent_web_url` only for an immediate owning object with a stable frontend page and identity exposed in the same projection; they omit that field rather than walking to a more distant ancestor. Clarification candidates intentionally make a documented breaking change from ambiguous `url` to explicit absolute `web_url` and sanitized relative `api_url`, with no compatibility alias; F-S34 does not add `api_url` universally.
 - Make all high-risk write workflows support `dry_run`.
 - Dry-run workflows must expose every effective mutation field in an explicit plan. Action names alone are not a reviewable plan; keep selected existing records factual and map each unresolved foreign-key field to the earlier planned create that supplies it. A field-level preview without a confirmation token is advisory: execution must repeat preflight and callers must review again after intervening upstream changes.
@@ -512,7 +513,7 @@ Important behaviors:
 
 Important behaviors:
 
-- Treat supplier and manufacturer roles explicitly. Do not add customer-specific assumptions while sales is out of scope.
+- Treat supplier and manufacturer roles explicitly. Do not add customer-specific assumptions while sales is out of scope. F-S44's separately approved customer-role flag administration is limited to role state and dependency safety; it does not add sales tools, customer contacts/billing, CRM behavior, or customer defaults.
 - `search_companies`, `search_suppliers`, and `search_manufacturers` should operate on the same InvenTree Company model with explicit role filters.
 - `create_contact` and `create_address` are included only for supplier/manufacturer operational data needed by catalog and purchasing workflows. They must not introduce customer-role defaults, sales contacts, billing workflows, or CRM-style customer management in milestone 1.
 - Fail if an existing company match is ambiguous.
@@ -935,6 +936,18 @@ Live order-entry hardening normalizes omitted, null, blank, and whitespace-only 
 - BOM import workflow.
 - Build order create/allocate/complete workflow.
 - Stocktake adjustment workflow.
+- F-S39 through F-S47 close approved external-URL, part, family-relation, related-part, sourcing, company, stock-detail/history, and purchasing exact-read or maintenance gaps while retaining concise search projections.
+- F-S48 through F-S54 add separately reviewed owner, contact/address, project-code, delete-on-deplete policy, serial, stock-provenance, and install/uninstall workflows instead of broad generic PATCH surfaces.
+- F-S55 through F-S60 are discovery-only stories for barcode, tags, testing, pricing, requirements, and stocktake generation/reporting; each requires explicit operator approval of its resulting implementation contract.
+- F-S61 is complete on `main` and establishes the InvenTree 1.5/API 530 baseline. The post-merge optional-field audit uses these explicit routes:
+  - F-S40 owns part `consumable` and notes; nested category/default-location detail and `category_path` remain separate exact lookups, existing part parameters remain under F-S12, and tags/price breaks remain F-S56/F-S58.
+  - F-S43 owns sourcing availability/read metadata and long notes; F-S44 owns company notes and ordinary metadata; their API 530 `duplicate` inputs are write-only commands excluded pending separately approved guarded duplication workflows.
+  - F-S45 owns stock `location_path`; nested stock location/supplier-part detail remains separate, and stock tags/tests remain F-S56/F-S57. F-S46 projects new tracking detail through stable IDs and safe display fields rather than embedded full records.
+  - F-S47 owns purchase-order notes, line/extra-line discount, and nullable total-price reads; supplier/order/part detail remains separate, tags remain F-S56, and PO duplication remains F-S63.
+  - Expanded F-S64 owns generic parameter values for purchase orders, stock locations, companies, supplier parts, manufacturer parts, and part categories, plus API 530 parameter-template `unique` administration; F-S67 owns location `path`, while category `path` remains part of the existing exact category read and F-S69 deletion plan.
+  - F-S56 owns all newly schema-visible tags and F-S58 owns embedded price-break/pricing workflows. Pinned inventories must classify null, omission, read-only, write-only, embedded-detail, and deferred behavior so future API drift cannot silently widen a tool.
+  No additional story is required for the API 530 additions. F-S62 through F-S69 extend the operational inventory focus with purchase-order hold/resume/cancel and metadata maintenance, deferred PO duplication, cross-object parameters, stock custom status, deferred stock merge, location detail/type administration, and guarded location/category deletion.
+- Build orders, BOM mutation, sales orders, return orders, and related sales/customer workflows remain deferred and are not implied by the PO, stock, location, and category coverage stories.
 
 Future workflows require a new product review pass before implementation.
 
