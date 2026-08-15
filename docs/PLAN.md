@@ -944,6 +944,7 @@ Live order-entry hardening normalizes omitted, null, blank, and whitespace-only 
 - Build order create/allocate/complete workflow.
 - Stocktake adjustment workflow.
 - F-S39 through F-S47 close approved external-URL, part, family-relation, related-part, sourcing, company, stock-detail/history, and purchasing exact-read or maintenance gaps while retaining concise search projections.
+- F-S42 exposes related-part links as undirected stable-ID records with bounded reads, guarded create, note-only state-bound update, and confirmed single-link deletion; endpoint replacement remains an explicit delete-then-create workflow.
 - F-S48 through F-S54 add separately reviewed owner, contact/address, project-code, delete-on-deplete policy, serial, stock-provenance, and install/uninstall workflows instead of broad generic PATCH surfaces.
 - F-S55 through F-S60 are discovery-only stories for barcode, tags, testing, pricing, requirements, and stocktake generation/reporting; each requires explicit operator approval of its resulting implementation contract.
 - F-S61 is complete on `main` and establishes the InvenTree 1.5/API 530 baseline. The post-merge optional-field audit uses these explicit routes:

@@ -927,6 +927,63 @@ func TestClientMethodsAgainstInvenTree(t *testing.T) {
 		r.Equal(inventree.PurchaseOrderStatusComplete, explicitlyCompleted.Status)
 	})
 
+	t.Run("part_relation_crud", func(t *testing.T) {
+		r := require.New(t)
+		a := assert.New(t)
+		ctx, _, _ := testhandler.SetupTestHandler(t)
+		fixture := newClientMethodFixture(t, shared)
+		category := fixture.ensure(t, testenv.FixtureCategory)
+		part1Name, err := fixture.run.Name("relation-part-1")
+		r.NoError(err)
+		part2Name, err := fixture.run.Name("relation-part-2")
+		r.NoError(err)
+		part1, err := fixture.client.CreatePart(ctx, inventree.PartCreate{Name: part1Name, Category: dvgoutils.Ptr(category.ID), Active: dvgoutils.Ptr(true)})
+		r.NoError(err)
+		part2, err := fixture.client.CreatePart(ctx, inventree.PartCreate{Name: part2Name, Category: dvgoutils.Ptr(category.ID), Active: dvgoutils.Ptr(true)})
+		r.NoError(err)
+
+		relation, err := fixture.client.CreatePartRelation(ctx, inventree.PartRelationCreate{Part1: part1.PK, Part2: part2.PK, Note: "created"})
+		r.NoError(err)
+		r.NotZero(relation.PK)
+		a.Equal(part1.PK, relation.Part1)
+		a.Equal(part2.PK, relation.Part2)
+
+		got, err := fixture.client.GetPartRelation(ctx, relation.PK)
+		r.NoError(err)
+		a.Equal(relation, got)
+		for _, partID := range []int{part1.PK, part2.PK} {
+			page, pageErr := fixture.client.SearchPartRelationsPage(ctx, inventree.PartRelationQuery{Part: partID, Limit: 10})
+			r.NoError(pageErr)
+			a.Contains(partRelationIDs(page.Results), relation.PK, "the generic part filter must match either endpoint")
+		}
+		forward, err := fixture.client.SearchPartRelationsPage(ctx, inventree.PartRelationQuery{Part1: part1.PK, Part2: part2.PK, Limit: 10})
+		r.NoError(err)
+		a.Contains(partRelationIDs(forward.Results), relation.PK)
+		reverseFilter, err := fixture.client.SearchPartRelationsPage(ctx, inventree.PartRelationQuery{Part1: part2.PK, Part2: part1.PK, Limit: 10})
+		r.NoError(err)
+		a.NotContains(partRelationIDs(reverseFilter.Results), relation.PK, "endpoint-specific filters preserve stored direction")
+
+		_, err = fixture.client.CreatePartRelation(ctx, inventree.PartRelationCreate{Part1: part2.PK, Part2: part1.PK, Note: "reversed duplicate"})
+		r.Error(err, "InvenTree 1.5.0 must reject the same undirected pair in reversed order")
+		var apiErr *inventree.APIError
+		r.ErrorAs(err, &apiErr)
+		a.Equal(http.StatusBadRequest, apiErr.StatusCode)
+
+		updated, err := fixture.client.UpdatePartRelation(ctx, relation.PK, inventree.PatchFields{"note": inventree.Set("updated")})
+		r.NoError(err)
+		a.Equal("updated", updated.Note)
+		a.Equal(part1.PK, updated.Part1)
+		a.Equal(part2.PK, updated.Part2)
+		r.NoError(fixture.client.DeletePartRelation(ctx, relation.PK))
+		_, err = fixture.client.GetPartRelation(ctx, relation.PK)
+		r.Error(err)
+
+		part1, err = fixture.client.UpdatePart(ctx, part1.PK, inventree.PatchFields{"active": inventree.Set(false)})
+		r.NoError(err)
+		a.False(part1.Active)
+		r.NoError(fixture.client.DeletePart(ctx, part1.PK), "removing the relation must unblock an otherwise-unused inactive part")
+	})
+
 	t.Run("part_delete", func(t *testing.T) {
 		r := require.New(t)
 		ctx, _, _ := testhandler.SetupTestHandler(t)

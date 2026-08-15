@@ -330,6 +330,7 @@ func registerWriteTools(server *mcp.Server, deps Dependencies) {
 	addWriteTool(server, deps, UpdatePartToolName, "Update part", "Partially updates an InvenTree part.", updatePart(deps))
 	registerPartFamilyTools(server, deps)
 	registerPartDeleteTool(server, deps)
+	registerPartRelationWriteTools(server, deps)
 	addWriteTool(server, deps, SetPartParametersToolName, "Set part parameters", "Creates or updates part parameter values using existing linked templates.", setPartParameters(deps))
 	addWriteTool(server, deps, DeletePartParameterToolName, "Delete part parameter", "Deletes one parameter row by stable ID after confirm:true and verifies removal.", deletePartParameter(deps))
 	registerParameterTemplateTools(server, deps)

@@ -91,6 +91,25 @@ func TestReadMethodsUseExpectedEndpoints(t *testing.T) {
 			response: `{"pk":10,"name":"resistor","notes":"detail","creation_user":7,"minimum_stock":1.5,"revision_of":8,"revision_count":2,"variant_of":9}`,
 		},
 		{
+			name: "search part relations page",
+			call: func(ctx context.Context, client *Client) error {
+				page, err := client.SearchPartRelationsPage(ctx, PartRelationQuery{Part: 10, Part1: 10, Part2: 20, Limit: 100, Offset: 2})
+				if err == nil && (!page.HasMore || len(page.Results) != 1) {
+					return errors.New("expected bounded part-relation page")
+				}
+				return err
+			},
+			wantPath:  "/api/part/related/",
+			wantQuery: url.Values{"part": []string{"10"}, "part_1": []string{"10"}, "part_2": []string{"20"}, "limit": []string{"100"}, "offset": []string{"2"}},
+			response:  `{"count":2,"next":"https://inventory.example.test/api/part/related/?offset=102","previous":null,"results":[{"pk":70,"part_1":10,"part_2":20,"note":"mate"}]}`,
+		},
+		{
+			name:     "get part relation",
+			call:     func(ctx context.Context, client *Client) error { _, err := client.GetPartRelation(ctx, 70); return err },
+			wantPath: "/api/part/related/70/",
+			response: `{"pk":70,"part_1":10,"part_2":20,"note":"mate"}`,
+		},
+		{
 			name: "search categories",
 			call: func(ctx context.Context, client *Client) error {
 				_, err := client.SearchPartCategories(ctx, SearchQuery{Search: "passives"})

@@ -26,6 +26,8 @@ const (
 
 	SearchPartsToolName                     = "search_parts"
 	GetPartToolName                         = "get_part"
+	ListPartRelationsToolName               = "list_part_relations"
+	GetPartRelationToolName                 = "get_part_relation"
 	SearchPartCategoriesToolName            = "search_part_categories"
 	GetPartCategoryToolName                 = "get_part_category"
 	SearchParameterTemplatesToolName        = "search_parameter_templates"
@@ -71,6 +73,9 @@ const (
 	UpdatePartToolName                      = "update_part"
 	UpdatePartFamilyRelationshipsToolName   = "update_part_family_relationships"
 	DeletePartToolName                      = "delete_part"
+	CreatePartRelationToolName              = "create_part_relation"
+	UpdatePartRelationToolName              = "update_part_relation"
+	DeletePartRelationToolName              = "delete_part_relation"
 	CreatePartCategoryToolName              = "create_part_category"
 	UpdatePartCategoryToolName              = "update_part_category"
 	SetPartParametersToolName               = "set_part_parameters"
@@ -137,6 +142,8 @@ type ToolAuthorization struct {
 var lookupToolNames = []string{
 	SearchPartsToolName,
 	GetPartToolName,
+	ListPartRelationsToolName,
+	GetPartRelationToolName,
 	SearchPartCategoriesToolName,
 	GetPartCategoryToolName,
 	SearchParameterTemplatesToolName,
@@ -176,6 +183,9 @@ var writeToolNames = []string{
 	UpdatePartToolName,
 	UpdatePartFamilyRelationshipsToolName,
 	DeletePartToolName,
+	CreatePartRelationToolName,
+	UpdatePartRelationToolName,
+	DeletePartRelationToolName,
 	CreatePartCategoryToolName,
 	UpdatePartCategoryToolName,
 	SetPartParametersToolName,
@@ -259,7 +269,7 @@ func init() {
 		scopes := []string{ScopeInventreeWrite}
 		mutationClass := "write"
 		switch name {
-		case CreatePartToolName, UpdatePartToolName, CreateCompanyToolName, CreateSupplierPartToolName, CreateManufacturerPartToolName, UpsertPartWorkflowToolName, CreateParameterTemplateToolName, UpdateParameterTemplateToolName, CreateCategoryParameterDefaultToolName, UpdateCategoryParameterDefaultToolName, CreatePartCategoryToolName, UpdatePartCategoryToolName, UpdateCompanyToolName, UpdateSupplierPartToolName, UpdateManufacturerPartToolName, CreateStockLocationToolName, UpdateStockLocationToolName, CreatePurchaseOrderExtraLineToolName, UpdatePurchaseOrderExtraLineToolName, CreatePurchaseOrderWorkflowToolName, IssuePurchaseOrderToolName, CompletePurchaseOrderToolName:
+		case CreatePartToolName, UpdatePartToolName, CreatePartRelationToolName, UpdatePartRelationToolName, CreateCompanyToolName, CreateSupplierPartToolName, CreateManufacturerPartToolName, UpsertPartWorkflowToolName, CreateParameterTemplateToolName, UpdateParameterTemplateToolName, CreateCategoryParameterDefaultToolName, UpdateCategoryParameterDefaultToolName, CreatePartCategoryToolName, UpdatePartCategoryToolName, UpdateCompanyToolName, UpdateSupplierPartToolName, UpdateManufacturerPartToolName, CreateStockLocationToolName, UpdateStockLocationToolName, CreatePurchaseOrderExtraLineToolName, UpdatePurchaseOrderExtraLineToolName, CreatePurchaseOrderWorkflowToolName, IssuePurchaseOrderToolName, CompletePurchaseOrderToolName:
 			scopes = []string{ScopeInventreeRead, ScopeInventreeWrite}
 		case BulkPropagatePartParametersToolName:
 			scopes = []string{ScopeInventreeRead, ScopeInventreeWrite, ScopeInventreeDestructive}
@@ -280,7 +290,7 @@ func init() {
 			scopes = []string{ScopeInventreeWrite, ScopeInventreeUpload}
 		case SetCompanyImageToolName, SetCompanyImageFromURLToolName:
 			scopes = []string{ScopeInventreeRead, ScopeInventreeWrite, ScopeInventreeUpload}
-		case DeletePartParameterToolName, DeleteParameterTemplateToolName, MergeParameterTemplatesToolName, DeleteCategoryParameterDefaultToolName, DeletePurchaseOrderExtraLineToolName, DeletePurchaseOrderLineToolName, DeletePartToolName:
+		case DeletePartParameterToolName, DeleteParameterTemplateToolName, MergeParameterTemplatesToolName, DeleteCategoryParameterDefaultToolName, DeletePurchaseOrderExtraLineToolName, DeletePurchaseOrderLineToolName, DeletePartToolName, DeletePartRelationToolName:
 			scopes = []string{ScopeInventreeRead, ScopeInventreeWrite, ScopeInventreeDestructive}
 			mutationClass = "destructive"
 		case DeleteAttachmentToolName:
@@ -294,7 +304,7 @@ func init() {
 		if name == UploadAttachmentFromURLToolName || name == SetCompanyImageFromURLToolName {
 			annotations.OpenWorld = true
 		}
-		if name == DeleteAttachmentToolName || name == ClearCompanyImageToolName || name == DeletePartParameterToolName || name == DeleteParameterTemplateToolName || name == MergeParameterTemplatesToolName || name == DeleteCategoryParameterDefaultToolName || name == DeletePurchaseOrderExtraLineToolName || name == DeletePurchaseOrderLineToolName || name == BulkPropagatePartParametersToolName || name == DepleteStockItemToolName || name == UpdatePartFamilyRelationshipsToolName || name == DeletePartToolName {
+		if name == DeleteAttachmentToolName || name == ClearCompanyImageToolName || name == DeletePartParameterToolName || name == DeleteParameterTemplateToolName || name == MergeParameterTemplatesToolName || name == DeleteCategoryParameterDefaultToolName || name == DeletePurchaseOrderExtraLineToolName || name == DeletePurchaseOrderLineToolName || name == BulkPropagatePartParametersToolName || name == DepleteStockItemToolName || name == UpdatePartFamilyRelationshipsToolName || name == DeletePartToolName || name == DeletePartRelationToolName {
 			annotations.Destructive = true
 		}
 		ToolAuthorizations[name] = ToolAuthorization{
@@ -494,6 +504,7 @@ type AttachmentMetadata struct {
 func registerLookupTools(server *mcp.Server, deps Dependencies) {
 	addReadOnlyTool(server, deps, SearchPartsToolName, "Search parts", "Searches InvenTree parts.", searchParts(deps))
 	addReadOnlyTool(server, deps, GetPartToolName, "Get part", "Retrieves one InvenTree part by ID.", getPart(deps))
+	registerPartRelationLookupTools(server, deps)
 	addReadOnlyTool(server, deps, SearchPartCategoriesToolName, "Search part categories", "Searches InvenTree part categories.", searchPartCategories(deps))
 	addReadOnlyTool(server, deps, GetPartCategoryToolName, "Get part category", "Retrieves one InvenTree part category with hierarchy and default metadata by stable ID.", getPartCategory(deps))
 	addReadOnlyTool(server, deps, SearchParameterTemplatesToolName, "Search parameter templates", "Searches InvenTree parameter templates.", searchParameterTemplates(deps))

@@ -84,7 +84,39 @@ endpoints:
     path: /api/part/related/
     method: GET
     operation_id: part_related_list
+    required_query:
+      - part
+      - part_1
+      - part_2
     response_schema: '#/components/schemas/PaginatedPartRelationList'
+  - id: create_part_relation
+    area: parts
+    path: /api/part/related/
+    method: POST
+    operation_id: part_related_create
+    request_schema: '#/components/schemas/PartRelation'
+    request_content_type: application/json
+    response_schema: '#/components/schemas/PartRelation'
+  - id: get_part_relation
+    area: parts
+    path: /api/part/related/{id}/
+    method: GET
+    operation_id: part_related_retrieve
+    response_schema: '#/components/schemas/PartRelation'
+  - id: update_part_relation
+    area: parts
+    path: /api/part/related/{id}/
+    method: PATCH
+    operation_id: part_related_partial_update
+    request_schema: '#/components/schemas/PatchedPartRelation'
+    request_content_type: application/json
+    response_schema: '#/components/schemas/PartRelation'
+  - id: delete_part_relation
+    area: parts
+    path: /api/part/related/{id}/
+    method: DELETE
+    operation_id: part_related_destroy
+    response_status: "204"
   - id: search_bom_items
     area: bom
     path: /api/bom/

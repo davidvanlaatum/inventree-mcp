@@ -13,20 +13,21 @@ import (
 var ErrLookupClientUnavailable = errors.New("InvenTree lookup client unavailable")
 
 type Dependencies struct {
-	ClientFromContext   func(context.Context) (any, error)
-	EnableWriteTools    bool
-	AuthorizationMode   AuthorizationMode
-	ResourceMetadataURL string
-	UploadMode          upload.Mode
-	UploadFS            afero.Fs
-	UploadAllowRoots    []string
-	UploadMaxBytes      int64
-	UploadTimeout       time.Duration
-	URLFetcher          upload.URLFetcher
-	WebLinks            *weblinks.Resolver
-	stockPlanStore      *stockPlanStore
-	parameterPlanStore  *parameterPlanStore
-	partFamilyPlanStore *partFamilyPlanStore
+	ClientFromContext     func(context.Context) (any, error)
+	EnableWriteTools      bool
+	AuthorizationMode     AuthorizationMode
+	ResourceMetadataURL   string
+	UploadMode            upload.Mode
+	UploadFS              afero.Fs
+	UploadAllowRoots      []string
+	UploadMaxBytes        int64
+	UploadTimeout         time.Duration
+	URLFetcher            upload.URLFetcher
+	WebLinks              *weblinks.Resolver
+	stockPlanStore        *stockPlanStore
+	parameterPlanStore    *parameterPlanStore
+	partFamilyPlanStore   *partFamilyPlanStore
+	partRelationPlanStore *partRelationPlanStore
 }
 
 func (d Dependencies) Client(ctx context.Context) (any, error) {
