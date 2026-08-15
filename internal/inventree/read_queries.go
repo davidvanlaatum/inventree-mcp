@@ -22,6 +22,7 @@ type CategoryQuery struct {
 type PartQuery struct {
 	CategoryID int
 	Cascade    *bool
+	RevisionOf int
 	VariantOf  int
 	Limit      int
 	Offset     int
@@ -187,6 +188,9 @@ func (q PartQuery) values() url.Values {
 	}
 	if q.VariantOf != 0 {
 		values.Set("variant_of", strconv.Itoa(q.VariantOf))
+	}
+	if q.RevisionOf != 0 {
+		values.Set("revision_of", strconv.Itoa(q.RevisionOf))
 	}
 	setPagination(values, q.Limit, q.Offset)
 	return values

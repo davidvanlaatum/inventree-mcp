@@ -438,6 +438,7 @@ Mutating operationally sensitive tools:
 - `stocktake_adjustment`
 - `deplete_stock_item`
 - `transfer_stock_item`
+- `update_part_family_relationships`
 - `add_bom_item`
 - `update_bom_item`
 - `receive_purchase_order_items`
@@ -449,6 +450,7 @@ Mutating destructive or irreversible tools:
 - `remove_bom_item`
 - `delete_attachment`
 - `clear_company_image`
+- `update_part_family_relationships`
 - `complete_build_order`
 
 Destructive or irreversible tools should require `confirm: true` and should expose `dry_run` where the workflow can be planned safely.
@@ -482,6 +484,7 @@ These tools help agents find stable IDs before writing data.
 
 - `create_part`
 - `update_part`
+- `update_part_family_relationships`
 - `set_part_parameters`
 - `create_part_category`
 - `update_part_category`
@@ -492,11 +495,12 @@ These tools help agents find stable IDs before writing data.
 Important behaviors:
 
 - Support IPN/SKU/name/category lookup.
-- Support variant/template relationships if enabled by the InvenTree instance.
+- Expose exact `revision_of`, `revision_count`, and `variant_of` values. Change family topology only through `update_part_family_relationships`, never ordinary scalar `update_part`.
 - Validate units, category, default location, and supplier/manufacturer references before write.
 - `update_part` should use PATCH and serialize only supplied fields.
 - Keep `search_parts` concise and use `get_part` as the exhaustive approved API 530 scalar projection. A checked field inventory must classify every default serializer field so nested detail, deferred workflows, write-only commands, and raw barcode data cannot leak into the exact surface through schema drift.
 - Part scalar create/update supports consumable/template/lock/salable/testable flags, default expiry, keywords, complete credential-free HTTP(S) link, minimum/maximum stock, revision text, and Markdown notes. Preserve omission versus false/zero, use explicit null-clearing controls for nullable additions, reject invalid effective stock bounds, treat `creation_user` as read-only, and perform exact stable-ID read-back under `inventree.read` plus `inventree.write`.
+- Family relationship assignment, replacement, and clearing require a principal-bound five-minute single-use plan token. Revisions require a nonblank revision code, a non-template target, and the same variant template on both records; variants require a template target. The plan binds both current relationship values, requested target IDs, relevant eligibility state, and deterministic exact-read traversal evidence under one shared 64-record budget; self-reference, cycles, incomplete traversal, and stale topology fail before PATCH. The dedicated tool is closed-world, non-idempotent, destructive, and requires read, write, operational, and destructive OAuth scopes.
 - Part-category administration trims names, refuses case-insensitive same-parent duplicates within a fail-closed 1,000-record scan, validates stable parent/default-location IDs, and uses PATCH with explicit null-clearing controls.
 - Category reparenting may include direct parts and descendants only after `confirm:true` hierarchy review; self/descendant cycles are refused. Structural-state changes also require confirmation, and promotion to structural is refused while direct parts exist.
 - Return recommended-but-missing field warnings for conventions such as IPN format, units, revision, default location, purchaseability, assembly flags, templates, and custom parameters when they can be detected.
@@ -1213,7 +1217,7 @@ The full first beta milestone should include:
 - HTTP OAuth protected resource, authorization-code with PKCE, token, refresh, encrypted envelope support, and per-tool scope enforcement as implementation primitives.
 - Tool mutation metadata for every registered tool.
 - PATCH-based partial update support in the client and first update tools.
-- Part/category tools: `search_parts`, `get_part`, `search_part_categories`, `get_part_category`, `create_part_category`, `update_part_category`, `create_part`, `update_part`, `search_parameter_templates`, `get_part_parameters`, `set_part_parameters`.
+- Part/category tools: `search_parts`, `get_part`, `search_part_categories`, `get_part_category`, `create_part_category`, `update_part_category`, `create_part`, `update_part`, `update_part_family_relationships`, `search_parameter_templates`, `get_part_parameters`, `set_part_parameters`.
 - Company tools: `search_companies`, `search_suppliers`, `search_manufacturers`, `create_company`, `create_supplier_part`, `create_manufacturer_part`.
 - Stock tools: `search_stock_locations`, `search_stock_items`, `create_stock_item`.
 - Attachment/image tools: `list_attachments`, `get_attachment_metadata`, `download_attachment`, `download_part_image`, `upload_attachment`, `upload_attachment_from_url`, `create_link_attachment`, `update_attachment_metadata`, `delete_attachment`, `set_primary_image`, `set_company_image`, `set_company_image_from_url`, `clear_company_image`.
@@ -1241,6 +1245,7 @@ Blocking milestone tests:
 - Protected `/mcp` unauthenticated behavior verified: no MCP method dispatch without a valid access token unless the connector spike explicitly requires pre-auth static discovery; if allowed, only the documented static methods succeed and InvenTree-contacting tools fail before handler dispatch.
 - Concurrent HTTP OAuth request isolation with different sealed InvenTree credentials.
 - PATCH omission and zero-value table tests for `update_part`.
+- State-bound assignment, replacement, clear, cycle, traversal-budget, response-loss recovery, and OAuth/annotation tests for `update_part_family_relationships`.
 - Annotation golden test for all milestone tools.
 - Attachment/image object capability table coverage check proving registered object types are a subset of `docs/api-schema.md`.
 - Attachment download test proving original-mode returned content matches uploaded fixture bytes, thumbnail-mode behavior is tested separately, out-of-scope attachment model types are rejected before content fetch, redirects are blocked or revalidated, and non-InvenTree URLs are refused.

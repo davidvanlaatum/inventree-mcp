@@ -122,7 +122,7 @@ Before assigning a new story ID, inspect `git worktree list --porcelain`, search
 | [F-S38](#f-s38-explicit-purchase-order-completion-after-receiving) | Complete fully received purchase orders explicitly during receipt or later. | Done |
 | [F-S39](#f-s39-preserve-complete-external-urls) | Preserve complete functional external URLs while rejecting credentials and retaining safe error redaction. | Done |
 | [F-S40](#f-s40-complete-part-exact-reads-and-scalar-maintenance) | Expose complete exact part records and align ordinary scalar create/update fields with verified serializer behavior. | Done |
-| [F-S41](#f-s41-guarded-part-revision-and-variant-relationships) | Add guarded assignment, replacement, and clearing of part revision and variant family relationships. | Ready |
+| [F-S41](#f-s41-guarded-part-revision-and-variant-relationships) | Add guarded assignment, replacement, and clearing of part revision and variant family relationships. | Done |
 | [F-S42](#f-s42-related-part-link-administration) | Expose normal related-part reads and guarded create, update, and delete operations. | Ready |
 | [F-S43](#f-s43-sourcing-link-detail-completeness) | Complete supplier/manufacturer-part exact reads and long-note maintenance while retaining concise searches. | Ready |
 | [F-S44](#f-s44-company-detail-and-role-completeness) | Complete exact company reads and guarded contact, tax, link, and customer-role maintenance. | Ready |
@@ -2129,19 +2129,28 @@ Tasks:
 
 ### F-S41: Guarded Part Revision And Variant Relationships
 
-- Status: `Ready`
+- Status: `Done`
 - Issue: [#122](https://github.com/davidvanlaatum/inventree-mcp/issues/122)
 - Depends on: F-S40
 - Decisions: approved by the operator on 2026-08-15. `revision_of` and `variant_of` are separate from ordinary scalar metadata because they change part-family topology.
+- Progress: implementation and initial validation are complete on `codex/f-s41-part-family-relationships` from current `origin/main` at `1094d6aa`. The dedicated guarded tool keeps family topology separate from ordinary scalar `update_part`; review follow-ups added retryable-4xx read-back, fail-closed malformed-topology handling, field-specific missing-target clarification, minimal recovery projections, pinned upstream rejection coverage, and MCP wire-contract coverage.
 - Scope: expose complete family references and add guarded stable-ID updates for revision and variant relationships.
 - Acceptance:
   - Exact part reads expose `revision_of`, `revision_count`, and `variant_of` with stable IDs.
   - Writes accept stable target part IDs and explicit clear operations, reject self-reference and cycles, and validate target existence.
-  - Replacement or clearing uses a state-bound plan token covering both current family references and target; execution requires explicit confirmation, and stale plans fail before mutation.
+  - Every assignment, replacement, or clear requires a principal-bound state-bound plan token covering both current family references, the requested after-state targets, relevant eligibility state, and traversal evidence; execution requires `confirm:true`, and stale plans fail before mutation.
   - Cycle and target validation use deterministic traversal, shared request/record budgets, and fail closed when the complete relevant topology cannot be proven within bounds.
-  - Exact reads require `inventree.read`; mutations require `inventree.read`, `inventree.write`, and `inventree.operational`, remain closed-world and non-idempotent, and publish `destructiveHint:true` plus `inventree.destructive` for replacement or clear.
+  - Because scopes and annotations are descriptor-level, every call requires `inventree.read`, `inventree.write`, `inventree.operational`, and `inventree.destructive`, remains closed-world and non-idempotent, and publishes `destructiveHint:true`.
   - Writes use exact read-back and safe ambiguous-result recovery without leaking unrelated part data.
   - Pinned integration tests establish InvenTree cycle, revision, and variant semantics; plan, task, schema, tool-reference, and operator docs are aligned.
+- Tasks:
+  - [x] Expose exact revision and variant family fields and add the pinned server-side revision filter.
+  - [x] Add the dedicated state-bound family relationship plan and mutation tool with shared bounded traversal.
+  - [x] Add deterministic token, cycle, stale-topology, recovery, authorization, and pinned integration coverage.
+  - [x] Align plan, schema capability notes, tool reference, operator recipe, prompt, and generated manifest.
+  - [x] Complete validation, package coverage comparison, and the required Go, QA, product, and infosec review panel.
+- Validation: `go generate ./internal/tools`, `go mod tidy -diff`, `go build ./...`, `go vet ./...`, `golangci-lint run ./...` (0 issues), `go test -tags no_integration_tests ./internal/tools ./docs`, focused pinned `GOFLAGS=-trimpath go test -race ./internal/tools -run '^TestMilestoneHappyPathToolsAgainstInvenTree$/part_family_relationships$' -count=1`, full `GOFLAGS=-trimpath go test -race -p=1 ./...`, and `git diff --check` pass. Against exact base `origin/main` at `1094d6aa`, `internal/inventree` rises from 88.3% to 88.4% and `internal/tools` rises from 83.5% to 83.8%; no package-level coverage reduction remains.
+- Review: Senior Go Developer, Senior QA / Test Architect, Senior Product Manager, and Senior Infosec Reviewer passes completed. Findings on retryable 408/425/429 recovery, missing and malformed topology, pinned upstream rejection evidence, MCP wire coverage, descriptor-level acceptance wording, and minimal recovery disclosure were resolved with focused reruns; all four roles report no remaining actionable findings.
 - Residual risk: preflight and relationship PATCH are separate requests, so concurrent topology changes remain a single-writer concern unless InvenTree exposes an atomic constraint.
 
 ### F-S42: Related-Part Link Administration

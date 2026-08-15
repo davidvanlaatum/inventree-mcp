@@ -75,6 +75,7 @@ var PromptManifest = []PromptManifestEntry{
 - Company updates never change the customer role (is_customer), contact, tax, tag, or image state; exact reads may report is_customer. Removing a supplier/manufacturer role requires confirmation and is refused while corresponding links exist.
 - Use explicit clear flags for nullable company and sourcing-link fields. Recovery projections intentionally omit notes and redact external links.
 - Do not invent categories, units, supplier SKUs, manufacturer part numbers, compliance status, or revision data.
+- Do not change revision_of or variant_of through ordinary update_part. Use update_part_family_relationships with dry_run:true, review its complete bounded topology evidence, then provide the same principal-bound plan_hash with confirm:true. Never retry a partial_failure blindly.
 - Prefer upsert_part_with_supplier_and_manufacturer with dry_run:true before any write. Review every field in planned_changes; depends_on identifies unresolved IDs from earlier planned creates, while record fields contain only factual stable records.
 - If the workflow reports validation_failed or partial_failure, preserve returned stable IDs and completed actions, inspect the named records, and continue only the reported remaining_actions after current-state verification.
 - Treat omitted recommended fields separately from API-required fields and return a structured clarification when required values are missing.`,

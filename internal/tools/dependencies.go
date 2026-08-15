@@ -26,6 +26,7 @@ type Dependencies struct {
 	WebLinks            *weblinks.Resolver
 	stockPlanStore      *stockPlanStore
 	parameterPlanStore  *parameterPlanStore
+	partFamilyPlanStore *partFamilyPlanStore
 }
 
 func (d Dependencies) Client(ctx context.Context) (any, error) {
