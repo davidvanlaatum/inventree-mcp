@@ -51,7 +51,7 @@ type UploadAttachmentFromURLInput struct {
 type CreateLinkAttachmentInput struct {
 	ModelType      string   `json:"model_type" jsonschema:"InvenTree attachment model type. Use one of the attachment endpoint's short, unqualified values: part, stockitem, company, manufacturerpart, supplierpart, or purchaseorder. Do not use parameter model types such as part.part or order.purchaseorder."`
 	ModelID        int      `json:"model_id" jsonschema:"Stable target object primary key."`
-	URL            string   `json:"url" jsonschema:"HTTP(S) URL to store as a link attachment without fetching."`
+	URL            string   `json:"url" jsonschema:"Complete HTTP(S) URL without userinfo to store as a link attachment without fetching; query parameters and fragments are preserved."`
 	Filename       string   `json:"filename,omitempty" jsonschema:"Optional filename for duplicate preflight. InvenTree assigns stored-link filename metadata."`
 	Comment        *string  `json:"comment,omitempty" jsonschema:"Optional attachment comment."`
 	Tags           []string `json:"tags,omitempty" jsonschema:"Optional attachment tags."`
@@ -235,7 +235,7 @@ func deleteAttachment(deps Dependencies) mcp.ToolHandlerFor[DeleteAttachmentInpu
 			}
 			if !input.Confirm {
 				clarification := NewClarification("Confirm deletion of this attachment?", "confirm", "delete_attachment requires confirm:true before deleting", "confirm", true, []ClarificationCandidate{candidateFor(existing)}, map[string]any{"id": input.ID})
-				return TextResult(StatusClarificationRequired), AttachmentWriteOutput{Status: StatusClarificationRequired, Record: sanitizeAttachment(existing), Clarification: &clarification}, nil
+				return TextResult(StatusClarificationRequired), AttachmentWriteOutput{Status: StatusClarificationRequired, Record: attachmentClarificationProjection(existing), Clarification: &clarification}, nil
 			}
 			if err := client.DeleteAttachment(ctx, input.ID); err != nil {
 				return nil, AttachmentWriteOutput{}, err
@@ -263,16 +263,16 @@ func setPrimaryImage(deps Dependencies) mcp.ToolHandlerFor[SetPrimaryImageInput,
 			}
 			if attachment.ModelType != "part" || attachment.ModelID != input.PartID {
 				clarification := NewClarification("Which image attachment belongs to this part?", "attachment_id", "set_primary_image requires an image attachment attached to the requested part", "attachment_id", true, []ClarificationCandidate{candidateFor(attachment)}, map[string]any{"part_id": input.PartID, "attachment_id": input.AttachmentID})
-				return TextResult(StatusClarificationRequired), AttachmentWriteOutput{Status: StatusClarificationRequired, Record: sanitizeAttachment(attachment), Clarification: &clarification, PartID: input.PartID}, nil
+				return TextResult(StatusClarificationRequired), AttachmentWriteOutput{Status: StatusClarificationRequired, Record: attachmentClarificationProjection(attachment), Clarification: &clarification, PartID: input.PartID}, nil
 			}
 			if !attachment.IsImage || attachment.Attachment == nil || strings.TrimSpace(*attachment.Attachment) == "" {
 				clarification := NewClarification("Which image attachment should become primary?", "attachment_id", "set_primary_image requires an existing file attachment marked as an image", "attachment_id", true, []ClarificationCandidate{candidateFor(attachment)}, map[string]any{"part_id": input.PartID, "attachment_id": input.AttachmentID})
-				return TextResult(StatusClarificationRequired), AttachmentWriteOutput{Status: StatusClarificationRequired, Record: sanitizeAttachment(attachment), Clarification: &clarification, PartID: input.PartID}, nil
+				return TextResult(StatusClarificationRequired), AttachmentWriteOutput{Status: StatusClarificationRequired, Record: attachmentClarificationProjection(attachment), Clarification: &clarification, PartID: input.PartID}, nil
 			}
 			replacing := part.Image != nil && strings.TrimSpace(*part.Image) != ""
 			if replacing && !input.Confirm {
 				clarification := NewClarification("Replace the existing primary image for this part?", "confirm", "set_primary_image requires confirm:true before replacing an existing primary image", "confirm", true, []ClarificationCandidate{candidateFor(attachment)}, map[string]any{"part_id": input.PartID, "attachment_id": input.AttachmentID})
-				return TextResult(StatusClarificationRequired), AttachmentWriteOutput{Status: StatusClarificationRequired, Record: sanitizeAttachment(attachment), Clarification: &clarification, PartID: input.PartID, Replaced: true}, nil
+				return TextResult(StatusClarificationRequired), AttachmentWriteOutput{Status: StatusClarificationRequired, Record: attachmentClarificationProjection(attachment), Clarification: &clarification, PartID: input.PartID, Replaced: true}, nil
 			}
 			download, err := client.DownloadAttachment(ctx, input.AttachmentID, inventree.AttachmentContentOriginal, uploadMaxBytes(deps))
 			if err != nil {
@@ -288,6 +288,12 @@ func setPrimaryImage(deps Dependencies) mcp.ToolHandlerFor[SetPrimaryImageInput,
 			}
 			return TextResult(StatusOK), AttachmentWriteOutput{Status: StatusOK, Record: sanitizeAttachment(attachment), PartID: input.PartID, ImageURL: redactedMetadataURL(updatedPart.Image), Replaced: replacing}, nil
 		})
+}
+
+func attachmentClarificationProjection(record inventree.Attachment) AttachmentMetadata {
+	safe := sanitizeAttachment(record)
+	safe.LinkURL = ""
+	return safe
 }
 
 func resolveUploadSource(ctx context.Context, deps Dependencies, input UploadAttachmentInput) (upload.ResolvedSource, *mcp.CallToolResult, AttachmentWriteOutput, bool, error) {
@@ -418,23 +424,14 @@ func attachmentDuplicates(record inventree.Attachment, filename string, size int
 }
 
 func validateStoredLinkURL(raw string) (string, error) {
-	parsed, err := url.Parse(strings.TrimSpace(raw))
+	validated, err := validateExternalURL(raw)
 	if err != nil {
-		return "", errors.New("parse link attachment URL failed")
+		return "", errors.New("link attachment URL must be an absolute HTTP(S) URL without userinfo or credentials")
 	}
-	if parsed.Scheme != "http" && parsed.Scheme != "https" {
-		return "", errors.New("link attachment URL scheme must be http or https")
+	if validated == "" {
+		return "", errors.New("link attachment URL is required")
 	}
-	if parsed.Hostname() == "" {
-		return "", errors.New("link attachment URL host is required")
-	}
-	if parsed.User != nil {
-		return "", errors.New("link attachment URL must not include userinfo")
-	}
-	if parsed.Fragment != "" {
-		return "", errors.New("link attachment URL must not include a fragment")
-	}
-	return parsed.String(), nil
+	return validated, nil
 }
 
 func hardAttachmentClarification(question string, field string, reason string, retry string, retryValues map[string]any) (*mcp.CallToolResult, AttachmentWriteOutput, error) {

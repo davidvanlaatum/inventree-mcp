@@ -499,6 +499,10 @@ func stockClarification(out StockAdjustmentOutput, question, subject, reason, re
 
 func stockUnknownResult(out StockAdjustmentOutput, message string) (*mcp.CallToolResult, StockAdjustmentOutput, error) {
 	out.Status = StatusPartialFailure
+	if out.Record != nil {
+		recovery := stockItemRecoveryProjection(*out.Record)
+		out.Record = &recovery
+	}
 	out.Failure = &StockAdjustmentFailure{
 		Action:       out.Plan.Action,
 		Message:      message,

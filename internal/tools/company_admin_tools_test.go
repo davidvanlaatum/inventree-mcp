@@ -17,14 +17,14 @@ import (
 func TestGetCompanyAdminIncludesApprovedFieldsAndRedactsWebsite(t *testing.T) {
 	t.Parallel()
 	ctx, _, _ := testhandler.SetupTestHandler(t)
-	website := "https://user:pass@example.test/company?token=secret#fragment"
+	website := "https://example.test/company?token=secret#fragment"
 	notes := "operator-only note"
 	fake := &fakeCompanyAdmin{company: inventree.CompanyDetail{Company: inventree.Company{PK: 30, Name: "Acme", Currency: "AUD", IsSupplier: true, IsCustomer: true}, Website: website, Notes: &notes}}
 
 	_, out, err := getCompanyAdmin(companyAdminDeps(fake))(ctx, &mcp.CallToolRequest{}, IDInput{ID: 30})
 	require.NoError(t, err)
 	require.NotNil(t, out.Record)
-	assert.Equal(t, "https://example.test/company", out.Record.Website)
+	assert.Equal(t, website, out.Record.Website)
 	assert.Equal(t, notes, *out.Record.Notes)
 	assert.True(t, out.Record.IsCustomer)
 }
@@ -42,13 +42,13 @@ func TestCompanyAdminExactSourcingReadsRedactLinks(t *testing.T) {
 	_, supplier, err := getSupplierPartAdmin(companyAdminDeps(fake))(ctx, &mcp.CallToolRequest{}, IDInput{ID: 40})
 	require.NoError(t, err)
 	require.NotNil(t, supplier.Record)
-	assert.Equal(t, "https://example.test/supplier", supplier.Record.Link)
+	assert.Empty(t, supplier.Record.Link)
 	assert.Equal(t, note, *supplier.Record.Note)
 
 	_, manufacturer, err := getManufacturerPartAdmin(companyAdminDeps(fake))(ctx, &mcp.CallToolRequest{}, IDInput{ID: 50})
 	require.NoError(t, err)
 	require.NotNil(t, manufacturer.Record)
-	assert.Equal(t, "https://example.test/manufacturer", manufacturer.Record.Link)
+	assert.Equal(t, manufacturerLink, manufacturer.Record.Link)
 }
 
 func TestCompanyAdminSourcingSearchesAreBoundedAndSorted(t *testing.T) {
@@ -165,27 +165,27 @@ func TestCompanyAndSupplierUpdatesRecoverPostPersistResponseLoss(t *testing.T) {
 	t.Parallel()
 	ctx, _, _ := testhandler.SetupTestHandler(t)
 	fake := baseSourcingFake()
-	description := "recovered company"
+	complete := "https://supplier.test/item?account=42&view=full#pricing"
 	fake.companyUpdateErr = errors.New("connection reset")
-	fake.afterCompanyUpdate = func(inventree.PatchFields) { fake.company.Description = description }
+	fake.afterCompanyUpdate = func(inventree.PatchFields) { fake.company.Website = complete }
 
-	_, company, err := updateCompanyAdmin(companyAdminDeps(fake))(ctx, &mcp.CallToolRequest{}, UpdateCompanyInput{ID: 30, Description: &description})
+	_, company, err := updateCompanyAdmin(companyAdminDeps(fake))(ctx, &mcp.CallToolRequest{}, UpdateCompanyInput{ID: 30, Website: &complete})
 	require.NoError(t, err)
 	assert.True(t, company.Recovered)
-	assert.Nil(t, company.Record)
+	require.NotNil(t, company.Record)
+	assert.Equal(t, complete, company.Record.Website)
 	require.NotNil(t, company.Current)
 
 	fake.companyUpdateErr = nil
-	active := false
 	fake.supplierUpdateErr = errors.New("connection reset")
-	fake.afterSupplierUpdate = func(inventree.PatchFields) { fake.supplier.Active = false }
-	_, supplier, err := updateSupplierPartAdmin(companyAdminDeps(fake))(ctx, &mcp.CallToolRequest{}, UpdateSupplierPartInput{ID: 40, Active: &active})
+	fake.afterSupplierUpdate = func(inventree.PatchFields) { fake.supplier.Link = &complete }
+	_, supplier, err := updateSupplierPartAdmin(companyAdminDeps(fake))(ctx, &mcp.CallToolRequest{}, UpdateSupplierPartInput{ID: 40, Link: &complete})
 	require.NoError(t, err)
 	assert.True(t, supplier.Recovered)
-	assert.Nil(t, supplier.Record)
+	require.NotNil(t, supplier.Record)
+	assert.Equal(t, complete, supplier.Record.Link)
 	require.NotNil(t, supplier.Current)
-	assert.False(t, supplier.Current.Active)
-	encoded, err := json.Marshal(supplier)
+	encoded, err := json.Marshal(supplier.Current)
 	require.NoError(t, err)
 	assert.NotContains(t, string(encoded), "description")
 	assert.NotContains(t, string(encoded), "note")
@@ -210,6 +210,54 @@ func TestUpdateSupplierAndManufacturerPartSuccess(t *testing.T) {
 	require.NotNil(t, manufacturer.Record)
 	require.NotNil(t, manufacturer.Record.Description)
 	assert.Equal(t, description, *manufacturer.Record.Description)
+}
+
+func TestCompanyAndSourcingUpdatesPreserveCompleteLinksAndRejectCredentials(t *testing.T) {
+	t.Parallel()
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	r := require.New(t)
+	a := assert.New(t)
+	complete := "https://supplier.test/item?account=42&view=full#pricing"
+	fake := baseSourcingFake()
+
+	fake.afterCompanyUpdate = func(fields inventree.PatchFields) {
+		a.Equal(inventree.Set(complete), fields["website"])
+		fake.company.Website = complete
+	}
+	_, company, err := updateCompanyAdmin(companyAdminDeps(fake))(ctx, &mcp.CallToolRequest{}, UpdateCompanyInput{ID: 30, Website: &complete})
+	r.NoError(err)
+	r.NotNil(company.Record)
+	a.Equal(complete, company.Record.Website)
+
+	fake.afterSupplierUpdate = func(fields inventree.PatchFields) {
+		a.Equal(inventree.Set(complete), fields["link"])
+		fake.supplier.Link = &complete
+	}
+	_, supplier, err := updateSupplierPartAdmin(companyAdminDeps(fake))(ctx, &mcp.CallToolRequest{}, UpdateSupplierPartInput{ID: 40, Link: &complete})
+	r.NoError(err)
+	r.NotNil(supplier.Record)
+	a.Equal(complete, supplier.Record.Link)
+
+	fake.afterManufacturerUpdate = func(fields inventree.PatchFields) {
+		a.Equal(inventree.Set(complete), fields["link"])
+		fake.manufacturer.Link = &complete
+	}
+	_, manufacturer, err := updateManufacturerPartAdmin(companyAdminDeps(fake))(ctx, &mcp.CallToolRequest{}, UpdateManufacturerPartInput{ID: 50, Link: &complete})
+	r.NoError(err)
+	r.NotNil(manufacturer.Record)
+	a.Equal(complete, manufacturer.Record.Link)
+
+	unsafe := "https://user:password@supplier.test/private?token=secret#fragment"
+	companyCalls, supplierCalls, manufacturerCalls := fake.updateCompanyCalls, fake.updateSupplierCalls, fake.updateManufacturerCalls
+	_, _, err = updateCompanyAdmin(companyAdminDeps(fake))(ctx, &mcp.CallToolRequest{}, UpdateCompanyInput{ID: 30, Website: &unsafe})
+	r.ErrorContains(err, "must not include userinfo or credentials")
+	_, _, err = updateSupplierPartAdmin(companyAdminDeps(fake))(ctx, &mcp.CallToolRequest{}, UpdateSupplierPartInput{ID: 40, Link: &unsafe})
+	r.ErrorContains(err, "must not include userinfo or credentials")
+	_, _, err = updateManufacturerPartAdmin(companyAdminDeps(fake))(ctx, &mcp.CallToolRequest{}, UpdateManufacturerPartInput{ID: 50, Link: &unsafe})
+	r.ErrorContains(err, "must not include userinfo or credentials")
+	a.Equal(companyCalls, fake.updateCompanyCalls)
+	a.Equal(supplierCalls, fake.updateSupplierCalls)
+	a.Equal(manufacturerCalls, fake.updateManufacturerCalls)
 }
 
 func TestUpdateCompanyManufacturerRoleRemovalChecksLinks(t *testing.T) {
@@ -243,17 +291,16 @@ func TestUpdateManufacturerPartRecoversPostPersistResponseLoss(t *testing.T) {
 	ctx, _, _ := testhandler.SetupTestHandler(t)
 	fake := baseSourcingFake()
 	fake.manufacturerUpdateErr = errors.New("connection reset after write")
-	mpn := "NEW-MPN"
-	fake.afterManufacturerUpdate = func(fields inventree.PatchFields) { fake.manufacturer.MPN = dvgoutils.Ptr("NEW-MPN") }
+	complete := "https://supplier.test/item?account=42&view=full#pricing"
+	fake.afterManufacturerUpdate = func(fields inventree.PatchFields) { fake.manufacturer.Link = &complete }
 
-	_, out, err := updateManufacturerPartAdmin(companyAdminDeps(fake))(ctx, &mcp.CallToolRequest{}, UpdateManufacturerPartInput{ID: 50, MPN: &mpn})
+	_, out, err := updateManufacturerPartAdmin(companyAdminDeps(fake))(ctx, &mcp.CallToolRequest{}, UpdateManufacturerPartInput{ID: 50, Link: &complete})
 	require.NoError(t, err)
 	assert.Equal(t, StatusOK, out.Status)
 	assert.True(t, out.Recovered)
-	assert.Nil(t, out.Record)
+	require.NotNil(t, out.Record)
+	assert.Equal(t, complete, out.Record.Link)
 	require.NotNil(t, out.Current)
-	require.NotNil(t, out.Current.MPN)
-	assert.Equal(t, "NEW-MPN", *out.Current.MPN)
 }
 
 func TestCompanyAdminRecoveryKeepsProtectedFieldsOutOfCurrent(t *testing.T) {
@@ -269,7 +316,9 @@ func TestCompanyAdminRecoveryKeepsProtectedFieldsOutOfCurrent(t *testing.T) {
 
 	_, out, err := updateManufacturerPartAdmin(companyAdminDeps(fake))(ctx, &mcp.CallToolRequest{}, UpdateManufacturerPartInput{ID: 50, MPN: &mpn})
 	require.NoError(t, err)
-	encoded, err := json.Marshal(out)
+	require.NotNil(t, out.Record)
+	assert.Equal(t, "https://example.test/?token=secret", out.Record.Link)
+	encoded, err := json.Marshal(out.Current)
 	require.NoError(t, err)
 	assert.NotContains(t, string(encoded), secret)
 	assert.NotContains(t, string(encoded), "token=secret")

@@ -174,7 +174,12 @@ func verifyStockDepletion(ctx context.Context, client StockAdjustmentClient, out
 
 func stockDepletionPartial(out StockAdjustmentOutput, record *inventree.StockItem, recovery string) (*mcp.CallToolResult, StockAdjustmentOutput, error) {
 	out.Status = StatusPartialFailure
-	out.Record = record
+	if record != nil {
+		safe := stockItemRecoveryProjection(*record)
+		out.Record = &safe
+	} else {
+		out.Record = nil
+	}
 	out.Failure = &StockAdjustmentFailure{Action: DepleteStockItemToolName, Message: "stock deletion result could not be verified", RecoveryPlan: recovery}
 	return TextResult(StatusPartialFailure), out, nil
 }

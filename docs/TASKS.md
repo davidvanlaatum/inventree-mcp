@@ -120,15 +120,15 @@ Before assigning a new story ID, inspect `git worktree list --porcelain`, search
 | [F-S36](#f-s36-versioned-outbound-http-user-agent) | Identify every outbound runtime HTTP request with the MCP server name and build version. | Done |
 | [F-S37](#f-s37-restore-default-web-prefix-in-canonical-object-links) | Restore InvenTree's default `/web` frontend mount in fallback-generated object links. | Done |
 | [F-S38](#f-s38-explicit-purchase-order-completion-after-receiving) | Complete fully received purchase orders explicitly during receipt or later. | Done |
-| [F-S39](#f-s39-preserve-complete-external-urls) | Preserve complete functional external URLs while rejecting credentials and retaining safe error redaction. | Ready |
-| [F-S40](#f-s40-complete-part-exact-reads-and-scalar-maintenance) | Expose complete exact part records and align ordinary scalar create/update fields with verified serializer behavior. | Planned |
+| [F-S39](#f-s39-preserve-complete-external-urls) | Preserve complete functional external URLs while rejecting credentials and retaining safe error redaction. | Done |
+| [F-S40](#f-s40-complete-part-exact-reads-and-scalar-maintenance) | Expose complete exact part records and align ordinary scalar create/update fields with verified serializer behavior. | Ready |
 | [F-S41](#f-s41-guarded-part-revision-and-variant-relationships) | Add guarded assignment, replacement, and clearing of part revision and variant family relationships. | Planned |
 | [F-S42](#f-s42-related-part-link-administration) | Expose normal related-part reads and guarded create, update, and delete operations. | Planned |
-| [F-S43](#f-s43-sourcing-link-detail-completeness) | Complete supplier/manufacturer-part exact reads and long-note maintenance while retaining concise searches. | Planned |
-| [F-S44](#f-s44-company-detail-and-role-completeness) | Complete exact company reads and guarded contact, tax, link, and customer-role maintenance. | Planned |
-| [F-S45](#f-s45-stock-item-detail-completeness) | Expose complete high-value stock-item exact-read fields while retaining concise searches and guarded mutation boundaries. | Planned |
+| [F-S43](#f-s43-sourcing-link-detail-completeness) | Complete supplier/manufacturer-part exact reads and long-note maintenance while retaining concise searches. | Ready |
+| [F-S44](#f-s44-company-detail-and-role-completeness) | Complete exact company reads and guarded contact, tax, link, and customer-role maintenance. | Ready |
+| [F-S45](#f-s45-stock-item-detail-completeness) | Expose complete high-value stock-item exact-read fields while retaining concise searches and guarded mutation boundaries. | Ready |
 | [F-S46](#f-s46-stock-tracking-and-stocktake-history) | Expose bounded stock tracking events and historical part stocktake snapshots through normal read-only tools. | Planned |
-| [F-S47](#f-s47-purchase-order-and-line-detail-completeness) | Complete exact purchase-order and ordinary-line reads plus standalone order metadata and external-link maintenance. | Planned |
+| [F-S47](#f-s47-purchase-order-and-line-detail-completeness) | Complete exact purchase-order and ordinary-line reads plus standalone order metadata and external-link maintenance. | Ready |
 | [F-S48](#f-s48-owner-discovery-and-cross-object-responsibility) | Discover InvenTree owners and support consistent guarded responsibility assignment across applicable objects. | Planned |
 | [F-S49](#f-s49-structured-contact-and-address-references) | Discover structured company contacts and addresses and support guarded assignment on applicable objects. | Planned |
 | [F-S50](#f-s50-project-code-discovery-and-assignment) | Discover existing project codes and support consistent guarded assignment across purchase-order records. | Planned |
@@ -1632,7 +1632,7 @@ Tasks:
 
 - Validation: `go generate ./internal/tools`, `go mod tidy -diff`, `go vet ./...`, `golangci-lint run ./...`, `GOFLAGS=-trimpath go test -race -p=1 ./...`, and `git diff --check` pass. Focused pinned InvenTree 1.4.3 runs for `TestClientMethodsAgainstInvenTree/po` and `TestMilestoneHappyPathToolsAgainstInvenTree/purchase_order_create_and_retry_happy_path` pass with live list/get/create/PATCH/delete, zero and negative prices, exact total deltas/restoration, standalone and combined recovery, deletion, placement, and receipt coverage. `go test -tags no_integration_tests -cover ./...` passes; `internal/tools` is 81.9% versus 82.5% on exact `origin/main`, while every other package percentage is unchanged. Focused tests materially cover the new bounded scans, sanitized errors, exact retry/no-second-create behavior, ambiguous candidate and zero-candidate recovery, later-extra partial failure, uncertain deletion, cross-order total refresh, and stale issue-confirmation state; QA accepted the remaining 0.6-point package dilution as no uncovered acceptance or safety gap.
 - Review: Senior Go Developer, Senior QA / Test Architect, Senior Product Manager, and Senior Infosec Reviewer reviews completed because F-S23 adds mutating and destructive tool surface, changes OAuth scopes and operator contracts, and adds pinned-live coverage. Findings covered unusable candidate projections and recovery routing, definite-versus-ambiguous errors, incomplete accumulated-state and bounded-scan tests, stale deletion and cross-order totals, byte-counted references, missing structured identity guidance, exact signed-total assertions, read-scope omissions, planned-link/hash sanitization, and a hidden-URL hash oracle. Fixes add stable sanitized candidates, search-versus-get recovery tools, complete refreshed affected-order output, rune-count validation, structured not-found/clarification paths, exact and failure-focused tests, read-plus-write scope enforcement, sanitized planned links, and confirmation hashes over the operator-visible sanitized projection. Final focused Go, QA, product, and infosec reruns found no actionable findings.
-- Residual risk: duplicate preflight, mutation, read-back, and total refresh are separate InvenTree requests, so a concurrent UI or API writer can race the final interval. Ambiguous results preserve accumulated stable IDs, actions, sanitized candidates, and explicit search/read recovery guidance; operators should coordinate a single writer and inspect current state before retrying. Completeness-sensitive scans fail closed above 1,000 extra lines. Confirmation hashes intentionally omit URL credentials, query, and fragment with the public sanitized projection, so changes limited to hidden URL metadata do not invalidate an issue plan.
+- Residual risk: duplicate preflight, mutation, read-back, and total refresh are separate InvenTree requests, so a concurrent UI or API writer can race the final interval. Ambiguous results preserve accumulated stable IDs, actions, sanitized candidates, and explicit search/read recovery guidance; operators should coordinate a single writer and inspect current state before retrying. Completeness-sensitive scans fail closed above 1,000 extra lines. F-S39 later superseded the original query/fragment-stripping rule: complete valid credential-free links now participate in public issue plans and hashes, while clarification and minimal recovery projections omit them.
 - 2026-08-09 follow-up: a review pass found `delete_purchase_order_extra_line` propagated a raw error (opaque `isError:true`) instead of a structured `clarification_required` response when the extra line's parent purchase order could not be found (deleted or otherwise missing) between the extra-line read and the order lookup, unlike create/update's existing `order_id`-not-found handling in the same file. Fixed by checking `isNotFound` on the `loadExtraLineOrder` result in the delete handler and returning a hard-error clarification; `TestPurchaseOrderExtraLineDeleteOrderNotFound` covers the new path. The sibling `delete_purchase_order_line` tool (F-S32) has the same class of gap; it is being addressed separately in another worktree rather than here. Senior Go Developer and Senior QA / Test Architect review of this follow-up found no actionable findings.
 
 ### F-S24: Guarded Delete-On-Deplete Stock Depletion
@@ -2086,11 +2086,11 @@ Tasks:
 
 ### F-S39: Preserve Complete External URLs
 
-- Status: `Ready`
+- Status: `Done`
 - Issue: [#120](https://github.com/davidvanlaatum/inventree-mcp/issues/120)
 - Depends on: none
 - Decisions: approved by the operator on 2026-08-15. Successful reads and writes preserve HTTP(S) query parameters and fragments because removing them can break functional links. URLs containing userinfo or credentials remain invalid. Errors, clarification candidates, ordinary structured logs, and minimal recovery projections remain URL-free. Operator-enabled sensitive traffic logging can capture complete authorized response bodies, including external URLs, under the existing explicit warning.
-- Scope: replace the existing query/fragment-stripping response policy with complete functional URL preservation across supported external-link fields, including newly exposed part, company, purchase-order, and ordinary purchase-order-line links.
+- Scope: replace the existing query/fragment-stripping response policy across currently exposed company website, supplier-part, manufacturer-part, stock-item, stored attachment-link, and purchase-order extra-line fields. Dependent stories must apply the same policy when they expose part, company-link, purchase-order, and ordinary purchase-order-line fields.
 - Acceptance:
   - Existing supplier-part, manufacturer-part, stock-item, company, attachment-link, and purchase-order extra-line successful reads preserve scheme, host, path, query, and fragment.
   - Part, company-link, purchase-order, and ordinary purchase-order-line fields use the same policy when exposed by dependent stories.
@@ -2098,11 +2098,19 @@ Tasks:
   - URLs remain absent from errors, clarification candidates, ordinary structured logs, and minimal recovery projections; sensitive traffic-body logging retains its documented opt-in disclosure boundary.
   - Deterministic tests cover credentials, query strings, fragments, malformed URLs, and redaction boundaries.
   - `docs/PLAN.md`, `docs/api-schema.md`, `docs/tool-reference.md`, and `docs/operator-recipes.md` are aligned.
+- Tasks:
+  - [x] Centralize complete credential-free HTTP(S) validation and successful projection across the currently exposed URL surfaces.
+  - [x] Require exact stable-ID read-back for company and sourcing-link creates, updates, and the combined part workflow.
+  - [x] Keep errors, clarification records/candidates, ordinary logs, and partial or ambiguous recovery projections URL-free while retaining the explicit sensitive traffic-body logging boundary.
+  - [x] Align OAuth scopes, generated metadata, public documentation, deterministic tests, and the canonical issue.
+  - [x] Compare exact-base package coverage, run full validation, and resolve the Go, QA, product, and infosec review panel.
+- Validation: `go generate ./internal/tools`, `go mod tidy -diff`, `go build ./...`, `go vet ./...`, `golangci-lint run ./...` (0 issues), `go test -tags no_integration_tests ./...`, `GOFLAGS=-trimpath go test -race -p=1 ./...` against pinned InvenTree 1.5.0, focused `GOFLAGS=-trimpath go test -race ./internal/tools ./docs`, and `git diff --check` pass. Compared with exact base `origin/main` at `ea4cd687`, every no-integration package coverage percentage is unchanged except `internal/tools`, which rises from 83.2% to 83.4%.
+- Review: Senior Go Developer, Senior QA / Test Architect, Senior Product Manager, and Senior Infosec Reviewer passes completed. Findings on exact create/read-back, URL-bearing recovery and clarification records, recovered-success PATCH projections, OAuth read scope, and deferred-scope wording were resolved with deterministic regressions and aligned docs. Focused reruns of all four roles found no remaining actionable findings.
 - Residual risk: query strings can contain sensitive data even without userinfo; authorized successful reads intentionally preserve them for functionality, so callers remain responsible for treating returned URLs as inventory data and the MCP must continue preventing secondary disclosure.
 
 ### F-S40: Complete Part Exact Reads And Scalar Maintenance
 
-- Status: `Planned`
+- Status: `Ready`
 - Issue: [#121](https://github.com/davidvanlaatum/inventree-mcp/issues/121)
 - Depends on: F-S39
 - Decisions: approved by the operator on 2026-08-15. Exact reads expose all approved default scalar fields already returned by the API, while searches remain concise. `creation_user` is read-only. API 530's nested category/location detail, category path, and parameters remain separate lookups; tags and price breaks remain deferred to F-S56 and F-S58. Raw `barcode_hash` remains excluded pending F-S55.
@@ -2152,7 +2160,7 @@ Tasks:
 
 ### F-S43: Sourcing-Link Detail Completeness
 
-- Status: `Planned`
+- Status: `Ready`
 - Issue: [#124](https://github.com/davidvanlaatum/inventree-mcp/issues/124)
 - Depends on: F-S20, F-S39
 - Decisions: approved by the operator on 2026-08-15. Exact supplier/manufacturer-part reads expose all approved fields; list/search projections remain concise and embedded company detail remains a separate `get_company` call. Raw `barcode_hash` remains excluded pending F-S55.
@@ -2170,7 +2178,7 @@ Tasks:
 
 ### F-S44: Company Detail And Role Completeness
 
-- Status: `Planned`
+- Status: `Ready`
 - Issue: [#125](https://github.com/davidvanlaatum/inventree-mcp/issues/125)
 - Depends on: F-S20, F-S31, F-S39
 - Decisions: approved by the operator on 2026-08-15. Phone, email, free-text contact, business tax ID, external link, image URL, supplied/manufactured counts, and customer role are in scope. Tax ID is for business identifiers such as ABN/ACN, not personal TFNs.
@@ -2188,7 +2196,7 @@ Tasks:
 
 ### F-S45: Stock-Item Detail Completeness
 
-- Status: `Planned`
+- Status: `Ready`
 - Issue: [#126](https://github.com/davidvanlaatum/inventree-mcp/issues/126)
 - Depends on: F-S21, F-S39
 - Decisions: approved by the operator on 2026-08-15. Exact stock reads add API-derived SKU, MPN, expired/stale state, and read-only sales-order traceability. Embedded part detail remains a separate `get_part` call and searches stay concise. Raw `barcode_hash` remains excluded pending F-S55.
@@ -2221,7 +2229,7 @@ Tasks:
 
 ### F-S47: Purchase-Order And Line Detail Completeness
 
-- Status: `Planned`
+- Status: `Ready`
 - Issue: [#128](https://github.com/davidvanlaatum/inventree-mcp/issues/128)
 - Depends on: F-S03, F-S23, F-S38, F-S39, F-S61
 - Decisions: approved by the operator on 2026-08-15. Exact order and line reads expose all approved fields while searches remain concise. Embedded user, address, contact, project, destination, build, and part records remain separate lookups. Raw `barcode_hash` remains excluded pending F-S55. Existing-order supplier and internal InvenTree reference remain immutable, and `status_custom_key` remains read-only.

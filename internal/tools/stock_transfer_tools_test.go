@@ -156,6 +156,7 @@ func TestTransferStockItemFailsClosedOnExactReadErrorsAndIdentityMismatch(t *tes
 		a := assert.New(t)
 		ctx, _, _ := testhandler.SetupTestHandler(t)
 		fake := newFakeStockTransferClient()
+		fake.item.Link = "https://supplier.test/stock?token=secret#details"
 		fake.itemErr = &inventree.APIError{StatusCode: http.StatusNotFound, Kind: inventree.ErrorKindNotFound}
 		_, output, err := transferStockItem(stockTransferDeps(fake))(ctx, &mcp.CallToolRequest{}, TransferStockItemInput{DryRun: true, StockItemID: 50, DestinationLocationID: 20, Reason: "move"})
 		r.NoError(err)
@@ -296,6 +297,8 @@ func TestTransferStockItemRecoversLostResponseAndReturnsPartialForMismatch(t *te
 		a.Equal(StatusPartialFailure, output.Status)
 		r.NotNil(output.Failure)
 		a.Contains(output.Failure.RecoveryPlan, "do not retry blindly")
+		r.NotNil(output.Record)
+		a.Empty(output.Record.Link)
 		a.Equal(1, fake.transferCalls)
 	})
 }

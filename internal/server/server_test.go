@@ -1662,10 +1662,10 @@ func TestTrafficLogMiddlewareCapturesHTTPBodies(t *testing.T) {
 	a.Equal(`{"ok":true}`, outbound.Body)
 }
 
-func TestTrafficLogTreatsConfiguredWebLinkAuthoritiesAsSensitiveResponseCapture(t *testing.T) {
+func TestTrafficLogTreatsCompleteAuthorizedURLsAsSensitiveResponseCapture(t *testing.T) {
 	t.Parallel()
 	r := require.New(t)
-	const response = `{"status":"ok","record":{"pk":7,"web_url":"https://internal.inventory.example/part/7/"}}`
+	const response = `{"status":"ok","record":{"pk":7,"web_url":"https://internal.inventory.example/part/7/","link":"https://supplier.example/item?token=sensitive#datasheet"}}`
 
 	var output strings.Builder
 	traffic := &trafficLog{w: &output}
@@ -1681,6 +1681,7 @@ func TestTrafficLogTreatsConfiguredWebLinkAuthoritiesAsSensitiveResponseCapture(
 	r.NoError(json.Unmarshal([]byte(lines[1]), &outbound))
 	r.Equal(response, outbound.Body)
 	r.Contains(outbound.Body, "internal.inventory.example")
+	r.Contains(outbound.Body, "?token=sensitive#datasheet")
 }
 
 func TestTrafficLogMiddlewareRejectsUnreadableHTTPRequestBody(t *testing.T) {

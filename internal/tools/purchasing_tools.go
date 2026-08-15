@@ -1326,6 +1326,12 @@ func purchaseOrderLineClarification(question, reason string, orderID, supplierPa
 
 func workflowFailure(out PurchaseOrderWorkflowOutput, action, message, recovery string) (*mcp.CallToolResult, PurchaseOrderWorkflowOutput, error) {
 	out.Status = StatusPartialFailure
+	for i := range out.ExtraLines {
+		out.ExtraLines[i] = purchaseOrderExtraLineRecovery(out.ExtraLines[i])
+	}
+	for i := range out.PlannedChanges {
+		delete(out.PlannedChanges[i].Fields, "link")
+	}
 	out.Failure = &PurchaseOrderWorkflowFailure{Action: action, Message: message, RecoveryPlan: recovery}
 	return TextResult(StatusPartialFailure), out, nil
 }
