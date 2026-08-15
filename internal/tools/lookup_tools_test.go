@@ -967,7 +967,11 @@ func (f *fakeMilestoneLookupClient) CreateSupplierPart(_ context.Context, input 
 	if f.createSupplierPartErr != nil {
 		return inventree.SupplierPart{}, f.createSupplierPartErr
 	}
-	return inventree.SupplierPart{PK: 40, Part: input.Part, Supplier: input.Supplier, SKU: input.SKU}, nil
+	description := ""
+	if input.Description != nil {
+		description = *input.Description
+	}
+	return inventree.SupplierPart{PK: 40, Part: input.Part, Supplier: input.Supplier, SKU: input.SKU, Description: description, Packaging: input.Packaging}, nil
 }
 
 func (f *fakeMilestoneLookupClient) GetSupplierPartDetail(_ context.Context, id int) (inventree.SupplierPartDetail, error) {
@@ -984,7 +988,7 @@ func (f *fakeMilestoneLookupClient) GetSupplierPartDetail(_ context.Context, id 
 		}
 	}
 	input := f.lastCreateSupplierPart
-	return inventree.SupplierPartDetail{PK: id, Part: input.Part, Supplier: input.Supplier, SKU: input.SKU, Description: input.Description, Link: input.Link, ManufacturerPart: input.ManufacturerPart, Packaging: input.Packaging, Note: input.Note}, nil
+	return inventree.SupplierPartDetail{PK: id, Part: input.Part, Supplier: input.Supplier, SKU: input.SKU, Description: input.Description, Link: input.Link, ManufacturerPart: input.ManufacturerPart, Packaging: input.Packaging, Note: input.Note, Notes: input.Notes, Available: derefFloat64(input.Available)}, nil
 }
 
 func (f *fakeMilestoneLookupClient) SearchManufacturerParts(_ context.Context, query inventree.ManufacturerPartQuery) ([]inventree.ManufacturerPart, error) {
@@ -1003,7 +1007,11 @@ func (f *fakeMilestoneLookupClient) CreateManufacturerPart(_ context.Context, in
 	if input.MPN != nil {
 		mpn = *input.MPN
 	}
-	return inventree.ManufacturerPart{PK: 50, Part: input.Part, Manufacturer: input.Manufacturer, MPN: mpn}, nil
+	description := ""
+	if input.Description != nil {
+		description = *input.Description
+	}
+	return inventree.ManufacturerPart{PK: 50, Part: input.Part, Manufacturer: input.Manufacturer, MPN: mpn, Description: description}, nil
 }
 
 func (f *fakeMilestoneLookupClient) GetManufacturerPartDetail(_ context.Context, id int) (inventree.ManufacturerPartDetail, error) {
@@ -1021,7 +1029,14 @@ func (f *fakeMilestoneLookupClient) GetManufacturerPartDetail(_ context.Context,
 		}
 	}
 	input := f.lastCreateManufacturerPart
-	return inventree.ManufacturerPartDetail{PK: id, Part: input.Part, Manufacturer: input.Manufacturer, MPN: input.MPN, Description: input.Description, Link: input.Link}, nil
+	return inventree.ManufacturerPartDetail{PK: id, Part: input.Part, Manufacturer: input.Manufacturer, MPN: input.MPN, Description: input.Description, Link: input.Link, Notes: input.Notes}, nil
+}
+
+func derefFloat64(value *float64) float64 {
+	if value == nil {
+		return 0
+	}
+	return *value
 }
 
 func (f *fakeMilestoneLookupClient) CreateStockItem(_ context.Context, input inventree.StockItemCreate) (inventree.StockItem, error) {

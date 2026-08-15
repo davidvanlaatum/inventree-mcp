@@ -332,19 +332,26 @@ type CompanyDetail struct {
 
 type SupplierPartDetail struct {
 	WebLinkFields
-	PK                 int     `json:"pk"`
-	Part               int     `json:"part"`
-	Supplier           int     `json:"supplier"`
-	SKU                string  `json:"SKU"`
-	Description        *string `json:"description"`
-	Active             bool    `json:"active"`
-	Primary            bool    `json:"primary"`
-	Packaging          *string `json:"packaging"`
-	PackQuantityNative float64 `json:"pack_quantity_native"`
-	Link               *string `json:"link"`
-	ManufacturerPart   *int    `json:"manufacturer_part"`
-	PackQuantity       string  `json:"pack_quantity"`
-	Note               *string `json:"note"`
+	PK                  int      `json:"pk"`
+	Part                int      `json:"part"`
+	Supplier            int      `json:"supplier"`
+	SKU                 string   `json:"SKU"`
+	Description         *string  `json:"description"`
+	Link                *string  `json:"link"`
+	Active              bool     `json:"active"`
+	Primary             bool     `json:"primary"`
+	ManufacturerPart    *int     `json:"manufacturer_part"`
+	MPN                 *string  `json:"MPN"`
+	Packaging           *string  `json:"packaging"`
+	PackQuantity        string   `json:"pack_quantity"`
+	PackQuantityNative  float64  `json:"pack_quantity_native"`
+	Note                *string  `json:"note"`
+	Notes               *string  `json:"notes"`
+	Available           float64  `json:"available"`
+	AvailabilityUpdated *string  `json:"availability_updated"`
+	InStock             *float64 `json:"in_stock"`
+	OnOrder             *float64 `json:"on_order"`
+	Updated             *string  `json:"updated"`
 }
 
 type ManufacturerPartDetail struct {
@@ -355,6 +362,7 @@ type ManufacturerPartDetail struct {
 	MPN          *string `json:"MPN"`
 	Description  *string `json:"description"`
 	Link         *string `json:"link"`
+	Notes        *string `json:"notes"`
 }
 
 type CompanyPage struct {

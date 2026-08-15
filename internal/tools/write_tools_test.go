@@ -1903,6 +1903,9 @@ func TestDirectExternalLinkCreatesPreserveExactReadBackAndRejectCredentials(t *t
 	a := assert.New(t)
 	ctx, _, _ := testhandler.SetupTestHandler(t)
 	complete := "https://supplier.test/item?account=42&view=full#pricing"
+	supplierNotes := "supplier **Markdown**"
+	manufacturerNotes := "manufacturer **Markdown**"
+	available := 0.0
 
 	companyFake := &fakeMilestoneLookupClient{}
 	_, company, err := createCompany(depsForFake(companyFake))(ctx, &mcp.CallToolRequest{}, CreateCompanyInput{Name: "Linked Co", Currency: "AUD", Website: complete, IsSupplier: true})
@@ -1912,18 +1915,29 @@ func TestDirectExternalLinkCreatesPreserveExactReadBackAndRejectCredentials(t *t
 	a.Equal(complete, companyFake.lastCreateCompany.Website)
 
 	supplierFake := &fakeMilestoneLookupClient{}
-	_, supplier, err := createSupplierPart(depsForFake(supplierFake))(ctx, &mcp.CallToolRequest{}, CreateSupplierPartInput{PartID: 10, SupplierID: 30, SKU: "SKU-LINK", Link: &complete})
+	_, supplier, err := createSupplierPart(depsForFake(supplierFake))(ctx, &mcp.CallToolRequest{}, CreateSupplierPartInput{PartID: 10, SupplierID: 30, SKU: "SKU-LINK", Link: &complete, Notes: &supplierNotes, Available: &available})
 	r.NoError(err)
 	a.Equal(StatusOK, supplier.Status)
 	a.Equal(complete, supplier.Record.Link)
 	a.Equal(complete, *supplierFake.lastCreateSupplierPart.Link)
+	a.Equal(supplierNotes, *supplier.Record.Notes)
+	a.Zero(supplier.Record.Available)
+	a.Equal(supplierNotes, *supplierFake.lastCreateSupplierPart.Notes)
+	r.NotNil(supplierFake.lastCreateSupplierPart.Available)
+	a.Zero(*supplierFake.lastCreateSupplierPart.Available)
 
 	manufacturerFake := &fakeMilestoneLookupClient{}
-	_, manufacturer, err := createManufacturerPart(depsForFake(manufacturerFake))(ctx, &mcp.CallToolRequest{}, CreateManufacturerPartInput{PartID: 10, ManufacturerID: 31, MPN: dvgoutils.Ptr("MPN-LINK"), Link: &complete})
+	_, manufacturer, err := createManufacturerPart(depsForFake(manufacturerFake))(ctx, &mcp.CallToolRequest{}, CreateManufacturerPartInput{PartID: 10, ManufacturerID: 31, MPN: dvgoutils.Ptr("MPN-LINK"), Link: &complete, Notes: &manufacturerNotes})
 	r.NoError(err)
 	a.Equal(StatusOK, manufacturer.Status)
 	a.Equal(complete, manufacturer.Record.Link)
 	a.Equal(complete, *manufacturerFake.lastCreateManufacturerPart.Link)
+	a.Equal(manufacturerNotes, *manufacturer.Record.Notes)
+	a.Equal(manufacturerNotes, *manufacturerFake.lastCreateManufacturerPart.Notes)
+
+	notFinite := math.Inf(1)
+	_, _, err = createSupplierPart(depsForFake(&fakeMilestoneLookupClient{}))(ctx, &mcp.CallToolRequest{}, CreateSupplierPartInput{PartID: 10, SupplierID: 30, SKU: "INVALID", Available: &notFinite})
+	r.ErrorContains(err, "available must be finite")
 
 	credentialURL := "https://user:password@supplier.test/private?token=secret#fragment"
 	companyCalls, supplierCalls, manufacturerCalls := companyFake.createCompanyCalls, supplierFake.createSupplierPartCalls, manufacturerFake.createManufacturerPartCalls
@@ -1955,6 +1969,8 @@ func TestDirectExternalLinkCreatesReturnURLFreePartialFailureWhenReadBackCannotV
 	ctx, _, _ := testhandler.SetupTestHandler(t)
 	requested := "https://supplier.test/item?account=42#pricing"
 	different := "https://supplier.test/item?account=43#pricing"
+	description := "sensitive sourcing description"
+	packaging := "private packaging"
 
 	companyFake := &fakeMilestoneLookupClient{companyDetail: &inventree.CompanyDetail{Company: inventree.Company{PK: 30}, Website: different}}
 	_, company, err := createCompany(depsForFake(companyFake))(ctx, &mcp.CallToolRequest{}, CreateCompanyInput{Name: "Linked Co", Currency: "AUD", Website: requested, IsSupplier: true})
@@ -1964,18 +1980,102 @@ func TestDirectExternalLinkCreatesReturnURLFreePartialFailureWhenReadBackCannotV
 	a.NotEmpty(company.RecoveryPlan)
 
 	supplierFake := &fakeMilestoneLookupClient{supplierPartDetail: &inventree.SupplierPartDetail{PK: 40, Link: &different}}
-	_, supplier, err := createSupplierPart(depsForFake(supplierFake))(ctx, &mcp.CallToolRequest{}, CreateSupplierPartInput{PartID: 10, SupplierID: 30, SKU: "SKU-LINK", Link: &requested})
+	_, supplier, err := createSupplierPart(depsForFake(supplierFake))(ctx, &mcp.CallToolRequest{}, CreateSupplierPartInput{PartID: 10, SupplierID: 30, SKU: "SKU-LINK", Description: &description, Link: &requested, Packaging: &packaging})
 	r.NoError(err)
 	a.Equal(StatusPartialFailure, supplier.Status)
-	a.Empty(supplier.Record.Link)
+	a.Nil(supplier.Record)
+	r.NotNil(supplier.Recovery)
+	a.Equal(40, supplier.Recovery.ID)
 	a.NotEmpty(supplier.RecoveryPlan)
+	supplierWire, err := json.Marshal(supplier)
+	r.NoError(err)
+	a.JSONEq(`{"status":"partial_failure","recovery":{"id":40},"recovery_plan":"Read the supplier part by its stable ID and verify the requested external link, long notes, and availability before retrying or applying any further change."}`, string(supplierWire))
+	a.NotContains(string(supplierWire), requested)
+	a.NotContains(string(supplierWire), description)
+	a.NotContains(string(supplierWire), packaging)
 
 	manufacturerFake := &fakeMilestoneLookupClient{manufacturerPartDetail: &inventree.ManufacturerPartDetail{PK: 50, Link: &different}}
-	_, manufacturer, err := createManufacturerPart(depsForFake(manufacturerFake))(ctx, &mcp.CallToolRequest{}, CreateManufacturerPartInput{PartID: 10, ManufacturerID: 31, Link: &requested})
+	_, manufacturer, err := createManufacturerPart(depsForFake(manufacturerFake))(ctx, &mcp.CallToolRequest{}, CreateManufacturerPartInput{PartID: 10, ManufacturerID: 31, Description: &description, Link: &requested})
 	r.NoError(err)
 	a.Equal(StatusPartialFailure, manufacturer.Status)
-	a.Empty(manufacturer.Record.Link)
+	a.Nil(manufacturer.Record)
+	r.NotNil(manufacturer.Recovery)
+	a.Equal(50, manufacturer.Recovery.ID)
 	a.NotEmpty(manufacturer.RecoveryPlan)
+	manufacturerWire, err := json.Marshal(manufacturer)
+	r.NoError(err)
+	a.NotContains(string(manufacturerWire), requested)
+	a.NotContains(string(manufacturerWire), description)
+}
+
+func TestDirectSourcingCreatesRequireLongNotesAndAvailabilityReadBack(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	link := "https://supplier.test/item?account=42#details"
+	requestedNotes, differentNotes := "requested **Markdown**", "different **Markdown**"
+	available := 3.5
+
+	supplierFake := &fakeMilestoneLookupClient{supplierPartDetail: &inventree.SupplierPartDetail{PK: 40, Link: &link, Notes: &differentNotes, Available: available}}
+	_, supplier, err := createSupplierPart(depsForFake(supplierFake))(ctx, &mcp.CallToolRequest{}, CreateSupplierPartInput{PartID: 10, SupplierID: 30, SKU: "SKU-DETAIL", Link: &link, Notes: &requestedNotes, Available: &available})
+	r.NoError(err)
+	a.Equal(StatusPartialFailure, supplier.Status)
+	a.Nil(supplier.Record)
+	r.NotNil(supplier.Recovery)
+	a.Equal(40, supplier.Recovery.ID)
+	a.NotEmpty(supplier.RecoveryPlan)
+
+	supplierAvailabilityFake := &fakeMilestoneLookupClient{supplierPartDetail: &inventree.SupplierPartDetail{PK: 40, Link: &link, Notes: &requestedNotes, Available: 4.5}}
+	_, supplierAvailability, err := createSupplierPart(depsForFake(supplierAvailabilityFake))(ctx, &mcp.CallToolRequest{}, CreateSupplierPartInput{PartID: 10, SupplierID: 30, SKU: "SKU-AVAILABILITY", Link: &link, Notes: &requestedNotes, Available: &available})
+	r.NoError(err)
+	a.Equal(StatusPartialFailure, supplierAvailability.Status)
+	a.Nil(supplierAvailability.Record)
+	r.NotNil(supplierAvailability.Recovery)
+	a.Equal(40, supplierAvailability.Recovery.ID)
+	a.NotEmpty(supplierAvailability.RecoveryPlan)
+
+	manufacturerFake := &fakeMilestoneLookupClient{manufacturerPartDetail: &inventree.ManufacturerPartDetail{PK: 50, Link: &link, Notes: &differentNotes}}
+	_, manufacturer, err := createManufacturerPart(depsForFake(manufacturerFake))(ctx, &mcp.CallToolRequest{}, CreateManufacturerPartInput{PartID: 10, ManufacturerID: 31, MPN: dvgoutils.Ptr("MPN-DETAIL"), Link: &link, Notes: &requestedNotes})
+	r.NoError(err)
+	a.Equal(StatusPartialFailure, manufacturer.Status)
+	a.Nil(manufacturer.Record)
+	r.NotNil(manufacturer.Recovery)
+	a.Equal(50, manufacturer.Recovery.ID)
+	a.NotEmpty(manufacturer.RecoveryPlan)
+}
+
+func TestDirectSourcingCreateRecoveryWithoutStableIDUsesBoundedSearch(t *testing.T) {
+	t.Parallel()
+	for _, id := range []int{0, -1} {
+		t.Run(fmt.Sprintf("id_%d", id), func(t *testing.T) {
+			t.Parallel()
+			r := require.New(t)
+			a := assert.New(t)
+			ctx, _, _ := testhandler.SetupTestHandler(t)
+			fake := &fakeMilestoneLookupClient{supplierPartDetail: &inventree.SupplierPartDetail{PK: id}, manufacturerPartDetail: &inventree.ManufacturerPartDetail{PK: id}}
+
+			_, supplier, err := verifyCreatedSupplierPart(ctx, fake, inventree.SupplierPart{PK: id}, inventree.PatchFields{})
+			r.NoError(err)
+			a.Equal(StatusPartialFailure, supplier.Status)
+			a.Nil(supplier.Record)
+			a.Nil(supplier.Recovery)
+			a.Contains(supplier.RecoveryPlan, "bounded supplier-part search")
+			supplierWire, err := json.Marshal(supplier)
+			r.NoError(err)
+			a.NotContains(string(supplierWire), `"recovery"`)
+
+			_, manufacturer, err := verifyCreatedManufacturerPart(ctx, fake, inventree.ManufacturerPart{PK: id}, inventree.PatchFields{})
+			r.NoError(err)
+			a.Equal(StatusPartialFailure, manufacturer.Status)
+			a.Nil(manufacturer.Record)
+			a.Nil(manufacturer.Recovery)
+			a.Contains(manufacturer.RecoveryPlan, "bounded manufacturer-part search")
+			manufacturerWire, err := json.Marshal(manufacturer)
+			r.NoError(err)
+			a.NotContains(string(manufacturerWire), `"recovery"`)
+		})
+	}
 }
 
 func TestCreateSupplierAndManufacturerPartsAskBeforeDuplicate(t *testing.T) {

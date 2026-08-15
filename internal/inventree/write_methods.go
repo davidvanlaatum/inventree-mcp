@@ -62,16 +62,18 @@ type CategoryCreate struct {
 }
 
 type SupplierPartCreate struct {
-	Part             int     `json:"part"`
-	Supplier         int     `json:"supplier"`
-	SKU              string  `json:"SKU"`
-	Description      *string `json:"description,omitempty"`
-	Link             *string `json:"link,omitempty"`
-	Active           *bool   `json:"active,omitempty"`
-	Primary          *bool   `json:"primary,omitempty"`
-	ManufacturerPart *int    `json:"manufacturer_part,omitempty"`
-	Packaging        *string `json:"packaging,omitempty"`
-	Note             *string `json:"note,omitempty"`
+	Part             int      `json:"part"`
+	Supplier         int      `json:"supplier"`
+	SKU              string   `json:"SKU"`
+	Description      *string  `json:"description,omitempty"`
+	Link             *string  `json:"link,omitempty"`
+	Active           *bool    `json:"active,omitempty"`
+	Primary          *bool    `json:"primary,omitempty"`
+	ManufacturerPart *int     `json:"manufacturer_part,omitempty"`
+	Packaging        *string  `json:"packaging,omitempty"`
+	Note             *string  `json:"note,omitempty"`
+	Notes            *string  `json:"notes,omitempty"`
+	Available        *float64 `json:"available,omitempty"`
 }
 
 type ManufacturerPartCreate struct {
@@ -80,6 +82,7 @@ type ManufacturerPartCreate struct {
 	MPN          *string `json:"MPN,omitempty"`
 	Description  *string `json:"description,omitempty"`
 	Link         *string `json:"link,omitempty"`
+	Notes        *string `json:"notes,omitempty"`
 }
 
 type ParameterCreate struct {

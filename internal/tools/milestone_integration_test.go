@@ -750,12 +750,21 @@ func TestMilestoneHappyPathToolsAgainstInvenTree(t *testing.T) {
 		r.NoError(err)
 		r.NotNil(supplierGet.Record)
 		packaging := "reel"
-		_, supplierUpdate, err := updateSupplierPartAdmin(fixture.deps())(ctx, &mcp.CallToolRequest{}, UpdateSupplierPartInput{ID: supplierPart.ID, Packaging: &packaging})
+		supplierLongNotes := "supplier **Markdown** notes"
+		explicitZeroAvailability := 0.0
+		_, supplierUpdate, err := updateSupplierPartAdmin(fixture.deps())(ctx, &mcp.CallToolRequest{}, UpdateSupplierPartInput{ID: supplierPart.ID, Packaging: &packaging, ManufacturerPartID: &manufacturerPart.PK, Notes: &supplierLongNotes, Available: &explicitZeroAvailability})
 		r.NoError(err)
 		a.Equal(StatusOK, supplierUpdate.Status)
 		r.NotNil(supplierUpdate.Record)
 		r.NotNil(supplierUpdate.Record.Packaging)
 		a.Equal(packaging, *supplierUpdate.Record.Packaging)
+		a.Equal(supplierLongNotes, *supplierUpdate.Record.Notes)
+		a.Zero(supplierUpdate.Record.Available)
+		a.Equal(manufacturerPart.MPN, *supplierUpdate.Record.MPN)
+		r.NotNil(supplierUpdate.Record.AvailabilityUpdated)
+		r.NotNil(supplierUpdate.Record.InStock)
+		r.NotNil(supplierUpdate.Record.OnOrder)
+		r.NotNil(supplierUpdate.Record.Updated)
 
 		_, manufacturerSearch, err := searchManufacturerPartsAdmin(fixture.deps())(ctx, &mcp.CallToolRequest{}, ManufacturerPartSearchInput{PartID: part.ID, ManufacturerID: manufacturer.ID, MPN: manufacturerPart.MPN})
 		r.NoError(err)
@@ -764,12 +773,14 @@ func TestMilestoneHappyPathToolsAgainstInvenTree(t *testing.T) {
 		r.NoError(err)
 		r.NotNil(manufacturerGet.Record)
 		manufacturerDescription := "verified F-S20 manufacturer link"
-		_, manufacturerUpdate, err := updateManufacturerPartAdmin(fixture.deps())(ctx, &mcp.CallToolRequest{}, UpdateManufacturerPartInput{ID: manufacturerPart.PK, Description: &manufacturerDescription})
+		manufacturerLongNotes := "manufacturer **Markdown** notes"
+		_, manufacturerUpdate, err := updateManufacturerPartAdmin(fixture.deps())(ctx, &mcp.CallToolRequest{}, UpdateManufacturerPartInput{ID: manufacturerPart.PK, Description: &manufacturerDescription, Notes: &manufacturerLongNotes})
 		r.NoError(err)
 		a.Equal(StatusOK, manufacturerUpdate.Status)
 		r.NotNil(manufacturerUpdate.Record)
 		r.NotNil(manufacturerUpdate.Record.Description)
 		a.Equal(manufacturerDescription, *manufacturerUpdate.Record.Description)
+		a.Equal(manufacturerLongNotes, *manufacturerUpdate.Record.Notes)
 
 		missingPartID := 999999999
 		_, _, err = updateSupplierPartAdmin(fixture.deps())(ctx, &mcp.CallToolRequest{}, UpdateSupplierPartInput{ID: supplierPart.ID, PartID: &missingPartID})
@@ -820,11 +831,12 @@ func TestMilestoneHappyPathToolsAgainstInvenTree(t *testing.T) {
 		r.NotNil(explicitSupplierValues.Record.Description)
 		a.Empty(*explicitSupplierValues.Record.Description)
 		a.False(explicitSupplierValues.Record.Active)
-		_, clearedSupplierNote, err := updateSupplierPartAdmin(fixture.deps())(ctx, &mcp.CallToolRequest{}, UpdateSupplierPartInput{ID: supplierPart.ID, ClearNote: true})
+		_, clearedSupplierNote, err := updateSupplierPartAdmin(fixture.deps())(ctx, &mcp.CallToolRequest{}, UpdateSupplierPartInput{ID: supplierPart.ID, ClearNote: true, ClearNotes: true})
 		r.NoError(err)
 		a.Equal(StatusOK, clearedSupplierNote.Status)
 		r.NotNil(clearedSupplierNote.Record)
 		a.Nil(clearedSupplierNote.Record.Note)
+		a.Nil(clearedSupplierNote.Record.Notes)
 
 		_, explicitManufacturerValues, err := updateManufacturerPartAdmin(fixture.deps())(ctx, &mcp.CallToolRequest{}, UpdateManufacturerPartInput{ID: manufacturerPart.PK, Description: &empty, Link: &empty})
 		r.NoError(err)
@@ -832,12 +844,13 @@ func TestMilestoneHappyPathToolsAgainstInvenTree(t *testing.T) {
 		r.NotNil(explicitManufacturerValues.Record)
 		r.NotNil(explicitManufacturerValues.Record.Description)
 		a.Empty(*explicitManufacturerValues.Record.Description)
-		_, clearedManufacturerValues, err := updateManufacturerPartAdmin(fixture.deps())(ctx, &mcp.CallToolRequest{}, UpdateManufacturerPartInput{ID: manufacturerPart.PK, ClearDescription: true, ClearLink: true})
+		_, clearedManufacturerValues, err := updateManufacturerPartAdmin(fixture.deps())(ctx, &mcp.CallToolRequest{}, UpdateManufacturerPartInput{ID: manufacturerPart.PK, ClearDescription: true, ClearLink: true, ClearNotes: true})
 		r.NoError(err)
 		a.Equal(StatusOK, clearedManufacturerValues.Status)
 		r.NotNil(clearedManufacturerValues.Record)
 		a.Nil(clearedManufacturerValues.Record.Description)
 		a.Empty(clearedManufacturerValues.Record.Link)
+		a.Nil(clearedManufacturerValues.Record.Notes)
 
 		roleRemovalName, err := fixture.run.Name("supplier-role-removal")
 		r.NoError(err)

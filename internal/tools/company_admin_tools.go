@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"net/http"
 	"reflect"
 	"slices"
@@ -56,18 +57,26 @@ type CompanyRecoveryView struct {
 
 type SupplierPartView struct {
 	inventree.WebLinkFields
-	ID                 int     `json:"id"`
-	PartID             int     `json:"part_id"`
-	SupplierID         int     `json:"supplier_id"`
-	SKU                string  `json:"sku"`
-	Description        *string `json:"description"`
-	Link               string  `json:"link,omitempty"`
-	Active             bool    `json:"active"`
-	Primary            bool    `json:"primary"`
-	ManufacturerPartID *int    `json:"manufacturer_part_id,omitempty"`
-	Packaging          *string `json:"packaging,omitempty"`
-	PackQuantity       string  `json:"pack_quantity"`
-	Note               *string `json:"note,omitempty"`
+	ID                  int      `json:"id"`
+	PartID              int      `json:"part_id"`
+	SupplierID          int      `json:"supplier_id"`
+	SKU                 string   `json:"sku"`
+	Description         *string  `json:"description"`
+	Link                string   `json:"link,omitempty"`
+	Active              bool     `json:"active"`
+	Primary             bool     `json:"primary"`
+	ManufacturerPartID  *int     `json:"manufacturer_part_id"`
+	MPN                 *string  `json:"mpn"`
+	Packaging           *string  `json:"packaging"`
+	PackQuantity        string   `json:"pack_quantity"`
+	PackQuantityNative  float64  `json:"pack_quantity_native"`
+	Note                *string  `json:"note"`
+	Notes               *string  `json:"notes"`
+	Available           float64  `json:"available"`
+	AvailabilityUpdated *string  `json:"availability_updated"`
+	InStock             *float64 `json:"in_stock"`
+	OnOrder             *float64 `json:"on_order"`
+	Updated             *string  `json:"updated"`
 }
 
 type SupplierPartRecoveryView struct {
@@ -89,6 +98,7 @@ type ManufacturerPartView struct {
 	MPN            *string `json:"mpn"`
 	Description    *string `json:"description"`
 	Link           string  `json:"link,omitempty"`
+	Notes          *string `json:"notes"`
 }
 
 type ManufacturerPartRecoveryView struct {
@@ -154,23 +164,26 @@ type UpdateCompanyInput struct {
 }
 
 type UpdateSupplierPartInput struct {
-	ID                    int     `json:"id"`
-	PartID                *int    `json:"part_id,omitempty"`
-	SupplierID            *int    `json:"supplier_id,omitempty"`
-	SKU                   *string `json:"sku,omitempty"`
-	Description           *string `json:"description,omitempty"`
-	ClearDescription      bool    `json:"clear_description,omitempty"`
-	Link                  *string `json:"link,omitempty" jsonschema:"Complete HTTP(S) supplier-part URL without userinfo; query parameters and fragments are preserved."`
-	ClearLink             bool    `json:"clear_link,omitempty"`
-	Active                *bool   `json:"active,omitempty"`
-	Primary               *bool   `json:"primary,omitempty"`
-	ManufacturerPartID    *int    `json:"manufacturer_part_id,omitempty"`
-	ClearManufacturerPart bool    `json:"clear_manufacturer_part,omitempty"`
-	Packaging             *string `json:"packaging,omitempty"`
-	ClearPackaging        bool    `json:"clear_packaging,omitempty"`
-	PackQuantity          *string `json:"pack_quantity,omitempty"`
-	Note                  *string `json:"note,omitempty"`
-	ClearNote             bool    `json:"clear_note,omitempty"`
+	ID                    int      `json:"id"`
+	PartID                *int     `json:"part_id,omitempty"`
+	SupplierID            *int     `json:"supplier_id,omitempty"`
+	SKU                   *string  `json:"sku,omitempty"`
+	Description           *string  `json:"description,omitempty"`
+	ClearDescription      bool     `json:"clear_description,omitempty"`
+	Link                  *string  `json:"link,omitempty" jsonschema:"Complete HTTP(S) supplier-part URL without userinfo; query parameters and fragments are preserved."`
+	ClearLink             bool     `json:"clear_link,omitempty"`
+	Active                *bool    `json:"active,omitempty"`
+	Primary               *bool    `json:"primary,omitempty"`
+	ManufacturerPartID    *int     `json:"manufacturer_part_id,omitempty"`
+	ClearManufacturerPart bool     `json:"clear_manufacturer_part,omitempty"`
+	Packaging             *string  `json:"packaging,omitempty"`
+	ClearPackaging        bool     `json:"clear_packaging,omitempty"`
+	PackQuantity          *string  `json:"pack_quantity,omitempty"`
+	Note                  *string  `json:"note,omitempty"`
+	ClearNote             bool     `json:"clear_note,omitempty"`
+	Notes                 *string  `json:"notes,omitempty" jsonschema:"Replacement long Markdown notes, distinct from the short note field."`
+	ClearNotes            bool     `json:"clear_notes,omitempty" jsonschema:"Explicitly PATCH long Markdown notes to null; mutually exclusive with notes."`
+	Available             *float64 `json:"available,omitempty" jsonschema:"Replacement upstream availability quantity. Explicit zero is preserved."`
 }
 
 type UpdateManufacturerPartInput struct {
@@ -183,6 +196,8 @@ type UpdateManufacturerPartInput struct {
 	ClearDescription bool    `json:"clear_description,omitempty"`
 	Link             *string `json:"link,omitempty" jsonschema:"Complete HTTP(S) manufacturer-part URL without userinfo; query parameters and fragments are preserved."`
 	ClearLink        bool    `json:"clear_link,omitempty"`
+	Notes            *string `json:"notes,omitempty" jsonschema:"Replacement long Markdown notes."`
+	ClearNotes       bool    `json:"clear_notes,omitempty" jsonschema:"Explicitly PATCH long Markdown notes to null; mutually exclusive with notes."`
 }
 
 func registerCompanyAdminLookupTools(server *mcp.Server, deps Dependencies) {
@@ -487,7 +502,7 @@ func companyPatch(input UpdateCompanyInput) (inventree.PatchFields, error) {
 }
 
 func supplierPartPatch(input UpdateSupplierPartInput, before inventree.SupplierPartDetail) (inventree.PatchFields, inventree.SupplierPartDetail, error) {
-	if conflict(input.Description != nil, input.ClearDescription) || conflict(input.Link != nil, input.ClearLink) || conflict(input.ManufacturerPartID != nil, input.ClearManufacturerPart) || conflict(input.Packaging != nil, input.ClearPackaging) || conflict(input.Note != nil, input.ClearNote) {
+	if conflict(input.Description != nil, input.ClearDescription) || conflict(input.Link != nil, input.ClearLink) || conflict(input.ManufacturerPartID != nil, input.ClearManufacturerPart) || conflict(input.Packaging != nil, input.ClearPackaging) || conflict(input.Note != nil, input.ClearNote) || conflict(input.Notes != nil, input.ClearNotes) {
 		return nil, before, errors.New("a nullable field value and its clear flag are mutually exclusive")
 	}
 	fields := inventree.PatchFields{}
@@ -564,11 +579,24 @@ func supplierPartPatch(input UpdateSupplierPartInput, before inventree.SupplierP
 	} else if input.ClearNote {
 		target.Note = nil
 	}
+	setNullableString(fields, "notes", input.Notes, input.ClearNotes)
+	if input.Notes != nil {
+		target.Notes = input.Notes
+	} else if input.ClearNotes {
+		target.Notes = nil
+	}
+	if input.Available != nil {
+		if math.IsNaN(*input.Available) || math.IsInf(*input.Available, 0) {
+			return nil, before, errors.New("available must be finite")
+		}
+		fields["available"] = inventree.Set(*input.Available)
+		target.Available = *input.Available
+	}
 	return fields, target, nil
 }
 
 func manufacturerPartPatch(input UpdateManufacturerPartInput, before inventree.ManufacturerPartDetail) (inventree.PatchFields, inventree.ManufacturerPartDetail, error) {
-	if conflict(input.MPN != nil, input.ClearMPN) || conflict(input.Description != nil, input.ClearDescription) || conflict(input.Link != nil, input.ClearLink) {
+	if conflict(input.MPN != nil, input.ClearMPN) || conflict(input.Description != nil, input.ClearDescription) || conflict(input.Link != nil, input.ClearLink) || conflict(input.Notes != nil, input.ClearNotes) {
 		return nil, before, errors.New("a nullable field value and its clear flag are mutually exclusive")
 	}
 	fields := inventree.PatchFields{}
@@ -610,6 +638,12 @@ func manufacturerPartPatch(input UpdateManufacturerPartInput, before inventree.M
 		target.Link = link
 	} else if input.ClearLink {
 		target.Link = nil
+	}
+	setNullableString(fields, "notes", input.Notes, input.ClearNotes)
+	if input.Notes != nil {
+		target.Notes = input.Notes
+	} else if input.ClearNotes {
+		target.Notes = nil
 	}
 	return fields, target, nil
 }
@@ -905,10 +939,10 @@ func companyFieldsMatch(record inventree.CompanyDetail, fields inventree.PatchFi
 	return patchMatches(fields, map[string]any{"name": record.Name, "description": record.Description, "website": record.Website, "currency": record.Currency, "active": record.Active, "is_supplier": record.IsSupplier, "is_manufacturer": record.IsManufacturer, "notes": record.Notes})
 }
 func supplierPartFieldsMatch(record inventree.SupplierPartDetail, fields inventree.PatchFields) bool {
-	return patchMatches(fields, map[string]any{"part": record.Part, "supplier": record.Supplier, "SKU": record.SKU, "description": record.Description, "link": record.Link, "active": record.Active, "primary": record.Primary, "manufacturer_part": record.ManufacturerPart, "packaging": record.Packaging, "pack_quantity": record.PackQuantity, "note": record.Note})
+	return patchMatches(fields, map[string]any{"part": record.Part, "supplier": record.Supplier, "SKU": record.SKU, "description": record.Description, "link": record.Link, "active": record.Active, "primary": record.Primary, "manufacturer_part": record.ManufacturerPart, "packaging": record.Packaging, "pack_quantity": record.PackQuantity, "note": record.Note, "notes": record.Notes, "available": record.Available})
 }
 func manufacturerPartFieldsMatch(record inventree.ManufacturerPartDetail, fields inventree.PatchFields) bool {
-	return patchMatches(fields, map[string]any{"part": record.Part, "manufacturer": record.Manufacturer, "MPN": record.MPN, "description": record.Description, "link": record.Link})
+	return patchMatches(fields, map[string]any{"part": record.Part, "manufacturer": record.Manufacturer, "MPN": record.MPN, "description": record.Description, "link": record.Link, "notes": record.Notes})
 }
 
 func patchMatches(fields inventree.PatchFields, values map[string]any) bool {
@@ -944,13 +978,13 @@ func companyRecovery(record inventree.CompanyDetail) CompanyRecoveryView {
 	return CompanyRecoveryView{ID: record.PK, Name: record.Name, Currency: record.Currency, Active: record.Active, IsSupplier: record.IsSupplier, IsManufacturer: record.IsManufacturer, IsCustomer: record.IsCustomer}
 }
 func supplierPartView(record inventree.SupplierPartDetail) SupplierPartView {
-	return SupplierPartView{ID: record.PK, PartID: record.Part, SupplierID: record.Supplier, SKU: record.SKU, Description: record.Description, Link: projectExternalURL(record.Link), Active: record.Active, Primary: record.Primary, ManufacturerPartID: record.ManufacturerPart, Packaging: record.Packaging, PackQuantity: record.PackQuantity, Note: record.Note}
+	return SupplierPartView{ID: record.PK, PartID: record.Part, SupplierID: record.Supplier, SKU: record.SKU, Description: record.Description, Link: projectExternalURL(record.Link), Active: record.Active, Primary: record.Primary, ManufacturerPartID: record.ManufacturerPart, MPN: record.MPN, Packaging: record.Packaging, PackQuantity: record.PackQuantity, PackQuantityNative: record.PackQuantityNative, Note: record.Note, Notes: record.Notes, Available: record.Available, AvailabilityUpdated: record.AvailabilityUpdated, InStock: record.InStock, OnOrder: record.OnOrder, Updated: record.Updated}
 }
 func supplierPartRecovery(record inventree.SupplierPartDetail) SupplierPartRecoveryView {
 	return SupplierPartRecoveryView{ID: record.PK, PartID: record.Part, SupplierID: record.Supplier, SKU: record.SKU, Active: record.Active, Primary: record.Primary, ManufacturerPartID: record.ManufacturerPart}
 }
 func manufacturerPartView(record inventree.ManufacturerPartDetail) ManufacturerPartView {
-	return ManufacturerPartView{ID: record.PK, PartID: record.Part, ManufacturerID: record.Manufacturer, MPN: record.MPN, Description: record.Description, Link: projectExternalURL(record.Link)}
+	return ManufacturerPartView{ID: record.PK, PartID: record.Part, ManufacturerID: record.Manufacturer, MPN: record.MPN, Description: record.Description, Link: projectExternalURL(record.Link), Notes: record.Notes}
 }
 func manufacturerPartRecovery(record inventree.ManufacturerPartDetail) ManufacturerPartRecoveryView {
 	return ManufacturerPartRecoveryView{ID: record.PK, PartID: record.Part, ManufacturerID: record.Manufacturer, MPN: record.MPN}
