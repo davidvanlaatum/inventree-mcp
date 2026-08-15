@@ -185,6 +185,165 @@ func TestReceivePurchaseOrderRequiresConfirmationThenCreatesStock(t *testing.T) 
 	a.Equal(locationID, *fake.lastReceive.Items[0].Location)
 }
 
+func TestReceivePurchaseOrderCanExplicitlyCompleteFinalReceipt(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	locationID := 40
+	fake := &fakePurchasingClient{
+		orders: []inventree.PurchaseOrder{{PK: 120, Status: inventree.PurchaseOrderStatusPlaced}},
+		lines: []inventree.PurchaseOrderLineItem{
+			{PK: 130, Order: 120, Part: 40, Quantity: 2, Received: 1, Destination: &locationID},
+			{PK: 131, Order: 120, Part: 41, Quantity: 3, Received: 2, Destination: &locationID},
+		},
+		stockItems: []inventree.StockItem{{PK: 50, Part: 10, Quantity: 1}, {PK: 51, Part: 11, Quantity: 1}},
+	}
+	input := ReceivePurchaseOrderInput{DryRun: true, CompleteOrder: true, OrderID: 120, Items: []ReceivePurchaseOrderItem{{LineItemID: 130, Quantity: 1}, {LineItemID: 131, Quantity: 1}}}
+	handler := receivePurchaseOrderItems(purchasingDeps(fake))
+
+	_, plan, err := handler(ctx, &mcp.CallToolRequest{}, input)
+	r.NoError(err)
+	a.True(plan.CompleteOrder)
+	r.Len(plan.CompletionLines, 2)
+	r.NotEmpty(plan.PlanHash)
+	input.DryRun = false
+	input.ConfirmReceive = true
+	input.PlanHash = plan.PlanHash
+	_, completed, err := handler(ctx, &mcp.CallToolRequest{}, input)
+	r.NoError(err)
+	a.Equal(StatusOK, completed.Status)
+	r.NotNil(completed.Order)
+	a.Equal(inventree.PurchaseOrderStatusComplete, completed.Order.Status)
+	a.Equal(CompletePurchaseOrderToolName, completed.CompletionAction)
+	a.False(completed.CompletionRecovered)
+	a.Equal(1, fake.receiveCalls)
+	a.Equal(1, fake.completeCalls)
+}
+
+func TestReceivePurchaseOrderCompletionPlanRequiresAllOutstandingLinesAndBindsIntent(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	locationID := 40
+	fake := &fakePurchasingClient{
+		orders: []inventree.PurchaseOrder{{PK: 120, Status: inventree.PurchaseOrderStatusPlaced}},
+		lines: []inventree.PurchaseOrderLineItem{
+			{PK: 130, Order: 120, Part: 40, Quantity: 1, Destination: &locationID},
+			{PK: 131, Order: 120, Part: 41, Quantity: 1, Destination: &locationID},
+		},
+	}
+	handler := receivePurchaseOrderItems(purchasingDeps(fake))
+	base := ReceivePurchaseOrderInput{DryRun: true, OrderID: 120, Items: []ReceivePurchaseOrderItem{{LineItemID: 130, Quantity: 1}}}
+	_, ordinary, err := handler(ctx, &mcp.CallToolRequest{}, base)
+	r.NoError(err)
+	base.CompleteOrder = true
+	_, incomplete, err := handler(ctx, &mcp.CallToolRequest{}, base)
+	r.NoError(err)
+	a.Equal(StatusClarificationRequired, incomplete.Status)
+	a.Contains(incomplete.Clarification.Reason, "every ordinary line")
+	a.NotEqual(ordinary.PlanHash, incomplete.PlanHash)
+	a.Zero(fake.receiveCalls)
+
+	base.Items = append(base.Items, ReceivePurchaseOrderItem{LineItemID: 131, Quantity: 1})
+	_, completionPlan, err := handler(ctx, &mcp.CallToolRequest{}, base)
+	r.NoError(err)
+	r.NotEmpty(completionPlan.PlanHash)
+	base.DryRun = false
+	base.ConfirmReceive = true
+	base.CompleteOrder = false
+	base.PlanHash = completionPlan.PlanHash
+	_, stale, err := handler(ctx, &mcp.CallToolRequest{}, base)
+	r.NoError(err)
+	a.Equal(StatusClarificationRequired, stale.Status)
+	a.Zero(fake.receiveCalls)
+}
+
+func TestReceivePurchaseOrderExplicitCompletionHonorsAutoCompleteAndPreservesReceiptOnFailure(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name             string
+		autoComplete     bool
+		completionErr    error
+		afterPersistErr  error
+		wantPartial      bool
+		wantRecovered    bool
+		wantCompleteCall int
+	}{
+		{name: "upstream already auto completed", autoComplete: true},
+		{name: "completion failure preserves receipt", completionErr: errors.New("timeout"), wantPartial: true, wantCompleteCall: 1},
+		{name: "lost completion response recovered", afterPersistErr: errors.New("response lost"), wantRecovered: true, wantCompleteCall: 1},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			r := require.New(t)
+			a := assert.New(t)
+			ctx, _, _ := testhandler.SetupTestHandler(t)
+			locationID := 40
+			fake := &fakePurchasingClient{
+				orders:     []inventree.PurchaseOrder{{PK: 120, Status: inventree.PurchaseOrderStatusPlaced}},
+				lines:      []inventree.PurchaseOrderLineItem{{PK: 130, Order: 120, Part: 40, Quantity: 1, Destination: &locationID}},
+				stockItems: []inventree.StockItem{{PK: 50, Part: 10, Quantity: 1}}, autoCompleteOnReceive: test.autoComplete,
+				completeErr: test.completionErr, completeErrAfterPersist: test.afterPersistErr,
+			}
+			input := ReceivePurchaseOrderInput{DryRun: true, CompleteOrder: true, OrderID: 120, Items: []ReceivePurchaseOrderItem{{LineItemID: 130, Quantity: 1}}}
+			handler := receivePurchaseOrderItems(purchasingDeps(fake))
+			_, plan, err := handler(ctx, &mcp.CallToolRequest{}, input)
+			r.NoError(err)
+			input.DryRun = false
+			input.ConfirmReceive = true
+			input.PlanHash = plan.PlanHash
+			_, output, err := handler(ctx, &mcp.CallToolRequest{}, input)
+			r.NoError(err)
+			r.Len(output.StockItems, 1)
+			if test.wantPartial {
+				a.Equal(StatusPartialFailure, output.Status)
+				r.NotNil(output.Failure)
+				a.Equal(CompletePurchaseOrderToolName, output.Failure.Action)
+				a.Contains(output.Failure.RecoveryPlan, "Do not repeat the receipt")
+			} else {
+				a.Equal(StatusOK, output.Status)
+			}
+			a.Equal(test.wantRecovered, output.CompletionRecovered)
+			a.Equal(1, fake.receiveCalls)
+			a.Equal(test.wantCompleteCall, fake.completeCalls)
+		})
+	}
+}
+
+func TestReceivePurchaseOrderExplicitCompletionRefreshFailureRequiresCompletionOnlyRecovery(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	locationID := 40
+	fake := &fakePurchasingClient{
+		orders:                  []inventree.PurchaseOrder{{PK: 120, Status: inventree.PurchaseOrderStatusPlaced}},
+		lines:                   []inventree.PurchaseOrderLineItem{{PK: 130, Order: 120, Part: 40, Quantity: 1, Destination: &locationID}},
+		stockItems:              []inventree.StockItem{{PK: 50, Part: 10, Quantity: 1}},
+		getOrderErrAfterReceive: errors.New("refresh unavailable"),
+	}
+	input := ReceivePurchaseOrderInput{DryRun: true, CompleteOrder: true, OrderID: 120, Items: []ReceivePurchaseOrderItem{{LineItemID: 130, Quantity: 1}}}
+	handler := receivePurchaseOrderItems(purchasingDeps(fake))
+	_, plan, err := handler(ctx, &mcp.CallToolRequest{}, input)
+	r.NoError(err)
+	input.DryRun = false
+	input.ConfirmReceive = true
+	input.PlanHash = plan.PlanHash
+	_, output, err := handler(ctx, &mcp.CallToolRequest{}, input)
+	r.NoError(err)
+	a.Equal(StatusPartialFailure, output.Status)
+	r.Len(output.StockItems, 1)
+	r.NotNil(output.Failure)
+	a.Equal(CompletePurchaseOrderToolName, output.Failure.Action)
+	a.Contains(output.Failure.RecoveryPlan, "Do not repeat the receipt")
+	a.NotContains(output.Failure.RecoveryPlan, "preparing a new dry-run plan")
+	a.Equal(1, fake.receiveCalls)
+	a.Zero(fake.completeCalls)
+}
+
 func TestReceivePurchaseOrderRejectsStalePlanAndSchemaInvalidQuantity(t *testing.T) {
 	t.Parallel()
 	r := require.New(t)
@@ -854,11 +1013,17 @@ type fakePurchasingClient struct {
 	failCreateLineAt                     int
 	receiveCalls                         int
 	receiveErr                           error
+	autoCompleteOnReceive                bool
 	issueCalls                           int
+	completeCalls                        int
+	completeErr                          error
+	completeErrAfterPersist              error
+	completeKeepPlaced                   bool
 	lastReceive                          inventree.PurchaseOrderReceive
 	stockItems                           []inventree.StockItem
 	locationErr                          error
 	getOrderErrAfterReceive              error
+	getOrderErrAfterComplete             error
 	missingOrderIDs                      map[int]bool
 }
 
@@ -872,10 +1037,32 @@ func (f *fakePurchasingClient) IssuePurchaseOrder(_ context.Context, id int) err
 	return nil
 }
 
-func (f *fakePurchasingClient) ReceivePurchaseOrder(_ context.Context, _ int, input inventree.PurchaseOrderReceive) ([]inventree.StockItem, error) {
+func (f *fakePurchasingClient) ReceivePurchaseOrder(_ context.Context, id int, input inventree.PurchaseOrderReceive) ([]inventree.StockItem, error) {
 	f.receiveCalls++
 	f.lastReceive = input
+	if f.autoCompleteOnReceive {
+		for index := range f.orders {
+			if f.orders[index].PK == id {
+				f.orders[index].Status = inventree.PurchaseOrderStatusComplete
+			}
+		}
+	}
 	return f.stockItems, f.receiveErr
+}
+
+func (f *fakePurchasingClient) CompletePurchaseOrder(_ context.Context, id int) error {
+	f.completeCalls++
+	if f.completeErr != nil {
+		return f.completeErr
+	}
+	if !f.completeKeepPlaced {
+		for index := range f.orders {
+			if f.orders[index].PK == id {
+				f.orders[index].Status = inventree.PurchaseOrderStatusComplete
+			}
+		}
+	}
+	return f.completeErrAfterPersist
 }
 
 func (f *fakePurchasingClient) GetPart(_ context.Context, id int) (inventree.Part, error) {
@@ -919,6 +1106,9 @@ func (f *fakePurchasingClient) GetPurchaseOrder(_ context.Context, id int) (inve
 	f.getOrderCalls++
 	if f.receiveCalls > 0 && f.getOrderErrAfterReceive != nil {
 		return inventree.PurchaseOrder{}, f.getOrderErrAfterReceive
+	}
+	if f.completeCalls > 0 && f.getOrderErrAfterComplete != nil {
+		return inventree.PurchaseOrder{}, f.getOrderErrAfterComplete
 	}
 	if f.missingOrderIDs[id] {
 		return inventree.PurchaseOrder{}, &inventree.APIError{StatusCode: 404, Kind: inventree.ErrorKindNotFound}

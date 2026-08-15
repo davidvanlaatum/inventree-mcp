@@ -528,6 +528,19 @@ func TestWriteMethodsUseExpectedEndpoints(t *testing.T) {
 				a.Empty(body)
 			},
 		},
+		{
+			name: "complete purchase order refuses incomplete override",
+			call: func(ctx context.Context, client *Client) error {
+				return client.CompletePurchaseOrder(ctx, 120)
+			},
+			method:   http.MethodPost,
+			path:     "/api/order/po/120/complete/",
+			response: `{}`,
+			assert: func(a *assert.Assertions, body map[string]any) {
+				a.Equal(false, body["accept_incomplete"])
+				a.Len(body, 1)
+			},
+		},
 	}
 
 	for _, tt := range tests {

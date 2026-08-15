@@ -64,8 +64,10 @@ type PurchaseOrderReceiveClient interface {
 	GetSupplierPart(context.Context, int) (inventree.SupplierPart, error)
 	GetPurchaseOrder(context.Context, int) (inventree.PurchaseOrder, error)
 	GetPurchaseOrderLine(context.Context, int) (inventree.PurchaseOrderLineItem, error)
+	SearchPurchaseOrderLines(context.Context, inventree.PurchaseOrderLineQuery) ([]inventree.PurchaseOrderLineItem, error)
 	GetStockLocation(context.Context, int) (inventree.StockLocation, error)
 	ReceivePurchaseOrder(context.Context, int, inventree.PurchaseOrderReceive) ([]inventree.StockItem, error)
+	CompletePurchaseOrder(context.Context, int) error
 }
 
 type PurchaseOrderIssueClient interface {
@@ -208,6 +210,7 @@ type ReceivePurchaseOrderInput struct {
 	DryRun         bool                       `json:"dry_run,omitempty" jsonschema:"Validate and return the complete receiving plan without creating stock."`
 	ConfirmReceive bool                       `json:"confirm_receive,omitempty" jsonschema:"Required true for the operational write after reviewing a dry run."`
 	PlanHash       string                     `json:"plan_hash,omitempty" jsonschema:"Exact plan hash returned by the latest dry run; required with confirm_receive."`
+	CompleteOrder  bool                       `json:"complete_order,omitempty" jsonschema:"Explicitly complete the order after this confirmed receipt; allowed only when the planned receipt leaves every ordinary line fully received."`
 	OrderID        int                        `json:"order_id" jsonschema:"Existing purchase-order primary key."`
 	LocationID     *int                       `json:"location_id,omitempty" jsonschema:"Fallback stock-location primary key used when an item and its order line have no destination."`
 	Items          []ReceivePurchaseOrderItem `json:"items" jsonschema:"Purchase-order line quantities to receive into newly created stock items."`
@@ -251,14 +254,18 @@ type ReceivePurchaseOrderPlanItem struct {
 }
 
 type ReceivePurchaseOrderOutput struct {
-	Status        string                         `json:"status"`
-	DryRun        bool                           `json:"dry_run"`
-	Order         *inventree.PurchaseOrder       `json:"order,omitempty"`
-	Plan          []ReceivePurchaseOrderPlanItem `json:"plan"`
-	PlanHash      string                         `json:"plan_hash,omitempty"`
-	StockItems    []inventree.StockItem          `json:"stock_items,omitempty"`
-	Failure       *PurchaseOrderWorkflowFailure  `json:"failure,omitempty"`
-	Clarification *ClarificationResponse         `json:"clarification,omitempty"`
+	Status              string                            `json:"status"`
+	DryRun              bool                              `json:"dry_run"`
+	Order               *inventree.PurchaseOrder          `json:"order,omitempty"`
+	Plan                []ReceivePurchaseOrderPlanItem    `json:"plan"`
+	PlanHash            string                            `json:"plan_hash,omitempty"`
+	CompleteOrder       bool                              `json:"complete_order"`
+	CompletionLines     []inventree.PurchaseOrderLineItem `json:"completion_lines,omitempty"`
+	CompletionAction    string                            `json:"completion_action,omitempty"`
+	CompletionRecovered bool                              `json:"completion_recovered,omitempty"`
+	StockItems          []inventree.StockItem             `json:"stock_items,omitempty"`
+	Failure             *PurchaseOrderWorkflowFailure     `json:"failure,omitempty"`
+	Clarification       *ClarificationResponse            `json:"clarification,omitempty"`
 }
 
 type IssuePurchaseOrderInput struct {
@@ -304,6 +311,7 @@ func registerPurchasingWriteTools(server *mcp.Server, deps Dependencies) {
 	addWriteTool(server, deps, CreatePurchaseOrderWorkflowToolName, "Create purchase order with lines", "Plans or retry-recoverably creates or updates a purchase order and validated lines.", createPurchaseOrderWithLines(deps))
 	addWriteTool(server, deps, IssuePurchaseOrderToolName, "Issue purchase order", "Plans or explicitly confirms placing a pending purchase order with its supplier.", issuePurchaseOrder(deps))
 	addWriteTool(server, deps, ReceivePurchaseOrderToolName, "Receive purchase order items", "Plans or explicitly confirms creation of new stock items from outstanding purchase-order line quantities.", receivePurchaseOrderItems(deps))
+	addWriteTool(server, deps, CompletePurchaseOrderToolName, "Complete purchase order", "Plans or explicitly completes one fully received placed purchase order without allowing incomplete completion.", completePurchaseOrder(deps))
 }
 
 func searchPurchaseOrders(deps Dependencies) mcp.ToolHandlerFor[PurchaseOrderSearchInput, LookupOutput[inventree.PurchaseOrder]] {
@@ -506,7 +514,7 @@ func createPurchaseOrderWithLines(deps Dependencies) mcp.ToolHandlerFor[Purchase
 func receivePurchaseOrderItems(deps Dependencies) mcp.ToolHandlerFor[ReceivePurchaseOrderInput, ReceivePurchaseOrderOutput] {
 	return LookupHandler[PurchaseOrderReceiveClient, ReceivePurchaseOrderInput, ReceivePurchaseOrderOutput](deps, ReceivePurchaseOrderToolName,
 		func(ctx context.Context, _ *mcp.CallToolRequest, client PurchaseOrderReceiveClient, input ReceivePurchaseOrderInput) (*mcp.CallToolResult, ReceivePurchaseOrderOutput, error) {
-			out := ReceivePurchaseOrderOutput{Status: StatusOK, DryRun: input.DryRun, Plan: []ReceivePurchaseOrderPlanItem{}}
+			out := ReceivePurchaseOrderOutput{Status: StatusOK, DryRun: input.DryRun, CompleteOrder: input.CompleteOrder, Plan: []ReceivePurchaseOrderPlanItem{}}
 			if input.OrderID <= 0 || len(input.Items) == 0 {
 				return receiveClarification(out, "Which purchase order lines should be received?", "purchase_order_receipt", "order_id must be positive and at least one receipt item is required", "order_id", map[string]any{"order_id": input.OrderID})
 			}
@@ -629,8 +637,35 @@ func receivePurchaseOrderItems(deps Dependencies) mcp.ToolHandlerFor[ReceivePurc
 				})
 			}
 
+			if input.CompleteOrder {
+				completionLines, err := client.SearchPurchaseOrderLines(ctx, inventree.PurchaseOrderLineQuery{Order: input.OrderID})
+				if err != nil {
+					return nil, out, err
+				}
+				sort.Slice(completionLines, func(i, j int) bool { return completionLines[i].PK < completionLines[j].PK })
+				out.CompletionLines = completionLines
+				projected := append([]inventree.PurchaseOrderLineItem(nil), completionLines...)
+				plannedByLine := make(map[int]float64, len(out.Plan))
+				for _, item := range out.Plan {
+					plannedByLine[item.LineItemID] = item.ReceiveQuantity
+				}
+				matched := 0
+				for index := range projected {
+					if quantity, found := plannedByLine[projected[index].PK]; found {
+						projected[index].Received += quantity
+						matched++
+					}
+				}
+				if matched != len(plannedByLine) {
+					return nil, out, errors.New("purchase-order completion preflight did not return every selected line")
+				}
+				if line, outstanding, found := firstOutstandingPurchaseOrderLine(projected); found {
+					return receiveClarification(out, "Should every outstanding ordinary line be included before completing this purchase order?", "purchase_order_completion", "explicit receipt-time completion requires the planned receipt to leave every ordinary line fully received", "items", map[string]any{"order_id": input.OrderID, "line_item_id": line.PK, "outstanding_quantity_after": outstanding})
+				}
+			}
+
 			if input.DryRun {
-				planHash, err := receivePlanHash(input.OrderID, order.Status, out.Plan)
+				planHash, err := receivePlanHash(input.OrderID, order.Status, input.CompleteOrder, out.Plan, out.CompletionLines)
 				if err != nil {
 					return nil, out, err
 				}
@@ -640,7 +675,7 @@ func receivePurchaseOrderItems(deps Dependencies) mcp.ToolHandlerFor[ReceivePurc
 			if !input.ConfirmReceive {
 				return receiveClarification(out, "Should a dry-run plan be reviewed before these quantities are received?", "confirmation", "run with dry_run:true first, then provide its plan_hash with confirm_receive:true", "dry_run", map[string]any{"order_id": input.OrderID, "dry_run": true})
 			}
-			planHash, err := receivePlanHash(input.OrderID, order.Status, out.Plan)
+			planHash, err := receivePlanHash(input.OrderID, order.Status, input.CompleteOrder, out.Plan, out.CompletionLines)
 			if err != nil {
 				return nil, out, err
 			}
@@ -662,9 +697,34 @@ func receivePurchaseOrderItems(deps Dependencies) mcp.ToolHandlerFor[ReceivePurc
 			}
 			refreshed, err := client.GetPurchaseOrder(ctx, input.OrderID)
 			if err != nil {
+				if input.CompleteOrder {
+					return receiveCompletionUnknown(out, "purchase-order receipt succeeded but the refreshed order state is unavailable before explicit completion")
+				}
 				return receiveUnknownResult(out, "purchase-order receipt succeeded but the refreshed order state is unavailable")
 			}
 			out.Order = &refreshed
+			if !input.CompleteOrder {
+				return TextResult(StatusOK), out, nil
+			}
+			if refreshed.Status == inventree.PurchaseOrderStatusComplete {
+				out.CompletionAction = "already_complete"
+				return TextResult(StatusOK), out, nil
+			}
+			if refreshed.Status != inventree.PurchaseOrderStatusPlaced {
+				return receiveCompletionUnknown(out, "purchase-order receipt succeeded but the order is no longer in a completable PLACED state")
+			}
+
+			out.CompletionAction = CompletePurchaseOrderToolName
+			completionErr := client.CompletePurchaseOrder(ctx, input.OrderID)
+			completed, readErr := client.GetPurchaseOrder(ctx, input.OrderID)
+			if readErr != nil {
+				return receiveCompletionUnknown(out, "purchase-order receipt succeeded but the explicit completion result is unknown because refreshed order state is unavailable")
+			}
+			out.Order = &completed
+			if completed.Status != inventree.PurchaseOrderStatusComplete {
+				return receiveCompletionUnknown(out, "purchase-order receipt succeeded but explicit completion did not produce verified COMPLETE state")
+			}
+			out.CompletionRecovered = completionErr != nil
 			return TextResult(StatusOK), out, nil
 		})
 }
@@ -769,6 +829,16 @@ func receiveUnknownResult(out ReceivePurchaseOrderOutput, message string) (*mcp.
 	return TextResult(StatusPartialFailure), out, nil
 }
 
+func receiveCompletionUnknown(out ReceivePurchaseOrderOutput, message string) (*mcp.CallToolResult, ReceivePurchaseOrderOutput, error) {
+	out.Status = StatusPartialFailure
+	out.Failure = &PurchaseOrderWorkflowFailure{
+		Action:       CompletePurchaseOrderToolName,
+		Message:      message,
+		RecoveryPlan: "The receipt succeeded and its stock_items must be preserved. Do not repeat the receipt. Read the purchase order and every ordinary line; if it is not COMPLETE and remains fully received, prepare a fresh complete_purchase_order dry-run plan.",
+	}
+	return TextResult(StatusPartialFailure), out, nil
+}
+
 func receiveQuantityString(quantity float64) (string, bool) {
 	if math.IsNaN(quantity) || math.IsInf(quantity, 0) || quantity <= 0 {
 		return "", false
@@ -781,12 +851,14 @@ func receiveQuantityString(quantity float64) (string, bool) {
 	return formatted, true
 }
 
-func receivePlanHash(orderID, orderStatus int, plan []ReceivePurchaseOrderPlanItem) (string, error) {
+func receivePlanHash(orderID, orderStatus int, completeOrder bool, plan []ReceivePurchaseOrderPlanItem, completionLines []inventree.PurchaseOrderLineItem) (string, error) {
 	payload, err := json.Marshal(struct {
-		OrderID     int                            `json:"order_id"`
-		OrderStatus int                            `json:"order_status"`
-		Plan        []ReceivePurchaseOrderPlanItem `json:"plan"`
-	}{OrderID: orderID, OrderStatus: orderStatus, Plan: plan})
+		OrderID         int                               `json:"order_id"`
+		OrderStatus     int                               `json:"order_status"`
+		CompleteOrder   bool                              `json:"complete_order"`
+		Plan            []ReceivePurchaseOrderPlanItem    `json:"plan"`
+		CompletionLines []inventree.PurchaseOrderLineItem `json:"completion_lines,omitempty"`
+	}{OrderID: orderID, OrderStatus: orderStatus, CompleteOrder: completeOrder, Plan: plan, CompletionLines: completionLines})
 	if err != nil {
 		return "", err
 	}

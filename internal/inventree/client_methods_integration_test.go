@@ -840,6 +840,46 @@ func TestClientMethodsAgainstInvenTree(t *testing.T) {
 		a := assert.New(t)
 		a.Equal(receivedStockItemPK, stockAfterDelete[0].PK)
 		a.Equal(1.5, stockAfterDelete[0].Quantity, "InvenTree does not adjust surviving stock quantity when its originating line is deleted")
+
+		// Pin the explicit completion endpoint with upstream auto-completion
+		// disabled, including the non-overridable accept_incomplete:false body.
+		var originalSetting struct {
+			Value *bool `json:"value"`
+		}
+		settingRequest, err := fixture.client.NewRequest(ctx, http.MethodGet, "/api/settings/global/PURCHASEORDER_AUTO_COMPLETE/", nil, nil)
+		r.NoError(err)
+		r.NoError(fixture.client.DoJSON(settingRequest, &originalSetting))
+		r.NotNil(originalSetting.Value)
+		var setting map[string]any
+		r.NoError(fixture.client.Patch(ctx, "/api/settings/global/PURCHASEORDER_AUTO_COMPLETE/", inventree.PatchFields{"value": inventree.Set("False")}, &setting))
+		t.Cleanup(func() {
+			cleanupCtx := context.WithoutCancel(ctx)
+			var restored map[string]any
+			r.NoError(fixture.client.Patch(cleanupCtx, "/api/settings/global/PURCHASEORDER_AUTO_COMPLETE/", inventree.PatchFields{"value": inventree.Set(strconv.FormatBool(*originalSetting.Value))}, &restored))
+			var restoredSetting struct {
+				Value *bool `json:"value"`
+			}
+			restoredRequest, requestErr := fixture.client.NewRequest(cleanupCtx, http.MethodGet, "/api/settings/global/PURCHASEORDER_AUTO_COMPLETE/", nil, nil)
+			r.NoError(requestErr)
+			r.NoError(fixture.client.DoJSON(restoredRequest, &restoredSetting))
+			r.Equal(originalSetting.Value, restoredSetting.Value)
+		})
+		completionOrder, err := fixture.client.CreatePurchaseOrder(ctx, inventree.PurchaseOrderCreate{Supplier: supplier.ID})
+		r.NoError(err)
+		completionReference, err := fixture.run.Name("po-explicit-complete")
+		r.NoError(err)
+		completionLine, err := fixture.client.CreatePurchaseOrderLine(ctx, inventree.PurchaseOrderLineCreate{Order: completionOrder.PK, SupplierPart: supplierPart.ID, Reference: &completionReference, Quantity: 1, Destination: &destination.ID})
+		r.NoError(err)
+		r.NoError(fixture.client.IssuePurchaseOrder(ctx, completionOrder.PK))
+		_, err = fixture.client.ReceivePurchaseOrder(ctx, completionOrder.PK, inventree.PurchaseOrderReceive{Items: []inventree.PurchaseOrderReceiveItem{{LineItem: completionLine.PK, Location: &destination.ID, Quantity: "1"}}})
+		r.NoError(err)
+		fullyReceived, err := fixture.client.GetPurchaseOrder(ctx, completionOrder.PK)
+		r.NoError(err)
+		r.Equal(inventree.PurchaseOrderStatusPlaced, fullyReceived.Status)
+		r.NoError(fixture.client.CompletePurchaseOrder(ctx, completionOrder.PK))
+		explicitlyCompleted, err := fixture.client.GetPurchaseOrder(ctx, completionOrder.PK)
+		r.NoError(err)
+		r.Equal(inventree.PurchaseOrderStatusComplete, explicitlyCompleted.Status)
 	})
 
 	t.Run("part_delete", func(t *testing.T) {

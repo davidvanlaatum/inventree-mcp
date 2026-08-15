@@ -29,7 +29,7 @@ func TestWorkflowPlannedChangesMCPWireContract(t *testing.T) {
 	seenSchemas := map[string]bool{}
 	for _, tool := range listed.Tools {
 		switch tool.Name {
-		case UpsertPartWorkflowToolName, InitialStockWorkflowToolName, CreatePurchaseOrderWorkflowToolName, IssuePurchaseOrderToolName, CreatePurchaseOrderExtraLineToolName, UpdatePurchaseOrderExtraLineToolName:
+		case UpsertPartWorkflowToolName, InitialStockWorkflowToolName, CreatePurchaseOrderWorkflowToolName, IssuePurchaseOrderToolName, CompletePurchaseOrderToolName, CreatePurchaseOrderExtraLineToolName, UpdatePurchaseOrderExtraLineToolName:
 			schema := tool.OutputSchema.(map[string]any)
 			properties := schema["properties"].(map[string]any)
 			a.Contains(properties, "planned_changes", tool.Name)
@@ -41,6 +41,7 @@ func TestWorkflowPlannedChangesMCPWireContract(t *testing.T) {
 		InitialStockWorkflowToolName:         true,
 		CreatePurchaseOrderWorkflowToolName:  true,
 		IssuePurchaseOrderToolName:           true,
+		CompletePurchaseOrderToolName:        true,
 		CreatePurchaseOrderExtraLineToolName: true,
 		UpdatePurchaseOrderExtraLineToolName: true,
 	}, seenSchemas)
@@ -117,6 +118,19 @@ func TestWorkflowPlannedChangesMCPWireContract(t *testing.T) {
 	issueChange := issueChanges[0].(map[string]any)
 	a.Equal(float64(120), issueChange["id"])
 	a.Equal(float64(inventree.PurchaseOrderStatusPlaced), issueChange["fields"].(map[string]any)["status"])
+
+	purchasingFake.orders[0].Status = inventree.PurchaseOrderStatusPlaced
+	purchasingFake.lines = []inventree.PurchaseOrderLineItem{{PK: 130, Order: 120, Quantity: 2, Received: 2}}
+	completeResult, err := purchasingSession.CallTool(ctx, &mcp.CallToolParams{Name: CompletePurchaseOrderToolName, Arguments: map[string]any{"dry_run": true, "order_id": 120}})
+	r.NoError(err)
+	a.False(completeResult.IsError)
+	completeOutput := completeResult.StructuredContent.(map[string]any)
+	completeChanges := completeOutput["planned_changes"].([]any)
+	completeChange := completeChanges[0].(map[string]any)
+	a.Equal(float64(120), completeChange["id"])
+	completeFields := completeChange["fields"].(map[string]any)
+	a.Equal(float64(inventree.PurchaseOrderStatusComplete), completeFields["status"])
+	a.Equal(false, completeFields["accept_incomplete"])
 }
 
 func plannedChangesSession(t *testing.T, ctx context.Context, client any) (*mcp.ClientSession, func()) {

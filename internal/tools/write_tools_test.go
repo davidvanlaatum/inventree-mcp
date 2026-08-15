@@ -518,7 +518,7 @@ func TestWriteToolAuthorizationsUseWriteScope(t *testing.T) {
 		auth, ok := ToolAuthorizations[name]
 		r.True(ok, "missing authorization for %s", name)
 		switch name {
-		case CreateParameterTemplateToolName, UpdateParameterTemplateToolName, CreateCategoryParameterDefaultToolName, UpdateCategoryParameterDefaultToolName, CreatePartCategoryToolName, CreateStockLocationToolName, CreatePurchaseOrderExtraLineToolName, CreatePurchaseOrderWorkflowToolName, IssuePurchaseOrderToolName:
+		case CreateParameterTemplateToolName, UpdateParameterTemplateToolName, CreateCategoryParameterDefaultToolName, UpdateCategoryParameterDefaultToolName, CreatePartCategoryToolName, CreateStockLocationToolName, CreatePurchaseOrderExtraLineToolName, CreatePurchaseOrderWorkflowToolName, IssuePurchaseOrderToolName, CompletePurchaseOrderToolName:
 			a.Equal("write", auth.MutationClass)
 			a.Equal([]string{ScopeInventreeRead, ScopeInventreeWrite}, auth.Scopes)
 			a.Equal(WriteAnnotations, auth.Annotations)
@@ -607,6 +607,7 @@ func TestWriteToolInputsExcludeSalesAndCustomerWorkflowFields(t *testing.T) {
 		reflect.TypeOf(DepleteStockItemInput{}),
 		reflect.TypeOf(IssuePurchaseOrderInput{}),
 		reflect.TypeOf(ReceivePurchaseOrderInput{}),
+		reflect.TypeOf(CompletePurchaseOrderInput{}),
 		reflect.TypeOf(SetCompanyImageInput{}),
 		reflect.TypeOf(SetCompanyImageFromURLInput{}),
 		reflect.TypeOf(ClearCompanyImageInput{}),
@@ -630,6 +631,7 @@ func TestWriteToolInputsExcludeSalesAndCustomerWorkflowFields(t *testing.T) {
 		reflect.TypeOf(inventree.StockItemCreate{}),
 		reflect.TypeOf(inventree.PurchaseOrderReceive{}),
 		reflect.TypeOf(inventree.PurchaseOrderReceiveItem{}),
+		reflect.TypeOf(inventree.PurchaseOrderComplete{}),
 		reflect.TypeOf(inventree.ParameterCreate{}),
 		reflect.TypeOf(inventree.AttachmentCreate{}),
 	} {
