@@ -291,6 +291,7 @@
       "milestone_status": "milestone_1",
       "mutation_class": "write",
       "scopes": [
+        "inventree.read",
         "inventree.write"
       ],
       "annotations": {
@@ -1814,6 +1815,7 @@
       "milestone_status": "milestone_1",
       "mutation_class": "write",
       "scopes": [
+        "inventree.read",
         "inventree.write"
       ],
       "annotations": {

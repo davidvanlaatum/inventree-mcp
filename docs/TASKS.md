@@ -121,9 +121,9 @@ Before assigning a new story ID, inspect `git worktree list --porcelain`, search
 | [F-S37](#f-s37-restore-default-web-prefix-in-canonical-object-links) | Restore InvenTree's default `/web` frontend mount in fallback-generated object links. | Done |
 | [F-S38](#f-s38-explicit-purchase-order-completion-after-receiving) | Complete fully received purchase orders explicitly during receipt or later. | Done |
 | [F-S39](#f-s39-preserve-complete-external-urls) | Preserve complete functional external URLs while rejecting credentials and retaining safe error redaction. | Done |
-| [F-S40](#f-s40-complete-part-exact-reads-and-scalar-maintenance) | Expose complete exact part records and align ordinary scalar create/update fields with verified serializer behavior. | Ready |
-| [F-S41](#f-s41-guarded-part-revision-and-variant-relationships) | Add guarded assignment, replacement, and clearing of part revision and variant family relationships. | Planned |
-| [F-S42](#f-s42-related-part-link-administration) | Expose normal related-part reads and guarded create, update, and delete operations. | Planned |
+| [F-S40](#f-s40-complete-part-exact-reads-and-scalar-maintenance) | Expose complete exact part records and align ordinary scalar create/update fields with verified serializer behavior. | Done |
+| [F-S41](#f-s41-guarded-part-revision-and-variant-relationships) | Add guarded assignment, replacement, and clearing of part revision and variant family relationships. | Ready |
+| [F-S42](#f-s42-related-part-link-administration) | Expose normal related-part reads and guarded create, update, and delete operations. | Ready |
 | [F-S43](#f-s43-sourcing-link-detail-completeness) | Complete supplier/manufacturer-part exact reads and long-note maintenance while retaining concise searches. | Ready |
 | [F-S44](#f-s44-company-detail-and-role-completeness) | Complete exact company reads and guarded contact, tax, link, and customer-role maintenance. | Ready |
 | [F-S45](#f-s45-stock-item-detail-completeness) | Expose complete high-value stock-item exact-read fields while retaining concise searches and guarded mutation boundaries. | Ready |
@@ -2110,7 +2110,7 @@ Tasks:
 
 ### F-S40: Complete Part Exact Reads And Scalar Maintenance
 
-- Status: `Ready`
+- Status: `Done`
 - Issue: [#121](https://github.com/davidvanlaatum/inventree-mcp/issues/121)
 - Depends on: F-S39
 - Decisions: approved by the operator on 2026-08-15. Exact reads expose all approved default scalar fields already returned by the API, while searches remain concise. `creation_user` is read-only. API 530's nested category/location detail, category path, and parameters remain separate lookups; tags and price breaks remain deferred to F-S56 and F-S58. Raw `barcode_hash` remains excluded pending F-S55.
@@ -2123,11 +2123,13 @@ Tasks:
   - `creation_user` remains read-only and is verified against pinned serializer behavior; primary-image mutation remains in dedicated image tools.
   - Minimum/maximum stock are non-negative decimals and a nonzero maximum below the minimum is rejected; default expiry is non-negative and `0` resets the default.
   - Pinned integration and JSON contract tests verify complete reads, writes, clears, omitted-vs-explicit values, API 530 schema/read-back presence for part notes, and field-inventory drift; public docs remain aligned.
+- Validation: `go generate ./internal/tools`, `go build ./...`, `go vet ./...`, `golangci-lint run ./...` (0 issues), `go test -tags no_integration_tests ./...`, pinned `GOFLAGS=-trimpath go test -race -p=1 ./internal/inventree -run '^TestClientMethodsAgainstInvenTree$/part_category$' -count=1`, pinned `GOFLAGS=-trimpath go test -race -p=1 ./internal/tools -run '^TestMilestoneHappyPathToolsAgainstInvenTree$/part_exact_detail_and_scalar_maintenance$' -count=1`, affected-package coverage comparison, and `git diff --check` pass. Against exact base `origin/main` at `d9c1ce94`, `internal/inventree` rises from 88.2% to 88.3%, `internal/tools` rises from 83.4% to 83.5%, and `internal/server`, `internal/schema`, and `docs` remain unchanged at 76.2%, 64.9%, and 57.1%.
+- Review: Senior Go Developer, Senior QA / Test Architect, Senior Product Manager, and Senior Infosec Reviewer passes completed. Findings on the F-S41 family-field boundary, structured local validation, canonical exact-part links, exhaustive inventory/failure tests, stable-ID recovery, factual partial-output shape, and typed MCP output-schema compatibility were resolved. Focused reruns of all four roles found no remaining actionable findings.
 - Residual risk: some computed part values are user- or configuration-dependent and nullable; exact reads must preserve factual nulls without treating unavailable aggregates as zero.
 
 ### F-S41: Guarded Part Revision And Variant Relationships
 
-- Status: `Planned`
+- Status: `Ready`
 - Issue: [#122](https://github.com/davidvanlaatum/inventree-mcp/issues/122)
 - Depends on: F-S40
 - Decisions: approved by the operator on 2026-08-15. `revision_of` and `variant_of` are separate from ordinary scalar metadata because they change part-family topology.
@@ -2144,7 +2146,7 @@ Tasks:
 
 ### F-S42: Related-Part Link Administration
 
-- Status: `Planned`
+- Status: `Ready`
 - Issue: [#123](https://github.com/davidvanlaatum/inventree-mcp/issues/123)
 - Depends on: F-S40
 - Decisions: approved by the operator on 2026-08-15. Related-part links must be usable outside `delete_part` preflight and removable without falling back to the InvenTree UI. Relation updates are note-only; changing either linked part requires guarded deletion and creation of a new relation.

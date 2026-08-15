@@ -257,7 +257,7 @@ func init() {
 		scopes := []string{ScopeInventreeWrite}
 		mutationClass := "write"
 		switch name {
-		case CreateCompanyToolName, CreateSupplierPartToolName, CreateManufacturerPartToolName, UpsertPartWorkflowToolName, CreateParameterTemplateToolName, UpdateParameterTemplateToolName, CreateCategoryParameterDefaultToolName, UpdateCategoryParameterDefaultToolName, CreatePartCategoryToolName, UpdatePartCategoryToolName, UpdateCompanyToolName, UpdateSupplierPartToolName, UpdateManufacturerPartToolName, CreateStockLocationToolName, UpdateStockLocationToolName, CreatePurchaseOrderExtraLineToolName, UpdatePurchaseOrderExtraLineToolName, CreatePurchaseOrderWorkflowToolName, IssuePurchaseOrderToolName, CompletePurchaseOrderToolName:
+		case CreatePartToolName, UpdatePartToolName, CreateCompanyToolName, CreateSupplierPartToolName, CreateManufacturerPartToolName, UpsertPartWorkflowToolName, CreateParameterTemplateToolName, UpdateParameterTemplateToolName, CreateCategoryParameterDefaultToolName, UpdateCategoryParameterDefaultToolName, CreatePartCategoryToolName, UpdatePartCategoryToolName, UpdateCompanyToolName, UpdateSupplierPartToolName, UpdateManufacturerPartToolName, CreateStockLocationToolName, UpdateStockLocationToolName, CreatePurchaseOrderExtraLineToolName, UpdatePurchaseOrderExtraLineToolName, CreatePurchaseOrderWorkflowToolName, IssuePurchaseOrderToolName, CompletePurchaseOrderToolName:
 			scopes = []string{ScopeInventreeRead, ScopeInventreeWrite}
 		case BulkPropagatePartParametersToolName:
 			scopes = []string{ScopeInventreeRead, ScopeInventreeWrite, ScopeInventreeDestructive}
@@ -328,7 +328,7 @@ func init() {
 
 type PartLookupClient interface {
 	SearchParts(context.Context, inventree.SearchQuery) ([]inventree.Part, error)
-	GetPart(context.Context, int) (inventree.Part, error)
+	GetPartDetail(context.Context, int) (inventree.PartDetail, error)
 }
 
 type CategoryLookupClient interface {
@@ -408,6 +408,16 @@ type LookupOutput[T any] struct {
 type RecordOutput[T any] struct {
 	Status string `json:"status"`
 	Record T      `json:"record,omitempty"`
+}
+
+type PartDetailView struct {
+	inventree.PartDetail
+	Link     string `json:"link,omitempty"`
+	complete bool
+}
+
+type PartRecoveryView struct {
+	PK int `json:"pk"`
 }
 
 type DownloadOutput struct {
@@ -519,12 +529,23 @@ func searchParts(deps Dependencies) mcp.ToolHandlerFor[SearchInput, LookupOutput
 		})
 }
 
-func getPart(deps Dependencies) mcp.ToolHandlerFor[IDInput, RecordOutput[inventree.Part]] {
-	return LookupHandler[PartLookupClient, IDInput, RecordOutput[inventree.Part]](deps, GetPartToolName,
-		func(ctx context.Context, _ *mcp.CallToolRequest, client PartLookupClient, input IDInput) (*mcp.CallToolResult, RecordOutput[inventree.Part], error) {
-			record, err := client.GetPart(ctx, input.ID)
-			return recordOutput(record, err)
+func getPart(deps Dependencies) mcp.ToolHandlerFor[IDInput, RecordOutput[*PartDetailView]] {
+	return LookupHandler[PartLookupClient, IDInput, RecordOutput[*PartDetailView]](deps, GetPartToolName,
+		func(ctx context.Context, _ *mcp.CallToolRequest, client PartLookupClient, input IDInput) (*mcp.CallToolResult, RecordOutput[*PartDetailView], error) {
+			record, err := client.GetPartDetail(ctx, input.ID)
+			if err == nil && record.PK != input.ID {
+				return nil, RecordOutput[*PartDetailView]{}, errors.New("InvenTree returned a mismatched part identity")
+			}
+			if err != nil {
+				return recordOutput((*PartDetailView)(nil), err)
+			}
+			view := partDetailView(record)
+			return recordOutput(&view, nil)
 		})
+}
+
+func partDetailView(record inventree.PartDetail) PartDetailView {
+	return PartDetailView{PartDetail: record, Link: projectExternalURL(record.Link), complete: true}
 }
 
 func searchPartCategories(deps Dependencies) mcp.ToolHandlerFor[SearchInput, LookupOutput[inventree.Category]] {

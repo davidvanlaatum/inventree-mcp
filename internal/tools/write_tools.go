@@ -2,7 +2,10 @@ package tools
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"math"
+	"net/http"
 	"strconv"
 	"strings"
 
@@ -12,6 +15,7 @@ import (
 
 type PartWriteClient interface {
 	SearchParts(context.Context, inventree.SearchQuery) ([]inventree.Part, error)
+	GetPartDetail(context.Context, int) (inventree.PartDetail, error)
 	CreatePart(context.Context, inventree.PartCreate) (inventree.Part, error)
 	UpdatePart(context.Context, int, inventree.PatchFields) (inventree.Part, error)
 }
@@ -76,34 +80,62 @@ type PartUpsertWorkflowClient interface {
 }
 
 type CreatePartInput struct {
-	Name            string  `json:"name" jsonschema:"Part name."`
-	Description     string  `json:"description,omitempty" jsonschema:"Optional part description."`
-	CategoryID      int     `json:"category_id" jsonschema:"Existing InvenTree part category primary key."`
-	IPN             string  `json:"ipn,omitempty" jsonschema:"Optional internal part number."`
-	Units           *string `json:"units,omitempty" jsonschema:"Optional unit of measure."`
-	Active          *bool   `json:"active,omitempty" jsonschema:"Optional explicit active flag."`
-	Assembly        *bool   `json:"assembly,omitempty" jsonschema:"Optional explicit assembly flag."`
-	Component       *bool   `json:"component,omitempty" jsonschema:"Optional explicit component flag."`
-	Purchaseable    *bool   `json:"purchaseable,omitempty" jsonschema:"Optional explicit purchasable flag."`
-	Trackable       *bool   `json:"trackable,omitempty" jsonschema:"Optional explicit trackable flag."`
-	Virtual         *bool   `json:"virtual,omitempty" jsonschema:"Optional explicit virtual flag."`
-	DefaultLocation *int    `json:"default_location_id,omitempty" jsonschema:"Optional existing stock location primary key."`
+	Name            string   `json:"name" jsonschema:"Part name."`
+	Description     string   `json:"description,omitempty" jsonschema:"Optional part description."`
+	CategoryID      int      `json:"category_id" jsonschema:"Existing InvenTree part category primary key."`
+	IPN             string   `json:"ipn,omitempty" jsonschema:"Optional internal part number."`
+	Units           *string  `json:"units,omitempty" jsonschema:"Optional unit of measure."`
+	Active          *bool    `json:"active,omitempty" jsonschema:"Optional explicit active flag."`
+	Assembly        *bool    `json:"assembly,omitempty" jsonschema:"Optional explicit assembly flag."`
+	Component       *bool    `json:"component,omitempty" jsonschema:"Optional explicit component flag."`
+	Purchaseable    *bool    `json:"purchaseable,omitempty" jsonschema:"Optional explicit purchasable flag."`
+	Trackable       *bool    `json:"trackable,omitempty" jsonschema:"Optional explicit trackable flag."`
+	Virtual         *bool    `json:"virtual,omitempty" jsonschema:"Optional explicit virtual flag."`
+	DefaultLocation *int     `json:"default_location_id,omitempty" jsonschema:"Optional existing stock location primary key."`
+	Consumable      *bool    `json:"consumable,omitempty" jsonschema:"Optional explicit consumable flag."`
+	DefaultExpiry   *int     `json:"default_expiry,omitempty" jsonschema:"Optional non-negative default stock expiry in days; 0 resets the default."`
+	IsTemplate      *bool    `json:"is_template,omitempty" jsonschema:"Optional explicit template flag."`
+	Keywords        *string  `json:"keywords,omitempty" jsonschema:"Optional search keywords."`
+	Link            *string  `json:"link,omitempty" jsonschema:"Optional complete HTTP(S) external link without userinfo."`
+	Locked          *bool    `json:"locked,omitempty" jsonschema:"Optional explicit locked flag."`
+	MinimumStock    *float64 `json:"minimum_stock,omitempty" jsonschema:"Optional non-negative minimum stock quantity."`
+	MaximumStock    *float64 `json:"maximum_stock,omitempty" jsonschema:"Optional non-negative maximum stock quantity; 0 disables the maximum."`
+	Revision        *string  `json:"revision,omitempty" jsonschema:"Optional revision text."`
+	Salable         *bool    `json:"salable,omitempty" jsonschema:"Optional explicit salable flag."`
+	Testable        *bool    `json:"testable,omitempty" jsonschema:"Optional explicit testable flag."`
+	Notes           *string  `json:"notes,omitempty" jsonschema:"Optional markdown notes."`
 }
 
 type UpdatePartInput struct {
-	ID              int     `json:"id" jsonschema:"Stable InvenTree part primary key."`
-	Name            *string `json:"name,omitempty" jsonschema:"Optional replacement part name."`
-	Description     *string `json:"description,omitempty" jsonschema:"Optional replacement description."`
-	CategoryID      *int    `json:"category_id,omitempty" jsonschema:"Optional existing category primary key."`
-	IPN             *string `json:"ipn,omitempty" jsonschema:"Optional replacement internal part number."`
-	Units           *string `json:"units,omitempty" jsonschema:"Optional replacement units."`
-	Active          *bool   `json:"active,omitempty" jsonschema:"Optional explicit active flag."`
-	Assembly        *bool   `json:"assembly,omitempty" jsonschema:"Optional explicit assembly flag."`
-	Component       *bool   `json:"component,omitempty" jsonschema:"Optional explicit component flag."`
-	Purchaseable    *bool   `json:"purchaseable,omitempty" jsonschema:"Optional explicit purchasable flag."`
-	Trackable       *bool   `json:"trackable,omitempty" jsonschema:"Optional explicit trackable flag."`
-	Virtual         *bool   `json:"virtual,omitempty" jsonschema:"Optional explicit virtual flag."`
-	DefaultLocation *int    `json:"default_location_id,omitempty" jsonschema:"Optional existing stock location primary key."`
+	ID              int      `json:"id" jsonschema:"Stable InvenTree part primary key."`
+	Name            *string  `json:"name,omitempty" jsonschema:"Optional replacement part name."`
+	Description     *string  `json:"description,omitempty" jsonschema:"Optional replacement description."`
+	CategoryID      *int     `json:"category_id,omitempty" jsonschema:"Optional existing category primary key."`
+	IPN             *string  `json:"ipn,omitempty" jsonschema:"Optional replacement internal part number."`
+	Units           *string  `json:"units,omitempty" jsonschema:"Optional replacement units."`
+	Active          *bool    `json:"active,omitempty" jsonschema:"Optional explicit active flag."`
+	Assembly        *bool    `json:"assembly,omitempty" jsonschema:"Optional explicit assembly flag."`
+	Component       *bool    `json:"component,omitempty" jsonschema:"Optional explicit component flag."`
+	Purchaseable    *bool    `json:"purchaseable,omitempty" jsonschema:"Optional explicit purchasable flag."`
+	Trackable       *bool    `json:"trackable,omitempty" jsonschema:"Optional explicit trackable flag."`
+	Virtual         *bool    `json:"virtual,omitempty" jsonschema:"Optional explicit virtual flag."`
+	DefaultLocation *int     `json:"default_location_id,omitempty" jsonschema:"Optional existing stock location primary key."`
+	Consumable      *bool    `json:"consumable,omitempty" jsonschema:"Optional explicit consumable flag."`
+	DefaultExpiry   *int     `json:"default_expiry,omitempty" jsonschema:"Optional non-negative default stock expiry in days; 0 resets the default."`
+	IsTemplate      *bool    `json:"is_template,omitempty" jsonschema:"Optional explicit template flag."`
+	Keywords        *string  `json:"keywords,omitempty" jsonschema:"Replacement search keywords."`
+	ClearKeywords   bool     `json:"clear_keywords,omitempty" jsonschema:"Explicitly PATCH keywords to null; mutually exclusive with keywords."`
+	Link            *string  `json:"link,omitempty" jsonschema:"Replacement complete HTTP(S) external link without userinfo."`
+	ClearLink       bool     `json:"clear_link,omitempty" jsonschema:"Explicitly PATCH link to null; mutually exclusive with link."`
+	Locked          *bool    `json:"locked,omitempty" jsonschema:"Optional explicit locked flag."`
+	MinimumStock    *float64 `json:"minimum_stock,omitempty" jsonschema:"Optional non-negative minimum stock quantity."`
+	MaximumStock    *float64 `json:"maximum_stock,omitempty" jsonschema:"Optional non-negative maximum stock quantity; 0 disables the maximum."`
+	Revision        *string  `json:"revision,omitempty" jsonschema:"Replacement revision text."`
+	ClearRevision   bool     `json:"clear_revision,omitempty" jsonschema:"Explicitly PATCH revision to null; mutually exclusive with revision."`
+	Salable         *bool    `json:"salable,omitempty" jsonschema:"Optional explicit salable flag."`
+	Testable        *bool    `json:"testable,omitempty" jsonschema:"Optional explicit testable flag."`
+	Notes           *string  `json:"notes,omitempty" jsonschema:"Replacement markdown notes."`
+	ClearNotes      bool     `json:"clear_notes,omitempty" jsonschema:"Explicitly PATCH notes to null; mutually exclusive with notes."`
 }
 
 type CreateCompanyInput struct {
@@ -196,6 +228,15 @@ type ParameterSetInput struct {
 type WriteRecordOutput[T any] struct {
 	Status        string                 `json:"status"`
 	Record        T                      `json:"record,omitempty"`
+	Validation    *ValidationFailure     `json:"validation,omitempty"`
+	Clarification *ClarificationResponse `json:"clarification,omitempty"`
+	RecoveryPlan  string                 `json:"recovery_plan,omitempty"`
+}
+
+type PartWriteOutput struct {
+	Status        string                 `json:"status"`
+	Record        *PartDetailView        `json:"record,omitempty"`
+	Recovery      *PartRecoveryView      `json:"recovery,omitempty"`
 	Validation    *ValidationFailure     `json:"validation,omitempty"`
 	Clarification *ClarificationResponse `json:"clarification,omitempty"`
 	RecoveryPlan  string                 `json:"recovery_plan,omitempty"`
@@ -311,26 +352,33 @@ func addWriteTool[In, Out any](server *mcp.Server, deps Dependencies, name strin
 	mcp.AddTool(server, ToolDescriptor(name, title, description), GuardTool(deps, name, handler))
 }
 
-func createPart(deps Dependencies) mcp.ToolHandlerFor[CreatePartInput, WriteRecordOutput[inventree.Part]] {
-	return LookupHandler[PartWriteClient, CreatePartInput, WriteRecordOutput[inventree.Part]](deps, CreatePartToolName,
-		func(ctx context.Context, _ *mcp.CallToolRequest, client PartWriteClient, input CreatePartInput) (*mcp.CallToolResult, WriteRecordOutput[inventree.Part], error) {
+func createPart(deps Dependencies) mcp.ToolHandlerFor[CreatePartInput, PartWriteOutput] {
+	return LookupHandler[PartWriteClient, CreatePartInput, PartWriteOutput](deps, CreatePartToolName,
+		func(ctx context.Context, _ *mcp.CallToolRequest, client PartWriteClient, input CreatePartInput) (*mcp.CallToolResult, PartWriteOutput, error) {
 			if input.CategoryID <= 0 {
-				return hardClarification[inventree.Part]("Which existing category should contain the new part?", "category_id", "create_part requires an existing category_id", "category_id", map[string]any{"name": input.Name})
+				return partHardClarification("Which existing category should contain the new part?", "category_id", "create_part requires an existing category_id", "category_id", map[string]any{"name": input.Name})
 			}
 			if input.DefaultLocation != nil && *input.DefaultLocation <= 0 {
-				return hardClarification[inventree.Part]("Which default stock location should be used?", "default_location_id", "default_location_id must be positive when provided", "default_location_id", map[string]any{"default_location_id": *input.DefaultLocation})
+				return partHardClarification("Which default stock location should be used?", "default_location_id", "default_location_id must be positive when provided", "default_location_id", map[string]any{"default_location_id": *input.DefaultLocation})
+			}
+			link, err := validateExternalURLPointer(input.Link)
+			if err != nil {
+				return partInputValidationOutput(&partInputValidationError{field: "link", message: "Provide a complete credential-free HTTP(S) URL."})
+			}
+			if err := validatePartStockDefaults(input.MinimumStock, input.MaximumStock, input.DefaultExpiry, 0, 0); err != nil {
+				return partInputValidationOutput(err)
 			}
 			if input.Name != "" {
 				records, err := client.SearchParts(ctx, inventree.SearchQuery{Search: input.Name, Limit: DefaultLookupLimit})
 				if err != nil {
-					return nil, WriteRecordOutput[inventree.Part]{}, err
+					return nil, PartWriteOutput{}, err
 				}
 				if len(records) > 0 {
 					clarification := NewClarification("Should an existing part be used instead of creating a new one?", "part", "matching part records already exist", "part_id", false, candidatesFor(records), map[string]any{"name": input.Name})
-					return TextResult(StatusClarificationRequired), WriteRecordOutput[inventree.Part]{Status: StatusClarificationRequired, Clarification: &clarification}, nil
+					return TextResult(StatusClarificationRequired), PartWriteOutput{Status: StatusClarificationRequired, Clarification: &clarification}, nil
 				}
 			}
-			record, err := client.CreatePart(ctx, inventree.PartCreate{
+			created, err := client.CreatePart(ctx, inventree.PartCreate{
 				Name:            input.Name,
 				Description:     input.Description,
 				Category:        &input.CategoryID,
@@ -343,29 +391,63 @@ func createPart(deps Dependencies) mcp.ToolHandlerFor[CreatePartInput, WriteReco
 				Trackable:       input.Trackable,
 				Virtual:         input.Virtual,
 				DefaultLocation: input.DefaultLocation,
+				Consumable:      input.Consumable,
+				DefaultExpiry:   input.DefaultExpiry,
+				IsTemplate:      input.IsTemplate,
+				Keywords:        input.Keywords,
+				Link:            link,
+				Locked:          input.Locked,
+				MinimumStock:    input.MinimumStock,
+				MaximumStock:    input.MaximumStock,
+				Revision:        input.Revision,
+				Salable:         input.Salable,
+				Testable:        input.Testable,
+				Notes:           input.Notes,
 			})
-			return writeRecordOutput(record, err)
+			if err != nil {
+				return partDetailWriteError(err)
+			}
+			if created.PK <= 0 {
+				return TextResult(StatusPartialFailure), PartWriteOutput{
+					Status:       StatusPartialFailure,
+					RecoveryPlan: "Creation may have succeeded, but the response did not include a stable part ID. Search for the requested part and inspect exact matches before retrying any write.",
+				}, nil
+			}
+			return readPartDetailAfterMutation(ctx, client, created.PK, "Creation returned a part ID, but exact read-back failed. Call get_part with that stable ID before retrying any write.")
 		})
 }
 
-func updatePart(deps Dependencies) mcp.ToolHandlerFor[UpdatePartInput, WriteRecordOutput[inventree.Part]] {
-	return LookupHandler[PartWriteClient, UpdatePartInput, WriteRecordOutput[inventree.Part]](deps, UpdatePartToolName,
-		func(ctx context.Context, _ *mcp.CallToolRequest, client PartWriteClient, input UpdatePartInput) (*mcp.CallToolResult, WriteRecordOutput[inventree.Part], error) {
+func updatePart(deps Dependencies) mcp.ToolHandlerFor[UpdatePartInput, PartWriteOutput] {
+	return LookupHandler[PartWriteClient, UpdatePartInput, PartWriteOutput](deps, UpdatePartToolName,
+		func(ctx context.Context, _ *mcp.CallToolRequest, client PartWriteClient, input UpdatePartInput) (*mcp.CallToolResult, PartWriteOutput, error) {
 			if input.ID <= 0 {
-				return hardClarification[inventree.Part]("Which part should be updated?", "part", "update_part requires a positive part id", "id", map[string]any{"id": input.ID})
+				return partHardClarification("Which part should be updated?", "part", "update_part requires a positive part id", "id", map[string]any{"id": input.ID})
 			}
 			if input.CategoryID != nil && *input.CategoryID <= 0 {
-				return hardClarification[inventree.Part]("Which category should contain this part?", "category_id", "category_id must be positive when provided", "category_id", map[string]any{"category_id": *input.CategoryID})
+				return partHardClarification("Which category should contain this part?", "category_id", "category_id must be positive when provided", "category_id", map[string]any{"category_id": *input.CategoryID})
 			}
 			if input.DefaultLocation != nil && *input.DefaultLocation <= 0 {
-				return hardClarification[inventree.Part]("Which default stock location should be used?", "default_location_id", "default_location_id must be positive when provided", "default_location_id", map[string]any{"default_location_id": *input.DefaultLocation})
+				return partHardClarification("Which default stock location should be used?", "default_location_id", "default_location_id must be positive when provided", "default_location_id", map[string]any{"default_location_id": *input.DefaultLocation})
 			}
-			fields := partPatchFields(input)
+			before, err := client.GetPartDetail(ctx, input.ID)
+			if err != nil {
+				return nil, PartWriteOutput{}, err
+			}
+			if before.PK != input.ID {
+				return nil, PartWriteOutput{}, fmt.Errorf("part detail identity mismatch: requested %d, received %d", input.ID, before.PK)
+			}
+			fields, err := partPatchFields(input, before)
+			if err != nil {
+				return partInputValidationOutput(err)
+			}
 			if len(fields) == 0 {
-				return hardClarification[inventree.Part]("Which part fields should be updated?", "part", "update_part requires at least one PATCH field", "id", map[string]any{"id": input.ID})
+				return partHardClarification("Which part fields should be updated?", "part", "update_part requires at least one PATCH field", "id", map[string]any{"id": input.ID})
 			}
-			record, err := client.UpdatePart(ctx, input.ID, fields)
-			return writeRecordOutput(record, err)
+			_, err = client.UpdatePart(ctx, input.ID, fields)
+			if err != nil {
+				return partDetailWriteError(err)
+			}
+			return readPartDetailAfterMutation(ctx, client, input.ID, "PATCH may have succeeded, but exact read-back failed. Call get_part with that stable ID before retrying.")
 		})
 }
 
@@ -1581,7 +1663,33 @@ func hardClarification[T any](question string, field string, reason string, retr
 	return TextResult(StatusClarificationRequired), WriteRecordOutput[T]{Status: StatusClarificationRequired, Clarification: &clarification}, nil
 }
 
-func partPatchFields(input UpdatePartInput) inventree.PatchFields {
+func partHardClarification(question string, field string, reason string, retry string, retryValues map[string]any) (*mcp.CallToolResult, PartWriteOutput, error) {
+	clarification := NewClarification(question, field, reason, retry, true, nil, retryValues)
+	return TextResult(StatusClarificationRequired), PartWriteOutput{Status: StatusClarificationRequired, Clarification: &clarification}, nil
+}
+
+func partPatchFields(input UpdatePartInput, before inventree.PartDetail) (inventree.PatchFields, error) {
+	for _, pair := range []struct {
+		field    string
+		provided bool
+		clear    bool
+	}{
+		{field: "keywords", provided: input.Keywords != nil, clear: input.ClearKeywords},
+		{field: "link", provided: input.Link != nil, clear: input.ClearLink},
+		{field: "revision", provided: input.Revision != nil, clear: input.ClearRevision},
+		{field: "notes", provided: input.Notes != nil, clear: input.ClearNotes},
+	} {
+		if conflict(pair.provided, pair.clear) {
+			return nil, &partInputValidationError{field: pair.field, message: "Provide either the replacement value or its clear flag, not both."}
+		}
+	}
+	link, err := validateExternalURLPointer(input.Link)
+	if err != nil {
+		return nil, &partInputValidationError{field: "link", message: "Provide a complete credential-free HTTP(S) URL."}
+	}
+	if err := validatePartStockDefaults(input.MinimumStock, input.MaximumStock, input.DefaultExpiry, before.MinimumStock, before.MaximumStock); err != nil {
+		return nil, err
+	}
 	fields := inventree.PatchFields{}
 	setPatchString(fields, "name", input.Name)
 	setPatchString(fields, "description", input.Description)
@@ -1595,7 +1703,86 @@ func partPatchFields(input UpdatePartInput) inventree.PatchFields {
 	setPatchBool(fields, "trackable", input.Trackable)
 	setPatchBool(fields, "virtual", input.Virtual)
 	setPatchInt(fields, "default_location", input.DefaultLocation)
-	return fields
+	setPatchBool(fields, "consumable", input.Consumable)
+	setPatchInt(fields, "default_expiry", input.DefaultExpiry)
+	setPatchBool(fields, "is_template", input.IsTemplate)
+	setNullableString(fields, "keywords", input.Keywords, input.ClearKeywords)
+	setNullableString(fields, "link", link, input.ClearLink)
+	setPatchBool(fields, "locked", input.Locked)
+	setPatchFloat(fields, "minimum_stock", input.MinimumStock)
+	setPatchFloat(fields, "maximum_stock", input.MaximumStock)
+	setNullableString(fields, "revision", input.Revision, input.ClearRevision)
+	setPatchBool(fields, "salable", input.Salable)
+	setPatchBool(fields, "testable", input.Testable)
+	setNullableString(fields, "notes", input.Notes, input.ClearNotes)
+	return fields, nil
+}
+
+func validatePartStockDefaults(minimum, maximum *float64, defaultExpiry *int, currentMinimum, currentMaximum float64) error {
+	if defaultExpiry != nil && *defaultExpiry < 0 {
+		return &partInputValidationError{field: "default_expiry", message: "Value must be non-negative."}
+	}
+	if minimum != nil && (math.IsNaN(*minimum) || math.IsInf(*minimum, 0) || *minimum < 0) {
+		return &partInputValidationError{field: "minimum_stock", message: "Value must be finite and non-negative."}
+	}
+	if maximum != nil && (math.IsNaN(*maximum) || math.IsInf(*maximum, 0) || *maximum < 0) {
+		return &partInputValidationError{field: "maximum_stock", message: "Value must be finite and non-negative."}
+	}
+	effectiveMinimum := currentMinimum
+	if minimum != nil {
+		effectiveMinimum = *minimum
+	}
+	effectiveMaximum := currentMaximum
+	if maximum != nil {
+		effectiveMaximum = *maximum
+	}
+	if effectiveMaximum != 0 && effectiveMaximum < effectiveMinimum {
+		return &partInputValidationError{field: "maximum_stock", message: "Value must be zero or greater than or equal to minimum_stock."}
+	}
+	return nil
+}
+
+type partInputValidationError struct {
+	field   string
+	message string
+}
+
+func (e *partInputValidationError) Error() string {
+	return e.field + ": " + e.message
+}
+
+func partInputValidationOutput(err error) (*mcp.CallToolResult, PartWriteOutput, error) {
+	var inputErr *partInputValidationError
+	if !errors.As(err, &inputErr) {
+		return nil, PartWriteOutput{}, err
+	}
+	validation := &ValidationFailure{
+		StatusCode: http.StatusBadRequest,
+		Fields:     []ValidationFieldError{{Field: inputErr.field, Messages: []string{inputErr.message}}},
+	}
+	return TextResult(StatusValidationFailed), PartWriteOutput{Status: StatusValidationFailed, Validation: validation}, nil
+}
+
+func setPatchFloat(fields inventree.PatchFields, name string, value *float64) {
+	if value != nil {
+		fields[name] = inventree.Set(*value)
+	}
+}
+
+func partDetailWriteError(err error) (*mcp.CallToolResult, PartWriteOutput, error) {
+	if validation, ok := safeValidationFailure(err); ok {
+		return TextResult(StatusValidationFailed), PartWriteOutput{Status: StatusValidationFailed, Validation: validation}, nil
+	}
+	return nil, PartWriteOutput{}, err
+}
+
+func readPartDetailAfterMutation(ctx context.Context, client PartWriteClient, id int, recovery string) (*mcp.CallToolResult, PartWriteOutput, error) {
+	detail, err := client.GetPartDetail(ctx, id)
+	if err != nil || detail.PK != id {
+		return TextResult(StatusPartialFailure), PartWriteOutput{Status: StatusPartialFailure, Recovery: &PartRecoveryView{PK: id}, RecoveryPlan: recovery}, nil
+	}
+	view := partDetailView(detail)
+	return TextResult(StatusOK), PartWriteOutput{Status: StatusOK, Record: &view}, nil
 }
 
 func setPatchString(fields inventree.PatchFields, name string, value *string) {

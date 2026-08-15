@@ -659,7 +659,7 @@ func TestHTTPToolsExposeSecuritySchemesAndEnforcePerToolScopes(t *testing.T) {
 	r.Equal(http.StatusOK, deniedRecorder.Code)
 	a.Contains(deniedRecorder.Body.String(), `"isError":true`)
 	a.Contains(deniedRecorder.Body.String(), `"mcp/www_authenticate"`)
-	a.Contains(deniedRecorder.Body.String(), `scope=\"inventree.write\"`)
+	a.Contains(deniedRecorder.Body.String(), `scope=\"inventree.read inventree.write\"`)
 	a.Contains(deniedRecorder.Body.String(), `error=\"insufficient_scope\"`)
 	a.Contains(deniedRecorder.Body.String(), `error_description=`)
 	a.NotContains(deniedRecorder.Body.String(), "secret-inventree-token")
@@ -994,13 +994,13 @@ func TestProductionHTTPMuxProtectsMCPAndPublishesResourceMetadata(t *testing.T) 
 	r.Equal(http.StatusOK, listRecorder.Code)
 	listedTools := decodeListedTools(t, listRecorder.Body.Bytes())
 	a.NotNil(listedTools[tools.CreatePartToolName])
-	a.Equal([]string{"oauth2:inventree.write"}, securitySchemeSummaries(listedTools[tools.CreatePartToolName].Meta[tools.MetaSecuritySchemesKey]))
+	a.Equal([]string{"oauth2:inventree.read inventree.write"}, securitySchemeSummaries(listedTools[tools.CreatePartToolName].Meta[tools.MetaSecuritySchemesKey]))
 
 	deniedRecorder := postMCPWithBearer(t, handler, accessToken, `{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"create_part","arguments":{"name":"10k resistor","category_id":20}}}`)
 	r.Equal(http.StatusOK, deniedRecorder.Code)
 	a.Contains(deniedRecorder.Body.String(), `"isError":true`)
 	a.Contains(deniedRecorder.Body.String(), `insufficient_scope`)
-	a.Contains(deniedRecorder.Body.String(), `scope=\"inventree.write\"`)
+	a.Contains(deniedRecorder.Body.String(), `scope=\"inventree.read inventree.write\"`)
 	a.Equal(int32(0), clientCalls.Load())
 
 	rawUpstreamRecorder := postMCPWithBearer(t, handler, "secret-inventree-token", `{"jsonrpc":"2.0","id":4,"method":"tools/list","params":{}}`)
@@ -1604,8 +1604,8 @@ func (serverLookupClient) SearchParts(_ context.Context, query inventree.SearchQ
 	}}, nil
 }
 
-func (serverLookupClient) GetPart(_ context.Context, id int) (inventree.Part, error) {
-	return inventree.Part{PK: id, Name: "test part", Active: true}, nil
+func (serverLookupClient) GetPartDetail(_ context.Context, id int) (inventree.PartDetail, error) {
+	return inventree.PartDetail{PK: id, Name: "test part", Active: true}, nil
 }
 
 func TestRequestAndToolScopedLoggersAreReattached(t *testing.T) {

@@ -79,6 +79,18 @@ func TestReadMethodsUseExpectedEndpoints(t *testing.T) {
 			response: `{"pk":10,"name":"resistor"}`,
 		},
 		{
+			name: "get part detail",
+			call: func(ctx context.Context, client *Client) error {
+				record, err := client.GetPartDetail(ctx, 10)
+				if err == nil && (record.PK != 10 || record.Notes == nil || *record.Notes != "detail") {
+					return errors.New("part detail did not preserve exact fields")
+				}
+				return err
+			},
+			wantPath: "/api/part/10/",
+			response: `{"pk":10,"name":"resistor","notes":"detail","creation_user":7,"minimum_stock":1.5}`,
+		},
+		{
 			name: "search categories",
 			call: func(ctx context.Context, client *Client) error {
 				_, err := client.SearchPartCategories(ctx, SearchQuery{Search: "passives"})
