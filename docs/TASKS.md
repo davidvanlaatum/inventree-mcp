@@ -119,6 +119,7 @@ Before assigning a new story ID, inspect `git worktree list --porcelain`, search
 | [F-S35](#f-s35-local-upload-policy-discovery) | Let local agents discover STDIO upload roots and recover safely from allowlist rejections. | Done |
 | [F-S36](#f-s36-versioned-outbound-http-user-agent) | Identify every outbound runtime HTTP request with the MCP server name and build version. | Done |
 | [F-S37](#f-s37-restore-default-web-prefix-in-canonical-object-links) | Restore InvenTree's default `/web` frontend mount in fallback-generated object links. | Done |
+| [F-S38](#f-s38-explicit-purchase-order-completion-after-receiving) | Complete fully received purchase orders explicitly during receipt or later. | Done |
 
 ## Milestone 0: Repository And Planning
 
@@ -2020,3 +2021,34 @@ Tasks:
 - Validation: `go generate ./internal/tools`, `go mod tidy -diff`, `go build ./...`, `go vet ./...`, `golangci-lint run ./...` (0 issues), `go test -tags no_integration_tests ./...`, `GOFLAGS=-trimpath go test -race -p=1 ./...` including the default-on pinned InvenTree 1.4.3 Testcontainers suites, and `git diff --check` pass. Focused assertions cover the reported purchase-order 65 route, deployment-prefix and trailing-slash preservation, exact explicit custom mounts, runtime dependency wiring, and rejected default-base validation. Compared with exact base `d823a0a`, `cmd/inventree-mcp` remains 91.1%, `internal/config` rises from 93.0% to 93.1%, and `internal/weblinks` rises from 94.3% to 94.7%; no package-level reduction remains.
 - Review: Senior Go Developer, Senior QA / Test Architect, Senior Product Manager, and Senior Infosec Reviewer passes completed with no actionable findings. Go confirmed the resolver/config boundary and URL construction are maintainable; QA confirmed compositional projection coverage, unsafe-base/redaction regression coverage, and pinned mount evidence; Product confirmed README, plan, task, schema notes, web-link docs, tool reference, operator recipe, packaging example, and issue semantics align; Infosec confirmed `/web` is added only after existing URL validation, explicit mounts remain exact, request/header/OAuth inputs cannot influence routing, and disclosure/custom-basename risks remain accurately documented.
 - Residual risk: frontend basenames are not part of the REST OpenAPI contract and can drift. Explicit `INVENTREE_WEB_URL` remains required for installations whose frontend mount differs from the pinned stock InvenTree 1.4.3 default.
+
+### F-S38: Explicit Purchase-Order Completion After Receiving
+
+- Status: `Done`
+- Issue: [#118](https://github.com/davidvanlaatum/inventree-mcp/issues/118)
+- Depends on: F-S03
+- Progress: implementation started on `codex/f-s38-po-completion` from current `origin/main` (`dd8f588`).
+- Decisions: approved by the operator on 2026-08-15. Ordinary receiving respects InvenTree's `PURCHASEORDER_AUTO_COMPLETE` setting. A caller may explicitly request completion as part of a confirmed final receipt or complete the fully received order later through a separate guarded tool. The MCP must not complete an order with outstanding receivable line quantities and must not expose InvenTree's `accept_incomplete` override.
+- Scope: add explicit, guarded purchase-order completion without changing the default receipt behavior or repeating a successful receipt when a follow-on completion attempt fails.
+- Acceptance:
+  - `receive_purchase_order_items` preserves configuration-dependent upstream auto-completion when explicit completion is not requested.
+  - A reviewed final-receipt plan can bind an explicit completion request; confirmed execution receives stock once, completes the order when still placed and fully received, and returns refreshed `COMPLETE` state.
+  - A separate guarded `complete_purchase_order` workflow supports later completion of a fully received placed order, with current-state review, confirmation, read-back, and safe ambiguous-result recovery.
+  - Explicit completion refuses any order with outstanding ordinary line quantity; incomplete completion is not exposed.
+  - If receipt succeeds but explicit completion does not produce a verified result, output preserves the created stock and returns actionable completion-only recovery without instructing the caller to repeat receipt.
+  - Existing partial-receipt, receipt response-loss recovery, extra-line, stock-provenance, and upstream auto-completion behavior remains unchanged.
+  - Pinned InvenTree 1.4.3 Testcontainers coverage verifies configuration-disabled deferred completion, receipt-time explicit completion, and later explicit completion using per-subtest fixtures.
+  - `docs/PLAN.md`, `docs/api-schema.md`, `docs/tool-reference.md`, and `docs/operator-recipes.md` describe the verified completion semantics.
+  - Per-package coverage is compared with current `main`; Senior Go Developer, Senior QA / Test Architect, Senior Product Manager, and Senior Infosec Reviewer passes complete with every actionable finding resolved or documented.
+
+Tasks:
+
+- [x] Add schema-backed purchase-order completion client behavior and deterministic tests.
+- [x] Add guarded later completion and receipt-time explicit completion with safe recovery semantics.
+- [x] Add pinned-live coverage for auto-complete-disabled and explicit completion paths.
+- [x] Align planning, schema, tool-reference, operator, and generated-contract documentation.
+- [x] Compare coverage, run full validation, and resolve the Go, QA, product, and infosec review panel.
+
+- Validation: `go generate ./internal/tools`, `go mod tidy -diff`, `go build ./...`, `go vet ./...`, `golangci-lint run ./...` (0 issues), `go test -tags no_integration_tests ./...`, `GOFLAGS=-trimpath go test -race -p=1 ./...`, and `git diff --check` pass. Focused pinned InvenTree 1.4.3 runs pass for `TestClientMethodsAgainstInvenTree/po` and `TestMilestoneHappyPathToolsAgainstInvenTree/purchase_order_completion_with_auto_complete_disabled`. Compared with exact base `dd8f588`, `internal/inventree` remains 88.2% and `internal/tools` rises from 83.1% to 83.2%; no package-level coverage reduction remains.
+- Review: Senior Go Developer, Senior QA / Test Architect, Senior Product Manager, and Senior Infosec Reviewer passes completed, including focused reruns after resolving two findings. Product identified that a failed refresh after a known-success receipt with `complete_order:true` could incorrectly invite receipt recovery; the path now preserves returned stock and permits completion-only recovery, with regression coverage. QA identified that pinned tests restored the global auto-complete setting to a presumed default; both suites now capture, restore, and read-back verify the exact original value. Focused Go, QA, product, and infosec reruns found no remaining actionable findings.
+- Residual risk: receipt and explicit completion are separate upstream mutations, so completion can fail after stock was received; the response preserves returned stock and mandates completion-only recovery. Completion preflight and mutation are not atomic against concurrent upstream writers, though the MCP never sends `accept_incomplete:true` and exact read-back is required for verified success.

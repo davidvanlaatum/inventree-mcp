@@ -421,6 +421,7 @@ Mutating non-destructive tools:
 - `update_purchase_order_line`
 - `create_purchase_order_with_lines`
 - `issue_purchase_order`
+- `complete_purchase_order`
 - `create_build_order`
 - `import_parts`
 - `import_supplier_parts`
@@ -446,7 +447,6 @@ Mutating destructive or irreversible tools:
 - `remove_bom_item`
 - `delete_attachment`
 - `clear_company_image`
-- `close_purchase_order`
 - `complete_build_order`
 
 Destructive or irreversible tools should require `confirm: true` and should expose `dry_run` where the workflow can be planned safely.
@@ -649,17 +649,18 @@ Important behaviors:
 - `create_purchase_order_with_lines`
 - `issue_purchase_order`
 - `receive_purchase_order_items`
-- `close_purchase_order`
+- `complete_purchase_order`
 
 Important behaviors:
 
 - Use supplier-part links when receiving purchasable items.
 - Require `issue_purchase_order` with `confirm_issue:true` and the exact current-state hash from its dry run before a pending order is placed with its supplier. The hash binds the complete order metadata and sorted purchase-order line state visible in the preview and rejects changes observed by the confirmation preflight; receiving never issues an order implicitly. InvenTree does not provide an atomic conditional issue operation across the final reads and placement request, so operators must coordinate a single writer while issuing. If placement returns an ambiguous result, inspect the current order and line state before preparing any retry.
 - `receive_purchase_order_items` accepts schema-valid partial outstanding quantities only for a placed order, rejects virtual parts because they do not create stock, resolves location from item override to line destination to global fallback, and creates new stock items without merging into or updating existing stock.
-- Return a deterministic `plan_hash` with each dry run. The plan includes the supplier pack conversion, resulting base-stock quantity, resolved packaging, and source line purchase price/currency. The operational call requires both `confirm_receive:true` and the exact hash for the current preflight plan; changed order, line, supplier-pack, packaging, or source price state invalidates the confirmation. InvenTree's global currency conversion configuration is not revisioned through this endpoint, so a concurrent administrator change remains outside the hash boundary.
-- Return the refreshed purchase order, resolved receiving plan, created stock items, and received quantities. If the non-idempotent receive result is ambiguous, return structured `partial_failure` recovery guidance and do not invite a blind retry.
+- Return a deterministic `plan_hash` with each dry run. The plan includes the supplier pack conversion, resulting base-stock quantity, resolved packaging, source line purchase price/currency, and explicit `complete_order` intent. When completion is requested, the hash also binds every current ordinary line and the request is rejected unless the planned receipt leaves them all fully received. The operational call requires both `confirm_receive:true` and the exact hash for the current preflight plan; changed order, line, supplier-pack, packaging, source price, or completion intent invalidates the confirmation. InvenTree's global currency conversion configuration is not revisioned through this endpoint, so a concurrent administrator change remains outside the hash boundary.
+- By default, return the refreshed purchase order exactly as InvenTree leaves it, respecting the server's `PURCHASEORDER_AUTO_COMPLETE` setting. With explicit `complete_order:true`, treat an upstream auto-completed result as success or call the native completion endpoint after the successful receipt. If receipt succeeds but completion cannot be verified, preserve the returned stock items and provide completion-only recovery; never invite the caller to repeat the receipt.
+- `complete_purchase_order` separately dry-runs and confirms later completion of one placed order. Its current-state hash binds the complete order metadata, every sorted ordinary line, target `COMPLETE` status, and `accept_incomplete:false`. It returns success for an already-complete order, rejects any outstanding ordinary line quantity, verifies refreshed status after mutation, and recovers a lost completion response only when exact read-back proves `COMPLETE`.
 - Treat concurrent receipt of the same purchase-order line as unsupported. InvenTree 1.4.3 serializes its line updates but does not atomically cap a previously prepared receipt to the newly outstanding quantity; an MCP-process lock would not protect against the InvenTree UI, direct API clients, or other MCP replicas, so the operator accepted this narrow residual risk without local locking.
-- Require explicit confirmation before closing an order.
+- Require explicit current-state confirmation before completing an order; never expose InvenTree's incomplete-line completion override.
 - `update_purchase_order_line` should use PATCH and serialize only supplied fields.
 - `preview_purchase_order_with_lines` is the milestone dry-run tool. It must be read-only, reject write intent, and perform supplier-part validation without creating a purchase order.
 - `create_purchase_order_with_lines` was not registered in the original milestone 1 delivery. Its post-milestone F-S03 workflow takes a supplier, stable supplier reference, description/date fields, and receivable supplier-part line inputs; runs preview-equivalent validation first; then creates or updates the purchase order and lines while returning stable purchase-order and line IDs for retry/recovery. F-S23 adds optional non-receivable extra lines after the normal-line phase for invoice, surcharge, discount, and supplier-product context. Extra lines require a trimmed case-sensitive reference unique within the purchase order, accept exact signed unit prices including zero and negative values, and never create stock. Dry runs return field-level `planned_changes` for order, normal-line, and extra-line creates or patches, including references and dependencies on a planned order create. The exact `(supplier_id, supplier_reference)` pair is the order retry identity, while InvenTree generates its pattern-compliant internal reference. The completed purchasing tools are classified as implemented in the checked manifest.

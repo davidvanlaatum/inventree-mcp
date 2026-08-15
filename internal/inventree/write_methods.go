@@ -184,6 +184,10 @@ type PurchaseOrderReceive struct {
 	Location *int                       `json:"location,omitempty"`
 }
 
+type PurchaseOrderComplete struct {
+	AcceptIncomplete bool `json:"accept_incomplete"`
+}
+
 type PurchaseOrderReceiveItem struct {
 	LineItem      int     `json:"line_item"`
 	Location      *int    `json:"location,omitempty"`
@@ -463,6 +467,10 @@ func (c *Client) ReceivePurchaseOrder(ctx context.Context, id int, input Purchas
 	var out []StockItem
 	err := c.Post(ctx, fmt.Sprintf("/api/order/po/%d/receive/", id), input, &out)
 	return out, err
+}
+
+func (c *Client) CompletePurchaseOrder(ctx context.Context, id int) error {
+	return c.Post(ctx, fmt.Sprintf("/api/order/po/%d/complete/", id), PurchaseOrderComplete{AcceptIncomplete: false}, nil)
 }
 
 func (c *Client) IssuePurchaseOrder(ctx context.Context, id int) error {

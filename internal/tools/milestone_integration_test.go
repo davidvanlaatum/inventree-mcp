@@ -819,6 +819,84 @@ func TestMilestoneHappyPathToolsAgainstInvenTree(t *testing.T) {
 		r.Len(completed.StockItems, 2)
 	})
 
+	t.Run("purchase_order_completion_with_auto_complete_disabled", func(t *testing.T) {
+		r := require.New(t)
+		a := assert.New(t)
+		ctx, _, _ := testhandler.SetupTestHandler(t)
+		fixture := newMilestoneToolFixture(t, shared)
+		supplier := fixture.ensure(t, testenv.FixtureSupplier)
+		supplierPart := fixture.ensure(t, testenv.FixtureSupplierPart)
+		destination := fixture.ensure(t, testenv.FixtureLocation)
+
+		originalAutoComplete := purchaseOrderAutoCompleteSetting(t, ctx, fixture.client)
+		setPurchaseOrderAutoComplete(t, ctx, fixture.client, false)
+		t.Cleanup(func() {
+			cleanupCtx := context.WithoutCancel(ctx)
+			setPurchaseOrderAutoComplete(t, cleanupCtx, fixture.client, originalAutoComplete)
+			r.Equal(originalAutoComplete, purchaseOrderAutoCompleteSetting(t, cleanupCtx, fixture.client))
+		})
+
+		createFullyReceivableOrder := func(suffix string) (inventree.PurchaseOrder, []inventree.PurchaseOrderLineItem) {
+			t.Helper()
+			order, err := fixture.client.CreatePurchaseOrder(ctx, inventree.PurchaseOrderCreate{Supplier: supplier.ID})
+			r.NoError(err)
+			firstReference, err := fixture.run.Name(suffix + "-one")
+			r.NoError(err)
+			secondReference, err := fixture.run.Name(suffix + "-two")
+			r.NoError(err)
+			first, err := fixture.client.CreatePurchaseOrderLine(ctx, inventree.PurchaseOrderLineCreate{Order: order.PK, SupplierPart: supplierPart.ID, Reference: &firstReference, Quantity: 2, Destination: &destination.ID})
+			r.NoError(err)
+			second, err := fixture.client.CreatePurchaseOrderLine(ctx, inventree.PurchaseOrderLineCreate{Order: order.PK, SupplierPart: supplierPart.ID, Reference: &secondReference, Quantity: 1, Destination: &destination.ID})
+			r.NoError(err)
+			r.NoError(fixture.client.IssuePurchaseOrder(ctx, order.PK))
+			return order, []inventree.PurchaseOrderLineItem{first, second}
+		}
+
+		deferredOrder, deferredLines := createFullyReceivableOrder("po-deferred-completion")
+		deferredReceipt := ReceivePurchaseOrderInput{DryRun: true, OrderID: deferredOrder.PK, Items: []ReceivePurchaseOrderItem{{LineItemID: deferredLines[0].PK, Quantity: 2}, {LineItemID: deferredLines[1].PK, Quantity: 1}}}
+		_, deferredPlan, err := receivePurchaseOrderItems(fixture.deps())(ctx, &mcp.CallToolRequest{}, deferredReceipt)
+		r.NoError(err)
+		deferredReceipt.DryRun = false
+		deferredReceipt.ConfirmReceive = true
+		deferredReceipt.PlanHash = deferredPlan.PlanHash
+		_, deferredResult, err := receivePurchaseOrderItems(fixture.deps())(ctx, &mcp.CallToolRequest{}, deferredReceipt)
+		r.NoError(err)
+		r.NotNil(deferredResult.Order)
+		a.Equal(inventree.PurchaseOrderStatusPlaced, deferredResult.Order.Status)
+		deferredRead, err := fixture.client.GetPurchaseOrder(ctx, deferredOrder.PK)
+		r.NoError(err)
+		a.Equal(deferredResult.Order.Status, deferredRead.Status)
+
+		_, completionPlan, err := completePurchaseOrder(fixture.deps())(ctx, &mcp.CallToolRequest{}, CompletePurchaseOrderInput{DryRun: true, OrderID: deferredOrder.PK})
+		r.NoError(err)
+		r.NotEmpty(completionPlan.PlanHash)
+		r.Len(completionPlan.Lines, 2)
+		_, completedLater, err := completePurchaseOrder(fixture.deps())(ctx, &mcp.CallToolRequest{}, CompletePurchaseOrderInput{OrderID: deferredOrder.PK, ConfirmComplete: true, PlanHash: completionPlan.PlanHash})
+		r.NoError(err)
+		r.NotNil(completedLater.Order)
+		a.Equal(inventree.PurchaseOrderStatusComplete, completedLater.Order.Status)
+		completedLaterRead, err := fixture.client.GetPurchaseOrder(ctx, deferredOrder.PK)
+		r.NoError(err)
+		a.Equal(completedLater.Order.Status, completedLaterRead.Status)
+
+		inlineOrder, inlineLines := createFullyReceivableOrder("po-inline-completion")
+		inlineReceipt := ReceivePurchaseOrderInput{DryRun: true, CompleteOrder: true, OrderID: inlineOrder.PK, Items: []ReceivePurchaseOrderItem{{LineItemID: inlineLines[0].PK, Quantity: 2}, {LineItemID: inlineLines[1].PK, Quantity: 1}}}
+		_, inlinePlan, err := receivePurchaseOrderItems(fixture.deps())(ctx, &mcp.CallToolRequest{}, inlineReceipt)
+		r.NoError(err)
+		r.Len(inlinePlan.CompletionLines, 2)
+		inlineReceipt.DryRun = false
+		inlineReceipt.ConfirmReceive = true
+		inlineReceipt.PlanHash = inlinePlan.PlanHash
+		_, completedInline, err := receivePurchaseOrderItems(fixture.deps())(ctx, &mcp.CallToolRequest{}, inlineReceipt)
+		r.NoError(err)
+		r.NotNil(completedInline.Order)
+		a.Equal(inventree.PurchaseOrderStatusComplete, completedInline.Order.Status)
+		a.Equal(CompletePurchaseOrderToolName, completedInline.CompletionAction)
+		completedInlineRead, err := fixture.client.GetPurchaseOrder(ctx, inlineOrder.PK)
+		r.NoError(err)
+		a.Equal(completedInline.Order.Status, completedInlineRead.Status)
+	})
+
 	t.Run("purchase_order_line_delete_happy_path", func(t *testing.T) {
 		r := require.New(t)
 		a := assert.New(t)
@@ -1971,6 +2049,30 @@ func (f milestoneToolFixture) ensure(t *testing.T, kind testenv.FixtureKind) tes
 		r.NoError(f.run.RequireOwnedName(record.Name))
 	}
 	return record
+}
+
+func setPurchaseOrderAutoComplete(t *testing.T, ctx context.Context, client *inventree.Client, enabled bool) {
+	t.Helper()
+	r := require.New(t)
+	value := "False"
+	if enabled {
+		value = "True"
+	}
+	var setting map[string]any
+	r.NoError(client.Patch(ctx, "/api/settings/global/PURCHASEORDER_AUTO_COMPLETE/", inventree.PatchFields{"value": inventree.Set(value)}, &setting))
+}
+
+func purchaseOrderAutoCompleteSetting(t *testing.T, ctx context.Context, client *inventree.Client) bool {
+	t.Helper()
+	r := require.New(t)
+	var setting struct {
+		Value *bool `json:"value"`
+	}
+	req, err := client.NewRequest(ctx, http.MethodGet, "/api/settings/global/PURCHASEORDER_AUTO_COMPLETE/", nil, nil)
+	r.NoError(err)
+	r.NoError(client.DoJSON(req, &setting))
+	r.NotNil(setting.Value)
+	return *setting.Value
 }
 
 func attachmentTargetModelTypes() []string {

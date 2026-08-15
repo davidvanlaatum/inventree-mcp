@@ -101,6 +101,7 @@ const (
 	CreatePurchaseOrderWorkflowToolName     = "create_purchase_order_with_lines"
 	IssuePurchaseOrderToolName              = "issue_purchase_order"
 	ReceivePurchaseOrderToolName            = "receive_purchase_order_items"
+	CompletePurchaseOrderToolName           = "complete_purchase_order"
 	UploadAttachmentToolName                = "upload_attachment"
 	UploadAttachmentFromURLToolName         = "upload_attachment_from_url"
 	CreateLinkAttachmentToolName            = "create_link_attachment"
@@ -213,6 +214,7 @@ var writeToolNames = []string{
 	CreatePurchaseOrderWorkflowToolName,
 	IssuePurchaseOrderToolName,
 	ReceivePurchaseOrderToolName,
+	CompletePurchaseOrderToolName,
 	UploadAttachmentToolName,
 	UploadAttachmentFromURLToolName,
 	CreateLinkAttachmentToolName,
@@ -255,7 +257,7 @@ func init() {
 		scopes := []string{ScopeInventreeWrite}
 		mutationClass := "write"
 		switch name {
-		case CreateParameterTemplateToolName, UpdateParameterTemplateToolName, CreateCategoryParameterDefaultToolName, UpdateCategoryParameterDefaultToolName, CreatePartCategoryToolName, UpdatePartCategoryToolName, UpdateCompanyToolName, UpdateSupplierPartToolName, UpdateManufacturerPartToolName, CreateStockLocationToolName, UpdateStockLocationToolName, CreatePurchaseOrderExtraLineToolName, UpdatePurchaseOrderExtraLineToolName, CreatePurchaseOrderWorkflowToolName, IssuePurchaseOrderToolName:
+		case CreateParameterTemplateToolName, UpdateParameterTemplateToolName, CreateCategoryParameterDefaultToolName, UpdateCategoryParameterDefaultToolName, CreatePartCategoryToolName, UpdatePartCategoryToolName, UpdateCompanyToolName, UpdateSupplierPartToolName, UpdateManufacturerPartToolName, CreateStockLocationToolName, UpdateStockLocationToolName, CreatePurchaseOrderExtraLineToolName, UpdatePurchaseOrderExtraLineToolName, CreatePurchaseOrderWorkflowToolName, IssuePurchaseOrderToolName, CompletePurchaseOrderToolName:
 			scopes = []string{ScopeInventreeRead, ScopeInventreeWrite}
 		case BulkPropagatePartParametersToolName:
 			scopes = []string{ScopeInventreeRead, ScopeInventreeWrite, ScopeInventreeDestructive}
@@ -317,7 +319,7 @@ func init() {
 	extraLineUpdate := ToolAuthorizations[UpdatePurchaseOrderExtraLineToolName]
 	extraLineUpdate.Annotations.Idempotent = true
 	ToolAuthorizations[UpdatePurchaseOrderExtraLineToolName] = extraLineUpdate
-	for _, name := range []string{SearchPurchaseOrdersToolName, GetPurchaseOrderToolName, SearchPurchaseOrderLinesToolName, GetPurchaseOrderLineToolName, SearchPurchaseOrderExtraLinesToolName, GetPurchaseOrderExtraLineToolName, CreatePurchaseOrderToolName, AddPurchaseOrderLineToolName, UpdatePurchaseOrderLineToolName, DeletePurchaseOrderLineToolName, CreatePurchaseOrderExtraLineToolName, UpdatePurchaseOrderExtraLineToolName, DeletePurchaseOrderExtraLineToolName, CreatePurchaseOrderWorkflowToolName, IssuePurchaseOrderToolName, ReceivePurchaseOrderToolName} {
+	for _, name := range []string{SearchPurchaseOrdersToolName, GetPurchaseOrderToolName, SearchPurchaseOrderLinesToolName, GetPurchaseOrderLineToolName, SearchPurchaseOrderExtraLinesToolName, GetPurchaseOrderExtraLineToolName, CreatePurchaseOrderToolName, AddPurchaseOrderLineToolName, UpdatePurchaseOrderLineToolName, DeletePurchaseOrderLineToolName, CreatePurchaseOrderExtraLineToolName, UpdatePurchaseOrderExtraLineToolName, DeletePurchaseOrderExtraLineToolName, CreatePurchaseOrderWorkflowToolName, IssuePurchaseOrderToolName, ReceivePurchaseOrderToolName, CompletePurchaseOrderToolName} {
 		auth := ToolAuthorizations[name]
 		auth.MilestoneStatus = ToolMilestone1
 		ToolAuthorizations[name] = auth
