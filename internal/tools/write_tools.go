@@ -148,16 +148,18 @@ type CreateCompanyInput struct {
 }
 
 type CreateSupplierPartInput struct {
-	PartID             int     `json:"part_id" jsonschema:"Existing purchasable part primary key."`
-	SupplierID         int     `json:"supplier_id" jsonschema:"Existing supplier company primary key."`
-	SKU                string  `json:"sku" jsonschema:"Supplier SKU."`
-	Description        *string `json:"description,omitempty" jsonschema:"Optional supplier part description."`
-	Link               *string `json:"link,omitempty" jsonschema:"Optional complete HTTP(S) supplier-part URL without userinfo; query parameters and fragments are preserved."`
-	Active             *bool   `json:"active,omitempty" jsonschema:"Optional explicit active flag."`
-	Primary            *bool   `json:"primary,omitempty" jsonschema:"Optional explicit primary flag."`
-	ManufacturerPartID *int    `json:"manufacturer_part_id,omitempty" jsonschema:"Optional existing manufacturer-part primary key."`
-	Packaging          *string `json:"packaging,omitempty" jsonschema:"Optional packaging text."`
-	Note               *string `json:"note,omitempty" jsonschema:"Optional short note."`
+	PartID             int      `json:"part_id" jsonschema:"Existing purchasable part primary key."`
+	SupplierID         int      `json:"supplier_id" jsonschema:"Existing supplier company primary key."`
+	SKU                string   `json:"sku" jsonschema:"Supplier SKU."`
+	Description        *string  `json:"description,omitempty" jsonschema:"Optional supplier part description."`
+	Link               *string  `json:"link,omitempty" jsonschema:"Optional complete HTTP(S) supplier-part URL without userinfo; query parameters and fragments are preserved."`
+	Active             *bool    `json:"active,omitempty" jsonschema:"Optional explicit active flag."`
+	Primary            *bool    `json:"primary,omitempty" jsonschema:"Optional explicit primary flag."`
+	ManufacturerPartID *int     `json:"manufacturer_part_id,omitempty" jsonschema:"Optional existing manufacturer-part primary key."`
+	Packaging          *string  `json:"packaging,omitempty" jsonschema:"Optional packaging text."`
+	Note               *string  `json:"note,omitempty" jsonschema:"Optional short note."`
+	Notes              *string  `json:"notes,omitempty" jsonschema:"Optional long Markdown notes, distinct from the short note field."`
+	Available          *float64 `json:"available,omitempty" jsonschema:"Optional upstream availability quantity. Explicit zero is preserved."`
 }
 
 type CreateManufacturerPartInput struct {
@@ -166,6 +168,7 @@ type CreateManufacturerPartInput struct {
 	MPN            *string `json:"mpn,omitempty" jsonschema:"Optional manufacturer part number."`
 	Description    *string `json:"description,omitempty" jsonschema:"Optional manufacturer part description."`
 	Link           *string `json:"link,omitempty" jsonschema:"Optional complete HTTP(S) manufacturer-part URL without userinfo; query parameters and fragments are preserved."`
+	Notes          *string `json:"notes,omitempty" jsonschema:"Optional long Markdown notes."`
 }
 
 type CreateStockItemInput struct {
@@ -233,6 +236,19 @@ type WriteRecordOutput[T any] struct {
 	RecoveryPlan  string                 `json:"recovery_plan,omitempty"`
 }
 
+type SourcingCreateRecovery struct {
+	ID int `json:"id"`
+}
+
+type SourcingCreateOutput[T any] struct {
+	Status        string                  `json:"status"`
+	Record        *T                      `json:"record,omitempty"`
+	Recovery      *SourcingCreateRecovery `json:"recovery,omitempty"`
+	Validation    *ValidationFailure      `json:"validation,omitempty"`
+	Clarification *ClarificationResponse  `json:"clarification,omitempty"`
+	RecoveryPlan  string                  `json:"recovery_plan,omitempty"`
+}
+
 type PartWriteOutput struct {
 	Status        string                 `json:"status"`
 	Record        *PartDetailView        `json:"record,omitempty"`
@@ -249,12 +265,15 @@ type CompanyWriteView struct {
 
 type SupplierPartWriteView struct {
 	inventree.SupplierPart
-	Link string `json:"link,omitempty"`
+	Link      string  `json:"link,omitempty"`
+	Available float64 `json:"available"`
+	Notes     *string `json:"notes"`
 }
 
 type ManufacturerPartWriteView struct {
 	inventree.ManufacturerPart
-	Link string `json:"link,omitempty"`
+	Link  string  `json:"link,omitempty"`
+	Notes *string `json:"notes"`
 }
 
 type PartUpsertWorkflowOutput struct {
@@ -567,31 +586,34 @@ func createCompany(deps Dependencies) mcp.ToolHandlerFor[CreateCompanyInput, Wri
 		})
 }
 
-func createSupplierPart(deps Dependencies) mcp.ToolHandlerFor[CreateSupplierPartInput, WriteRecordOutput[SupplierPartWriteView]] {
-	return LookupHandler[SupplierPartWriteClient, CreateSupplierPartInput, WriteRecordOutput[SupplierPartWriteView]](deps, CreateSupplierPartToolName,
-		func(ctx context.Context, _ *mcp.CallToolRequest, client SupplierPartWriteClient, input CreateSupplierPartInput) (*mcp.CallToolResult, WriteRecordOutput[SupplierPartWriteView], error) {
+func createSupplierPart(deps Dependencies) mcp.ToolHandlerFor[CreateSupplierPartInput, SourcingCreateOutput[SupplierPartWriteView]] {
+	return LookupHandler[SupplierPartWriteClient, CreateSupplierPartInput, SourcingCreateOutput[SupplierPartWriteView]](deps, CreateSupplierPartToolName,
+		func(ctx context.Context, _ *mcp.CallToolRequest, client SupplierPartWriteClient, input CreateSupplierPartInput) (*mcp.CallToolResult, SourcingCreateOutput[SupplierPartWriteView], error) {
 			link, err := validateExternalURLPointer(input.Link)
 			if err != nil {
-				return nil, WriteRecordOutput[SupplierPartWriteView]{}, err
+				return nil, SourcingCreateOutput[SupplierPartWriteView]{}, err
 			}
 			input.Link = link
+			if input.Available != nil && (math.IsNaN(*input.Available) || math.IsInf(*input.Available, 0)) {
+				return nil, SourcingCreateOutput[SupplierPartWriteView]{}, errors.New("available must be finite")
+			}
 			if input.PartID <= 0 {
-				return hardClarification[SupplierPartWriteView]("Which part should be linked to the supplier?", "part", "create_supplier_part requires a positive part_id", "part_id", map[string]any{"part_id": input.PartID})
+				return sourcingHardClarification[SupplierPartWriteView]("Which part should be linked to the supplier?", "part", "create_supplier_part requires a positive part_id", "part_id", map[string]any{"part_id": input.PartID})
 			}
 			if input.SupplierID <= 0 {
-				return hardClarification[SupplierPartWriteView]("Which supplier should be linked to the part?", "supplier", "create_supplier_part requires a positive supplier_id", "supplier_id", map[string]any{"supplier_id": input.SupplierID})
+				return sourcingHardClarification[SupplierPartWriteView]("Which supplier should be linked to the part?", "supplier", "create_supplier_part requires a positive supplier_id", "supplier_id", map[string]any{"supplier_id": input.SupplierID})
 			}
 			if input.ManufacturerPartID != nil && *input.ManufacturerPartID <= 0 {
-				return hardClarification[SupplierPartWriteView]("Which manufacturer part should be linked to this supplier part?", "manufacturer_part_id", "manufacturer_part_id must be positive when provided", "manufacturer_part_id", map[string]any{"manufacturer_part_id": *input.ManufacturerPartID})
+				return sourcingHardClarification[SupplierPartWriteView]("Which manufacturer part should be linked to this supplier part?", "manufacturer_part_id", "manufacturer_part_id must be positive when provided", "manufacturer_part_id", map[string]any{"manufacturer_part_id": *input.ManufacturerPartID})
 			}
 			query := inventree.SupplierPartQuery{Part: input.PartID, Supplier: input.SupplierID, SKU: input.SKU}
 			records, err := client.SearchSupplierParts(ctx, query)
 			if err != nil {
-				return nil, WriteRecordOutput[SupplierPartWriteView]{}, err
+				return nil, SourcingCreateOutput[SupplierPartWriteView]{}, err
 			}
 			if len(records) > 0 {
 				clarification := NewClarification("Should an existing supplier part be used instead of creating a new one?", "supplier_part", "matching supplier-part records already exist", "supplier_part_id", false, candidatesFor(records), nil)
-				return TextResult(StatusClarificationRequired), WriteRecordOutput[SupplierPartWriteView]{Status: StatusClarificationRequired, Clarification: &clarification}, nil
+				return TextResult(StatusClarificationRequired), SourcingCreateOutput[SupplierPartWriteView]{Status: StatusClarificationRequired, Clarification: &clarification}, nil
 			}
 			record, err := client.CreateSupplierPart(ctx, inventree.SupplierPartCreate{
 				Part:             input.PartID,
@@ -604,28 +626,40 @@ func createSupplierPart(deps Dependencies) mcp.ToolHandlerFor[CreateSupplierPart
 				ManufacturerPart: input.ManufacturerPartID,
 				Packaging:        input.Packaging,
 				Note:             input.Note,
+				Notes:            input.Notes,
+				Available:        input.Available,
 			})
 			if err != nil {
-				return writeRecordOutput(SupplierPartWriteView{}, err)
+				return sourcingCreateErrorOutput[SupplierPartWriteView](err)
 			}
-			return verifyCreatedSupplierPart(ctx, client, record, input.Link)
+			expected := inventree.PatchFields{}
+			if input.Link != nil {
+				expected["link"] = inventree.Set(*input.Link)
+			}
+			if input.Notes != nil {
+				expected["notes"] = inventree.Set(*input.Notes)
+			}
+			if input.Available != nil {
+				expected["available"] = inventree.Set(*input.Available)
+			}
+			return verifyCreatedSupplierPart(ctx, client, record, expected)
 		})
 }
 
-func createManufacturerPart(deps Dependencies) mcp.ToolHandlerFor[CreateManufacturerPartInput, WriteRecordOutput[ManufacturerPartWriteView]] {
-	return LookupHandler[ManufacturerPartWriteClient, CreateManufacturerPartInput, WriteRecordOutput[ManufacturerPartWriteView]](deps, CreateManufacturerPartToolName,
-		func(ctx context.Context, _ *mcp.CallToolRequest, client ManufacturerPartWriteClient, input CreateManufacturerPartInput) (*mcp.CallToolResult, WriteRecordOutput[ManufacturerPartWriteView], error) {
+func createManufacturerPart(deps Dependencies) mcp.ToolHandlerFor[CreateManufacturerPartInput, SourcingCreateOutput[ManufacturerPartWriteView]] {
+	return LookupHandler[ManufacturerPartWriteClient, CreateManufacturerPartInput, SourcingCreateOutput[ManufacturerPartWriteView]](deps, CreateManufacturerPartToolName,
+		func(ctx context.Context, _ *mcp.CallToolRequest, client ManufacturerPartWriteClient, input CreateManufacturerPartInput) (*mcp.CallToolResult, SourcingCreateOutput[ManufacturerPartWriteView], error) {
 			input.MPN = normalizedOptionalString(input.MPN)
 			link, err := validateExternalURLPointer(input.Link)
 			if err != nil {
-				return nil, WriteRecordOutput[ManufacturerPartWriteView]{}, err
+				return nil, SourcingCreateOutput[ManufacturerPartWriteView]{}, err
 			}
 			input.Link = link
 			if input.PartID <= 0 {
-				return hardClarification[ManufacturerPartWriteView]("Which part should be linked to the manufacturer?", "part", "create_manufacturer_part requires a positive part_id", "part_id", map[string]any{"part_id": input.PartID})
+				return sourcingHardClarification[ManufacturerPartWriteView]("Which part should be linked to the manufacturer?", "part", "create_manufacturer_part requires a positive part_id", "part_id", map[string]any{"part_id": input.PartID})
 			}
 			if input.ManufacturerID <= 0 {
-				return hardClarification[ManufacturerPartWriteView]("Which manufacturer should be linked to the part?", "manufacturer", "create_manufacturer_part requires a positive manufacturer_id", "manufacturer_id", map[string]any{"manufacturer_id": input.ManufacturerID})
+				return sourcingHardClarification[ManufacturerPartWriteView]("Which manufacturer should be linked to the part?", "manufacturer", "create_manufacturer_part requires a positive manufacturer_id", "manufacturer_id", map[string]any{"manufacturer_id": input.ManufacturerID})
 			}
 			query := inventree.ManufacturerPartQuery{Part: input.PartID, Manufacturer: input.ManufacturerID}
 			if input.MPN != nil {
@@ -633,11 +667,11 @@ func createManufacturerPart(deps Dependencies) mcp.ToolHandlerFor[CreateManufact
 			}
 			records, err := client.SearchManufacturerParts(ctx, query)
 			if err != nil {
-				return nil, WriteRecordOutput[ManufacturerPartWriteView]{}, err
+				return nil, SourcingCreateOutput[ManufacturerPartWriteView]{}, err
 			}
 			if len(records) > 0 {
 				clarification := NewClarification("Should an existing manufacturer part be used instead of creating a new one?", "manufacturer_part", "matching manufacturer-part records already exist", "manufacturer_part_id", false, candidatesFor(records), nil)
-				return TextResult(StatusClarificationRequired), WriteRecordOutput[ManufacturerPartWriteView]{Status: StatusClarificationRequired, Clarification: &clarification}, nil
+				return TextResult(StatusClarificationRequired), SourcingCreateOutput[ManufacturerPartWriteView]{Status: StatusClarificationRequired, Clarification: &clarification}, nil
 			}
 			record, err := client.CreateManufacturerPart(ctx, inventree.ManufacturerPartCreate{
 				Part:         input.PartID,
@@ -645,11 +679,19 @@ func createManufacturerPart(deps Dependencies) mcp.ToolHandlerFor[CreateManufact
 				MPN:          input.MPN,
 				Description:  input.Description,
 				Link:         input.Link,
+				Notes:        input.Notes,
 			})
 			if err != nil {
-				return writeRecordOutput(ManufacturerPartWriteView{}, err)
+				return sourcingCreateErrorOutput[ManufacturerPartWriteView](err)
 			}
-			return verifyCreatedManufacturerPart(ctx, client, record, input.Link)
+			expected := inventree.PatchFields{}
+			if input.Link != nil {
+				expected["link"] = inventree.Set(*input.Link)
+			}
+			if input.Notes != nil {
+				expected["notes"] = inventree.Set(*input.Notes)
+			}
+			return verifyCreatedManufacturerPart(ctx, client, record, expected)
 		})
 }
 
@@ -1575,20 +1617,47 @@ func verifyCreatedCompany(ctx context.Context, client CompanyWriteClient, create
 	return TextResult(StatusOK), WriteRecordOutput[CompanyWriteView]{Status: StatusOK, Record: companyWriteView(detail)}, nil
 }
 
-func verifyCreatedSupplierPart(ctx context.Context, client SupplierPartWriteClient, created inventree.SupplierPart, requestedLink *string) (*mcp.CallToolResult, WriteRecordOutput[SupplierPartWriteView], error) {
-	detail, err := client.GetSupplierPartDetail(ctx, created.PK)
-	if err != nil || detail.PK != created.PK || !externalURLMatches(detail.Link, requestedLink) {
-		return TextResult(StatusPartialFailure), WriteRecordOutput[SupplierPartWriteView]{Status: StatusPartialFailure, Record: SupplierPartWriteView{SupplierPart: created}, RecoveryPlan: "Read the supplier part by its stable ID and verify the external link before retrying or applying any further change."}, nil
+func verifyCreatedSupplierPart(ctx context.Context, client SupplierPartWriteClient, created inventree.SupplierPart, expected inventree.PatchFields) (*mcp.CallToolResult, SourcingCreateOutput[SupplierPartWriteView], error) {
+	if created.PK <= 0 {
+		return TextResult(StatusPartialFailure), SourcingCreateOutput[SupplierPartWriteView]{Status: StatusPartialFailure, RecoveryPlan: "Use a bounded supplier-part search with the requested part, supplier, and SKU identity, then verify the external link, long notes, and availability before retrying or applying any further change."}, nil
 	}
-	return TextResult(StatusOK), WriteRecordOutput[SupplierPartWriteView]{Status: StatusOK, Record: supplierPartWriteView(detail)}, nil
+	detail, err := client.GetSupplierPartDetail(ctx, created.PK)
+	if err != nil || detail.PK != created.PK || !supplierPartFieldsMatch(detail, expected) {
+		recovery := sourcingCreateRecovery(created.PK)
+		return TextResult(StatusPartialFailure), SourcingCreateOutput[SupplierPartWriteView]{Status: StatusPartialFailure, Recovery: recovery, RecoveryPlan: "Read the supplier part by its stable ID and verify the requested external link, long notes, and availability before retrying or applying any further change."}, nil
+	}
+	view := supplierPartWriteView(detail)
+	return TextResult(StatusOK), SourcingCreateOutput[SupplierPartWriteView]{Status: StatusOK, Record: &view}, nil
 }
 
-func verifyCreatedManufacturerPart(ctx context.Context, client ManufacturerPartWriteClient, created inventree.ManufacturerPart, requestedLink *string) (*mcp.CallToolResult, WriteRecordOutput[ManufacturerPartWriteView], error) {
-	detail, err := client.GetManufacturerPartDetail(ctx, created.PK)
-	if err != nil || detail.PK != created.PK || !externalURLMatches(detail.Link, requestedLink) {
-		return TextResult(StatusPartialFailure), WriteRecordOutput[ManufacturerPartWriteView]{Status: StatusPartialFailure, Record: ManufacturerPartWriteView{ManufacturerPart: created}, RecoveryPlan: "Read the manufacturer part by its stable ID and verify the external link before retrying or applying any further change."}, nil
+func verifyCreatedManufacturerPart(ctx context.Context, client ManufacturerPartWriteClient, created inventree.ManufacturerPart, expected inventree.PatchFields) (*mcp.CallToolResult, SourcingCreateOutput[ManufacturerPartWriteView], error) {
+	if created.PK <= 0 {
+		return TextResult(StatusPartialFailure), SourcingCreateOutput[ManufacturerPartWriteView]{Status: StatusPartialFailure, RecoveryPlan: "Use a bounded manufacturer-part search with the requested part, manufacturer, and MPN identity, then verify the external link and long notes before retrying or applying any further change."}, nil
 	}
-	return TextResult(StatusOK), WriteRecordOutput[ManufacturerPartWriteView]{Status: StatusOK, Record: manufacturerPartWriteView(detail)}, nil
+	detail, err := client.GetManufacturerPartDetail(ctx, created.PK)
+	if err != nil || detail.PK != created.PK || !manufacturerPartFieldsMatch(detail, expected) {
+		recovery := sourcingCreateRecovery(created.PK)
+		return TextResult(StatusPartialFailure), SourcingCreateOutput[ManufacturerPartWriteView]{Status: StatusPartialFailure, Recovery: recovery, RecoveryPlan: "Read the manufacturer part by its stable ID and verify the requested external link and long notes before retrying or applying any further change."}, nil
+	}
+	view := manufacturerPartWriteView(detail)
+	return TextResult(StatusOK), SourcingCreateOutput[ManufacturerPartWriteView]{Status: StatusOK, Record: &view}, nil
+}
+
+func sourcingCreateRecovery(id int) *SourcingCreateRecovery {
+	if id <= 0 {
+		return nil
+	}
+	return &SourcingCreateRecovery{ID: id}
+}
+
+func sourcingCreateErrorOutput[T any](err error) (*mcp.CallToolResult, SourcingCreateOutput[T], error) {
+	if validation, ok := safeValidationFailure(err); ok {
+		return TextResult(StatusValidationFailed), SourcingCreateOutput[T]{Status: StatusValidationFailed, Validation: validation}, nil
+	}
+	if isNotFound(err) {
+		return TextResult(StatusNotFound), SourcingCreateOutput[T]{Status: StatusNotFound}, nil
+	}
+	return nil, SourcingCreateOutput[T]{}, err
 }
 
 func verifyPartUpsertLinks(ctx context.Context, client PartUpsertWorkflowClient, input UpsertPartWorkflowInput, output *PartUpsertWorkflowOutput) (*mcp.CallToolResult, PartUpsertWorkflowOutput) {
@@ -1645,11 +1714,11 @@ func companyWriteView(detail inventree.CompanyDetail) CompanyWriteView {
 }
 
 func supplierPartWriteView(detail inventree.SupplierPartDetail) SupplierPartWriteView {
-	return SupplierPartWriteView{SupplierPart: inventree.SupplierPart{WebLinkFields: detail.WebLinkFields, PK: detail.PK, Part: detail.Part, Supplier: detail.Supplier, SKU: detail.SKU, Description: derefString(detail.Description), Active: detail.Active, Primary: detail.Primary, Packaging: detail.Packaging, PackQuantityNative: detail.PackQuantityNative}, Link: projectExternalURL(detail.Link)}
+	return SupplierPartWriteView{SupplierPart: inventree.SupplierPart{WebLinkFields: detail.WebLinkFields, PK: detail.PK, Part: detail.Part, Supplier: detail.Supplier, SKU: detail.SKU, Description: derefString(detail.Description), Active: detail.Active, Primary: detail.Primary, Packaging: detail.Packaging, PackQuantityNative: detail.PackQuantityNative}, Link: projectExternalURL(detail.Link), Available: detail.Available, Notes: detail.Notes}
 }
 
 func manufacturerPartWriteView(detail inventree.ManufacturerPartDetail) ManufacturerPartWriteView {
-	return ManufacturerPartWriteView{ManufacturerPart: inventree.ManufacturerPart{WebLinkFields: detail.WebLinkFields, PK: detail.PK, Part: detail.Part, Manufacturer: detail.Manufacturer, MPN: derefString(detail.MPN), Description: derefString(detail.Description)}, Link: projectExternalURL(detail.Link)}
+	return ManufacturerPartWriteView{ManufacturerPart: inventree.ManufacturerPart{WebLinkFields: detail.WebLinkFields, PK: detail.PK, Part: detail.Part, Manufacturer: detail.Manufacturer, MPN: derefString(detail.MPN), Description: derefString(detail.Description)}, Link: projectExternalURL(detail.Link), Notes: detail.Notes}
 }
 
 func writeRecordOutput[T any](record T, err error) (*mcp.CallToolResult, WriteRecordOutput[T], error) {
@@ -1663,6 +1732,11 @@ func writeRecordOutput[T any](record T, err error) (*mcp.CallToolResult, WriteRe
 func hardClarification[T any](question string, field string, reason string, retry string, retryValues map[string]any) (*mcp.CallToolResult, WriteRecordOutput[T], error) {
 	clarification := NewClarification(question, field, reason, retry, true, nil, retryValues)
 	return TextResult(StatusClarificationRequired), WriteRecordOutput[T]{Status: StatusClarificationRequired, Clarification: &clarification}, nil
+}
+
+func sourcingHardClarification[T any](question string, field string, reason string, retry string, retryValues map[string]any) (*mcp.CallToolResult, SourcingCreateOutput[T], error) {
+	clarification := NewClarification(question, field, reason, retry, true, nil, retryValues)
+	return TextResult(StatusClarificationRequired), SourcingCreateOutput[T]{Status: StatusClarificationRequired, Clarification: &clarification}, nil
 }
 
 func partHardClarification(question string, field string, reason string, retry string, retryValues map[string]any) (*mcp.CallToolResult, PartWriteOutput, error) {

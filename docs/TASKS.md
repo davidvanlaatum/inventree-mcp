@@ -124,7 +124,7 @@ Before assigning a new story ID, inspect `git worktree list --porcelain`, search
 | [F-S40](#f-s40-complete-part-exact-reads-and-scalar-maintenance) | Expose complete exact part records and align ordinary scalar create/update fields with verified serializer behavior. | Done |
 | [F-S41](#f-s41-guarded-part-revision-and-variant-relationships) | Add guarded assignment, replacement, and clearing of part revision and variant family relationships. | Done |
 | [F-S42](#f-s42-related-part-link-administration) | Expose normal related-part reads and guarded create, update, and delete operations. | Done |
-| [F-S43](#f-s43-sourcing-link-detail-completeness) | Complete supplier/manufacturer-part exact reads and long-note maintenance while retaining concise searches. | Ready |
+| [F-S43](#f-s43-sourcing-link-detail-completeness) | Complete supplier/manufacturer-part exact reads and long-note maintenance while retaining concise searches. | Done |
 | [F-S44](#f-s44-company-detail-and-role-completeness) | Complete exact company reads and guarded contact, tax, link, and customer-role maintenance. | Ready |
 | [F-S45](#f-s45-stock-item-detail-completeness) | Expose complete high-value stock-item exact-read fields while retaining concise searches and guarded mutation boundaries. | Ready |
 | [F-S46](#f-s46-stock-tracking-and-stocktake-history) | Expose bounded stock tracking events and historical part stocktake snapshots through normal read-only tools. | Planned |
@@ -2179,7 +2179,7 @@ Tasks:
 
 ### F-S43: Sourcing-Link Detail Completeness
 
-- Status: `Ready`
+- Status: `Done`
 - Issue: [#124](https://github.com/davidvanlaatum/inventree-mcp/issues/124)
 - Depends on: F-S20, F-S39
 - Decisions: approved by the operator on 2026-08-15. Exact supplier/manufacturer-part reads expose all approved fields; list/search projections remain concise and embedded company detail remains a separate `get_company` call. Raw `barcode_hash` remains excluded pending F-S55.
@@ -2193,6 +2193,13 @@ Tasks:
   - Existing sourcing create/update surfaces retain `inventree.read` plus `inventree.write`, remain closed-world and non-destructive, and preserve their reviewed per-tool idempotency annotations in authorization and generated-tool manifests.
   - API 530 nested part, company, and manufacturer-link details remain separate exact lookups; parameters, tags, and price breaks remain in their dedicated parameter, tag, and pricing workflows. Search results retain only high-value selection fields; barcode behavior is deferred to its dedicated story.
   - External links follow F-S39 and tests/docs cover nullable fields, note distinction, sanitization boundaries, and pinned API behavior.
+- Tasks:
+  - [x] Add exhaustive pinned supplier/manufacturer-part field inventories and complete approved exact-read projections while retaining concise searches.
+  - [x] Add long-note and supplier availability create/update/clear handling with exact read-back and explicit null/empty/zero semantics.
+  - [x] Preserve URL-, description-, and note-free minimal recovery, including positive-ID exact-get and missing-ID bounded-search create recovery.
+  - [x] Align plan, schema notes, tool reference, operator recipe, generated contracts, integration coverage, and the required reviewer panel.
+- Validation: `go generate ./internal/tools`, `go mod tidy -diff`, `go build ./...`, `go vet ./...`, `golangci-lint run ./...` (0 issues), `go test -tags no_integration_tests ./...`, focused pinned `GOFLAGS=-trimpath go test -race ./internal/inventree -run '^TestClientMethodsAgainstInvenTree$/writes$' -count=1`, focused pinned `GOFLAGS=-trimpath go test -race ./internal/tools -run '^TestMilestoneHappyPathToolsAgainstInvenTree$/company_and_sourcing_link_administration$' -count=1`, full serialized `GOFLAGS=-trimpath go test -race -p=1 ./...`, and `git diff --check` pass. Against exact base `origin/main` at `81cb57fd`, `internal/inventree` remains 89.2% and `internal/tools` rises from 83.9% to 84.0%; no package-level coverage reduction remains. Concurrent base/current coverage attempts both encountered the same unrelated `internal/selfupdate` timing failure; the serialized race suite passed that package and the full repository.
+- Review: Senior Go Developer, Senior QA / Test Architect, Senior Product Manager, and Senior Infosec Reviewer passes completed. Findings on nullable exact-wire keys, truthful direct-create projection documentation, privacy-minimal partial-create recovery, conditional recovery without a positive stable ID, fail-closed nonpositive IDs, operator guidance, and negative-ID coverage were resolved. Focused reruns of all four roles found no remaining actionable findings.
 - Residual risk: derived MPN and in-stock values can change independently of the sourcing-link record; callers must treat them as read-time context rather than stable identity.
 
 ### F-S44: Company Detail And Role Completeness

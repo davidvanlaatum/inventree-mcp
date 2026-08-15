@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"image"
 	"image/color"
 	"image/png"
@@ -303,11 +304,15 @@ func TestClientMethodsAgainstInvenTree(t *testing.T) {
 
 		sku, err := fixture.run.Name("sku")
 		r.NoError(err)
+		supplierNotes := "supplier **Markdown** notes"
+		available := 12.5
 		supplierPart, err := fixture.client.CreateSupplierPart(ctx, inventree.SupplierPartCreate{
-			Part:     part.PK,
-			Supplier: supplier.PK,
-			SKU:      sku,
-			Active:   dvgoutils.Ptr(false),
+			Part:      part.PK,
+			Supplier:  supplier.PK,
+			SKU:       sku,
+			Active:    dvgoutils.Ptr(false),
+			Notes:     &supplierNotes,
+			Available: &available,
 		})
 		r.NoError(err)
 		r.NotZero(supplierPart.PK)
@@ -320,6 +325,22 @@ func TestClientMethodsAgainstInvenTree(t *testing.T) {
 		supplierPartDetail, err := fixture.client.GetSupplierPartDetail(ctx, supplierPart.PK)
 		r.NoError(err)
 		r.Equal(supplierPart.PK, supplierPartDetail.PK)
+		r.Equal(supplierNotes, *supplierPartDetail.Notes)
+		r.Equal(available, supplierPartDetail.Available)
+		r.NotNil(supplierPartDetail.AvailabilityUpdated)
+		r.NotNil(supplierPartDetail.Updated)
+		var supplierRaw map[string]any
+		req, err := fixture.client.NewRequest(ctx, "GET", fmt.Sprintf("/api/company/part/%d/", supplierPart.PK), nil, nil)
+		r.NoError(err)
+		r.NoError(fixture.client.DoJSON(req, &supplierRaw))
+		for field, class := range inventree.SupplierPartFieldInventory {
+			if class == inventree.SourcingPartFieldExposed {
+				r.Contains(supplierRaw, field, "pinned supplier response field %s", field)
+			}
+		}
+		for field := range supplierRaw {
+			r.Contains(inventree.SupplierPartFieldInventory, field, "unclassified supplier response field %s", field)
+		}
 		updatedSupplierPart, err := fixture.client.UpdateSupplierPart(ctx, supplierPart.PK, inventree.PatchFields{"description": inventree.Set("updated supplier part"), "primary": inventree.Set(false)})
 		r.NoError(err)
 		r.NotNil(updatedSupplierPart.Description)
@@ -327,10 +348,12 @@ func TestClientMethodsAgainstInvenTree(t *testing.T) {
 
 		mpn, err := fixture.run.Name("mpn")
 		r.NoError(err)
+		manufacturerNotes := "manufacturer **Markdown** notes"
 		manufacturerPart, err := fixture.client.CreateManufacturerPart(ctx, inventree.ManufacturerPartCreate{
 			Part:         part.PK,
 			Manufacturer: manufacturer.PK,
 			MPN:          dvgoutils.Ptr(mpn),
+			Notes:        &manufacturerNotes,
 		})
 		r.NoError(err)
 		r.NotZero(manufacturerPart.PK)
@@ -343,10 +366,36 @@ func TestClientMethodsAgainstInvenTree(t *testing.T) {
 		manufacturerPartDetail, err := fixture.client.GetManufacturerPartDetail(ctx, manufacturerPart.PK)
 		r.NoError(err)
 		r.Equal(manufacturerPart.PK, manufacturerPartDetail.PK)
+		r.Equal(manufacturerNotes, *manufacturerPartDetail.Notes)
+		var manufacturerRaw map[string]any
+		req, err = fixture.client.NewRequest(ctx, "GET", fmt.Sprintf("/api/company/part/manufacturer/%d/", manufacturerPart.PK), nil, nil)
+		r.NoError(err)
+		r.NoError(fixture.client.DoJSON(req, &manufacturerRaw))
+		for field, class := range inventree.ManufacturerPartFieldInventory {
+			if class == inventree.SourcingPartFieldExposed {
+				r.Contains(manufacturerRaw, field, "pinned manufacturer response field %s", field)
+			}
+		}
+		for field := range manufacturerRaw {
+			r.Contains(inventree.ManufacturerPartFieldInventory, field, "unclassified manufacturer response field %s", field)
+		}
 		updatedManufacturerPart, err := fixture.client.UpdateManufacturerPart(ctx, manufacturerPart.PK, inventree.PatchFields{"description": inventree.Set("updated manufacturer part")})
 		r.NoError(err)
 		r.NotNil(updatedManufacturerPart.Description)
 		r.Equal("updated manufacturer part", *updatedManufacturerPart.Description)
+
+		_, err = fixture.client.UpdateSupplierPart(ctx, supplierPart.PK, inventree.PatchFields{"manufacturer_part": inventree.Set(manufacturerPart.PK), "available": inventree.Set(0.0), "notes": inventree.Null()})
+		r.NoError(err)
+		supplierPartDetail, err = fixture.client.GetSupplierPartDetail(ctx, supplierPart.PK)
+		r.NoError(err)
+		r.Equal(mpn, *supplierPartDetail.MPN)
+		r.Zero(supplierPartDetail.Available)
+		r.Nil(supplierPartDetail.Notes)
+		_, err = fixture.client.UpdateManufacturerPart(ctx, manufacturerPart.PK, inventree.PatchFields{"notes": inventree.Null()})
+		r.NoError(err)
+		manufacturerPartDetail, err = fixture.client.GetManufacturerPartDetail(ctx, manufacturerPart.PK)
+		r.NoError(err)
+		r.Nil(manufacturerPartDetail.Notes)
 
 		manufacturerParts, err := fixture.client.SearchManufacturerParts(ctx, inventree.ManufacturerPartQuery{
 			Part:         part.PK,
