@@ -7,6 +7,19 @@ Go-based Model Context Protocol server for common InvenTree data-entry workflows
 
 Current status: milestone 1 STDIO workflows are implemented for part/company entry, parameters, initial stock, attachments/images, purchase previews, and prompt checklists. Production HTTP startup serves the protected streamable HTTP `/mcp` endpoint plus an MCP-owned ChatGPT connector authorization/setup flow using CIMD `private_key_jwt`, PKCE S256, encrypted token envelopes, and per-tool scope checks. Reverse-proxy hardening and live packaged deployment validation remain follow-up work.
 
+## Supported InvenTree Versions
+
+This table records the InvenTree version and API revision the blocking Testcontainers integration suite verified against for each released `inventree-mcp` version. It documents tested compatibility only; it is not a claim of minimum supported InvenTree version. See [Compatibility Decisions](docs/PLAN.md#compatibility-decisions) for the full policy. The last row always tracks the InvenTree pin currently in effect on `main`, shown as its shipped tag once released; it instead reads `` `main` (unreleased) `` whenever that pin has not yet shipped in a tagged release.
+
+<!-- BEGIN inventree-compat-table -->
+| inventree-mcp version | InvenTree version | API revision |
+| --- | --- | --- |
+| `v0.0.1` | 1.4.0 | 511 |
+| `v0.0.2`–`v0.0.10` | 1.4.3 | 511 |
+<!-- inventree-compat-table:current-row -->
+| `v0.0.11` | 1.5.0 | 530 |
+<!-- END inventree-compat-table -->
+
 ## Quick Start
 
 Run STDIO mode:

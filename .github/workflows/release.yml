@@ -32,6 +32,18 @@ jobs:
             exit 1
           fi
 
+      - name: Verify README compatibility table is resolved
+        run: |
+          row=$(awk '/<!-- inventree-compat-table:current-row -->/{getline; print; exit}' README.md)
+          if [ -z "$row" ]; then
+            echo "::error::Could not locate the README compatibility table's current-row anchor" >&2
+            exit 1
+          fi
+          if printf '%s' "$row" | grep -q 'unreleased'; then
+            echo "::error::README compatibility table still shows an unreleased InvenTree pin ($row); replace the placeholder with this release's tag before tagging." >&2
+            exit 1
+          fi
+
       - name: Run tests
         run: go test -v -race ./...
 

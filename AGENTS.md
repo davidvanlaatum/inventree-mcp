@@ -1,7 +1,7 @@
 # Agent Instructions
 
 - If comments are unclear or require a product/workflow decision, report the specific question instead of guessing.
-- Keep `docs/PLAN.md`, `docs/TASKS.md`, `docs/api-schema.md`, tool reference docs, and operator recipes aligned with behavior changes.
+- Keep `docs/PLAN.md`, `docs/TASKS.md`, `docs/api-schema.md`, tool reference docs, operator recipes, and the README's [Supported InvenTree Versions](README.md#supported-inventree-versions) compatibility table aligned with behavior changes.
 - Use `docs/reviewers.md` as the standard reviewer roster for future review passes and keep it aligned when reviewer responsibilities change.
 
 ## Task Workflow
@@ -49,6 +49,8 @@ When picking up an implementation task from `docs/TASKS.md`:
 
 - Releases are created by pushing semantic version tags shaped as `vX.X.X` to GitHub. The tag workflow runs GoReleaser and publishes GitHub release assets.
 - Before creating or pushing a release tag, start from an up-to-date `main`, run the local validation relevant to the change, and run `goreleaser check` when GoReleaser is installed.
+- The README's [Supported InvenTree Versions](README.md#supported-inventree-versions) table's last row is fenced with `<!-- inventree-compat-table:current-row -->`. Before pushing a `git tag`, if that row still reads `` `main` (unreleased) ``, replace it with the tag about to be pushed in a commit on `main`, then tag that same commit, so the tagged commit's own README already reports its correct version. If the InvenTree pin has not changed since the last tag, no edit is needed; the existing row's range label may optionally be extended to also cover the new tag. The tag-triggered `Release` workflow fails before publishing if that row still reads `` `main` (unreleased) ``; if it does, delete the just-pushed tag (safe because no release assets were published yet), fix the row on `main`, and re-tag.
+- A pin-change commit — one that edits `internal/testenv`'s `DefaultInvenTreeImage`/`DefaultVersion`/`DefaultAPIVersion` constants, such as an InvenTree-baseline story — closes the compatibility table's previous current row at the last tag that carried the old pin and opens a new `` `main` (unreleased) `` current row for the new pin, in the same change that edits those constants.
 - Release packages are configured in `.goreleaser.yaml` and include Linux `deb`, `rpm`, and `apk` packages plus archived binaries and checksums. Run `goreleaser release --snapshot --clean` locally when changing release/package behavior, and keep the `Release Preview` workflow passing on PRs.
 - `goreleaser-snapshot` is a required repository check, so the real `Release Preview` snapshot must run for every pull request. Do not add pull-request path filters, pass-through jobs, or synthetic success checks. If this policy changes, update the repository ruleset first and document the replacement validation policy.
 - Direct-install release archives must contain exactly one regular `inventree-mcp` executable so the local updater can reject every unexpected archive entry. Keep the archive name template and `checksums.txt` layout aligned with `internal/selfupdate`; do not restore GoReleaser's default README/license archive entries without changing and reviewing the updater policy.
