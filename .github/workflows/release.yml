@@ -34,7 +34,7 @@ jobs:
 
       - name: Verify README compatibility table is resolved
         run: |
-          row=$(awk '/<!-- inventree-compat-table:current-row -->/{getline; print; exit}' README.md)
+          row=$(awk '/<!-- inventree-compat-table:current-row -->/{print; exit}' README.md)
           if [ -z "$row" ]; then
             echo "::error::Could not locate the README compatibility table's current-row anchor" >&2
             exit 1

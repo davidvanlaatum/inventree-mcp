@@ -16,17 +16,17 @@ func TestReadmeCompatTableMatchesBlockingPin(t *testing.T) {
 	const anchor = "<!-- inventree-compat-table:current-row -->"
 	lines := strings.Split(inventreemcp.ReadmeMarkdown(), "\n")
 
-	idx := -1
-	for i, line := range lines {
+	row := ""
+	found := false
+	for _, line := range lines {
 		if strings.Contains(line, anchor) {
-			idx = i
+			row = line
+			found = true
 			break
 		}
 	}
-	r.NotEqual(-1, idx, "README is missing the %q anchor", anchor)
-	r.Less(idx+1, len(lines), "README's compat-table anchor has no following row")
+	r.True(found, "README is missing the %q anchor", anchor)
 
-	row := lines[idx+1]
 	cells := strings.Split(row, "|")
 	r.GreaterOrEqual(len(cells), 4, "compat-table current row %q does not have the expected pipe-delimited cells", row)
 
