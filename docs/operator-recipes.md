@@ -28,6 +28,15 @@ If the later smoke test requires manual recovery, stop every process using the b
 - The checked machine-readable source is `docs/tool-manifest.json`, generated with `go generate ./internal/tools`.
 - Use `docs/tool-reference.md` for field-level contracts, mutation classes, upload sources, required scopes, MCP annotations, and clarification retry fields.
 
+## Check InvenTree Instance Info
+
+Call `get_inventree_instance_info` (no input) to confirm which InvenTree server/API version and instance identity a session is talking to, and to check the small operator-approved set of module/workflow-availability settings before assuming a feature (return orders, transfer orders, stocktake, project codes, part revisions/locking, barcode/label/report support) is usable.
+
+- Returns `server`, `version`, `api_version`, `instance`, `plugins_enabled`, and, when the credential has sufficient privilege, `commit_hash`/`commit_date`/`up_to_date`.
+- Returns `global_settings` and `user_settings` maps containing only the F-S71 operator-approved allowlisted keys (see `docs/api-schema.md` for the exact list and rationale); it never enumerates or exposes the full settings surface.
+- A missing/renamed allowlisted key, or a credential without sufficient InvenTree staff access for `/api/settings/global/{key}/`, is omitted from the corresponding map and listed by key in `omitted_global_settings`/`omitted_user_settings` instead of failing the call -- do not treat a nonempty `omitted_*` list as an error.
+- Requires only `inventree.read`; no `confirm` or destructive scope is involved.
+
 ## MCP Functionality-Gap Guidance
 
 Current `server/discover` and legacy `initialize` publish the same advisory server instructions in STDIO and HTTP modes. They ask consuming agents to distinguish a missing `inventree-mcp` capability from input, authorization, configuration, or upstream limitations; explain any safe workaround; check open and closed project issues when GitHub access is available; and obtain operator approval before creating an untracked issue. Clients may ignore this guidance, and agents without GitHub access must disclose that they cannot verify existing coverage and ask whether the operator wants the gap checked and, if untracked, an issue created.

@@ -16,6 +16,7 @@ coverage_areas:
   - bom
   - manufacturing
   - sales_orders
+  - instance_info
 
 forbidden_paths:
   - /api/notes-image-upload/
@@ -612,3 +613,27 @@ endpoints:
     method: POST
     operation_id: order_po_issue_create
     response_status: 201
+  - id: get_instance_server_info
+    area: instance_info
+    path: /api/
+    method: GET
+    operation_id: root_retrieve
+    response_schema: '#/components/schemas/InfoApi'
+  - id: get_instance_version_info
+    area: instance_info
+    path: /api/version/
+    method: GET
+    operation_id: version_retrieve
+    response_schema: '#/components/schemas/VersionView'
+  - id: get_instance_global_setting
+    area: instance_info
+    path: /api/settings/global/{key}/
+    method: GET
+    operation_id: settings_global_retrieve
+    response_schema: '#/components/schemas/GlobalSettings'
+  - id: get_instance_user_setting
+    area: instance_info
+    path: /api/settings/user/{key}/
+    method: GET
+    operation_id: settings_user_retrieve
+    response_schema: '#/components/schemas/UserSettings'

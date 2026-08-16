@@ -176,6 +176,7 @@ var lookupToolNames = []string{
 	GetPurchaseOrderLineToolName,
 	SearchPurchaseOrderExtraLinesToolName,
 	GetPurchaseOrderExtraLineToolName,
+	GetInstanceInfoToolName,
 }
 
 var writeToolNames = []string{
@@ -528,6 +529,7 @@ func registerLookupTools(server *mcp.Server, deps Dependencies) {
 	addReadOnlyTool(server, deps, DownloadPartImageToolName, "Download part image", "Downloads bounded content for a part primary image.", downloadPartImage(deps))
 	addReadOnlyTool(server, deps, PreviewPurchaseOrderToolName, "Preview purchase order with lines", "Validates supplier-part lines and returns a no-write purchase-order preview.", previewPurchaseOrder(deps))
 	registerPurchasingLookupTools(server, deps)
+	registerInstanceInfoTool(server, deps)
 }
 
 func addReadOnlyTool[In, Out any](server *mcp.Server, deps Dependencies, name string, title string, description string, handler mcp.ToolHandlerFor[In, Out]) {

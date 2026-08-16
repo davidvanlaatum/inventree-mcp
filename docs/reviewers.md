@@ -93,6 +93,7 @@ Run the full panel before:
 
 - Changing HTTP auth, OAuth, token envelope, or setup flow behavior.
 - Adding new mutating workflow tools.
+- Adding a new tool that reads staff-scoped or administrative InvenTree data (settings, plugins, user/permission records, and similar) rather than ordinary business data, per the precedent set by F-S71's `get_inventree_instance_info`.
 - Expanding upload, URL fetch, or filesystem access behavior.
 - Changing Testcontainers integration architecture.
 - Declaring a milestone complete.
