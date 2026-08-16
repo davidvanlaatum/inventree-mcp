@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/davidvanlaatum/inventree-mcp/internal/buildinfo"
 	"github.com/davidvanlaatum/inventree-mcp/internal/inventree"
 	"github.com/moby/moby/api/types/container"
 	dockernetwork "github.com/moby/moby/api/types/network"
@@ -22,9 +23,9 @@ import (
 )
 
 const (
-	DefaultInvenTreeImage = "inventree/inventree:1.5.0"
-	DefaultAPIVersion     = "530"
-	DefaultVersion        = "1.5.0"
+	DefaultInvenTreeImage = "inventree/inventree:" + buildinfo.PinnedInvenTreeVersion
+	DefaultAPIVersion     = buildinfo.PinnedInvenTreeAPIVersion
+	DefaultVersion        = buildinfo.PinnedInvenTreeVersion
 
 	EnvSkipDocker = "INVENTREE_TEST_SKIP_DOCKER"
 )

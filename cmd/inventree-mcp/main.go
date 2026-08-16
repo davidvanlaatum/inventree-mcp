@@ -55,9 +55,44 @@ func runWithContext(parentCtx context.Context, args []string, stdout, stderr io.
 
 	switch args[0] {
 	case "version", "--version":
-		writeLine(stdout, "version: %s", buildinfo.Version)
-		writeLine(stdout, "commit: %s", buildinfo.Commit)
-		writeLine(stdout, "date: %s", buildinfo.Date)
+		var flagOutput bytes.Buffer
+		flags := flag.NewFlagSet("version", flag.ContinueOnError)
+		flags.SetOutput(&flagOutput)
+		porcelain := flags.String("porcelain", "", "print machine-readable porcelain output for the given porcelain format version (e.g. 1) instead of human-readable text")
+		if err := flags.Parse(args[1:]); err != nil {
+			if errors.Is(err, flag.ErrHelp) {
+				_, _ = io.Copy(stdout, &flagOutput)
+				return 0
+			}
+			_, _ = io.Copy(stderr, &flagOutput)
+			writeLine(stderr, "inventree-mcp: %v", err)
+			return 2
+		}
+		if flags.NArg() != 0 {
+			writeLine(stderr, "inventree-mcp: version accepts flags only")
+			return 2
+		}
+		// An omitted --porcelain and an explicit --porcelain="" are indistinguishable here and
+		// both fall back to human-readable output; requireVersion always passes a non-empty
+		// buildinfo.PorcelainMarker, so this ambiguity is unreachable from self-update.
+		if *porcelain == "" {
+			writeLine(stdout, "inventree-mcp %s (commit %s, built %s)", buildinfo.Version, buildinfo.Commit, buildinfo.Date)
+			if buildinfo.PinnedInvenTreeVersion != "" {
+				writeLine(stdout, "InvenTree baseline: %s (API %s)", buildinfo.PinnedInvenTreeVersion, buildinfo.PinnedInvenTreeAPIVersion)
+			}
+			return 0
+		}
+		// This only ever matches the single format version this build currently produces; it
+		// does not yet serve older formats on request. The requested marker is taken as an
+		// explicit argument (rather than assumed) so that a future format bump can add
+		// per-version output selection here without changing this command's calling contract.
+		if *porcelain != buildinfo.PorcelainMarker {
+			writeLine(stderr, "inventree-mcp: unsupported porcelain marker %q; this build supports %q", *porcelain, buildinfo.PorcelainMarker)
+			return 2
+		}
+		for _, line := range buildinfo.PorcelainLines() {
+			writeLine(stdout, "%s", line)
+		}
 		return 0
 	case "serve":
 		var flagOutput bytes.Buffer
@@ -124,6 +159,9 @@ func runWithContext(parentCtx context.Context, args []string, stdout, stderr io.
 			return 0
 		}
 		writeLine(stdout, "updated inventree-mcp from %s to %s", result.PreviousVersion, result.Version)
+		if result.NewInvenTreeVersion != "" {
+			writeLine(stdout, "InvenTree baseline: %s (API %s) -> %s (API %s)", result.PreviousInvenTreeVersion, result.PreviousInvenTreeAPI, result.NewInvenTreeVersion, result.NewInvenTreeAPI)
+		}
 		writeLine(stdout, "previous binary: %s", result.BackupPath)
 		return 0
 	case "help", "-h", "--help":

@@ -13,6 +13,7 @@ import (
 	"testing"
 
 	"github.com/davidvanlaatum/dvgoutils/logging/testhandler"
+	"github.com/davidvanlaatum/inventree-mcp/internal/buildinfo"
 	"github.com/moby/moby/api/types/container"
 	dockernetwork "github.com/moby/moby/api/types/network"
 	"github.com/stretchr/testify/assert"
@@ -26,11 +27,20 @@ func TestDefaultOptionsPinInvenTreeVersion(t *testing.T) {
 
 	opts := DefaultOptions()
 
-	a.Equal("inventree/inventree:1.5.0", opts.Image)
-	a.Equal("1.5.0", opts.ExpectedVersion)
-	a.Equal("530", opts.ExpectedAPIVersion)
+	a.Equal("inventree/inventree:"+buildinfo.PinnedInvenTreeVersion, opts.Image)
+	a.Equal(buildinfo.PinnedInvenTreeVersion, opts.ExpectedVersion)
+	a.Equal(buildinfo.PinnedInvenTreeAPIVersion, opts.ExpectedAPIVersion)
 	a.Equal(defaultStartupTimeout, opts.StartupTimeout)
 	a.NoError(ValidateOptions(opts))
+}
+
+func TestDefaultConstantsMatchBuildinfoBaseline(t *testing.T) {
+	t.Parallel()
+	a := assert.New(t)
+
+	a.Equal("inventree/inventree:"+buildinfo.PinnedInvenTreeVersion, DefaultInvenTreeImage)
+	a.Equal(buildinfo.PinnedInvenTreeVersion, DefaultVersion)
+	a.Equal(buildinfo.PinnedInvenTreeAPIVersion, DefaultAPIVersion)
 }
 
 func TestDefaultTestOptionsForwardsContainerLogs(t *testing.T) {
