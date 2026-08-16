@@ -458,6 +458,12 @@ func (c *Client) UpdatePurchaseOrder(ctx context.Context, id int, fields PatchFi
 	return out, err
 }
 
+func (c *Client) UpdatePurchaseOrderDetail(ctx context.Context, id int, fields PatchFields) (PurchaseOrderDetail, error) {
+	var out PurchaseOrderDetail
+	err := c.Patch(ctx, fmt.Sprintf("/api/order/po/%d/", id), fields, &out)
+	return out, err
+}
+
 func (c *Client) CreatePurchaseOrderLine(ctx context.Context, input PurchaseOrderLineCreate) (PurchaseOrderLineItem, error) {
 	var out PurchaseOrderLineItem
 	err := c.Post(ctx, "/api/order/po-line/", input, &out)

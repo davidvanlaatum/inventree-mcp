@@ -2018,6 +2018,29 @@
       ]
     },
     {
+      "name": "update_purchase_order",
+      "milestone_status": "milestone_1",
+      "mutation_class": "write",
+      "scopes": [
+        "inventree.read",
+        "inventree.write"
+      ],
+      "annotations": {
+        "read_only": false,
+        "destructive": false,
+        "idempotent": true,
+        "open_world": false
+      },
+      "upload_sources": null,
+      "http_registration": "registered_with_oauth_scope_guard",
+      "icons": [
+        {
+          "src": "https://docs.inventree.org/en/latest/assets/logo.png",
+          "mimeType": "image/png"
+        }
+      ]
+    },
+    {
       "name": "update_purchase_order_extra_line",
       "milestone_status": "milestone_1",
       "mutation_class": "write",

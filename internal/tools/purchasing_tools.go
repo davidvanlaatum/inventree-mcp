@@ -26,6 +26,34 @@ type PurchaseOrderLookupClient interface {
 	GetPurchaseOrderLine(context.Context, int) (inventree.PurchaseOrderLineItem, error)
 }
 
+type PurchaseOrderDetailClient interface {
+	GetPurchaseOrderDetail(context.Context, int) (inventree.PurchaseOrderDetail, error)
+}
+
+type PurchaseOrderLineDetailClient interface {
+	GetPurchaseOrderLineDetail(context.Context, int) (inventree.PurchaseOrderLineItemDetail, error)
+}
+
+type PurchaseOrderUpdateClient interface {
+	GetStockLocation(context.Context, int) (inventree.StockLocation, error)
+	UpdatePurchaseOrderDetail(context.Context, int, inventree.PatchFields) (inventree.PurchaseOrderDetail, error)
+}
+
+// purchaseOrderDetailView projects PurchaseOrderDetail's link through the
+// F-S39 external-link policy for get_purchase_order and update_purchase_order
+// output.
+func purchaseOrderDetailView(record inventree.PurchaseOrderDetail) inventree.PurchaseOrderDetail {
+	if record.Link != "" {
+		record.Link = projectExternalURL(&record.Link)
+	}
+	return record
+}
+
+func purchaseOrderLineItemDetailView(record inventree.PurchaseOrderLineItemDetail) inventree.PurchaseOrderLineItemDetail {
+	record.PurchaseOrderLineItem = sanitizePurchaseOrderLine(record.PurchaseOrderLineItem)
+	return record
+}
+
 type PurchaseOrderWriteClient interface {
 	GetCompany(context.Context, int) (inventree.Company, error)
 	GetStockLocation(context.Context, int) (inventree.StockLocation, error)
@@ -113,6 +141,23 @@ type CreatePurchaseOrderInput struct {
 	DestinationID     *int    `json:"destination_id,omitempty" jsonschema:"Optional receiving stock-location primary key."`
 }
 
+type UpdatePurchaseOrderInput struct {
+	ID                int     `json:"id" jsonschema:"Existing purchase-order primary key."`
+	Description       *string `json:"description,omitempty" jsonschema:"Optional replacement order description, including an explicit empty string."`
+	Notes             *string `json:"notes,omitempty" jsonschema:"Optional replacement Markdown notes."`
+	ClearNotes        bool    `json:"clear_notes,omitempty" jsonschema:"Explicitly PATCH notes to null; mutually exclusive with notes."`
+	SupplierReference *string `json:"supplier_reference,omitempty" jsonschema:"Optional replacement supplier or external order identifier, including an explicit empty string."`
+	CreationDate      *string `json:"creation_date,omitempty" jsonschema:"Optional replacement creation date in YYYY-MM-DD form. Pinned InvenTree 1.5.0 behavior resets this to the current date rather than clearing it when sent null, so no clear flag is offered."`
+	StartDate         *string `json:"start_date,omitempty" jsonschema:"Optional replacement scheduled start date in YYYY-MM-DD form."`
+	ClearStartDate    bool    `json:"clear_start_date,omitempty" jsonschema:"Explicitly PATCH start_date to null; mutually exclusive with start_date."`
+	TargetDate        *string `json:"target_date,omitempty" jsonschema:"Optional replacement target delivery date in YYYY-MM-DD form."`
+	ClearTargetDate   bool    `json:"clear_target_date,omitempty" jsonschema:"Explicitly PATCH target_date to null; mutually exclusive with target_date."`
+	Currency          *string `json:"currency,omitempty" jsonschema:"Optional replacement order currency, including an explicit empty string to use the supplier default."`
+	DestinationID     *int    `json:"destination_id,omitempty" jsonschema:"Optional replacement receiving stock-location primary key."`
+	ClearDestination  bool    `json:"clear_destination,omitempty" jsonschema:"Explicitly PATCH destination to null; mutually exclusive with destination_id."`
+	Link              *string `json:"link,omitempty" jsonschema:"Optional replacement complete HTTP(S) link without userinfo; an explicit empty string clears it."`
+}
+
 type AddPurchaseOrderLineInput struct {
 	OrderID        int      `json:"order_id" jsonschema:"Existing purchase-order primary key."`
 	SupplierPartID int      `json:"supplier_part_id" jsonschema:"Existing supplier-part primary key."`
@@ -137,6 +182,8 @@ type UpdatePurchaseOrderLineInput struct {
 	Currency       *string  `json:"currency,omitempty" jsonschema:"Optional replacement purchase price currency."`
 	TargetDate     *string  `json:"target_date,omitempty" jsonschema:"Optional replacement target date in YYYY-MM-DD form."`
 	DestinationID  *int     `json:"destination_id,omitempty" jsonschema:"Optional replacement receiving stock-location primary key."`
+	Link           *string  `json:"link,omitempty" jsonschema:"Optional replacement complete HTTP(S) link without userinfo; an explicit empty string clears it."`
+	Discount       *float64 `json:"discount,omitempty" jsonschema:"Optional replacement discount value."`
 }
 
 type PurchaseOrderWorkflowInput struct {
@@ -304,6 +351,7 @@ func registerPurchasingLookupTools(server *mcp.Server, deps Dependencies) {
 
 func registerPurchasingWriteTools(server *mcp.Server, deps Dependencies) {
 	addWriteTool(server, deps, CreatePurchaseOrderToolName, "Create purchase order", "Creates a purchase order for an existing supplier.", createPurchaseOrder(deps))
+	addWriteTool(server, deps, UpdatePurchaseOrderToolName, "Update purchase order", "Partially updates purchase-order metadata by stable ID.", updatePurchaseOrder(deps))
 	addWriteTool(server, deps, AddPurchaseOrderLineToolName, "Add purchase order line", "Adds a validated supplier-part line to an existing purchase order.", addPurchaseOrderLine(deps))
 	addWriteTool(server, deps, UpdatePurchaseOrderLineToolName, "Update purchase order line", "Partially updates a purchase-order line after supplier consistency validation.", updatePurchaseOrderLine(deps))
 	registerPurchaseOrderLineDeleteTool(server, deps)
@@ -322,11 +370,17 @@ func searchPurchaseOrders(deps Dependencies) mcp.ToolHandlerFor[PurchaseOrderSea
 		})
 }
 
-func getPurchaseOrder(deps Dependencies) mcp.ToolHandlerFor[IDInput, RecordOutput[inventree.PurchaseOrder]] {
-	return LookupHandler[PurchaseOrderLookupClient, IDInput, RecordOutput[inventree.PurchaseOrder]](deps, GetPurchaseOrderToolName,
-		func(ctx context.Context, _ *mcp.CallToolRequest, client PurchaseOrderLookupClient, input IDInput) (*mcp.CallToolResult, RecordOutput[inventree.PurchaseOrder], error) {
-			record, err := client.GetPurchaseOrder(ctx, input.ID)
-			return recordOutput(record, err)
+func getPurchaseOrder(deps Dependencies) mcp.ToolHandlerFor[IDInput, RecordOutput[inventree.PurchaseOrderDetail]] {
+	return LookupHandler[PurchaseOrderDetailClient, IDInput, RecordOutput[inventree.PurchaseOrderDetail]](deps, GetPurchaseOrderToolName,
+		func(ctx context.Context, _ *mcp.CallToolRequest, client PurchaseOrderDetailClient, input IDInput) (*mcp.CallToolResult, RecordOutput[inventree.PurchaseOrderDetail], error) {
+			record, err := client.GetPurchaseOrderDetail(ctx, input.ID)
+			if err == nil && record.PK != input.ID {
+				return nil, RecordOutput[inventree.PurchaseOrderDetail]{}, errors.New("InvenTree returned a mismatched purchase-order identity")
+			}
+			if err != nil {
+				return recordOutput(inventree.PurchaseOrderDetail{}, err)
+			}
+			return recordOutput(purchaseOrderDetailView(record), nil)
 		})
 }
 
@@ -334,15 +388,24 @@ func searchPurchaseOrderLines(deps Dependencies) mcp.ToolHandlerFor[PurchaseOrde
 	return LookupHandler[PurchaseOrderLookupClient, PurchaseOrderLineSearchInput, LookupOutput[inventree.PurchaseOrderLineItem]](deps, SearchPurchaseOrderLinesToolName,
 		func(ctx context.Context, _ *mcp.CallToolRequest, client PurchaseOrderLookupClient, input PurchaseOrderLineSearchInput) (*mcp.CallToolResult, LookupOutput[inventree.PurchaseOrderLineItem], error) {
 			records, err := client.SearchPurchaseOrderLines(ctx, inventree.PurchaseOrderLineQuery{Search: input.Search, Order: input.OrderID, SupplierPart: input.SupplierPartID, Pending: input.Pending, Received: input.Received, Limit: NormalizeLookupLimit(input.Limit), Offset: input.Offset})
+			if err == nil {
+				records = sanitizePurchaseOrderLines(records)
+			}
 			return listOutput(records, err)
 		})
 }
 
-func getPurchaseOrderLine(deps Dependencies) mcp.ToolHandlerFor[IDInput, RecordOutput[inventree.PurchaseOrderLineItem]] {
-	return LookupHandler[PurchaseOrderLookupClient, IDInput, RecordOutput[inventree.PurchaseOrderLineItem]](deps, GetPurchaseOrderLineToolName,
-		func(ctx context.Context, _ *mcp.CallToolRequest, client PurchaseOrderLookupClient, input IDInput) (*mcp.CallToolResult, RecordOutput[inventree.PurchaseOrderLineItem], error) {
-			record, err := client.GetPurchaseOrderLine(ctx, input.ID)
-			return recordOutput(record, err)
+func getPurchaseOrderLine(deps Dependencies) mcp.ToolHandlerFor[IDInput, RecordOutput[inventree.PurchaseOrderLineItemDetail]] {
+	return LookupHandler[PurchaseOrderLineDetailClient, IDInput, RecordOutput[inventree.PurchaseOrderLineItemDetail]](deps, GetPurchaseOrderLineToolName,
+		func(ctx context.Context, _ *mcp.CallToolRequest, client PurchaseOrderLineDetailClient, input IDInput) (*mcp.CallToolResult, RecordOutput[inventree.PurchaseOrderLineItemDetail], error) {
+			record, err := client.GetPurchaseOrderLineDetail(ctx, input.ID)
+			if err == nil && record.PK != input.ID {
+				return nil, RecordOutput[inventree.PurchaseOrderLineItemDetail]{}, errors.New("InvenTree returned a mismatched purchase-order line identity")
+			}
+			if err != nil {
+				return recordOutput(inventree.PurchaseOrderLineItemDetail{}, err)
+			}
+			return recordOutput(purchaseOrderLineItemDetailView(record), nil)
 		})
 }
 
@@ -379,6 +442,35 @@ func createPurchaseOrder(deps Dependencies) mcp.ToolHandlerFor[CreatePurchaseOrd
 		})
 }
 
+func updatePurchaseOrder(deps Dependencies) mcp.ToolHandlerFor[UpdatePurchaseOrderInput, WriteRecordOutput[inventree.PurchaseOrderDetail]] {
+	return LookupHandler[PurchaseOrderUpdateClient, UpdatePurchaseOrderInput, WriteRecordOutput[inventree.PurchaseOrderDetail]](deps, UpdatePurchaseOrderToolName,
+		func(ctx context.Context, _ *mcp.CallToolRequest, client PurchaseOrderUpdateClient, input UpdatePurchaseOrderInput) (*mcp.CallToolResult, WriteRecordOutput[inventree.PurchaseOrderDetail], error) {
+			if input.ID <= 0 {
+				return updatePurchaseOrderClarification("Which purchase order should be updated?", "id must be positive", input.ID)
+			}
+			fields, err := updatePurchaseOrderPatch(input)
+			if err != nil {
+				return updatePurchaseOrderClarification("Which valid purchase-order fields should be updated?", err.Error(), input.ID)
+			}
+			if len(fields) == 0 {
+				return updatePurchaseOrderClarification("Which purchase-order fields should be updated?", "update_purchase_order requires at least one PATCH field", input.ID)
+			}
+			if input.DestinationID != nil {
+				if _, err := client.GetStockLocation(ctx, *input.DestinationID); err != nil {
+					return writeRecordOutput(inventree.PurchaseOrderDetail{}, err)
+				}
+			}
+			record, err := client.UpdatePurchaseOrderDetail(ctx, input.ID, fields)
+			if err != nil {
+				return writeRecordOutput(inventree.PurchaseOrderDetail{}, err)
+			}
+			if record.PK != input.ID {
+				return TextResult(StatusPartialFailure), WriteRecordOutput[inventree.PurchaseOrderDetail]{Status: StatusPartialFailure, RecoveryPlan: "PATCH returned a mismatched stable identity; read the order by its original ID before retrying."}, nil
+			}
+			return writeRecordOutput(purchaseOrderDetailView(record), nil)
+		})
+}
+
 func addPurchaseOrderLine(deps Dependencies) mcp.ToolHandlerFor[AddPurchaseOrderLineInput, WriteRecordOutput[inventree.PurchaseOrderLineItem]] {
 	return LookupHandler[PurchaseOrderLineWriteClient, AddPurchaseOrderLineInput, WriteRecordOutput[inventree.PurchaseOrderLineItem]](deps, AddPurchaseOrderLineToolName,
 		func(ctx context.Context, _ *mcp.CallToolRequest, client PurchaseOrderLineWriteClient, input AddPurchaseOrderLineInput) (*mcp.CallToolResult, WriteRecordOutput[inventree.PurchaseOrderLineItem], error) {
@@ -398,7 +490,10 @@ func addPurchaseOrderLine(deps Dependencies) mcp.ToolHandlerFor[AddPurchaseOrder
 				}
 			}
 			record, err := client.CreatePurchaseOrderLine(ctx, purchaseOrderLineCreate(input.OrderID, input.SupplierPartID, input.Line, input.Reference, input.Notes, input.Quantity, input.UnitPrice, input.Currency, input.TargetDate, input.DestinationID))
-			return writeRecordOutput(record, err)
+			if err != nil {
+				return writeRecordOutput(inventree.PurchaseOrderLineItem{}, err)
+			}
+			return writeRecordOutput(sanitizePurchaseOrderLine(record), nil)
 		})
 }
 
@@ -417,11 +512,15 @@ func updatePurchaseOrderLine(deps Dependencies) mcp.ToolHandlerFor[UpdatePurchas
 			if input.TargetDate != nil && !validDate(*input.TargetDate) {
 				return purchaseOrderLineClarification("What target date should be used?", "target_date must use YYYY-MM-DD", 0, 0)
 			}
+			validatedLink, err := validateExternalURLPointer(input.Link)
+			if err != nil {
+				return purchaseOrderLineClarification("What link should be used for this line?", "link must be an absolute HTTP(S) URL without userinfo or credentials", 0, 0)
+			}
 			line, err := client.GetPurchaseOrderLine(ctx, input.ID)
 			if err != nil {
 				return writeRecordOutput(inventree.PurchaseOrderLineItem{}, err)
 			}
-			fields := purchaseOrderLinePatch(input)
+			fields := purchaseOrderLinePatch(input, validatedLink)
 			if len(fields) == 0 {
 				return purchaseOrderLineClarification("Which purchase-order line fields should be updated?", "update_purchase_order_line requires at least one PATCH field", line.Order, line.Part)
 			}
@@ -444,7 +543,10 @@ func updatePurchaseOrderLine(deps Dependencies) mcp.ToolHandlerFor[UpdatePurchas
 				}
 			}
 			record, err := client.UpdatePurchaseOrderLine(ctx, input.ID, fields)
-			return writeRecordOutput(record, err)
+			if err != nil {
+				return writeRecordOutput(inventree.PurchaseOrderLineItem{}, err)
+			}
+			return writeRecordOutput(sanitizePurchaseOrderLine(record), nil)
 		})
 }
 
@@ -643,6 +745,7 @@ func receivePurchaseOrderItems(deps Dependencies) mcp.ToolHandlerFor[ReceivePurc
 					return nil, out, err
 				}
 				sort.Slice(completionLines, func(i, j int) bool { return completionLines[i].PK < completionLines[j].PK })
+				completionLines = sanitizePurchaseOrderLines(completionLines)
 				out.CompletionLines = completionLines
 				projected := append([]inventree.PurchaseOrderLineItem(nil), completionLines...)
 				plannedByLine := make(map[int]float64, len(out.Plan))
@@ -759,6 +862,7 @@ func issuePurchaseOrder(deps Dependencies) mcp.ToolHandlerFor[IssuePurchaseOrder
 				return nil, out, err
 			}
 			sort.Slice(lines, func(i, j int) bool { return lines[i].PK < lines[j].PK })
+			lines = sanitizePurchaseOrderLines(lines)
 			out.Lines = lines
 			extraLines, err := scanPurchaseOrderExtraLines(ctx, client, order.PK)
 			if err != nil {
@@ -1038,7 +1142,7 @@ func executePurchaseOrderWorkflow(ctx context.Context, client PurchaseOrderWorkf
 				return workflowFailure(out, "update_purchase_order_line", "purchase-order line update failed", "Use search_purchase_order_lines with the returned purchase_order ID and line reference, then retry with the same supplier_id and supplier_reference.")
 			}
 			out.Actions[len(out.Actions)-1].Status = "updated"
-			out.Lines = append(out.Lines, updated)
+			out.Lines = append(out.Lines, sanitizePurchaseOrderLine(updated))
 			continue
 		}
 		out.Actions = append(out.Actions, PurchaseOrderWorkflowAction{Name: "create_purchase_order_line", Status: pendingActionStatus(input.DryRun), RecordType: "purchase_order_line", Reference: lineReference})
@@ -1064,7 +1168,7 @@ func executePurchaseOrderWorkflow(ctx context.Context, client PurchaseOrderWorkf
 		}
 		out.Actions[len(out.Actions)-1].ID = created.PK
 		out.Actions[len(out.Actions)-1].Status = "created"
-		out.Lines = append(out.Lines, created)
+		out.Lines = append(out.Lines, sanitizePurchaseOrderLine(created))
 	}
 	for index, prepared := range preparedExtraLines {
 		prepared.Order = order.PK
@@ -1202,6 +1306,43 @@ func purchaseOrderCreate(reference string, supplierID int, supplierReference, de
 	return inventree.PurchaseOrderCreate{Reference: strings.TrimSpace(reference), Supplier: supplierID, SupplierReference: supplierReference, Description: description, CreationDate: creationDate, StartDate: startDate, TargetDate: targetDate, OrderCurrency: currency, Destination: destinationID}
 }
 
+func updatePurchaseOrderPatch(input UpdatePurchaseOrderInput) (inventree.PatchFields, error) {
+	for _, pair := range []struct {
+		field    string
+		provided bool
+		clear    bool
+	}{
+		{field: "notes", provided: input.Notes != nil, clear: input.ClearNotes},
+		{field: "start_date", provided: input.StartDate != nil, clear: input.ClearStartDate},
+		{field: "target_date", provided: input.TargetDate != nil, clear: input.ClearTargetDate},
+		{field: "destination_id", provided: input.DestinationID != nil, clear: input.ClearDestination},
+	} {
+		if conflict(pair.provided, pair.clear) {
+			return nil, fmt.Errorf("provide either a replacement %s or its clear flag, not both", pair.field)
+		}
+	}
+	for field, value := range map[string]*string{"creation_date": input.CreationDate, "start_date": input.StartDate, "target_date": input.TargetDate} {
+		if value != nil && !validDate(*value) {
+			return nil, fmt.Errorf("%s must use YYYY-MM-DD", field)
+		}
+	}
+	link, err := validateExternalURLPointer(input.Link)
+	if err != nil {
+		return nil, errors.New("link must be an absolute HTTP(S) URL without userinfo or credentials")
+	}
+	fields := inventree.PatchFields{}
+	setPatchString(fields, "description", input.Description)
+	setPatchString(fields, "supplier_reference", input.SupplierReference)
+	setPatchString(fields, "order_currency", input.Currency)
+	setPatchString(fields, "link", link)
+	setPatchString(fields, "creation_date", input.CreationDate)
+	setNullableString(fields, "notes", input.Notes, input.ClearNotes)
+	setNullableString(fields, "start_date", input.StartDate, input.ClearStartDate)
+	setNullableString(fields, "target_date", input.TargetDate, input.ClearTargetDate)
+	setNullableIntPatch(fields, "destination", input.DestinationID, input.ClearDestination)
+	return fields, nil
+}
+
 func exactSupplierReferenceMatches(orders []inventree.PurchaseOrder, supplierID int, supplierReference string) []inventree.PurchaseOrder {
 	matches := make([]inventree.PurchaseOrder, 0, len(orders))
 	for _, order := range orders {
@@ -1221,7 +1362,22 @@ func purchaseOrderLineCreate(orderID, supplierPartID int, line, reference, notes
 	return inventree.PurchaseOrderLineCreate{Order: orderID, SupplierPart: supplierPartID, Line: line, Reference: reference, Notes: notes, Quantity: quantity, TargetDate: targetDate, PurchasePrice: price, PurchasePriceCurrency: currency, Destination: destinationID}
 }
 
-func purchaseOrderLinePatch(input UpdatePurchaseOrderLineInput) inventree.PatchFields {
+func sanitizePurchaseOrderLine(record inventree.PurchaseOrderLineItem) inventree.PurchaseOrderLineItem {
+	if record.Link != "" {
+		record.Link = projectExternalURL(&record.Link)
+	}
+	return record
+}
+
+func sanitizePurchaseOrderLines(records []inventree.PurchaseOrderLineItem) []inventree.PurchaseOrderLineItem {
+	sanitized := make([]inventree.PurchaseOrderLineItem, len(records))
+	for i := range records {
+		sanitized[i] = sanitizePurchaseOrderLine(records[i])
+	}
+	return sanitized
+}
+
+func purchaseOrderLinePatch(input UpdatePurchaseOrderLineInput, validatedLink *string) inventree.PatchFields {
 	fields := inventree.PatchFields{}
 	if input.SupplierPartID != nil {
 		fields["part"] = inventree.Set(*input.SupplierPartID)
@@ -1249,6 +1405,12 @@ func purchaseOrderLinePatch(input UpdatePurchaseOrderLineInput) inventree.PatchF
 	}
 	if input.DestinationID != nil {
 		fields["destination"] = inventree.Set(*input.DestinationID)
+	}
+	if validatedLink != nil {
+		fields["link"] = inventree.Set(*validatedLink)
+	}
+	if input.Discount != nil {
+		fields["discount"] = inventree.Set(*input.Discount)
 	}
 	return fields
 }
@@ -1317,6 +1479,11 @@ func loadOrderAndSupplierPart(ctx context.Context, client PurchaseOrderLineWrite
 func purchaseOrderClarification(question, reason string, supplierID int) (*mcp.CallToolResult, WriteRecordOutput[inventree.PurchaseOrder], error) {
 	clarification := NewClarification(question, "supplier", reason, "supplier_id", true, nil, map[string]any{"supplier_id": supplierID})
 	return TextResult(StatusClarificationRequired), WriteRecordOutput[inventree.PurchaseOrder]{Status: StatusClarificationRequired, Clarification: &clarification}, nil
+}
+
+func updatePurchaseOrderClarification(question, reason string, id int) (*mcp.CallToolResult, WriteRecordOutput[inventree.PurchaseOrderDetail], error) {
+	clarification := NewClarification(question, "purchase_order", reason, "id", true, nil, map[string]any{"id": id})
+	return TextResult(StatusClarificationRequired), WriteRecordOutput[inventree.PurchaseOrderDetail]{Status: StatusClarificationRequired, Clarification: &clarification}, nil
 }
 
 func purchaseOrderLineClarification(question, reason string, orderID, supplierPartID int) (*mcp.CallToolResult, WriteRecordOutput[inventree.PurchaseOrderLineItem], error) {

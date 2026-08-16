@@ -1056,6 +1056,71 @@ func TestMilestoneHappyPathToolsAgainstInvenTree(t *testing.T) {
 		r.Len(completed.StockItems, 2)
 	})
 
+	t.Run("purchase_order_and_line_detail_completeness", func(t *testing.T) {
+		r := require.New(t)
+		a := assert.New(t)
+		ctx, _, _ := testhandler.SetupTestHandler(t)
+		fixture := newMilestoneToolFixture(t, shared)
+		supplier := fixture.ensure(t, testenv.FixtureSupplier)
+		supplierPart := fixture.ensure(t, testenv.FixtureSupplierPart)
+		destination := fixture.ensure(t, testenv.FixtureLocation)
+
+		_, created, err := createPurchaseOrder(fixture.deps())(ctx, &mcp.CallToolRequest{}, CreatePurchaseOrderInput{SupplierID: supplier.ID, DestinationID: &destination.ID})
+		r.NoError(err)
+		a.Equal(StatusOK, created.Status)
+		orderID := created.Record.PK
+
+		lineReference, err := fixture.run.Name("detail-line")
+		r.NoError(err)
+		price := 2.5
+		_, addedLine, err := addPurchaseOrderLine(fixture.deps())(ctx, &mcp.CallToolRequest{}, AddPurchaseOrderLineInput{OrderID: orderID, SupplierPartID: supplierPart.ID, Reference: &lineReference, Quantity: 3, UnitPrice: &price, Currency: dvgoutils.Ptr("AUD")})
+		r.NoError(err)
+		a.Equal(StatusOK, addedLine.Status)
+		lineID := addedLine.Record.PK
+
+		_, gotOrder, err := getPurchaseOrder(fixture.deps())(ctx, &mcp.CallToolRequest{}, IDInput{ID: orderID})
+		r.NoError(err)
+		a.Equal(StatusOK, gotOrder.Status)
+		a.Equal(orderID, gotOrder.Record.PK)
+		a.NotZero(gotOrder.Record.CreatedBy.PK)
+		r.NotNil(gotOrder.Record.LineItems)
+		a.Equal(1, *gotOrder.Record.LineItems)
+		r.NotNil(gotOrder.Record.StatusText)
+
+		_, gotLine, err := getPurchaseOrderLine(fixture.deps())(ctx, &mcp.CallToolRequest{}, IDInput{ID: lineID})
+		r.NoError(err)
+		a.Equal(StatusOK, gotLine.Status)
+		a.Equal(lineID, gotLine.Record.PK)
+		r.NotNil(gotLine.Record.SKU)
+		a.Equal(supplierPart.Name, *gotLine.Record.SKU)
+		r.NotNil(gotLine.Record.TotalPrice)
+		a.Nil(gotLine.Record.BuildOrder)
+
+		orderLink := "https://example.com/detail/" + lineReference
+		_, updatedOrder, err := updatePurchaseOrder(fixture.deps())(ctx, &mcp.CallToolRequest{}, UpdatePurchaseOrderInput{ID: orderID, Description: dvgoutils.Ptr("updated through update_purchase_order"), Link: &orderLink})
+		r.NoError(err)
+		a.Equal(StatusOK, updatedOrder.Status)
+		a.Equal("updated through update_purchase_order", updatedOrder.Record.Description)
+		a.Equal(orderLink, updatedOrder.Record.Link)
+
+		_, emptyPatch, err := updatePurchaseOrder(fixture.deps())(ctx, &mcp.CallToolRequest{}, UpdatePurchaseOrderInput{ID: orderID})
+		r.NoError(err)
+		a.Equal(StatusClarificationRequired, emptyPatch.Status)
+		r.NotNil(emptyPatch.Clarification)
+
+		lineLink := "https://example.com/detail/line/" + lineReference
+		_, updatedLine, err := updatePurchaseOrderLine(fixture.deps())(ctx, &mcp.CallToolRequest{}, UpdatePurchaseOrderLineInput{ID: lineID, Link: &lineLink, Discount: dvgoutils.Ptr(7.5)})
+		r.NoError(err)
+		a.Equal(StatusOK, updatedLine.Status)
+		a.Equal(lineLink, updatedLine.Record.Link)
+		a.Equal(7.5, updatedLine.Record.Discount)
+
+		_, gotLineAfterUpdate, err := getPurchaseOrderLine(fixture.deps())(ctx, &mcp.CallToolRequest{}, IDInput{ID: lineID})
+		r.NoError(err)
+		a.Equal(lineLink, gotLineAfterUpdate.Record.Link)
+		a.Equal(7.5, gotLineAfterUpdate.Record.Discount)
+	})
+
 	t.Run("purchase_order_completion_with_auto_complete_disabled", func(t *testing.T) {
 		r := require.New(t)
 		a := assert.New(t)

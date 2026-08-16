@@ -415,12 +415,54 @@ type PurchaseOrder struct {
 	TotalPrice        *DecimalString `json:"total_price"`
 }
 
+// PurchaseOrderCreatedBy projects the nested API 530 order.created_by User
+// object to its stable creator user ID at the MCP boundary. The wire format
+// decodes a full User object, but only the ID is exposed; unmarshalling into
+// this narrow type means the caller's username/email are never retained.
+type PurchaseOrderCreatedBy struct {
+	PK int
+}
+
+func (value *PurchaseOrderCreatedBy) UnmarshalJSON(data []byte) error {
+	var wire struct {
+		PK int `json:"pk"`
+	}
+	if err := json.Unmarshal(data, &wire); err != nil {
+		return err
+	}
+	value.PK = wire.PK
+	return nil
+}
+
+func (value PurchaseOrderCreatedBy) MarshalJSON() ([]byte, error) {
+	return json.Marshal(value.PK)
+}
+
+// PurchaseOrderDetail is the approved complete scalar projection returned by
+// the exact purchase-order endpoint. Embedded/nested records and deferred
+// fields are intentionally omitted; see PurchaseOrderFieldInventory for the
+// pinned classification.
+type PurchaseOrderDetail struct {
+	PurchaseOrder
+	CreatedBy       PurchaseOrderCreatedBy `json:"created_by"`
+	IssueDate       *string                `json:"issue_date"`
+	LineItems       *int                   `json:"line_items"`
+	CompletedLines  *int                   `json:"completed_lines"`
+	Link            string                 `json:"link"`
+	StatusText      *string                `json:"status_text"`
+	StatusCustomKey *int                   `json:"status_custom_key"`
+	Notes           *string                `json:"notes"`
+	Overdue         *bool                  `json:"overdue"`
+	CompleteDate    *string                `json:"complete_date"`
+	SupplierName    string                 `json:"supplier_name"`
+	UpdatedAt       *string                `json:"updated_at"`
+}
+
 type PurchaseOrderLineItem struct {
 	WebLinkFields
 	PK                    int            `json:"pk"`
 	Order                 int            `json:"order"`
 	Part                  int            `json:"part"`
-	SupplierPart          *int           `json:"supplier_part,omitempty"`
 	InternalPart          *int           `json:"internal_part"`
 	Destination           *int           `json:"destination"`
 	Line                  string         `json:"line"`
@@ -431,6 +473,24 @@ type PurchaseOrderLineItem struct {
 	TargetDate            *string        `json:"target_date"`
 	PurchasePrice         *DecimalString `json:"purchase_price"`
 	PurchasePriceCurrency string         `json:"purchase_price_currency"`
+	Link                  string         `json:"link"`
+	Discount              float64        `json:"discount"`
+}
+
+// PurchaseOrderLineItemDetail is the approved complete scalar projection
+// returned by the exact purchase-order-line endpoint. Nested order, part, and
+// supplier-part detail remain separate exact lookups; see
+// PurchaseOrderLineFieldInventory for the pinned classification.
+type PurchaseOrderLineItemDetail struct {
+	PurchaseOrderLineItem
+	BuildOrder       *int           `json:"build_order"`
+	Overdue          *bool          `json:"overdue"`
+	AutoPricing      bool           `json:"auto_pricing"`
+	SKU              *string        `json:"sku"`
+	MPN              *string        `json:"mpn"`
+	IPN              *string        `json:"ipn"`
+	InternalPartName string         `json:"internal_part_name"`
+	TotalPrice       *DecimalString `json:"total_price"`
 }
 
 type PurchaseOrderExtraLine struct {
@@ -446,6 +506,8 @@ type PurchaseOrderExtraLine struct {
 	Price         *DecimalString `json:"price"`
 	PriceCurrency string         `json:"price_currency"`
 	TargetDate    *string        `json:"target_date"`
+	Discount      float64        `json:"discount"`
+	TotalPrice    *DecimalString `json:"total_price"`
 }
 
 // BomItem is read-only in this client: it exists solely to let delete_part

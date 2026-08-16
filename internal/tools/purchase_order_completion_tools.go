@@ -70,6 +70,7 @@ func completePurchaseOrder(deps Dependencies) mcp.ToolHandlerFor[CompletePurchas
 				return nil, out, err
 			}
 			sort.Slice(lines, func(i, j int) bool { return lines[i].PK < lines[j].PK })
+			lines = sanitizePurchaseOrderLines(lines)
 			out.Lines = lines
 			if line, outstanding, found := firstOutstandingPurchaseOrderLine(lines); found {
 				return completePurchaseOrderClarification(out, "Should the outstanding purchase-order lines be received before completion?", "purchase order still has outstanding ordinary line quantity; incomplete completion is not supported", "line_item_id", map[string]any{"order_id": input.OrderID, "line_item_id": line.PK, "outstanding_quantity": outstanding})

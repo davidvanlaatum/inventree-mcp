@@ -72,6 +72,7 @@ type UpdatePurchaseOrderExtraLineInput struct {
 	ClearUnitPrice  bool     `json:"clear_unit_price,omitempty" jsonschema:"Explicitly set price to null; conflicts with unit_price and currency."`
 	TargetDate      *string  `json:"target_date,omitempty" jsonschema:"Optional replacement target date in YYYY-MM-DD form."`
 	ClearTargetDate bool     `json:"clear_target_date,omitempty" jsonschema:"Explicitly set target_date to null; conflicts with target_date."`
+	Discount        *float64 `json:"discount,omitempty" jsonschema:"Optional replacement discount value."`
 }
 
 type DeletePurchaseOrderExtraLineInput struct {
@@ -360,6 +361,9 @@ func prepareExtraLinePatch(input UpdatePurchaseOrderExtraLineInput, before inven
 		fields["target_date"] = inventree.Null()
 	} else {
 		setPatchString(fields, "target_date", input.TargetDate)
+	}
+	if input.Discount != nil {
+		fields["discount"] = inventree.Set(*input.Discount)
 	}
 	if len(fields) == 0 {
 		return nil, 0, "", errors.New("at least one patch field is required")

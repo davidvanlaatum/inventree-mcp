@@ -57,6 +57,7 @@ func deletePurchaseOrderLine(deps Dependencies) mcp.ToolHandlerFor[DeletePurchas
 			if err != nil || record.PK != input.ID {
 				return nil, PurchaseOrderLineDeleteOutput{}, safePurchaseOrderLineDeleteError("purchase-order line delete lookup")
 			}
+			record = sanitizePurchaseOrderLine(record)
 			order, err := loadPurchaseOrderLineDeleteOrder(ctx, client, record.Order)
 			if err != nil {
 				if isNotFound(err) {

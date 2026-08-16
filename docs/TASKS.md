@@ -128,10 +128,10 @@ Before assigning a new story ID, inspect `git worktree list --porcelain`, search
 | [F-S44](#f-s44-company-detail-and-role-completeness) | Complete exact company reads and guarded contact, tax, link, and customer-role maintenance. | Ready |
 | [F-S45](#f-s45-stock-item-detail-completeness) | Expose complete high-value stock-item exact-read fields while retaining concise searches and guarded mutation boundaries. | Ready |
 | [F-S46](#f-s46-stock-tracking-and-stocktake-history) | Expose bounded stock tracking events and historical part stocktake snapshots through normal read-only tools. | Planned |
-| [F-S47](#f-s47-purchase-order-and-line-detail-completeness) | Complete exact purchase-order and ordinary-line reads plus standalone order metadata and external-link maintenance. | Ready |
+| [F-S47](#f-s47-purchase-order-and-line-detail-completeness) | Complete exact purchase-order and ordinary-line reads plus standalone order metadata and external-link maintenance. | Done |
 | [F-S48](#f-s48-owner-discovery-and-cross-object-responsibility) | Discover InvenTree owners and support consistent guarded responsibility assignment across applicable objects. | Planned |
 | [F-S49](#f-s49-structured-contact-and-address-references) | Discover structured company contacts and addresses and support guarded assignment on applicable objects. | Planned |
-| [F-S50](#f-s50-project-code-discovery-and-assignment) | Discover existing project codes and support consistent guarded assignment across purchase-order records. | Planned |
+| [F-S50](#f-s50-project-code-discovery-and-assignment) | Discover existing project codes and support consistent guarded assignment across purchase-order records. | Ready |
 | [F-S51](#f-s51-guarded-delete-on-deplete-policy-updates) | Add a reviewed workflow for enabling or disabling delete-on-deplete behavior on one stock item. | Planned |
 | [F-S52](#f-s52-stock-serial-number-management) | Add dedicated discovery and guarded mutation workflows for stock serial numbers. | Planned |
 | [F-S53](#f-s53-guarded-stock-provenance-correction) | Add reviewed correction of supplier, purchase-order, and purchase-price provenance on eligible stock items. | Planned |
@@ -143,9 +143,9 @@ Before assigning a new story ID, inspect `git worktree list --porcelain`, search
 | [F-S59](#f-s59-part-requirements-visibility-discovery) | Investigate build and order demand visibility through the part requirements API. | Future |
 | [F-S60](#f-s60-stocktake-generation-and-reporting-discovery) | Investigate guarded generation of part stocktake snapshots and reports after history reads exist. | Future |
 | [F-S61](#f-s61-adopt-inventree-150-api-530-baseline) | Adopt InvenTree 1.5.0 and API 530 as the blocking compatibility baseline. | Done |
-| [F-S62](#f-s62-guarded-purchase-order-hold-resume-and-cancellation) | Add explicit current-state-planned hold, resume, and cancellation workflows without generic status editing or whole-order deletion. | Planned |
+| [F-S62](#f-s62-guarded-purchase-order-hold-resume-and-cancellation) | Add explicit current-state-planned hold, resume, and cancellation workflows without generic status editing or whole-order deletion. | Ready |
 | [F-S63](#f-s63-guarded-purchase-order-duplication-discovery) | Investigate a deferred, low-frequency workflow for safely duplicating selected purchase-order state. | Future |
-| [F-S64](#f-s64-cross-object-generic-parameter-values-and-uniqueness) | Add bounded generic parameter values across supported non-part-row object types and administer template uniqueness. | Planned |
+| [F-S64](#f-s64-cross-object-generic-parameter-values-and-uniqueness) | Add bounded generic parameter values across supported non-part-row object types and administer template uniqueness. | Ready |
 | [F-S65](#f-s65-guarded-stock-custom-status-management) | Extend the guarded stock-status workflow to assign or clear compatible custom status keys. | Planned |
 | [F-S66](#f-s66-guarded-stock-item-merge-discovery) | Investigate a deferred, fail-closed merge workflow for explicitly selected compatible stock items. | Future |
 | [F-S67](#f-s67-stock-location-detail-and-type-administration) | Complete stock-location icon detail and add guarded stock-location-type administration. | Ready |
@@ -2259,7 +2259,7 @@ Tasks:
 
 ### F-S47: Purchase-Order And Line Detail Completeness
 
-- Status: `Ready`
+- Status: `Done`
 - Issue: [#128](https://github.com/davidvanlaatum/inventree-mcp/issues/128)
 - Depends on: F-S03, F-S23, F-S38, F-S39, F-S61
 - Decisions: approved by the operator on 2026-08-15. Exact order and line reads expose all approved fields while searches remain concise. Embedded user, address, contact, project, destination, build, and part records remain separate lookups. Raw `barcode_hash` remains excluded pending F-S55. Existing-order supplier and internal InvenTree reference remain immutable, and `status_custom_key` remains read-only.
@@ -2276,7 +2276,9 @@ Tasks:
   - Existing order and line update surfaces retain `inventree.read` plus `inventree.write`, remain closed-world and non-destructive, and preserve their reviewed idempotency annotations in authorization and generated-tool manifests.
   - Build-order ID and custom status remain read-only; lifecycle changes continue through explicit tools, whole-order deletion remains unsupported, and MCP writes continue forcing `auto_pricing:false` and `merge_items:false`.
   - InvenTree 1.5/API 530 pinned integration, JSON contract, recovery/redaction, coverage, and plan/schema/tool/operator documentation are aligned.
-- Residual risk: several derived fields are recalculated by InvenTree and can change independently; exact reads are factual snapshots and must not imply atomic order-wide consistency.
+- Validation: `go build ./...`, `go vet ./...`, `golangci-lint run ./...` (0 issues), and `go test ./...` (full suite, including the blocking `TestClientMethodsAgainstInvenTree/po` and `TestMilestoneHappyPathToolsAgainstInvenTree/purchase_order_and_line_detail_completeness` Testcontainers subtests against pinned `inventree/inventree:1.5.0`) all pass, rerun after every review-driven fix below. `go generate ./internal/tools` regenerated `docs/tool-manifest.json`; `TestCheckedToolManifestMatchesGeneratedMetadata`, `TestToolReferenceDocumentsRegisteredWriteTools`, and `TestWriteToolAuthorizationsUseWriteScope` pass against the updated `docs/tool-reference.md`. New fast unit coverage (`TestUpdatePurchaseOrderValidatesAndPatches`, `TestUpdatePurchaseOrderLineRejectsMalformedLink` in `internal/tools/purchasing_tools_test.go`) exercises `update_purchase_order`'s invalid-ID, empty-patch, every value+clear-flag conflict, malformed date, malformed/userinfo `link`, invalid `destination_id`, happy-path patch, notes-clear, and mismatched-identity partial-failure paths without Testcontainers, plus malformed-link rejection for `update_purchase_order_line`.
+- Review: full Go, QA, product, and infosec panel completed (required because this story adds a new mutating workflow tool, `update_purchase_order`, per the `docs/reviewers.md` review-timing rule). Findings addressed: (1) Go — `update_purchase_order` was missing the `record.PK != input.ID` post-PATCH identity guard every sibling write tool uses; added, returning `partial_failure` with recovery guidance on mismatch. (2) Go — `updatePurchaseOrderClarification` dropped `retry_values`; now threads `id` through like every sibling clarification helper. (3) Infosec — the pre-existing `delete_purchase_order_line` tool echoed the new unsanitized `Link` field at four output sites because it wasn't in this story's sanitization sweep; fixed by sanitizing the fetched record once, immediately after lookup. (4) QA — `update_purchase_order` had zero fast/mocked unit coverage; added (see Validation). (5) QA — only 1 of 5 nullable `clear_*` fields was exercised against live InvenTree; extended the Testcontainers `po` subtest to cover `clear_start_date`/`clear_target_date`/`clear_destination` together, which is what caught finding (7). (6) QA — extra-line `total_price` null-preservation before any price is set was untested; added a dedicated unpriced-extra-line create/read/delete check to the same subtest. (7) **Live-testing discovery**: pinned InvenTree 1.5.0 does not clear `creation_date` on an explicit null PATCH — it resets the field to the current date instead, unlike `start_date`/`target_date`/`destination`, which do clear correctly. `clear_creation_date` was removed from `UpdatePurchaseOrderInput` entirely (the field can still be *set*, just never cleared through this tool) per the acceptance criteria's own "where pinned serializer behavior permits it" hedge; the quirk itself is now pinned by a dedicated assertion in `TestClientMethodsAgainstInvenTree/po`. (8) Product — `docs/tool-reference.md` and `docs/operator-recipes.md` didn't explain that `link` clears via an explicit empty string rather than a `clear_link` flag; both now say so explicitly, alongside the `creation_date` exception from finding (7). Earlier implementation-time findings, also addressed before review: the pre-existing unused `PurchaseOrderLineItem.SupplierPart` dead field was removed (it would have broken the new field-inventory drift test); the order-level `link` field was corrected from `*string` to plain `string` after live evidence showed InvenTree's schema models it as string-or-empty rather than nullable; `merge_items` is classified `write_only` and never returned by any read because its schema is `writeOnly:true`, despite the acceptance criteria's "effective `auto_pricing`/`merge_items` flags" wording; and `link`/`discount` sanitization was swept across every `PurchaseOrderLineItem` return site (search, add, update, workflow create/update, issue, receive, complete, and now delete).
+- Residual risk: several derived fields are recalculated by InvenTree and can change independently; exact reads are factual snapshots and must not imply atomic order-wide consistency. `merge_items`'s absence from every read (rather than an "effective" value) is an InvenTree schema constraint, not an MCP omission. `creation_date` can be set but never cleared through `update_purchase_order`, an accepted InvenTree 1.5.0 serializer limitation rather than an MCP gap.
 
 ### F-S48: Owner Discovery And Cross-Object Responsibility
 
@@ -2312,7 +2314,7 @@ Tasks:
 
 ### F-S50: Project-Code Discovery And Assignment
 
-- Status: `Planned`
+- Status: `Ready`
 - Issue: [#131](https://github.com/davidvanlaatum/inventree-mcp/issues/131)
 - Depends on: F-S23, F-S47
 - Decisions: approved by the operator on 2026-08-15. Project codes move from deliberate exclusion into a separate lookup-and-assignment story rather than opaque numeric inputs.
@@ -2512,7 +2514,7 @@ Tasks:
 
 ### F-S62: Guarded Purchase-Order Hold, Resume, And Cancellation
 
-- Status: `Planned`
+- Status: `Ready`
 - Issue: [#144](https://github.com/davidvanlaatum/inventree-mcp/issues/144)
 - Depends on: F-S47, F-S61
 - Decisions: approved by the operator on 2026-08-15. Purchase-order hold, resume, and cancellation are dedicated lifecycle workflows. Hold support must not ship unless the native resume transition is also verified and exposed. Generic status editing, custom-status mutation, whole-order deletion, and automatic cancellation are excluded.
@@ -2544,7 +2546,7 @@ Tasks:
 
 ### F-S64: Cross-Object Generic Parameter Values And Uniqueness
 
-- Status: `Planned`
+- Status: `Ready`
 - Issue: [#146](https://github.com/davidvanlaatum/inventree-mcp/issues/146)
 - Depends on: F-S11, F-S12, F-S13, F-S20, F-S21, F-S47, F-S61
 - Decisions: approved by the operator on 2026-08-15 as one generic cross-object story. API 530 makes generic parameter values visible on purchase orders, stock locations, companies, supplier parts, manufacturer parts, and part categories; all supported non-part families use existing compatible templates. Part-row values remain in F-S12 and category parameter-template/default links remain in F-S13. API 530 parameter-template `unique` is exposed and writable here because value writes must understand and preserve its uniqueness policy.

@@ -419,6 +419,7 @@ Mutating non-destructive tools:
 - `set_company_image`
 - `set_company_image_from_url`
 - `create_purchase_order`
+- `update_purchase_order`
 - `add_purchase_order_line`
 - `update_purchase_order_line`
 - `create_purchase_order_with_lines`
@@ -651,6 +652,7 @@ Important behaviors:
 ### Purchasing Tools
 
 - `create_purchase_order`
+- `update_purchase_order`
 - `add_purchase_order_line`
 - `update_purchase_order_line`
 - `preview_purchase_order_with_lines`
@@ -670,6 +672,7 @@ Important behaviors:
 - Treat concurrent receipt of the same purchase-order line as unsupported. InvenTree 1.5.0 serializes its line updates but does not atomically cap a previously prepared receipt to the newly outstanding quantity; an MCP-process lock would not protect against the InvenTree UI, direct API clients, or other MCP replicas, so the operator accepted this narrow residual risk without local locking.
 - Require explicit current-state confirmation before completing an order; never expose InvenTree's incomplete-line completion override.
 - `update_purchase_order_line` should use PATCH and serialize only supplied fields.
+- F-S47 adds standalone `update_purchase_order`, using PATCH by exact stable ID for description, Markdown notes, supplier reference, creation/start/target dates, currency, destination, and external link, with explicit `clear_*` flags for every nullable field except `creation_date`: pinned InvenTree 1.5.0 resets `creation_date` to the current date rather than clearing it when sent JSON `null`, so no `clear_creation_date` flag is offered and the field can only be set, never cleared, through this tool. Supplier company and internal InvenTree `reference` remain immutable through this tool; `status`, `status_custom_key`, `project_code`, `responsible`, `contact`, and `address` remain read-only or deferred pending their own stories. `get_purchase_order` and `get_purchase_order_line` expose the complete approved exact-read field set behind checked-in pinned field inventories (`PurchaseOrderFieldInventory`, `PurchaseOrderLineFieldInventory`) that fail raw-key contract tests on unclassified schema drift; nested order/part/supplier-part detail and staff-only fields (owner, contact, address, project code, parameters, tags) remain separate lookups or deferred. `update_purchase_order_line` and `update_purchase_order_extra_line` additionally accept `link` and `discount`, using the same F-S39 external-link validation/redaction as order-level `link`.
 - `preview_purchase_order_with_lines` is the milestone dry-run tool. It must be read-only, reject write intent, and perform supplier-part validation without creating a purchase order.
 - `create_purchase_order_with_lines` was not registered in the original milestone 1 delivery. Its post-milestone F-S03 workflow takes a supplier, stable supplier reference, description/date fields, and receivable supplier-part line inputs; runs preview-equivalent validation first; then creates or updates the purchase order and lines while returning stable purchase-order and line IDs for retry/recovery. F-S23 adds optional non-receivable extra lines after the normal-line phase for invoice, surcharge, discount, and supplier-product context. Extra lines require a trimmed case-sensitive reference unique within the purchase order, accept exact signed unit prices including zero and negative values, and never create stock. Dry runs return field-level `planned_changes` for order, normal-line, and extra-line creates or patches, including references and dependencies on a planned order create. The exact `(supplier_id, supplier_reference)` pair is the order retry identity, while InvenTree generates its pattern-compliant internal reference. The completed purchasing tools are classified as implemented in the checked manifest.
 - Purchase-order write tools must include read/search support for purchase orders and lines so duplicate checks and recovery after interrupted writes do not require raw REST calls.
