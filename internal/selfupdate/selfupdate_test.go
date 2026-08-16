@@ -115,6 +115,7 @@ func TestUpdaterInstallsVerifiedReleaseAndPreservesPrevious(t *testing.T) {
 		if commands == 1 {
 			a.Equal(fs.FileMode(0o700), probeInfo.Mode().Perm())
 		}
+		a.Equal([]string{"version", "--porcelain", buildinfo.PorcelainMarker}, command.Args)
 		a.Equal(dir, command.Dir)
 		a.Equal([]string{"LANG=C", "LC_ALL=C", "PATH=/usr/bin:/bin"}, command.Env)
 		a.NotContains(strings.Join(command.Env, "\x00"), "TOKEN")

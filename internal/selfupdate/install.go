@@ -445,7 +445,7 @@ func cloneToTemp(source, dir, pattern string, mode fs.FileMode) (string, error) 
 func requireVersion(ctx context.Context, runner CommandRunner, executable, dir, want string, timeout time.Duration, outputLimit int64) (buildinfo.PorcelainInfo, error) {
 	output, err := runner(ctx, Command{
 		Path:        executable,
-		Args:        []string{"version"},
+		Args:        []string{"version", "--porcelain", buildinfo.PorcelainMarker},
 		Dir:         dir,
 		Env:         []string{"LANG=C", "LC_ALL=C", "PATH=/usr/bin:/bin"},
 		Timeout:     timeout,

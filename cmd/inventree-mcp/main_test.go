@@ -135,7 +135,7 @@ func TestRunServeHelpExitsSuccessfully(t *testing.T) {
 	a.Empty(stderr.String())
 }
 
-func TestRunVersionReportsBuildVersion(t *testing.T) {
+func TestRunVersionReportsHumanReadableByDefault(t *testing.T) {
 	t.Parallel()
 	r := require.New(t)
 	a := assert.New(t)
@@ -148,7 +148,93 @@ func TestRunVersionReportsBuildVersion(t *testing.T) {
 	})
 
 	r.Equal(0, code)
+	a.Equal("inventree-mcp dev (commit unknown, built unknown)\nInvenTree baseline: "+buildinfo.PinnedInvenTreeVersion+" (API "+buildinfo.PinnedInvenTreeAPIVersion+")\n", stdout.String())
+	a.Empty(stderr.String())
+}
+
+func TestRunVersionPorcelainReportsBuildVersion(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := run([]string{"version", "--porcelain", buildinfo.PorcelainMarker}, &stdout, &stderr, mapEnv(nil))
+
+	r.Equal(0, code)
 	a.Equal("porcelain: 1\nversion: dev\ncommit: unknown\ndate: unknown\ninventree_version: "+buildinfo.PinnedInvenTreeVersion+"\ninventree_api: "+buildinfo.PinnedInvenTreeAPIVersion+"\n", stdout.String())
+	a.Empty(stderr.String())
+}
+
+func TestRunVersionPorcelainRejectsUnsupportedFormatVersion(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := run([]string{"version", "--porcelain", "2"}, &stdout, &stderr, mapEnv(nil))
+
+	r.Equal(2, code)
+	a.Empty(stdout.String())
+	a.Contains(stderr.String(), `unsupported porcelain marker "2"`)
+	a.Contains(stderr.String(), buildinfo.PorcelainMarker)
+}
+
+func TestRunVersionPorcelainRequiresValue(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := run([]string{"version", "--porcelain"}, &stdout, &stderr, mapEnv(nil))
+
+	r.Equal(2, code)
+	a.Empty(stdout.String())
+	a.Contains(stderr.String(), "flag needs an argument")
+}
+
+func TestRunVersionRejectsUnknownFlag(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := run([]string{"version", "--unknown"}, &stdout, &stderr, mapEnv(nil))
+
+	r.Equal(2, code)
+	a.Empty(stdout.String())
+	a.Contains(stderr.String(), "flag provided but not defined")
+}
+
+func TestRunVersionRejectsPositionalArgument(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := run([]string{"version", "v1.2.3"}, &stdout, &stderr, mapEnv(nil))
+
+	r.Equal(2, code)
+	a.Empty(stdout.String())
+	a.Contains(stderr.String(), "version accepts flags only")
+}
+
+func TestRunVersionHelp(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := run([]string{"version", "--help"}, &stdout, &stderr, mapEnv(nil))
+
+	r.Equal(0, code)
+	a.Contains(stdout.String(), "Usage of version:")
+	a.Contains(stdout.String(), "-porcelain")
 	a.Empty(stderr.String())
 }
 
