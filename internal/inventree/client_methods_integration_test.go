@@ -1425,6 +1425,78 @@ func TestClientMethodsAgainstInvenTree(t *testing.T) {
 		r.ErrorAs(err, &apiErr)
 		r.Equal(inventree.ErrorKindNotFound, apiErr.Kind)
 	})
+
+	t.Run("instance_info", func(t *testing.T) {
+		r := require.New(t)
+		a := assert.New(t)
+		ctx, _, _ := testhandler.SetupTestHandler(t)
+		fixture := newClientMethodFixture(t, shared)
+
+		server, err := fixture.client.GetServerInfo(ctx)
+		r.NoError(err)
+		a.NotEmpty(server.Server)
+		a.Equal(shared.Environment().Version, server.Version)
+		a.Equal(shared.Environment().APIVersion, strconv.Itoa(server.APIVersion))
+		a.NotEmpty(server.Instance)
+
+		version, err := fixture.client.GetVersionInfo(ctx)
+		r.NoError(err, "the shared fixture's admin account must have InvenTree staff access for /api/version/'s declared a:staff OAuth scope")
+		a.NotEmpty(version.CommitHash)
+		a.NotEmpty(version.CommitDate)
+
+		for _, key := range instanceInfoAllowlistedGlobalSettingsForTest {
+			setting, err := fixture.client.GetGlobalSetting(ctx, key)
+			r.NoErrorf(err, "allowlisted global setting %s must be present and readable by a staff credential on the pinned InvenTree baseline", key)
+			a.Equal(key, setting.Key)
+		}
+
+		for _, key := range instanceInfoAllowlistedUserSettingsForTest {
+			setting, err := fixture.client.GetUserSetting(ctx, key)
+			r.NoErrorf(err, "allowlisted user setting %s must be present and readable", key)
+			a.Equal(key, setting.Key)
+		}
+
+		_, err = fixture.client.GetGlobalSetting(ctx, "F_S71_NONEXISTENT_SETTING_KEY")
+		r.Error(err, "a removed/renamed allowlisted key must be reported as an omittable error, not silently succeed")
+		a.True(inventree.IsOmittableFetchError(err), "a missing global setting key must classify as omittable so the instance-info tool omits it instead of failing the call")
+	})
+}
+
+// instanceInfoAllowlistedGlobalSettingsForTest and instanceInfoAllowlistedUserSettingsForTest
+// mirror internal/tools's F-S71 operator-approved allowlist (allowlistedGlobalSettings and
+// allowlistedUserSettings in internal/tools/instance_info_tools.go -- keep this list in sync
+// with that one by hand on any future allowlist change). They are duplicated here rather than
+// imported to keep this package's Testcontainers suite free of a dependency on internal/tools,
+// and to keep this test asserting the client contract the tool package consumes rather than
+// reaching into that package's implementation.
+var instanceInfoAllowlistedGlobalSettingsForTest = []string{
+	"INVENTREE_INSTANCE",
+	"INVENTREE_INSTANCE_ID",
+	"INVENTREE_COMPANY_NAME",
+	"INVENTREE_DEFAULT_CURRENCY",
+	"CURRENCY_CODES",
+	"BUILDORDER_REFERENCE_PATTERN",
+	"SALESORDER_REFERENCE_PATTERN",
+	"PURCHASEORDER_REFERENCE_PATTERN",
+	"RETURNORDER_REFERENCE_PATTERN",
+	"TRANSFERORDER_REFERENCE_PATTERN",
+	"RETURNORDER_ENABLED",
+	"TRANSFERORDER_ENABLED",
+	"STOCKTAKE_ENABLE",
+	"PROJECT_CODES_ENABLED",
+	"PART_ENABLE_REVISION",
+	"PART_ENABLE_LOCKING",
+	"SERIAL_NUMBER_GLOBALLY_UNIQUE",
+	"PARAMETER_ENFORCE_UNITS",
+	"BARCODE_ENABLE",
+	"LABEL_ENABLE",
+	"REPORT_ENABLE",
+	"CURRENCY_UPDATE_PLUGIN",
+	"BARCODE_GENERATION_PLUGIN",
+}
+
+var instanceInfoAllowlistedUserSettingsForTest = []string{
+	"DATE_DISPLAY_FORMAT",
 }
 
 // deactivatePart controls for InvenTree 1.5.0's independent "Cannot delete
