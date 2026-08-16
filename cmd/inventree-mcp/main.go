@@ -82,6 +82,10 @@ func runWithContext(parentCtx context.Context, args []string, stdout, stderr io.
 			}
 			return 0
 		}
+		// This only ever matches the single format version this build currently produces; it
+		// does not yet serve older formats on request. The requested marker is taken as an
+		// explicit argument (rather than assumed) so that a future format bump can add
+		// per-version output selection here without changing this command's calling contract.
 		if *porcelain != buildinfo.PorcelainMarker {
 			writeLine(stderr, "inventree-mcp: unsupported porcelain marker %q; this build supports %q", *porcelain, buildinfo.PorcelainMarker)
 			return 2
