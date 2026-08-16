@@ -653,6 +653,134 @@ func TestUpdaterRejectsStagedProbeFailuresWithoutMutation(t *testing.T) {
 	}
 }
 
+func TestRequireVersionAcceptsWithAndWithoutOptionalInvenTreeFields(t *testing.T) {
+	t.Parallel()
+	tests := map[string]struct {
+		output string
+		want   buildinfo.PorcelainInfo
+	}{
+		"with optional fields": {
+			output: "porcelain: 1\nversion: v1.2.3\ncommit: abc\ndate: 2026-08-16T10:00:00Z\ninventree_version: 1.5.0\ninventree_api: 530\n",
+			want:   buildinfo.PorcelainInfo{Version: "v1.2.3", Commit: "abc", Date: "2026-08-16T10:00:00Z", InvenTreeVersion: "1.5.0", InvenTreeAPI: "530"},
+		},
+		"without optional fields": {
+			output: "porcelain: 1\nversion: v1.2.3\ncommit: abc\ndate: 2026-08-16T10:00:00Z\n",
+			want:   buildinfo.PorcelainInfo{Version: "v1.2.3", Commit: "abc", Date: "2026-08-16T10:00:00Z"},
+		},
+	}
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			r := require.New(t)
+			a := assert.New(t)
+			runner := func(context.Context, Command) (string, error) { return test.output, nil }
+			info, err := requireVersion(t.Context(), runner, "/bin/example", "/bin", "v1.2.3", time.Second, 1024)
+			r.NoError(err)
+			a.Equal(test.want, info)
+		})
+	}
+}
+
+func TestRequireVersionRejectsMalformedOrUnsupportedPorcelain(t *testing.T) {
+	t.Parallel()
+	tests := map[string]string{
+		"missing porcelain marker":           "version: v1.2.3\ncommit: abc\ndate: 2026-08-16T10:00:00Z\n",
+		"unsupported porcelain version":      "porcelain: 2\nversion: v1.2.3\ncommit: abc\ndate: 2026-08-16T10:00:00Z\n",
+		"line without colon-space separator": "porcelain: 1\nversion:v1.2.3\ncommit: abc\ndate: 2026-08-16T10:00:00Z\n",
+		"version mismatch":                   "porcelain: 1\nversion: v9.9.9\ncommit: abc\ndate: 2026-08-16T10:00:00Z\n",
+	}
+	for name, output := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			a := assert.New(t)
+			runner := func(context.Context, Command) (string, error) { return output, nil }
+			_, err := requireVersion(t.Context(), runner, "/bin/example", "/bin", "v1.2.3", time.Second, 1024)
+			a.Error(err, name)
+		})
+	}
+}
+
+func TestUpdaterPopulatesInvenTreeBaselineFromPreRenameCandidateWithoutSecondExec(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+
+	dir := resolvedTempDir(t)
+	executable := filepath.Join(dir, binaryName)
+	r.NoError(os.WriteFile(executable, []byte("old"), 0o755))
+	r.NoError(adoptDirectInstall(executable))
+	archive := makeArchive(t, []archiveEntry{{name: binaryName, mode: 0o755, body: []byte("new")}})
+	client := releaseClient("v1.1.0", archive, runtime.GOOS, runtime.GOARCH)
+	calls := 0
+	runner := func(context.Context, Command) (string, error) {
+		calls++
+		if calls == 1 {
+			return "porcelain: 1\nversion: v1.1.0\ncommit: test\ndate: 2026-08-16T10:00:00Z\ninventree_version: 1.6.0\ninventree_api: 540\n", nil
+		}
+		return versionOutput("v1.1.0"), nil
+	}
+	updater := New(Dependencies{Client: client, ExecutablePath: func() (string, error) { return executable, nil }, RunCommand: runner, GOOS: runtime.GOOS, GOARCH: runtime.GOARCH})
+
+	result, err := updater.Run(t.Context(), "v1.0.0", Options{})
+	r.NoError(err)
+	a.True(result.Updated)
+	a.Equal(buildinfo.PinnedInvenTreeVersion, result.PreviousInvenTreeVersion)
+	a.Equal(buildinfo.PinnedInvenTreeAPIVersion, result.PreviousInvenTreeAPI)
+	a.Equal("1.6.0", result.NewInvenTreeVersion)
+	a.Equal("540", result.NewInvenTreeAPI)
+	a.Equal(2, calls, "only the pre-rename staged probe and the post-rename installed probe should run; the summary must reuse the pre-rename parse rather than executing the candidate a third time")
+}
+
+func TestUpdaterOmitsInvenTreeBaselineWhenCandidateLacksOptionalFields(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+
+	dir := resolvedTempDir(t)
+	executable := filepath.Join(dir, binaryName)
+	r.NoError(os.WriteFile(executable, []byte("old"), 0o755))
+	r.NoError(adoptDirectInstall(executable))
+	archive := makeArchive(t, []archiveEntry{{name: binaryName, mode: 0o755, body: []byte("new")}})
+	client := releaseClient("v1.1.0", archive, runtime.GOOS, runtime.GOARCH)
+	runner := func(context.Context, Command) (string, error) {
+		return "porcelain: 1\nversion: v1.1.0\ncommit: test\ndate: 2026-08-16T10:00:00Z\n", nil
+	}
+	updater := New(Dependencies{Client: client, ExecutablePath: func() (string, error) { return executable, nil }, RunCommand: runner, GOOS: runtime.GOOS, GOARCH: runtime.GOARCH})
+
+	result, err := updater.Run(t.Context(), "v1.0.0", Options{})
+	r.NoError(err)
+	a.True(result.Updated)
+	a.Empty(result.NewInvenTreeVersion)
+	a.Empty(result.NewInvenTreeAPI)
+}
+
+// TestOldFixedThreeLineParserRejectsNewPorcelainFormat documents, rather than silently
+// drops, F-S72's accepted one-time self-update break: every binary released before this
+// story shipped has a compiled-in requireVersion that expects the exact old
+// "version:\ncommit:\ndate:" 3-line shape and rejects the new porcelain output as
+// malformed, refusing to self-update into it. Since the production old parser was
+// replaced rather than kept, this test re-implements a minimal copy of it inline solely
+// to prove the migration break is real and intentional, not accidental.
+//
+// TODO: revisit or remove this test at the v1.0.0 boundary (AGENTS.md's Release Workflow
+// section already treats v1.0.0 as a compatibility milestone), once no supported binary
+// predates the porcelain format.
+func TestOldFixedThreeLineParserRejectsNewPorcelainFormat(t *testing.T) {
+	t.Parallel()
+	a := assert.New(t)
+
+	oldParserRequiresVersion := func(output string) error {
+		lines := strings.Split(strings.TrimSpace(output), "\n")
+		if len(lines) != 3 || !strings.HasPrefix(lines[0], "version: ") || !strings.HasPrefix(lines[1], "commit: ") || !strings.HasPrefix(lines[2], "date: ") {
+			return fmt.Errorf("malformed version output")
+		}
+		return nil
+	}
+
+	newOutput := strings.Join(buildinfo.PorcelainLines(), "\n") + "\n"
+	a.ErrorContains(oldParserRequiresVersion(newOutput), "malformed version output")
+}
+
 func TestUpdaterVerificationFailuresLeaveInstallationUnchanged(t *testing.T) {
 	t.Parallel()
 	tests := map[string]func(*testing.T, []byte) *mapHTTPClient{
@@ -884,7 +1012,7 @@ func TestInstallRetainsCommittedRecoveryRecordOnCleanupSyncFailure(t *testing.T)
 	priorPrevious := []byte("older")
 	r.NoError(os.WriteFile(executable+".previous", priorPrevious, 0o700))
 	calls := 0
-	previousPath, err := installVerified(t.Context(), installRequest{Executable: executable, Binary: []byte("new"), TargetVersion: "v1.1.0", RunCommand: func(context.Context, Command) (string, error) { return versionOutput("v1.1.0"), nil }, Timeout: time.Second, OutputLimit: 1024, SyncDirectory: func(path string) error {
+	result, err := installVerified(t.Context(), installRequest{Executable: executable, Binary: []byte("new"), TargetVersion: "v1.1.0", RunCommand: func(context.Context, Command) (string, error) { return versionOutput("v1.1.0"), nil }, Timeout: time.Second, OutputLimit: 1024, SyncDirectory: func(path string) error {
 		calls++
 		if calls == 3 {
 			return errors.New("injected commit sync failure")
@@ -892,7 +1020,8 @@ func TestInstallRetainsCommittedRecoveryRecordOnCleanupSyncFailure(t *testing.T)
 		return syncDirectory(path)
 	}})
 	r.NoError(err)
-	a.Equal(executable+".previous", previousPath)
+	a.Equal(executable+".previous", result.PreviousPath)
+	a.Equal("v1.1.0", result.Candidate.Version)
 	installed, readErr := os.ReadFile(executable)
 	r.NoError(readErr)
 	a.Equal([]byte("new"), installed)
@@ -1065,7 +1194,7 @@ func TestInstallRollsBackRealInstalledSubprocessFailures(t *testing.T) {
 			r.NoError(os.WriteFile(executable, old, 0o751))
 			r.NoError(os.WriteFile(executable+".previous", prior, 0o700))
 			seen := filepath.Join(dir, "probe-seen")
-			script := fmt.Sprintf("#!/bin/sh\nif [ ! -e '%s' ]; then\n  : > '%s'\n  printf 'version: v1.1.0\\ncommit: test\\ndate: test\\n'\n  exit 0\nfi\n%s\n", seen, seen, installedAction)
+			script := fmt.Sprintf("#!/bin/sh\nif [ ! -e '%s' ]; then\n  : > '%s'\n  printf 'porcelain: 1\\nversion: v1.1.0\\ncommit: test\\ndate: 2026-08-16T10:00:00Z\\n'\n  exit 0\nfi\n%s\n", seen, seen, installedAction)
 			_, err := installVerified(t.Context(), installRequest{Executable: executable, Binary: []byte(script), TargetVersion: "v1.1.0", RunCommand: runCommand, Timeout: 50 * time.Millisecond, OutputLimit: 1024})
 			a.Error(err)
 			installed, readErr := os.ReadFile(executable)
@@ -1406,7 +1535,7 @@ func makeArchive(t *testing.T, entries []archiveEntry) []byte {
 }
 
 func versionOutput(version string) string {
-	return "version: " + version + "\ncommit: test\ndate: test\n"
+	return "porcelain: 1\nversion: " + version + "\ncommit: test\ndate: 2026-08-16T10:00:00Z\ninventree_version: " + buildinfo.PinnedInvenTreeVersion + "\ninventree_api: " + buildinfo.PinnedInvenTreeAPIVersion + "\n"
 }
 
 func resolvedTempDir(t *testing.T) string {

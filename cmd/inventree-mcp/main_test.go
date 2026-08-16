@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/davidvanlaatum/dvgoutils/logging"
+	"github.com/davidvanlaatum/inventree-mcp/internal/buildinfo"
 	"github.com/davidvanlaatum/inventree-mcp/internal/config"
 	"github.com/davidvanlaatum/inventree-mcp/internal/inventree"
 	"github.com/davidvanlaatum/inventree-mcp/internal/platform"
@@ -147,7 +148,7 @@ func TestRunVersionReportsBuildVersion(t *testing.T) {
 	})
 
 	r.Equal(0, code)
-	a.Equal("version: dev\ncommit: unknown\ndate: unknown\n", stdout.String())
+	a.Equal("porcelain: 1\nversion: dev\ncommit: unknown\ndate: unknown\ninventree_version: "+buildinfo.PinnedInvenTreeVersion+"\ninventree_api: "+buildinfo.PinnedInvenTreeAPIVersion+"\n", stdout.String())
 	a.Empty(stderr.String())
 }
 
@@ -208,6 +209,28 @@ func TestRunSelfUpdateReportsSuccess(t *testing.T) {
 
 	r.Equal(0, code)
 	a.Equal("updated inventree-mcp from v1.2.2 to v1.2.3\nprevious binary: /safe/inventree-mcp.previous\n", stdout.String())
+	a.Empty(stderr.String())
+}
+
+func TestRunSelfUpdateReportsInvenTreeBaselineWhenPresent(t *testing.T) {
+	r := require.New(t)
+	a := assert.New(t)
+
+	original := runSelfUpdate
+	t.Cleanup(func() { runSelfUpdate = original })
+	runSelfUpdate = func(context.Context, string, selfupdate.Options) (selfupdate.Result, error) {
+		return selfupdate.Result{
+			PreviousVersion: "v1.2.2", Version: "v1.2.3", BackupPath: "/safe/inventree-mcp.previous", Updated: true,
+			PreviousInvenTreeVersion: "1.4.0", PreviousInvenTreeAPI: "520",
+			NewInvenTreeVersion: "1.5.0", NewInvenTreeAPI: "530",
+		}, nil
+	}
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := run([]string{"self-update"}, &stdout, &stderr, mapEnv(nil))
+
+	r.Equal(0, code)
+	a.Equal("updated inventree-mcp from v1.2.2 to v1.2.3\nInvenTree baseline: 1.4.0 (API 520) -> 1.5.0 (API 530)\nprevious binary: /safe/inventree-mcp.previous\n", stdout.String())
 	a.Empty(stderr.String())
 }
 

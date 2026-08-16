@@ -55,9 +55,9 @@ func runWithContext(parentCtx context.Context, args []string, stdout, stderr io.
 
 	switch args[0] {
 	case "version", "--version":
-		writeLine(stdout, "version: %s", buildinfo.Version)
-		writeLine(stdout, "commit: %s", buildinfo.Commit)
-		writeLine(stdout, "date: %s", buildinfo.Date)
+		for _, line := range buildinfo.PorcelainLines() {
+			writeLine(stdout, "%s", line)
+		}
 		return 0
 	case "serve":
 		var flagOutput bytes.Buffer
@@ -124,6 +124,9 @@ func runWithContext(parentCtx context.Context, args []string, stdout, stderr io.
 			return 0
 		}
 		writeLine(stdout, "updated inventree-mcp from %s to %s", result.PreviousVersion, result.Version)
+		if result.NewInvenTreeVersion != "" {
+			writeLine(stdout, "InvenTree baseline: %s (API %s) -> %s (API %s)", result.PreviousInvenTreeVersion, result.PreviousInvenTreeAPI, result.NewInvenTreeVersion, result.NewInvenTreeAPI)
+		}
 		writeLine(stdout, "previous binary: %s", result.BackupPath)
 		return 0
 	case "help", "-h", "--help":

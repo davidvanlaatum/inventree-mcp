@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/davidvanlaatum/inventree-mcp/internal/buildinfo"
 	"golang.org/x/mod/semver"
 )
 
@@ -34,13 +35,22 @@ type Options struct {
 	AdoptDirectInstall bool
 }
 
-// Result describes the outcome of one update attempt.
+// Result describes the outcome of one update attempt. The InvenTree baseline fields are
+// populated only when Updated is true; PreviousInvenTree* comes from the already-running
+// process's own compiled-in constants, and NewInvenTree* comes from the pre-rename staged
+// candidate's parsed version output. Either pair may be empty when the corresponding
+// build predates internal/buildinfo's InvenTree-baseline constants.
 type Result struct {
 	PreviousVersion string
 	Version         string
 	BackupPath      string
 	Updated         bool
 	Adopted         bool
+
+	PreviousInvenTreeVersion string
+	PreviousInvenTreeAPI     string
+	NewInvenTreeVersion      string
+	NewInvenTreeAPI          string
 }
 
 // Limits bounds all network, archive, and process work.
@@ -219,7 +229,7 @@ func (u *Updater) Run(ctx context.Context, currentVersion string, options Option
 	if err != nil {
 		return Result{}, err
 	}
-	backup, err := installVerified(ctx, installRequest{
+	installed, err := installVerified(ctx, installRequest{
 		Executable:    executable,
 		Binary:        binary,
 		Mode:          mode,
@@ -232,7 +242,11 @@ func (u *Updater) Run(ctx context.Context, currentVersion string, options Option
 		return Result{}, err
 	}
 	result.Updated = true
-	result.BackupPath = backup
+	result.BackupPath = installed.PreviousPath
+	result.PreviousInvenTreeVersion = buildinfo.PinnedInvenTreeVersion
+	result.PreviousInvenTreeAPI = buildinfo.PinnedInvenTreeAPIVersion
+	result.NewInvenTreeVersion = installed.Candidate.InvenTreeVersion
+	result.NewInvenTreeAPI = installed.Candidate.InvenTreeAPI
 	return result, nil
 }
 

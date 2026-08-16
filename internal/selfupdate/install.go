@@ -13,6 +13,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/davidvanlaatum/inventree-mcp/internal/buildinfo"
 )
 
 // Command describes a bounded, credential-isolated subprocess.
@@ -187,7 +189,15 @@ func validateInstallTarget(executable, goos string) error {
 	return nil
 }
 
-func installVerified(ctx context.Context, request installRequest) (string, error) {
+// installResult reports the prior-executable backup path plus the pre-rename staged
+// candidate's parsed version output, so callers can build an update summary without a
+// second exec of the installed binary.
+type installResult struct {
+	PreviousPath string
+	Candidate    buildinfo.PorcelainInfo
+}
+
+func installVerified(ctx context.Context, request installRequest) (installResult, error) {
 	if request.SyncDirectory == nil {
 		request.SyncDirectory = syncDirectory
 	}
@@ -201,18 +211,18 @@ func installVerified(ctx context.Context, request installRequest) (string, error
 		request.ReplaceTransaction = replaceTransaction
 	}
 	if err := validateInstallTarget(request.Executable, runtimeGOOS()); err != nil {
-		return "", err
+		return installResult{}, err
 	}
 	info, err := os.Lstat(request.Executable)
 	if err != nil {
-		return "", fmt.Errorf("stat installed executable: %w", err)
+		return installResult{}, fmt.Errorf("stat installed executable: %w", err)
 	}
 	originalMode := info.Mode().Perm()
 	dir := filepath.Dir(request.Executable)
 	transactionOwnsArtifacts := false
 	candidate, err := os.CreateTemp(dir, "."+binaryName+"-update-*")
 	if err != nil {
-		return "", fmt.Errorf("create update staging file: %w", err)
+		return installResult{}, fmt.Errorf("create update staging file: %w", err)
 	}
 	candidatePath := candidate.Name()
 	defer func() {
@@ -222,34 +232,35 @@ func installVerified(ctx context.Context, request installRequest) (string, error
 		}
 	}()
 	if err := candidate.Chmod(0o700); err != nil {
-		return "", fmt.Errorf("protect update staging file: %w", err)
+		return installResult{}, fmt.Errorf("protect update staging file: %w", err)
 	}
 	if _, err := io.Copy(candidate, bytes.NewReader(request.Binary)); err != nil {
-		return "", fmt.Errorf("write update staging file: %w", err)
+		return installResult{}, fmt.Errorf("write update staging file: %w", err)
 	}
 	if err := candidate.Sync(); err != nil {
-		return "", fmt.Errorf("sync update staging file: %w", err)
+		return installResult{}, fmt.Errorf("sync update staging file: %w", err)
 	}
 	if err := candidate.Close(); err != nil {
-		return "", fmt.Errorf("close update staging file: %w", err)
+		return installResult{}, fmt.Errorf("close update staging file: %w", err)
 	}
-	if err := requireVersion(ctx, request.RunCommand, candidatePath, dir, request.TargetVersion, request.Timeout, request.OutputLimit); err != nil {
-		return "", fmt.Errorf("validate staged executable: %w", err)
+	candidateInfo, err := requireVersion(ctx, request.RunCommand, candidatePath, dir, request.TargetVersion, request.Timeout, request.OutputLimit)
+	if err != nil {
+		return installResult{}, fmt.Errorf("validate staged executable: %w", err)
 	}
 	if err := validateInstallTarget(request.Executable, runtimeGOOS()); err != nil {
-		return "", fmt.Errorf("target changed before replacement: %w", err)
+		return installResult{}, fmt.Errorf("target changed before replacement: %w", err)
 	}
 	currentInfo, err := os.Lstat(request.Executable)
 	if err != nil {
-		return "", fmt.Errorf("re-stat target before replacement: %w", err)
+		return installResult{}, fmt.Errorf("re-stat target before replacement: %w", err)
 	}
 	if !os.SameFile(info, currentInfo) || info.Mode() != currentInfo.Mode() || info.Size() != currentInfo.Size() {
-		return "", fmt.Errorf("target identity, mode, or size changed before replacement: %w", ErrUnsafeTarget)
+		return installResult{}, fmt.Errorf("target identity, mode, or size changed before replacement: %w", ErrUnsafeTarget)
 	}
 
 	backupFile, err := os.CreateTemp(dir, "."+binaryName+"-rollback-*")
 	if err != nil {
-		return "", fmt.Errorf("create rollback file: %w", err)
+		return installResult{}, fmt.Errorf("create rollback file: %w", err)
 	}
 	backupPath := backupFile.Name()
 	defer func() {
@@ -259,48 +270,48 @@ func installVerified(ctx context.Context, request installRequest) (string, error
 		}
 	}()
 	if err := backupFile.Chmod(0o600); err != nil {
-		return "", fmt.Errorf("protect rollback file: %w", err)
+		return installResult{}, fmt.Errorf("protect rollback file: %w", err)
 	}
 	current, err := os.Open(request.Executable)
 	if err != nil {
-		return "", fmt.Errorf("open installed executable for backup: %w", err)
+		return installResult{}, fmt.Errorf("open installed executable for backup: %w", err)
 	}
 	_, copyErr := io.Copy(backupFile, current)
 	openedInfo, statOpenErr := current.Stat()
 	closeCurrentErr := current.Close()
 	if copyErr != nil {
-		return "", fmt.Errorf("copy installed executable to rollback file: %w", copyErr)
+		return installResult{}, fmt.Errorf("copy installed executable to rollback file: %w", copyErr)
 	}
 	if closeCurrentErr != nil {
-		return "", fmt.Errorf("close installed executable backup source: %w", closeCurrentErr)
+		return installResult{}, fmt.Errorf("close installed executable backup source: %w", closeCurrentErr)
 	}
 	if statOpenErr != nil {
-		return "", fmt.Errorf("stat installed executable backup source: %w", statOpenErr)
+		return installResult{}, fmt.Errorf("stat installed executable backup source: %w", statOpenErr)
 	}
 	if !os.SameFile(info, openedInfo) {
-		return "", fmt.Errorf("target changed while creating rollback file: %w", ErrUnsafeTarget)
+		return installResult{}, fmt.Errorf("target changed while creating rollback file: %w", ErrUnsafeTarget)
 	}
 	if err := backupFile.Sync(); err != nil {
-		return "", fmt.Errorf("sync rollback file: %w", err)
+		return installResult{}, fmt.Errorf("sync rollback file: %w", err)
 	}
 	if err := backupFile.Close(); err != nil {
-		return "", fmt.Errorf("close rollback file: %w", err)
+		return installResult{}, fmt.Errorf("close rollback file: %w", err)
 	}
 	previousPath := request.Executable + ".previous"
 	if err := validateExistingPrevious(previousPath); err != nil {
-		return "", err
+		return installResult{}, err
 	}
 	previousBackupPath := ""
 	previousMode := fs.FileMode(0)
 	if _, err := os.Lstat(previousPath); err == nil {
 		previousInfo, statErr := os.Stat(previousPath)
 		if statErr != nil {
-			return "", statErr
+			return installResult{}, statErr
 		}
 		previousMode = previousInfo.Mode().Perm()
 		previousBackupPath, err = cloneToTemp(previousPath, dir, "."+binaryName+"-previous-backup-*", 0o600)
 		if err != nil {
-			return "", fmt.Errorf("preserve existing previous executable: %w", err)
+			return installResult{}, fmt.Errorf("preserve existing previous executable: %w", err)
 		}
 		defer func() {
 			if !transactionOwnsArtifacts {
@@ -308,11 +319,11 @@ func installVerified(ctx context.Context, request installRequest) (string, error
 			}
 		}()
 	} else if !errors.Is(err, os.ErrNotExist) {
-		return "", err
+		return installResult{}, err
 	}
 	previousCandidate, err := cloneToTemp(backupPath, dir, "."+binaryName+"-previous-candidate-*", 0o600)
 	if err != nil {
-		return "", fmt.Errorf("prepare previous executable: %w", err)
+		return installResult{}, fmt.Errorf("prepare previous executable: %w", err)
 	}
 	defer func() {
 		if !transactionOwnsArtifacts {
@@ -321,13 +332,13 @@ func installVerified(ctx context.Context, request installRequest) (string, error
 	}()
 	finalInfo, err := os.Lstat(request.Executable)
 	if err != nil {
-		return "", fmt.Errorf("final target validation: %w", err)
+		return installResult{}, fmt.Errorf("final target validation: %w", err)
 	}
 	if !os.SameFile(info, finalInfo) || info.Mode() != finalInfo.Mode() || info.Size() != finalInfo.Size() {
-		return "", fmt.Errorf("target changed before atomic replacement: %w", ErrUnsafeTarget)
+		return installResult{}, fmt.Errorf("target changed before atomic replacement: %w", ErrUnsafeTarget)
 	}
 	if err := os.Chmod(candidatePath, originalMode); err != nil {
-		return "", fmt.Errorf("set installed mode on candidate: %w", err)
+		return installResult{}, fmt.Errorf("set installed mode on candidate: %w", err)
 	}
 
 	txn := transaction{
@@ -344,43 +355,44 @@ func installVerified(ctx context.Context, request installRequest) (string, error
 		if _, statErr := os.Lstat(transactionPath); statErr == nil {
 			transactionOwnsArtifacts = true
 		}
-		return "", err
+		return installResult{}, err
 	}
 	transactionOwnsArtifacts = true
 	if err := os.Rename(candidatePath, request.Executable); err != nil {
-		return "", rollbackTransaction(request.Executable, txn, fmt.Errorf("atomically replace executable: %w", err))
+		return installResult{}, rollbackTransaction(request.Executable, txn, fmt.Errorf("atomically replace executable: %w", err))
 	}
 	if err := request.SyncDirectory(dir); err != nil {
-		return "", rollbackTransaction(request.Executable, txn, fmt.Errorf("sync executable directory: %w", err))
+		return installResult{}, rollbackTransaction(request.Executable, txn, fmt.Errorf("sync executable directory: %w", err))
 	}
-	if err := requireVersion(ctx, request.RunCommand, request.Executable, dir, request.TargetVersion, request.Timeout, request.OutputLimit); err != nil {
-		return "", rollbackTransaction(request.Executable, txn, fmt.Errorf("validate installed executable: %w", err))
+	if _, err := requireVersion(ctx, request.RunCommand, request.Executable, dir, request.TargetVersion, request.Timeout, request.OutputLimit); err != nil {
+		return installResult{}, rollbackTransaction(request.Executable, txn, fmt.Errorf("validate installed executable: %w", err))
 	}
 	if err := os.Chmod(backupPath, originalMode); err != nil {
-		return "", rollbackTransaction(request.Executable, txn, fmt.Errorf("set previous executable mode: %w", err))
+		return installResult{}, rollbackTransaction(request.Executable, txn, fmt.Errorf("set previous executable mode: %w", err))
 	}
 	if err := os.Chmod(previousCandidate, originalMode); err != nil {
-		return "", rollbackTransaction(request.Executable, txn, fmt.Errorf("set previous candidate mode: %w", err))
+		return installResult{}, rollbackTransaction(request.Executable, txn, fmt.Errorf("set previous candidate mode: %w", err))
 	}
 	if err := os.Rename(previousCandidate, previousPath); err != nil {
-		return "", rollbackTransaction(request.Executable, txn, fmt.Errorf("publish previous executable: %w", err))
+		return installResult{}, rollbackTransaction(request.Executable, txn, fmt.Errorf("publish previous executable: %w", err))
 	}
 	if err := request.SyncDirectory(dir); err != nil {
-		return "", rollbackTransaction(request.Executable, txn, fmt.Errorf("sync previous executable: %w", err))
+		return installResult{}, rollbackTransaction(request.Executable, txn, fmt.Errorf("sync previous executable: %w", err))
 	}
 	txn.Committed = true
+	result := installResult{PreviousPath: previousPath, Candidate: candidateInfo}
 	if err := request.ReplaceTransaction(request.Executable, txn); err != nil {
 		var publishedError *transactionPublishError
 		if errors.As(err, &publishedError) {
-			return previousPath, nil
+			return result, nil
 		}
-		return "", rollbackTransaction(request.Executable, txn, fmt.Errorf("commit update transaction: %w", err))
+		return installResult{}, rollbackTransaction(request.Executable, txn, fmt.Errorf("commit update transaction: %w", err))
 	}
 	if err := cleanupCommittedTransaction(request.Executable, txn, request.RemoveTransaction, request.SyncDirectory); err != nil {
-		return previousPath, nil
+		return result, nil
 	}
 	transactionOwnsArtifacts = false
-	return previousPath, nil
+	return result, nil
 }
 
 func cloneToTemp(source, dir, pattern string, mode fs.FileMode) (string, error) {
@@ -427,7 +439,10 @@ func cloneToTemp(source, dir, pattern string, mode fs.FileMode) (string, error) 
 	return path, nil
 }
 
-func requireVersion(ctx context.Context, runner CommandRunner, executable, dir, want string, timeout time.Duration, outputLimit int64) error {
+// requireVersion runs executable's bounded `version` command and requires its porcelain
+// output to name exactly the wanted release, returning the parsed fields alongside its
+// pass/fail result so callers can reuse them instead of re-executing the candidate.
+func requireVersion(ctx context.Context, runner CommandRunner, executable, dir, want string, timeout time.Duration, outputLimit int64) (buildinfo.PorcelainInfo, error) {
 	output, err := runner(ctx, Command{
 		Path:        executable,
 		Args:        []string{"version"},
@@ -437,20 +452,20 @@ func requireVersion(ctx context.Context, runner CommandRunner, executable, dir, 
 		OutputLimit: outputLimit,
 	})
 	if err != nil {
-		return err
+		return buildinfo.PorcelainInfo{}, err
 	}
-	lines := strings.Split(strings.TrimSpace(output), "\n")
-	if len(lines) != 3 || !strings.HasPrefix(lines[0], "version: ") || !strings.HasPrefix(lines[1], "commit: ") || !strings.HasPrefix(lines[2], "date: ") {
-		return fmt.Errorf("malformed version output")
-	}
-	got, err := canonicalStableVersion(strings.TrimPrefix(lines[0], "version: "))
+	info, err := buildinfo.ParsePorcelain(output)
 	if err != nil {
-		return err
+		return buildinfo.PorcelainInfo{}, fmt.Errorf("malformed version output: %w", err)
+	}
+	got, err := canonicalStableVersion(info.Version)
+	if err != nil {
+		return buildinfo.PorcelainInfo{}, err
 	}
 	if got != want {
-		return fmt.Errorf("version mismatch: got %s, want %s", got, want)
+		return buildinfo.PorcelainInfo{}, fmt.Errorf("version mismatch: got %s, want %s", got, want)
 	}
-	return nil
+	return info, nil
 }
 
 func writeTransaction(executable string, txn transaction) error {
