@@ -126,16 +126,16 @@ Before assigning a new story ID, inspect `git worktree list --porcelain`, search
 | [F-S42](#f-s42-related-part-link-administration) | Expose normal related-part reads and guarded create, update, and delete operations. | Done |
 | [F-S43](#f-s43-sourcing-link-detail-completeness) | Complete supplier/manufacturer-part exact reads and long-note maintenance while retaining concise searches. | Done |
 | [F-S44](#f-s44-company-detail-and-role-completeness) | Complete exact company reads and guarded contact, tax, link, and customer-role maintenance. | Ready |
-| [F-S45](#f-s45-stock-item-detail-completeness) | Expose complete high-value stock-item exact-read fields while retaining concise searches and guarded mutation boundaries. | Ready |
-| [F-S46](#f-s46-stock-tracking-and-stocktake-history) | Expose bounded stock tracking events and historical part stocktake snapshots through normal read-only tools. | Planned |
+| [F-S45](#f-s45-stock-item-detail-completeness) | Expose complete high-value stock-item exact-read fields while retaining concise searches and guarded mutation boundaries. | Done |
+| [F-S46](#f-s46-stock-tracking-and-stocktake-history) | Expose bounded stock tracking events and historical part stocktake snapshots through normal read-only tools. | Ready |
 | [F-S47](#f-s47-purchase-order-and-line-detail-completeness) | Complete exact purchase-order and ordinary-line reads plus standalone order metadata and external-link maintenance. | Done |
 | [F-S48](#f-s48-owner-discovery-and-cross-object-responsibility) | Discover InvenTree owners and support consistent guarded responsibility assignment across applicable objects. | Planned |
 | [F-S49](#f-s49-structured-contact-and-address-references) | Discover structured company contacts and addresses and support guarded assignment on applicable objects. | Planned |
 | [F-S50](#f-s50-project-code-discovery-and-assignment) | Discover existing project codes and support consistent guarded assignment across purchase-order records. | Ready |
-| [F-S51](#f-s51-guarded-delete-on-deplete-policy-updates) | Add a reviewed workflow for enabling or disabling delete-on-deplete behavior on one stock item. | Planned |
-| [F-S52](#f-s52-stock-serial-number-management) | Add dedicated discovery and guarded mutation workflows for stock serial numbers. | Planned |
-| [F-S53](#f-s53-guarded-stock-provenance-correction) | Add reviewed correction of supplier, purchase-order, and purchase-price provenance on eligible stock items. | Planned |
-| [F-S54](#f-s54-stock-install-and-uninstall-workflows) | Add dedicated guarded workflows for parent/child stock installation relationships. | Planned |
+| [F-S51](#f-s51-guarded-delete-on-deplete-policy-updates) | Add a reviewed workflow for enabling or disabling delete-on-deplete behavior on one stock item. | Ready |
+| [F-S52](#f-s52-stock-serial-number-management) | Add dedicated discovery and guarded mutation workflows for stock serial numbers. | Ready |
+| [F-S53](#f-s53-guarded-stock-provenance-correction) | Add reviewed correction of supplier, purchase-order, and purchase-price provenance on eligible stock items. | Ready |
+| [F-S54](#f-s54-stock-install-and-uninstall-workflows) | Add dedicated guarded workflows for parent/child stock installation relationships. | Ready |
 | [F-S55](#f-s55-barcode-workflow-discovery) | Investigate safe barcode presence, generation, resolution, assignment, removal, and scan-history tooling. | Future |
 | [F-S56](#f-s56-cross-object-tag-workflow-discovery) | Investigate tag discovery and consistent assignment/removal across supported object types. | Future |
 | [F-S57](#f-s57-part-testing-workflow-discovery) | Investigate part test templates, stock-item test results, attachments, and safe workflow boundaries. | Future |
@@ -146,7 +146,7 @@ Before assigning a new story ID, inspect `git worktree list --porcelain`, search
 | [F-S62](#f-s62-guarded-purchase-order-hold-resume-and-cancellation) | Add explicit current-state-planned hold, resume, and cancellation workflows without generic status editing or whole-order deletion. | Ready |
 | [F-S63](#f-s63-guarded-purchase-order-duplication-discovery) | Investigate a deferred, low-frequency workflow for safely duplicating selected purchase-order state. | Future |
 | [F-S64](#f-s64-cross-object-generic-parameter-values-and-uniqueness) | Add bounded generic parameter values across supported non-part-row object types and administer template uniqueness. | Ready |
-| [F-S65](#f-s65-guarded-stock-custom-status-management) | Extend the guarded stock-status workflow to assign or clear compatible custom status keys. | Planned |
+| [F-S65](#f-s65-guarded-stock-custom-status-management) | Extend the guarded stock-status workflow to assign or clear compatible custom status keys. | Ready |
 | [F-S66](#f-s66-guarded-stock-item-merge-discovery) | Investigate a deferred, fail-closed merge workflow for explicitly selected compatible stock items. | Future |
 | [F-S67](#f-s67-stock-location-detail-and-type-administration) | Complete stock-location icon detail and add guarded stock-location-type administration. | Ready |
 | [F-S68](#f-s68-guarded-stock-location-deletion) | Delete one empty, unreferenced stock location only through a complete fail-closed dependency plan. | Planned |
@@ -2226,8 +2226,9 @@ Tasks:
 
 ### F-S45: Stock-Item Detail Completeness
 
-- Status: `Ready`
+- Status: `Done`
 - Issue: [#126](https://github.com/davidvanlaatum/inventree-mcp/issues/126)
+- Progress: implemented on `codex/f-s45-stock-item-detail-completeness` from `main` at `ccd45e6`.
 - Depends on: F-S21, F-S39
 - Decisions: approved by the operator on 2026-08-15. Exact stock reads add API-derived SKU, MPN, expired/stale state, and read-only sales-order traceability. Embedded part detail remains a separate `get_part` call and searches stay concise. Raw `barcode_hash` remains excluded pending F-S55.
 - Scope: complete `get_stock_item` response coverage without broadening generic stock PATCH into identity, quantity, location, status, provenance, installation, or lifecycle mutation.
@@ -2238,11 +2239,13 @@ Tasks:
   - External stock links follow F-S39; barcode presence and operations remain deferred to the barcode story.
   - Nullable and derived values preserve upstream semantics and sensitive URLs/notes remain absent from errors and recovery projections.
   - Pinned integration and JSON tests plus plan/schema/tool/operator documentation cover the complete exact-read contract, including null, omitted, empty, and populated location-path behavior.
-- Residual risk: derived identifiers and stale/expired state can change between reads; they are informational context and must not become mutation preconditions unless explicitly bound by a guarded workflow.
+- Validation: `go generate ./internal/tools` (no `docs/tool-manifest.json` diff), `go build ./...`, `go vet ./...`, `golangci-lint run ./...` (0 issues), `go test -tags no_integration_tests ./...`, `go mod tidy -diff`, and `git diff --check` all pass. `GOFLAGS=-trimpath go test -race -p=1 ./...` passes with every default-on Testcontainers suite against pinned InvenTree 1.5.0, including the new `TestClientMethodsAgainstInvenTree/stock_item_detail` and `TestMilestoneHappyPathToolsAgainstInvenTree/stock_item_detail_completeness` subtests. New fast unit coverage: a "get stock item detail" case in `internal/inventree/read_methods_test.go`'s table-driven `TestReadMethodsUseExpectedEndpoints` (asserts the exact explicit query params sent); `TestStockItemFieldInventoryClassifiesPinnedSerializerExactly` and `TestStockItemDetailPreservesNullableScalarsAndOmitsUnapprovedFields` in `internal/inventree/stock_item_field_inventory_test.go`; `TestStockItemDetailLocationPathHandlesNullOmittedEmptyAndPopulated` covering all four `location_path` JSON states the acceptance criteria calls out. Per-package coverage compared against exact base `origin/main` at `ccd45e6` (`go test -tags no_integration_tests -cover`): `internal/inventree`, `internal/tools`, and `docs` are unchanged at 88.2%, 84.0%, and 57.1% respectively — no package-level reduction.
+- Review: Senior Go Developer, Senior QA / Test Architect, Senior Product Manager, and Senior Infosec Reviewer reviews completed (full panel run per the tool-surface-change precedent set by F-S40/F-S43/F-S47). Go and Infosec reviews found no actionable findings. QA found the acceptance criteria's required null/omitted/empty/populated `location_path` coverage was only exercised for the populated case; fixed by adding the JSON-decode unit test above plus a pinned live-Testcontainers case, which also surfaced a genuine live-discovery finding — pinned InvenTree 1.5.0 falls back to the part's `default_location` when `location` is omitted on stock creation rather than leaving the item locationless, so the only reliably reachable null-location state is an explicit `location:null` PATCH; both behaviors are now covered and documented in `docs/api-schema.md`. QA also flagged a harmless unused fixture line in `stock_admin_tools_test.go`, removed. Product found the new `docs/api-schema.md` section made an unverified claim about what upstream setting drives `stale` (conflating it with `expiry_date`/`stocktake_date`), didn't disclose that `stale` (unlike `expired`) is decoded but not asserted by any test, and two minor clarity gaps around the sales-order boundary and the new fields' read-only status; all four addressed with doc wording fixes in `docs/api-schema.md` and `docs/operator-recipes.md`. Focused rerun of the affected areas after fixes found no further actionable findings.
+- Residual risk: derived identifiers and stale/expired state can change between reads; they are informational context and must not become mutation preconditions unless explicitly bound by a guarded workflow. `stale`'s exact upstream trigger is instance-configuration-dependent and undocumented in the pinned OpenAPI schema, so this story decodes it without asserting a specific value in tests, unlike `expired`.
 
 ### F-S46: Stock Tracking And Stocktake History
 
-- Status: `Planned`
+- Status: `Ready`
 - Issue: [#127](https://github.com/davidvanlaatum/inventree-mcp/issues/127)
 - Depends on: F-S05, F-S45
 - Decisions: approved by the operator on 2026-08-15. Tracking searches require a stock-item or part filter. Historical stocktake reads are part-scoped. Entry/report generation remains a separate future story.
@@ -2330,7 +2333,7 @@ Tasks:
 
 ### F-S51: Guarded Delete-On-Deplete Policy Updates
 
-- Status: `Planned`
+- Status: `Ready`
 - Issue: [#132](https://github.com/davidvanlaatum/inventree-mcp/issues/132)
 - Depends on: F-S24, F-S45
 - Decisions: approved by the operator on 2026-08-15. `delete_on_deplete` is not ordinary metadata because it controls future record deletion; changes require a dedicated reviewed workflow.
@@ -2346,7 +2349,7 @@ Tasks:
 
 ### F-S52: Stock Serial-Number Management
 
-- Status: `Planned`
+- Status: `Ready`
 - Issue: [#133](https://github.com/davidvanlaatum/inventree-mcp/issues/133)
 - Depends on: F-S45
 - Decisions: approved by the operator on 2026-08-15. Serial changes affect stock identity and trackability and therefore remain outside ordinary metadata PATCH.
@@ -2362,7 +2365,7 @@ Tasks:
 
 ### F-S53: Guarded Stock Provenance Correction
 
-- Status: `Planned`
+- Status: `Ready`
 - Issue: [#134](https://github.com/davidvanlaatum/inventree-mcp/issues/134)
 - Depends on: F-S43, F-S45, F-S47
 - Decisions: approved by the operator on 2026-08-15. Supplier part, purchase order, purchase price, and currency corrections require a dedicated guarded story; stock base-part reassignment remains unsupported.
@@ -2378,7 +2381,7 @@ Tasks:
 
 ### F-S54: Stock Install And Uninstall Workflows
 
-- Status: `Planned`
+- Status: `Ready`
 - Issue: [#135](https://github.com/davidvanlaatum/inventree-mcp/issues/135)
 - Depends on: F-S45
 - Decisions: approved by the operator on 2026-08-15. `belongs_to` and installed-item relationships remain read-only until handled by explicit install/uninstall workflows; build, consumption, customer, and sales provenance remain lifecycle-owned.
@@ -2567,7 +2570,7 @@ Tasks:
 
 ### F-S65: Guarded Stock Custom-Status Management
 
-- Status: `Planned`
+- Status: `Ready`
 - Issue: [#147](https://github.com/davidvanlaatum/inventree-mcp/issues/147)
 - Depends on: F-S05, F-S45, F-S61
 - Decisions: approved by the operator on 2026-08-15. Stock `status_custom_key` is maintained only through the existing guarded status workflow; `is_building` remains read-only while build workflows are deferred.

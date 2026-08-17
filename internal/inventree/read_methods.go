@@ -191,6 +191,28 @@ func (c *Client) GetStockItem(ctx context.Context, id int) (StockItem, error) {
 	return out, err
 }
 
+// GetStockItemDetail retrieves one stock item with explicit embedded-detail
+// query flags rather than the endpoint's own defaults: path_detail is enabled
+// so location_path is populated, while part_detail (on by default upstream),
+// location_detail, supplier_part_detail, and tests stay off because nested
+// part, location, and supplier-part records remain separate exact lookups.
+func (c *Client) GetStockItemDetail(ctx context.Context, id int) (StockItemDetail, error) {
+	var out StockItemDetail
+	query := url.Values{
+		"path_detail":          []string{"true"},
+		"part_detail":          []string{"false"},
+		"location_detail":      []string{"false"},
+		"supplier_part_detail": []string{"false"},
+		"tests":                []string{"false"},
+	}
+	req, err := c.NewRequest(ctx, http.MethodGet, fmt.Sprintf("/api/stock/%d/", id), query, nil)
+	if err != nil {
+		return out, err
+	}
+	err = c.DoJSON(req, &out)
+	return out, err
+}
+
 func (c *Client) SearchPartParameters(ctx context.Context, query PartParameterQuery) ([]Parameter, error) {
 	return listAll[Parameter](ctx, c, "/api/parameter/", query.values())
 }

@@ -270,6 +270,19 @@ func TestReadMethodsUseExpectedEndpoints(t *testing.T) {
 			response: `{"pk":50,"part":10,"location":40,"quantity":2,"status":10,"packaging":"reel"}`,
 		},
 		{
+			name: "get stock item detail",
+			call: func(ctx context.Context, client *Client) error {
+				record, err := client.GetStockItemDetail(ctx, 50)
+				if err == nil && (record.PK != 50 || record.SKU == nil || *record.SKU != "SKU-50" || record.Expired == nil || !*record.Expired || len(record.LocationPath) != 1) {
+					return errors.New("stock item detail did not preserve exact fields")
+				}
+				return err
+			},
+			wantPath:  "/api/stock/50/",
+			wantQuery: url.Values{"path_detail": []string{"true"}, "part_detail": []string{"false"}, "location_detail": []string{"false"}, "supplier_part_detail": []string{"false"}, "tests": []string{"false"}},
+			response:  `{"pk":50,"part":10,"location":40,"quantity":2,"status":10,"SKU":"SKU-50","MPN":null,"expired":true,"stale":false,"location_path":[{"pk":40,"name":"Bin"}]}`,
+		},
+		{
 			name: "search part parameters",
 			call: func(ctx context.Context, client *Client) error {
 				_, err := client.SearchPartParameters(ctx, PartParameterQuery{Search: "10k", PartID: 10, TemplateID: 70, Limit: 9, Offset: 5})

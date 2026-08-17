@@ -235,6 +235,54 @@ type StockItem struct {
 	Updated                *string        `json:"updated"`
 	PurchaseOrder          *int           `json:"purchase_order"`
 	PurchaseOrderReference *string        `json:"purchase_order_reference"`
+}
+
+// StockItemDetail is the approved complete scalar projection returned by the
+// exact stock-item endpoint. Nested location, part, and supplier-part detail
+// remain separate lookups, and tags/tests remain deferred; see
+// StockItemFieldInventory for the pinned classification.
+type StockItemDetail struct {
+	WebLinkFields
+	PK                     int            `json:"pk"`
+	Part                   int            `json:"part"`
+	Location               *int           `json:"location"`
+	Quantity               float64        `json:"quantity"`
+	Serial                 *string        `json:"serial"`
+	Batch                  *string        `json:"batch"`
+	ExpiryDate             *string        `json:"expiry_date"`
+	Packaging              *string        `json:"packaging"`
+	Notes                  *string        `json:"notes"`
+	Link                   string         `json:"link"`
+	Status                 int            `json:"status"`
+	StatusText             *string        `json:"status_text"`
+	StatusCustomKey        *int           `json:"status_custom_key"`
+	DeleteOnDeplete        bool           `json:"delete_on_deplete"`
+	InStock                bool           `json:"in_stock"`
+	IsBuilding             bool           `json:"is_building"`
+	Owner                  *int           `json:"owner"`
+	SupplierPart           *int           `json:"supplier_part"`
+	SKU                    *string        `json:"SKU"`
+	MPN                    *string        `json:"MPN"`
+	Build                  *int           `json:"build"`
+	ConsumedBy             *int           `json:"consumed_by"`
+	Customer               *int           `json:"customer"`
+	SalesOrder             *int           `json:"sales_order"`
+	SalesOrderReference    *string        `json:"sales_order_reference"`
+	BelongsTo              *int           `json:"belongs_to"`
+	Parent                 *int           `json:"parent"`
+	Allocated              *float64       `json:"allocated"`
+	Expired                *bool          `json:"expired"`
+	Stale                  *bool          `json:"stale"`
+	InstalledItems         *int           `json:"installed_items"`
+	ChildItems             *int           `json:"child_items"`
+	TrackingItems          *int           `json:"tracking_items"`
+	PurchasePrice          *DecimalString `json:"purchase_price"`
+	PurchasePriceCurrency  string         `json:"purchase_price_currency"`
+	CreationDate           *string        `json:"creation_date"`
+	StocktakeDate          *string        `json:"stocktake_date"`
+	Updated                *string        `json:"updated"`
+	PurchaseOrder          *int           `json:"purchase_order"`
+	PurchaseOrderReference *string        `json:"purchase_order_reference"`
 	LocationPath           []TreePath     `json:"location_path,omitempty"`
 }
 

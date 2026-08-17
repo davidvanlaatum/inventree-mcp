@@ -251,7 +251,13 @@ func TestStockAdministrationExactLookupHandlers(t *testing.T) {
 	fake := newStockAdminFake()
 	fake.locations[40] = inventree.StockLocation{PK: 40, Name: "Bin"}
 	fake.locationTypes[3] = inventree.StockLocationType{PK: 3, Name: "Shelf"}
-	fake.stockItems[50] = inventree.StockItem{PK: 50, Part: 5, Quantity: 2, Link: "https://example.test/item?secret=value"}
+	fake.stockItemDetails[50] = inventree.StockItemDetail{
+		PK: 50, Part: 5, Quantity: 2, Link: "https://example.test/item?secret=value",
+		SKU: dvgoutils.Ptr("SKU-50"), MPN: dvgoutils.Ptr("MPN-50"),
+		Expired: dvgoutils.Ptr(true), Stale: dvgoutils.Ptr(false),
+		SalesOrderReference: dvgoutils.Ptr("SO0001"),
+		LocationPath:        []inventree.TreePath{{PK: 40, Name: "Bin"}},
+	}
 
 	_, location, err := getStockLocation(stockAdminDeps(fake))(ctx, &mcp.CallToolRequest{}, IDInput{ID: 40})
 	r.NoError(err)
@@ -267,6 +273,18 @@ func TestStockAdministrationExactLookupHandlers(t *testing.T) {
 	_, stock, err := getStockItem(stockAdminDeps(fake))(ctx, &mcp.CallToolRequest{}, IDInput{ID: 50})
 	r.NoError(err)
 	a.Equal("https://example.test/item?secret=value", stock.Record.Link)
+	r.NotNil(stock.Record.SKU)
+	a.Equal("SKU-50", *stock.Record.SKU)
+	r.NotNil(stock.Record.MPN)
+	a.Equal("MPN-50", *stock.Record.MPN)
+	r.NotNil(stock.Record.Expired)
+	a.True(*stock.Record.Expired)
+	r.NotNil(stock.Record.Stale)
+	a.False(*stock.Record.Stale)
+	r.NotNil(stock.Record.SalesOrderReference)
+	a.Equal("SO0001", *stock.Record.SalesOrderReference)
+	r.Len(stock.Record.LocationPath, 1)
+	a.Equal("Bin", stock.Record.LocationPath[0].Name)
 }
 
 func TestStockAdministrationPlanAndReadbackFailuresDoNotWriteBlindly(t *testing.T) {
@@ -412,6 +430,7 @@ func TestStockAdministrationPatchValidationEdges(t *testing.T) {
 type stockAdminFake struct {
 	locations             map[int]inventree.StockLocation
 	stockItems            map[int]inventree.StockItem
+	stockItemDetails      map[int]inventree.StockItemDetail
 	companies             map[int]inventree.Company
 	locationTypes         map[int]inventree.StockLocationType
 	pages                 map[int]inventree.StockLocationPage
@@ -428,7 +447,7 @@ type stockAdminFake struct {
 }
 
 func newStockAdminFake() *stockAdminFake {
-	return &stockAdminFake{locations: map[int]inventree.StockLocation{}, stockItems: map[int]inventree.StockItem{}, companies: map[int]inventree.Company{}, locationTypes: map[int]inventree.StockLocationType{}, pages: map[int]inventree.StockLocationPage{}}
+	return &stockAdminFake{locations: map[int]inventree.StockLocation{}, stockItems: map[int]inventree.StockItem{}, stockItemDetails: map[int]inventree.StockItemDetail{}, companies: map[int]inventree.Company{}, locationTypes: map[int]inventree.StockLocationType{}, pages: map[int]inventree.StockLocationPage{}}
 }
 
 func stockAdminDeps(fake *stockAdminFake) Dependencies {
@@ -508,6 +527,14 @@ func (f *stockAdminFake) GetStockItem(_ context.Context, id int) (inventree.Stoc
 	value, ok := f.stockItems[id]
 	if !ok {
 		return inventree.StockItem{}, errors.New("not found")
+	}
+	return value, nil
+}
+
+func (f *stockAdminFake) GetStockItemDetail(_ context.Context, id int) (inventree.StockItemDetail, error) {
+	value, ok := f.stockItemDetails[id]
+	if !ok {
+		return inventree.StockItemDetail{}, errors.New("not found")
 	}
 	return value, nil
 }
