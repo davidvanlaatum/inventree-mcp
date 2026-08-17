@@ -32,16 +32,24 @@ type CompanyAdminClient interface {
 
 type CompanyView struct {
 	inventree.WebLinkFields
-	ID             int     `json:"id"`
-	Name           string  `json:"name"`
-	Description    string  `json:"description"`
-	Website        string  `json:"website"`
-	Currency       string  `json:"currency"`
-	Active         bool    `json:"active"`
-	IsSupplier     bool    `json:"is_supplier"`
-	IsManufacturer bool    `json:"is_manufacturer"`
-	IsCustomer     bool    `json:"is_customer"`
-	Notes          *string `json:"notes,omitempty"`
+	ID                int     `json:"id"`
+	Name              string  `json:"name"`
+	Description       string  `json:"description"`
+	Website           string  `json:"website"`
+	Phone             string  `json:"phone,omitempty"`
+	Email             *string `json:"email,omitempty"`
+	Contact           string  `json:"contact,omitempty"`
+	TaxID             string  `json:"tax_id,omitempty"`
+	Link              string  `json:"link,omitempty"`
+	ImageURL          string  `json:"image_url,omitempty"`
+	Currency          string  `json:"currency"`
+	Active            bool    `json:"active"`
+	IsSupplier        bool    `json:"is_supplier"`
+	IsManufacturer    bool    `json:"is_manufacturer"`
+	IsCustomer        bool    `json:"is_customer"`
+	PartsSupplied     int     `json:"parts_supplied"`
+	PartsManufactured int     `json:"parts_manufactured"`
+	Notes             *string `json:"notes,omitempty"`
 }
 
 type CompanyRecoveryView struct {
@@ -154,10 +162,17 @@ type UpdateCompanyInput struct {
 	Name           *string `json:"name,omitempty"`
 	Description    *string `json:"description,omitempty"`
 	Website        *string `json:"website,omitempty" jsonschema:"Complete HTTP(S) company website URL without userinfo; query parameters and fragments are preserved. An explicit empty string clears it."`
+	Phone          *string `json:"phone,omitempty" jsonschema:"Replacement contact phone number. An explicit empty string clears it. Never echoed in errors or recovery projections."`
+	Email          *string `json:"email,omitempty" jsonschema:"Replacement contact email. Mutually exclusive with clear_email. Never echoed in errors or recovery projections."`
+	ClearEmail     bool    `json:"clear_email,omitempty" jsonschema:"Explicitly PATCH email to null; mutually exclusive with email."`
+	Contact        *string `json:"contact,omitempty" jsonschema:"Replacement free-text point-of-contact name; not a linked contact record. An explicit empty string clears it. Never echoed in errors or recovery projections."`
+	TaxID          *string `json:"tax_id,omitempty" jsonschema:"Replacement business tax identifier (for example ABN/ACN), not a personal identifier. An explicit empty string clears it. Never echoed in errors or recovery projections."`
+	Link           *string `json:"link,omitempty" jsonschema:"Complete HTTP(S) external company-information URL without userinfo, distinct from website; query parameters and fragments are preserved. An explicit empty string clears it."`
 	Currency       *string `json:"currency,omitempty"`
 	Active         *bool   `json:"active,omitempty"`
 	IsSupplier     *bool   `json:"is_supplier,omitempty"`
 	IsManufacturer *bool   `json:"is_manufacturer,omitempty"`
+	IsCustomer     *bool   `json:"is_customer,omitempty" jsonschema:"Set true to add the customer role. An explicit false is rejected here; use remove_company_customer_role for guarded removal."`
 	Notes          *string `json:"notes,omitempty" jsonschema:"Replacement markdown notes. Notes are never included in recovery or error projections."`
 	ClearNotes     bool    `json:"clear_notes,omitempty" jsonschema:"Explicitly PATCH notes to null; mutually exclusive with notes."`
 	Confirm        bool    `json:"confirm,omitempty" jsonschema:"Required when removing supplier or manufacturer role."`
@@ -459,6 +474,9 @@ func companyPatch(input UpdateCompanyInput) (inventree.PatchFields, error) {
 	if input.Notes != nil && input.ClearNotes {
 		return nil, errors.New("notes and clear_notes are mutually exclusive")
 	}
+	if conflict(input.Email != nil, input.ClearEmail) {
+		return nil, errors.New("email and clear_email are mutually exclusive")
+	}
 	fields := inventree.PatchFields{}
 	if input.Name != nil {
 		name := strings.TrimSpace(*input.Name)
@@ -477,6 +495,23 @@ func companyPatch(input UpdateCompanyInput) (inventree.PatchFields, error) {
 		}
 		fields["website"] = inventree.Set(website)
 	}
+	if input.Phone != nil {
+		fields["phone"] = inventree.Set(strings.TrimSpace(*input.Phone))
+	}
+	setNullableString(fields, "email", input.Email, input.ClearEmail)
+	if input.Contact != nil {
+		fields["contact"] = inventree.Set(strings.TrimSpace(*input.Contact))
+	}
+	if input.TaxID != nil {
+		fields["tax_id"] = inventree.Set(strings.TrimSpace(*input.TaxID))
+	}
+	if input.Link != nil {
+		link, err := validateExternalURL(*input.Link)
+		if err != nil {
+			return nil, err
+		}
+		fields["link"] = inventree.Set(link)
+	}
 	if input.Currency != nil {
 		currency := strings.TrimSpace(*input.Currency)
 		if currency == "" {
@@ -492,6 +527,12 @@ func companyPatch(input UpdateCompanyInput) (inventree.PatchFields, error) {
 	}
 	if input.IsManufacturer != nil {
 		fields["is_manufacturer"] = inventree.Set(*input.IsManufacturer)
+	}
+	if input.IsCustomer != nil {
+		if !*input.IsCustomer {
+			return nil, errors.New("update_company cannot remove the customer role; use remove_company_customer_role for guarded removal")
+		}
+		fields["is_customer"] = inventree.Set(true)
 	}
 	if input.Notes != nil {
 		fields["notes"] = inventree.Set(*input.Notes)
@@ -936,7 +977,7 @@ func recoverManufacturerPartUpdate(ctx context.Context, client CompanyAdminClien
 }
 
 func companyFieldsMatch(record inventree.CompanyDetail, fields inventree.PatchFields) bool {
-	return patchMatches(fields, map[string]any{"name": record.Name, "description": record.Description, "website": record.Website, "currency": record.Currency, "active": record.Active, "is_supplier": record.IsSupplier, "is_manufacturer": record.IsManufacturer, "notes": record.Notes})
+	return patchMatches(fields, map[string]any{"name": record.Name, "description": record.Description, "website": record.Website, "phone": record.Phone, "email": record.Email, "contact": record.Contact, "tax_id": record.TaxID, "link": record.Link, "currency": record.Currency, "active": record.Active, "is_supplier": record.IsSupplier, "is_manufacturer": record.IsManufacturer, "is_customer": record.IsCustomer, "notes": record.Notes})
 }
 func supplierPartFieldsMatch(record inventree.SupplierPartDetail, fields inventree.PatchFields) bool {
 	return patchMatches(fields, map[string]any{"part": record.Part, "supplier": record.Supplier, "SKU": record.SKU, "description": record.Description, "link": record.Link, "active": record.Active, "primary": record.Primary, "manufacturer_part": record.ManufacturerPart, "packaging": record.Packaging, "pack_quantity": record.PackQuantity, "note": record.Note, "notes": record.Notes, "available": record.Available})
@@ -972,7 +1013,16 @@ func comparablePatchValue(value any) any {
 }
 
 func companyView(record inventree.CompanyDetail) CompanyView {
-	return CompanyView{ID: record.PK, Name: record.Name, Description: record.Description, Website: projectExternalURL(stringPointer(record.Website)), Currency: record.Currency, Active: record.Active, IsSupplier: record.IsSupplier, IsManufacturer: record.IsManufacturer, IsCustomer: record.IsCustomer, Notes: record.Notes}
+	return CompanyView{
+		ID: record.PK, Name: record.Name, Description: record.Description,
+		Website: projectExternalURL(stringPointer(record.Website)),
+		Phone:   record.Phone, Email: record.Email, Contact: record.Contact, TaxID: record.TaxID,
+		Link: projectExternalURL(stringPointer(record.Link)), ImageURL: redactedMetadataURL(record.Image),
+		Currency: record.Currency, Active: record.Active,
+		IsSupplier: record.IsSupplier, IsManufacturer: record.IsManufacturer, IsCustomer: record.IsCustomer,
+		PartsSupplied: record.PartsSupplied, PartsManufactured: record.PartsManufactured,
+		Notes: record.Notes,
+	}
 }
 func companyRecovery(record inventree.CompanyDetail) CompanyRecoveryView {
 	return CompanyRecoveryView{ID: record.PK, Name: record.Name, Currency: record.Currency, Active: record.Active, IsSupplier: record.IsSupplier, IsManufacturer: record.IsManufacturer, IsCustomer: record.IsCustomer}
@@ -1036,7 +1086,7 @@ func stringPointer(value string) *string {
 func safeCompanyAdminError(action string, err error) error {
 	var apiErr *inventree.APIError
 	if errors.As(err, &apiErr) {
-		allowed := []string{"name", "description", "website", "currency", "active", "is_supplier", "is_manufacturer", "notes", "part", "supplier", "SKU", "manufacturer", "MPN", "link", "primary", "manufacturer_part", "packaging", "pack_quantity", "note"}
+		allowed := []string{"name", "description", "website", "phone", "email", "contact", "tax_id", "currency", "active", "is_supplier", "is_manufacturer", "is_customer", "notes", "part", "supplier", "SKU", "manufacturer", "MPN", "link", "primary", "manufacturer_part", "packaging", "pack_quantity", "note"}
 		var details []string
 		for _, key := range allowed {
 			if messages := apiErr.FieldErrors[key]; len(messages) > 0 {

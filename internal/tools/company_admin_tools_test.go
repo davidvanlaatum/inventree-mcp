@@ -30,6 +30,31 @@ func TestGetCompanyAdminIncludesApprovedFieldsAndRedactsWebsite(t *testing.T) {
 	assert.True(t, out.Record.IsCustomer)
 }
 
+func TestGetCompanyAdminExposesContactTaxLinkImageAndCounts(t *testing.T) {
+	t.Parallel()
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	email := "ap@example.test"
+	image := "/media/company_images/acme.png?token=secret#frag"
+	link := "https://user:pass@example.test/info?secret=1#frag"
+	fake := &fakeCompanyAdmin{company: inventree.CompanyDetail{
+		Company: inventree.Company{PK: 30, Name: "Acme", Currency: "AUD", IsSupplier: true, Image: &image, PartsSupplied: 3, PartsManufactured: 2},
+		Phone:   "555-0100", Email: &email, Contact: "Jane Doe", TaxID: "ABN123", Link: link,
+	}}
+
+	_, out, err := getCompanyAdmin(companyAdminDeps(fake))(ctx, &mcp.CallToolRequest{}, IDInput{ID: 30})
+	require.NoError(t, err)
+	require.NotNil(t, out.Record)
+	assert.Equal(t, "555-0100", out.Record.Phone)
+	require.NotNil(t, out.Record.Email)
+	assert.Equal(t, email, *out.Record.Email)
+	assert.Equal(t, "Jane Doe", out.Record.Contact)
+	assert.Equal(t, "ABN123", out.Record.TaxID)
+	assert.Empty(t, out.Record.Link, "credentialed external link must be omitted rather than repaired")
+	assert.Equal(t, "/media/company_images/acme.png", out.Record.ImageURL, "image URL must have query/fragment stripped")
+	assert.Equal(t, 3, out.Record.PartsSupplied)
+	assert.Equal(t, 2, out.Record.PartsManufactured)
+}
+
 func TestCompanyAdminExactSourcingReadsRedactLinks(t *testing.T) {
 	t.Parallel()
 	r := require.New(t)
@@ -162,6 +187,64 @@ func TestUpdateCompanyConfirmedRoleRemovalWithoutLinks(t *testing.T) {
 	assert.Equal(t, StatusOK, out.Status)
 	require.NotNil(t, out.Record)
 	assert.False(t, out.Record.IsSupplier)
+}
+
+func TestUpdateCompanyAddsCustomerRoleButRejectsInlineRemoval(t *testing.T) {
+	t.Parallel()
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	fake := &fakeCompanyAdmin{company: inventree.CompanyDetail{Company: inventree.Company{PK: 30, Name: "Acme", Currency: "AUD"}}}
+	fake.afterCompanyUpdate = func(inventree.PatchFields) { fake.company.IsCustomer = true }
+	add := true
+
+	_, out, err := updateCompanyAdmin(companyAdminDeps(fake))(ctx, &mcp.CallToolRequest{}, UpdateCompanyInput{ID: 30, IsCustomer: &add})
+	require.NoError(t, err)
+	assert.Equal(t, StatusOK, out.Status)
+	require.NotNil(t, out.Record)
+	assert.True(t, out.Record.IsCustomer)
+
+	fake.company.IsCustomer = true
+	remove := false
+	_, _, err = updateCompanyAdmin(companyAdminDeps(fake))(ctx, &mcp.CallToolRequest{}, UpdateCompanyInput{ID: 30, IsCustomer: &remove})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "remove_company_customer_role")
+	assert.Equal(t, 1, fake.updateCompanyCalls, "the rejected removal attempt must not reach UpdateCompany")
+}
+
+func TestUpdateCompanyWritesAndClearsContactTaxAndLinkFields(t *testing.T) {
+	t.Parallel()
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	phone, contact, taxID, email, link := "555-0100", "Jane Doe", "ABN123", "ap@example.test", "https://example.test/info"
+	fake := &fakeCompanyAdmin{company: inventree.CompanyDetail{Company: inventree.Company{PK: 30, Name: "Acme", Currency: "AUD"}, Phone: phone, Contact: contact, TaxID: taxID, Email: &email, Link: link}}
+
+	_, out, err := updateCompanyAdmin(companyAdminDeps(fake))(ctx, &mcp.CallToolRequest{}, UpdateCompanyInput{ID: 30, Phone: &phone, Contact: &contact, TaxID: &taxID, Email: &email, Link: &link})
+	require.NoError(t, err)
+	assert.Equal(t, StatusOK, out.Status)
+	require.NotNil(t, out.Record)
+	assert.Equal(t, phone, out.Record.Phone)
+	assert.Equal(t, contact, out.Record.Contact)
+	assert.Equal(t, taxID, out.Record.TaxID)
+
+	empty := ""
+	fake.afterCompanyUpdate = func(inventree.PatchFields) {
+		fake.company.Phone, fake.company.Contact, fake.company.TaxID, fake.company.Link = "", "", "", ""
+	}
+	_, out, err = updateCompanyAdmin(companyAdminDeps(fake))(ctx, &mcp.CallToolRequest{}, UpdateCompanyInput{ID: 30, Phone: &empty, Contact: &empty, TaxID: &empty, Link: &empty})
+	require.NoError(t, err)
+	assert.Equal(t, StatusOK, out.Status)
+	require.NotNil(t, out.Record)
+	assert.Empty(t, out.Record.Phone)
+	assert.Empty(t, out.Record.Contact)
+	assert.Empty(t, out.Record.TaxID)
+
+	fake.afterCompanyUpdate = func(inventree.PatchFields) { fake.company.Email = nil }
+	_, out, err = updateCompanyAdmin(companyAdminDeps(fake))(ctx, &mcp.CallToolRequest{}, UpdateCompanyInput{ID: 30, ClearEmail: true})
+	require.NoError(t, err)
+	assert.Equal(t, StatusOK, out.Status)
+	require.NotNil(t, out.Record)
+	assert.Nil(t, out.Record.Email)
+
+	_, _, err = updateCompanyAdmin(companyAdminDeps(fake))(ctx, &mcp.CallToolRequest{}, UpdateCompanyInput{ID: 30, Email: &email, ClearEmail: true})
+	assert.ErrorContains(t, err, "email and clear_email are mutually exclusive")
 }
 
 func TestUpdateCompanyDetectsPostWriteRoleDependencyRace(t *testing.T) {

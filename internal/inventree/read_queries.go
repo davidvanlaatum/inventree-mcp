@@ -55,8 +55,15 @@ type StockItemQuery struct {
 	LocationID      int
 	PurchaseOrderID int
 	SupplierPartID  int
+	Customer        int
 	Limit           int
 	Offset          int
+}
+
+type SalesOrderQuery struct {
+	Customer int
+	Limit    int
+	Offset   int
 }
 
 type StockLocationQuery struct {
@@ -248,6 +255,17 @@ func (q StockItemQuery) values() url.Values {
 	}
 	if q.SupplierPartID != 0 {
 		values.Set("supplier_part", strconv.Itoa(q.SupplierPartID))
+	}
+	if q.Customer != 0 {
+		values.Set("customer", strconv.Itoa(q.Customer))
+	}
+	return values
+}
+
+func (q SalesOrderQuery) values() url.Values {
+	values := SearchQuery{Limit: q.Limit, Offset: q.Offset}.values()
+	if q.Customer != 0 {
+		values.Set("customer", strconv.Itoa(q.Customer))
 	}
 	return values
 }

@@ -125,12 +125,12 @@ Before assigning a new story ID, inspect `git worktree list --porcelain`, search
 | [F-S41](#f-s41-guarded-part-revision-and-variant-relationships) | Add guarded assignment, replacement, and clearing of part revision and variant family relationships. | Done |
 | [F-S42](#f-s42-related-part-link-administration) | Expose normal related-part reads and guarded create, update, and delete operations. | Done |
 | [F-S43](#f-s43-sourcing-link-detail-completeness) | Complete supplier/manufacturer-part exact reads and long-note maintenance while retaining concise searches. | Done |
-| [F-S44](#f-s44-company-detail-and-role-completeness) | Complete exact company reads and guarded contact, tax, link, and customer-role maintenance. | Active |
+| [F-S44](#f-s44-company-detail-and-role-completeness) | Complete exact company reads and guarded contact, tax, link, and customer-role maintenance. | Done |
 | [F-S45](#f-s45-stock-item-detail-completeness) | Expose complete high-value stock-item exact-read fields while retaining concise searches and guarded mutation boundaries. | Done |
 | [F-S46](#f-s46-stock-tracking-and-stocktake-history) | Expose bounded stock tracking events and historical part stocktake snapshots through normal read-only tools. | Ready |
 | [F-S47](#f-s47-purchase-order-and-line-detail-completeness) | Complete exact purchase-order and ordinary-line reads plus standalone order metadata and external-link maintenance. | Done |
-| [F-S48](#f-s48-owner-discovery-and-cross-object-responsibility) | Discover InvenTree owners and support consistent guarded responsibility assignment across applicable objects. | Planned |
-| [F-S49](#f-s49-structured-contact-and-address-references) | Discover structured company contacts and addresses and support guarded assignment on applicable objects. | Planned |
+| [F-S48](#f-s48-owner-discovery-and-cross-object-responsibility) | Discover InvenTree owners and support consistent guarded responsibility assignment across applicable objects. | Ready |
+| [F-S49](#f-s49-structured-contact-and-address-references) | Discover structured company contacts and addresses and support guarded assignment on applicable objects. | Ready |
 | [F-S50](#f-s50-project-code-discovery-and-assignment) | Discover existing project codes and support consistent guarded assignment across purchase-order records. | Ready |
 | [F-S51](#f-s51-guarded-delete-on-deplete-policy-updates) | Add a reviewed workflow for enabling or disabling delete-on-deplete behavior on one stock item. | Ready |
 | [F-S52](#f-s52-stock-serial-number-management) | Add dedicated discovery and guarded mutation workflows for stock serial numbers. | Ready |
@@ -2208,7 +2208,7 @@ Tasks:
 
 ### F-S44: Company Detail And Role Completeness
 
-- Status: `Active`
+- Status: `Done`
 - Issue: [#125](https://github.com/davidvanlaatum/inventree-mcp/issues/125)
 - Depends on: F-S20, F-S31, F-S39
 - Decisions: approved by the operator on 2026-08-15. Phone, email, free-text contact, business tax ID, external link, image URL, supplied/manufactured counts, and customer role are in scope. Tax ID is for business identifiers such as ABN/ACN, not personal TFNs.
@@ -2222,7 +2222,9 @@ Tasks:
   - Exact reads require `inventree.read`; ordinary metadata and role addition require `inventree.read` and `inventree.write`. Role removal additionally requires `inventree.destructive`, publishes `destructiveHint:true`, remains closed-world and non-idempotent, and rejects stale plans.
   - Tax IDs and contact data remain absent from logs, errors, clarification candidates, and minimal recovery projections; image mutation remains in dedicated tools.
   - F-S39 URL behavior, pinned role/dependency tests, and plan/schema/tool/operator documentation are aligned.
-- Residual risk: customer-role dependency coverage must be established against pinned InvenTree behavior before removal can be considered complete; jurisdiction-specific tax identifiers remain operator-controlled business data.
+- Validation: `go build ./...`, `go vet ./...`, `golangci-lint run ./...` (0 issues), `go generate ./internal/tools` (no manifest diff), and `git diff --check` all pass. `go test ./...` (full suite, including the blocking `TestClientMethodsAgainstInvenTree/company_detail_and_role_completeness` and `TestMilestoneHappyPathToolsAgainstInvenTree/company_customer_role_removal_happy_path` Testcontainers subtests against pinned `inventree/inventree:1.5.0`) passes; rerun clean after every review-driven fix below. New fast unit coverage in `internal/tools/company_admin_tools_test.go` and `internal/tools/company_role_tools_test.go` (11 new tests) exercises exact-read field exposure, write/clear round trips for phone/email/contact/tax_id/link, `is_customer:true` addition versus unconditional `is_customer:false` rejection, the guarded-removal dry-run/confirm/dependency-block/stale-token/audit-error/ambiguous-recovery/definite-rejection paths, and plan-store single-use/mismatch/expiry behavior, all without Testcontainers. `internal/inventree/company_field_inventory_test.go` pins every API 530 `Company` field's classification against `docs/api-schema.yaml` and a nullable-preservation JSON test. Per-package coverage under `-tags no_integration_tests`: `internal/tools` 84.1% (baseline 84.0%); `internal/inventree` 87.3% (baseline 88.2%, a small expected reduction — see Residual risk).
+- Review: full Go, QA, product, and infosec panel completed (required: new mutating destructive workflow tool, `remove_company_customer_role`). Findings addressed: (1) Go — the post-token-consumption re-audit could burn the single-use plan token even when it correctly blocked execution on a dependency race, contradicting the intended "a blocked attempt never spends the token" guarantee; restructured `removeCompanyCustomerRole` so the dependency audit always runs exactly once per call, strictly before token consumption, in both the preview and confirm branches. (2) QA — zero Testcontainers/live-API coverage existed for the two new client methods (`SearchStockItemsPage`, `SearchSalesOrdersPage`), the extended `UpdateCompany` PATCH surface, and the new tool's own guarded workflow, violating the standing rule that every exported client method needs default-on live coverage; added a `company_detail_and_role_completeness` subtest to `internal/inventree/client_methods_integration_test.go` (live field writes/clears, raw-key contract check, and real dependency-count transitions for both new query methods) and a `company_customer_role_removal_happy_path` subtest to `internal/tools/milestone_integration_test.go` (live preview → dependency-blocked-with-no-token-issued → dependency-cleared → confirmed removal → verified read-back), matching the precedent set by F-S24 and F-S32. (3) QA — the ambiguous-mutation-recovery and dependency-audit-error paths in `verifyCompanyRoleRemoval`/`companyCustomerDependencyAudit` had no test coverage; added `TestRemoveCompanyCustomerRoleRecoversAmbiguousMutationErrorAndRejectsDefinite` and `TestRemoveCompanyCustomerRoleFailsClosedWhenDependencyAuditErrors`. A follow-up QA re-verification pass confirmed all three findings closed and independently surfaced the same milestone-coverage gap already fixed in (2). Product and Infosec review passed with no blocking findings; Product's two low-severity observations (the unconditional `is_customer:false` rejection message could be friendlier for the true-no-op case, and `search_stock_items` has no `customer_id` filter for an operator to identify blocking stock items by name) are accepted as-is — both are explicitly documented trade-offs, not gaps in this story's own acceptance criteria.
+- Residual risk: derived fields (image URL, supplied/manufactured counts) are recalculated by InvenTree and can change independently; exact reads are factual snapshots. The dependency audit proves a bounded existence count, not identity — an operator blocked by `dependency_stock_items`/`dependency_sales_orders` must use InvenTree directly (or a future `search_stock_items` `customer_id` filter) to find the specific blocking records, consistent with the story's sales/CRM boundary. `internal/inventree` package coverage under the fast unit-test tag dropped slightly (88.2% to 87.3%) because the two new thin `listPage`-wrapping client methods (`SearchStockItemsPage`, `SearchSalesOrdersPage`) are proven only by the new live Testcontainers subtest rather than an additional mocked-HTTP unit test; the underlying generic `listPage` helper they call is already unit-tested via sibling methods, so an additional httptest-only unit test would add coverage percentage without adding real verification, and was judged not worth the risk of it silently drifting from the real endpoint's behavior.
 
 ### F-S45: Stock-Item Detail Completeness
 
@@ -2285,7 +2287,7 @@ Tasks:
 
 ### F-S48: Owner Discovery And Cross-Object Responsibility
 
-- Status: `Planned`
+- Status: `Ready`
 - Issue: [#129](https://github.com/davidvanlaatum/inventree-mcp/issues/129)
 - Depends on: F-S40, F-S44, F-S47
 - Decisions: approved by the operator on 2026-08-15. Owner references may represent users or groups; opaque IDs without discovery are not sufficient. The story inventories already supported, non-sales object types before finalizing assignments; any newly discovered object domain requires a separate operator checkpoint.
@@ -2301,7 +2303,7 @@ Tasks:
 
 ### F-S49: Structured Contact And Address References
 
-- Status: `Planned`
+- Status: `Ready`
 - Issue: [#130](https://github.com/davidvanlaatum/inventree-mcp/issues/130)
 - Depends on: F-S44, F-S47
 - Decisions: approved by the operator on 2026-08-15. Structured contacts/addresses are separate from free-text company contact fields and require discovery before assignment.
