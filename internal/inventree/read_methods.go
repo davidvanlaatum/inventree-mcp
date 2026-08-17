@@ -507,12 +507,24 @@ func (c *Client) GetPurchaseOrder(ctx context.Context, id int) (PurchaseOrder, e
 	return out, err
 }
 
+func (c *Client) GetPurchaseOrderDetail(ctx context.Context, id int) (PurchaseOrderDetail, error) {
+	var out PurchaseOrderDetail
+	err := c.get(ctx, fmt.Sprintf("/api/order/po/%d/", id), &out)
+	return out, err
+}
+
 func (c *Client) SearchPurchaseOrderLines(ctx context.Context, query PurchaseOrderLineQuery) ([]PurchaseOrderLineItem, error) {
 	return listAll[PurchaseOrderLineItem](ctx, c, "/api/order/po-line/", query.values())
 }
 
 func (c *Client) GetPurchaseOrderLine(ctx context.Context, id int) (PurchaseOrderLineItem, error) {
 	var out PurchaseOrderLineItem
+	err := c.get(ctx, fmt.Sprintf("/api/order/po-line/%d/", id), &out)
+	return out, err
+}
+
+func (c *Client) GetPurchaseOrderLineDetail(ctx context.Context, id int) (PurchaseOrderLineItemDetail, error) {
+	var out PurchaseOrderLineItemDetail
 	err := c.get(ctx, fmt.Sprintf("/api/order/po-line/%d/", id), &out)
 	return out, err
 }

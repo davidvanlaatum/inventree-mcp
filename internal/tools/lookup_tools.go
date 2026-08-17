@@ -98,6 +98,7 @@ const (
 	DepleteStockItemToolName                = "deplete_stock_item"
 	TransferStockItemToolName               = "transfer_stock_item"
 	CreatePurchaseOrderToolName             = "create_purchase_order"
+	UpdatePurchaseOrderToolName             = "update_purchase_order"
 	AddPurchaseOrderLineToolName            = "add_purchase_order_line"
 	UpdatePurchaseOrderLineToolName         = "update_purchase_order_line"
 	DeletePurchaseOrderLineToolName         = "delete_purchase_order_line"
@@ -218,6 +219,7 @@ var writeToolNames = []string{
 	DepleteStockItemToolName,
 	TransferStockItemToolName,
 	CreatePurchaseOrderToolName,
+	UpdatePurchaseOrderToolName,
 	AddPurchaseOrderLineToolName,
 	UpdatePurchaseOrderLineToolName,
 	DeletePurchaseOrderLineToolName,
@@ -270,7 +272,7 @@ func init() {
 		scopes := []string{ScopeInventreeWrite}
 		mutationClass := "write"
 		switch name {
-		case CreatePartToolName, UpdatePartToolName, CreatePartRelationToolName, UpdatePartRelationToolName, CreateCompanyToolName, CreateSupplierPartToolName, CreateManufacturerPartToolName, UpsertPartWorkflowToolName, CreateParameterTemplateToolName, UpdateParameterTemplateToolName, CreateCategoryParameterDefaultToolName, UpdateCategoryParameterDefaultToolName, CreatePartCategoryToolName, UpdatePartCategoryToolName, UpdateCompanyToolName, UpdateSupplierPartToolName, UpdateManufacturerPartToolName, CreateStockLocationToolName, UpdateStockLocationToolName, CreatePurchaseOrderExtraLineToolName, UpdatePurchaseOrderExtraLineToolName, CreatePurchaseOrderWorkflowToolName, IssuePurchaseOrderToolName, CompletePurchaseOrderToolName:
+		case CreatePartToolName, UpdatePartToolName, CreatePartRelationToolName, UpdatePartRelationToolName, CreateCompanyToolName, CreateSupplierPartToolName, CreateManufacturerPartToolName, UpsertPartWorkflowToolName, CreateParameterTemplateToolName, UpdateParameterTemplateToolName, CreateCategoryParameterDefaultToolName, UpdateCategoryParameterDefaultToolName, CreatePartCategoryToolName, UpdatePartCategoryToolName, UpdateCompanyToolName, UpdateSupplierPartToolName, UpdateManufacturerPartToolName, CreateStockLocationToolName, UpdateStockLocationToolName, CreatePurchaseOrderExtraLineToolName, UpdatePurchaseOrderExtraLineToolName, UpdatePurchaseOrderToolName, CreatePurchaseOrderWorkflowToolName, IssuePurchaseOrderToolName, CompletePurchaseOrderToolName:
 			scopes = []string{ScopeInventreeRead, ScopeInventreeWrite}
 		case BulkPropagatePartParametersToolName:
 			scopes = []string{ScopeInventreeRead, ScopeInventreeWrite, ScopeInventreeDestructive}
@@ -332,7 +334,10 @@ func init() {
 	extraLineUpdate := ToolAuthorizations[UpdatePurchaseOrderExtraLineToolName]
 	extraLineUpdate.Annotations.Idempotent = true
 	ToolAuthorizations[UpdatePurchaseOrderExtraLineToolName] = extraLineUpdate
-	for _, name := range []string{SearchPurchaseOrdersToolName, GetPurchaseOrderToolName, SearchPurchaseOrderLinesToolName, GetPurchaseOrderLineToolName, SearchPurchaseOrderExtraLinesToolName, GetPurchaseOrderExtraLineToolName, CreatePurchaseOrderToolName, AddPurchaseOrderLineToolName, UpdatePurchaseOrderLineToolName, DeletePurchaseOrderLineToolName, CreatePurchaseOrderExtraLineToolName, UpdatePurchaseOrderExtraLineToolName, DeletePurchaseOrderExtraLineToolName, CreatePurchaseOrderWorkflowToolName, IssuePurchaseOrderToolName, ReceivePurchaseOrderToolName, CompletePurchaseOrderToolName} {
+	orderUpdate := ToolAuthorizations[UpdatePurchaseOrderToolName]
+	orderUpdate.Annotations.Idempotent = true
+	ToolAuthorizations[UpdatePurchaseOrderToolName] = orderUpdate
+	for _, name := range []string{SearchPurchaseOrdersToolName, GetPurchaseOrderToolName, SearchPurchaseOrderLinesToolName, GetPurchaseOrderLineToolName, SearchPurchaseOrderExtraLinesToolName, GetPurchaseOrderExtraLineToolName, CreatePurchaseOrderToolName, UpdatePurchaseOrderToolName, AddPurchaseOrderLineToolName, UpdatePurchaseOrderLineToolName, DeletePurchaseOrderLineToolName, CreatePurchaseOrderExtraLineToolName, UpdatePurchaseOrderExtraLineToolName, DeletePurchaseOrderExtraLineToolName, CreatePurchaseOrderWorkflowToolName, IssuePurchaseOrderToolName, ReceivePurchaseOrderToolName, CompletePurchaseOrderToolName} {
 		auth := ToolAuthorizations[name]
 		auth.MilestoneStatus = ToolMilestone1
 		ToolAuthorizations[name] = auth

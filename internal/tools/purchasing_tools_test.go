@@ -999,6 +999,98 @@ func TestPurchaseOrderWritesRejectSupplierMismatchAndInvalidInputs(t *testing.T)
 	a.Contains(lineOutput.Clarification.Reason, "does not belong")
 }
 
+func TestUpdatePurchaseOrderValidatesAndPatches(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	fake := &fakePurchasingClient{orders: []inventree.PurchaseOrder{{PK: 120, Reference: "PO-1", Supplier: 30}}}
+	deps := purchasingDeps(fake)
+
+	_, invalidID, err := updatePurchaseOrder(deps)(ctx, &mcp.CallToolRequest{}, UpdatePurchaseOrderInput{ID: 0})
+	r.NoError(err)
+	a.Equal(StatusClarificationRequired, invalidID.Status)
+	r.NotNil(invalidID.Clarification)
+	a.Equal(map[string]any{"id": 0}, invalidID.Clarification.RetryValues)
+
+	_, emptyPatch, err := updatePurchaseOrder(deps)(ctx, &mcp.CallToolRequest{}, UpdatePurchaseOrderInput{ID: 120})
+	r.NoError(err)
+	a.Equal(StatusClarificationRequired, emptyPatch.Status)
+	r.NotNil(emptyPatch.Clarification)
+	a.Equal(map[string]any{"id": 120}, emptyPatch.Clarification.RetryValues)
+
+	for _, conflict := range []UpdatePurchaseOrderInput{
+		{ID: 120, Notes: dvgoutils.Ptr("x"), ClearNotes: true},
+		{ID: 120, StartDate: dvgoutils.Ptr("2026-01-01"), ClearStartDate: true},
+		{ID: 120, TargetDate: dvgoutils.Ptr("2026-01-01"), ClearTargetDate: true},
+		{ID: 120, DestinationID: dvgoutils.Ptr(5), ClearDestination: true},
+	} {
+		_, out, err := updatePurchaseOrder(deps)(ctx, &mcp.CallToolRequest{}, conflict)
+		r.NoError(err)
+		a.Equal(StatusClarificationRequired, out.Status, "conflicting value+clear flag must be rejected: %+v", conflict)
+	}
+
+	_, badDate, err := updatePurchaseOrder(deps)(ctx, &mcp.CallToolRequest{}, UpdatePurchaseOrderInput{ID: 120, StartDate: dvgoutils.Ptr("01/01/2026")})
+	r.NoError(err)
+	a.Equal(StatusClarificationRequired, badDate.Status)
+
+	_, badLink, err := updatePurchaseOrder(deps)(ctx, &mcp.CallToolRequest{}, UpdatePurchaseOrderInput{ID: 120, Link: dvgoutils.Ptr("ftp://example.com/file")})
+	r.NoError(err)
+	a.Equal(StatusClarificationRequired, badLink.Status)
+
+	_, userinfoLink, err := updatePurchaseOrder(deps)(ctx, &mcp.CallToolRequest{}, UpdatePurchaseOrderInput{ID: 120, Link: dvgoutils.Ptr("https://user:pass@example.com/file")})
+	r.NoError(err)
+	a.Equal(StatusClarificationRequired, userinfoLink.Status)
+
+	fake.locationErr = errors.New("stock location not found")
+	_, badDestination, err := updatePurchaseOrder(deps)(ctx, &mcp.CallToolRequest{}, UpdatePurchaseOrderInput{ID: 120, DestinationID: dvgoutils.Ptr(999)})
+	r.Error(err)
+	a.Equal("", badDestination.Status)
+	fake.locationErr = nil
+
+	_, updated, err := updatePurchaseOrder(deps)(ctx, &mcp.CallToolRequest{}, UpdatePurchaseOrderInput{ID: 120, Description: dvgoutils.Ptr("replacement description"), Link: dvgoutils.Ptr("https://example.com/order")})
+	r.NoError(err)
+	a.Equal(StatusOK, updated.Status)
+	a.Equal("replacement description", updated.Record.Description)
+	a.Equal("https://example.com/order", updated.Record.Link)
+	a.Equal(1, fake.updateOrderDetailCalls)
+
+	_, clearedNotes, err := updatePurchaseOrder(deps)(ctx, &mcp.CallToolRequest{}, UpdatePurchaseOrderInput{ID: 120, ClearNotes: true})
+	r.NoError(err)
+	a.Equal(StatusOK, clearedNotes.Status)
+	a.Nil(clearedNotes.Record.Notes)
+
+	fake.updateOrderDetailMismatchPK = true
+	_, mismatched, err := updatePurchaseOrder(deps)(ctx, &mcp.CallToolRequest{}, UpdatePurchaseOrderInput{ID: 120, Description: dvgoutils.Ptr("again")})
+	r.NoError(err)
+	a.Equal(StatusPartialFailure, mismatched.Status)
+	a.NotEmpty(mismatched.RecoveryPlan)
+
+	fake.updateOrderDetailErr = errors.New("upstream failure")
+	_, upstreamErr, err := updatePurchaseOrder(deps)(ctx, &mcp.CallToolRequest{}, UpdatePurchaseOrderInput{ID: 120, Description: dvgoutils.Ptr("again")})
+	r.Error(err)
+	a.Equal("", upstreamErr.Status)
+}
+
+func TestUpdatePurchaseOrderLineRejectsMalformedLink(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	fake := &fakePurchasingClient{orders: []inventree.PurchaseOrder{{PK: 120, Supplier: 30}}, lines: []inventree.PurchaseOrderLineItem{{PK: 130, Order: 120, Part: 40, Quantity: 2}}}
+	deps := purchasingDeps(fake)
+
+	_, badLink, err := updatePurchaseOrderLine(deps)(ctx, &mcp.CallToolRequest{}, UpdatePurchaseOrderLineInput{ID: 130, Link: dvgoutils.Ptr("not a url")})
+	r.NoError(err)
+	a.Equal(StatusClarificationRequired, badLink.Status)
+	a.Zero(fake.updateLineCalls)
+
+	_, userinfoLink, err := updatePurchaseOrderLine(deps)(ctx, &mcp.CallToolRequest{}, UpdatePurchaseOrderLineInput{ID: 130, Link: dvgoutils.Ptr("https://user:pass@example.com/line")})
+	r.NoError(err)
+	a.Equal(StatusClarificationRequired, userinfoLink.Status)
+	a.Zero(fake.updateLineCalls)
+}
+
 func purchasingDeps(fake *fakePurchasingClient) Dependencies {
 	return Dependencies{ClientFromContext: func(context.Context) (any, error) { return fake, nil }}
 }
@@ -1046,6 +1138,9 @@ type fakePurchasingClient struct {
 	getOrderErrAfterReceive              error
 	getOrderErrAfterComplete             error
 	missingOrderIDs                      map[int]bool
+	updateOrderDetailCalls               int
+	updateOrderDetailErr                 error
+	updateOrderDetailMismatchPK          bool
 }
 
 func (f *fakePurchasingClient) IssuePurchaseOrder(_ context.Context, id int) error {
@@ -1219,6 +1314,62 @@ func (f *fakePurchasingClient) UpdatePurchaseOrderLine(_ context.Context, id int
 		return f.lines[index], nil
 	}
 	return inventree.PurchaseOrderLineItem{}, errors.New("line not found")
+}
+
+func (f *fakePurchasingClient) GetPurchaseOrderDetail(ctx context.Context, id int) (inventree.PurchaseOrderDetail, error) {
+	order, err := f.GetPurchaseOrder(ctx, id)
+	if err != nil {
+		return inventree.PurchaseOrderDetail{}, err
+	}
+	return inventree.PurchaseOrderDetail{PurchaseOrder: order}, nil
+}
+
+func (f *fakePurchasingClient) GetPurchaseOrderLineDetail(ctx context.Context, id int) (inventree.PurchaseOrderLineItemDetail, error) {
+	line, err := f.GetPurchaseOrderLine(ctx, id)
+	if err != nil {
+		return inventree.PurchaseOrderLineItemDetail{}, err
+	}
+	return inventree.PurchaseOrderLineItemDetail{PurchaseOrderLineItem: line}, nil
+}
+
+func (f *fakePurchasingClient) UpdatePurchaseOrderDetail(ctx context.Context, id int, fields inventree.PatchFields) (inventree.PurchaseOrderDetail, error) {
+	f.updateOrderDetailCalls++
+	if f.updateOrderDetailErr != nil {
+		return inventree.PurchaseOrderDetail{}, f.updateOrderDetailErr
+	}
+	order, err := f.GetPurchaseOrder(ctx, id)
+	if err != nil {
+		return inventree.PurchaseOrderDetail{}, err
+	}
+	payload, err := json.Marshal(fields)
+	if err != nil {
+		return inventree.PurchaseOrderDetail{}, err
+	}
+	decoded := map[string]any{}
+	if err := json.Unmarshal(payload, &decoded); err != nil {
+		return inventree.PurchaseOrderDetail{}, err
+	}
+	if value, ok := decoded["description"]; ok {
+		order.Description, _ = value.(string)
+	}
+	detail := inventree.PurchaseOrderDetail{PurchaseOrder: order}
+	if value, ok := decoded["notes"]; ok {
+		if text, isString := value.(string); isString {
+			detail.Notes = &text
+		}
+	}
+	if value, ok := decoded["link"]; ok {
+		detail.Link, _ = value.(string)
+	}
+	for index := range f.orders {
+		if f.orders[index].PK == order.PK {
+			f.orders[index] = order
+		}
+	}
+	if f.updateOrderDetailMismatchPK {
+		detail.PK = id + 999
+	}
+	return detail, nil
 }
 
 func (f *fakePurchasingClient) SearchPurchaseOrderExtraLinesPage(_ context.Context, query inventree.PurchaseOrderExtraLineQuery) (inventree.Page[inventree.PurchaseOrderExtraLine], error) {

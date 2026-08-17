@@ -596,7 +596,7 @@ func TestWriteToolAuthorizationsUseWriteScope(t *testing.T) {
 			expected := WriteAnnotations
 			expected.Idempotent = true
 			a.Equal(expected, auth.Annotations)
-		case UpdateCompanyToolName, UpdateSupplierPartToolName, UpdateManufacturerPartToolName, UpdateStockLocationToolName, UpdatePurchaseOrderExtraLineToolName:
+		case UpdateCompanyToolName, UpdateSupplierPartToolName, UpdateManufacturerPartToolName, UpdateStockLocationToolName, UpdatePurchaseOrderExtraLineToolName, UpdatePurchaseOrderToolName:
 			a.Equal("write", auth.MutationClass)
 			a.Equal([]string{ScopeInventreeRead, ScopeInventreeWrite}, auth.Scopes)
 			expected := WriteAnnotations
