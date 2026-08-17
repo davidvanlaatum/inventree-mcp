@@ -56,6 +56,8 @@ func decorateWebLink(resolver *weblinks.Resolver, toolName string, target any) {
 		value.WebURL = resolver.URL(weblinks.StockLocation, value.PK)
 	case *inventree.StockItem:
 		value.WebURL = resolver.URL(weblinks.StockItem, value.PK)
+	case *inventree.StockItemDetail:
+		value.WebURL = resolver.URL(weblinks.StockItem, value.PK)
 	case *inventree.SupplierPart:
 		value.WebURL = resolver.URL(weblinks.SupplierPart, value.PK)
 	case *inventree.SupplierPartDetail:

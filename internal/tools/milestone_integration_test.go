@@ -8,6 +8,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"image"
@@ -713,6 +714,72 @@ func TestMilestoneHappyPathToolsAgainstInvenTree(t *testing.T) {
 		a.Equal(StatusClarificationRequired, duplicateOut.Status)
 		r.NotNil(duplicateOut.Clarification)
 		a.Contains(clarificationCandidateIDs(*duplicateOut.Clarification), fmt.Sprint(laterDuplicate.PK))
+	})
+
+	t.Run("stock_item_detail_completeness", func(t *testing.T) {
+		r := require.New(t)
+		a := assert.New(t)
+		ctx, _, _ := testhandler.SetupTestHandler(t)
+		fixture := newMilestoneToolFixture(t, shared)
+		part := fixture.ensure(t, testenv.FixturePart)
+		supplierPart := fixture.ensure(t, testenv.FixtureSupplierPart)
+
+		rootName, err := fixture.run.Name("stock-detail-root")
+		r.NoError(err)
+		_, rootOut, err := createStockLocation(fixture.deps())(ctx, &mcp.CallToolRequest{}, CreateStockLocationInput{Name: rootName})
+		r.NoError(err)
+		r.NotNil(rootOut.Record)
+		root := *rootOut.Record
+
+		childName, err := fixture.run.Name("stock-detail-child")
+		r.NoError(err)
+		_, childOut, err := createStockLocation(fixture.deps())(ctx, &mcp.CallToolRequest{}, CreateStockLocationInput{Name: childName, ParentID: &root.PK})
+		r.NoError(err)
+		r.NotNil(childOut.Record)
+		child := *childOut.Record
+
+		_, created, err := createStockItem(fixture.deps())(ctx, &mcp.CallToolRequest{}, CreateStockItemInput{PartID: part.ID, LocationID: child.PK, Quantity: 4})
+		r.NoError(err)
+		a.Equal(StatusOK, created.Status)
+
+		_, bare, err := getStockItem(fixture.deps())(ctx, &mcp.CallToolRequest{}, IDInput{ID: created.Record.PK})
+		r.NoError(err)
+		a.Equal(StatusOK, bare.Status)
+		a.Equal(created.Record.PK, bare.Record.PK)
+		a.Nil(bare.Record.SKU)
+		a.Nil(bare.Record.MPN)
+		a.Nil(bare.Record.SalesOrder)
+		a.Nil(bare.Record.SalesOrderReference)
+		r.Len(bare.Record.LocationPath, 2)
+		a.Equal(root.Name, bare.Record.LocationPath[0].Name)
+		a.Equal(child.Name, bare.Record.LocationPath[1].Name)
+
+		_, err = fixture.client.UpdateStockItem(ctx, created.Record.PK, inventree.PatchFields{"supplier_part": inventree.Set(supplierPart.ID), "expiry_date": inventree.Set("2020-01-01")})
+		r.NoError(err)
+
+		_, exact, err := getStockItem(fixture.deps())(ctx, &mcp.CallToolRequest{}, IDInput{ID: created.Record.PK})
+		r.NoError(err)
+		a.Equal(StatusOK, exact.Status)
+		r.NotNil(exact.Record.SKU)
+		a.Equal(supplierPart.Name, *exact.Record.SKU)
+		a.Nil(exact.Record.MPN)
+		r.NotNil(exact.Record.Expired)
+		a.True(*exact.Record.Expired)
+
+		_, search, err := searchStockItems(fixture.deps())(ctx, &mcp.CallToolRequest{}, StockItemsInput{PartID: part.ID})
+		r.NoError(err)
+		a.Equal(StatusOK, search.Status)
+		r.NotEmpty(search.Results)
+		encoded, err := json.Marshal(search.Results[0])
+		r.NoError(err)
+		var keys map[string]any
+		r.NoError(json.Unmarshal(encoded, &keys))
+		a.NotContains(keys, "SKU")
+		a.NotContains(keys, "MPN")
+		a.NotContains(keys, "expired")
+		a.NotContains(keys, "stale")
+		a.NotContains(keys, "location_path")
+		a.NotContains(keys, "sales_order_reference")
 	})
 
 	t.Run("company_and_sourcing_link_administration", func(t *testing.T) {

@@ -638,6 +638,13 @@ func sanitizedStockItem(item inventree.StockItem) inventree.StockItem {
 	return item
 }
 
+func sanitizedStockItemDetail(item inventree.StockItemDetail) inventree.StockItemDetail {
+	if item.Link != "" {
+		item.Link = projectExternalURL(&item.Link)
+	}
+	return item
+}
+
 func projectStockMetadataPlan(plan StockMetadataPlan) StockMetadataPlan {
 	plan.Before.Link = projectExternalURL(&plan.Before.Link)
 	plan.After.Link = projectExternalURL(&plan.After.Link)

@@ -380,7 +380,7 @@ type StockLocationTypeLookupClient interface {
 }
 
 type StockItemExactLookupClient interface {
-	GetStockItem(context.Context, int) (inventree.StockItem, error)
+	GetStockItemDetail(context.Context, int) (inventree.StockItemDetail, error)
 }
 
 type AttachmentLookupClient interface {
@@ -693,14 +693,14 @@ func searchStockItems(deps Dependencies) mcp.ToolHandlerFor[StockItemsInput, Loo
 		})
 }
 
-func getStockItem(deps Dependencies) mcp.ToolHandlerFor[IDInput, RecordOutput[inventree.StockItem]] {
-	return LookupHandler[StockItemExactLookupClient, IDInput, RecordOutput[inventree.StockItem]](deps, GetStockItemToolName,
-		func(ctx context.Context, _ *mcp.CallToolRequest, client StockItemExactLookupClient, input IDInput) (*mcp.CallToolResult, RecordOutput[inventree.StockItem], error) {
-			record, err := client.GetStockItem(ctx, input.ID)
+func getStockItem(deps Dependencies) mcp.ToolHandlerFor[IDInput, RecordOutput[inventree.StockItemDetail]] {
+	return LookupHandler[StockItemExactLookupClient, IDInput, RecordOutput[inventree.StockItemDetail]](deps, GetStockItemToolName,
+		func(ctx context.Context, _ *mcp.CallToolRequest, client StockItemExactLookupClient, input IDInput) (*mcp.CallToolResult, RecordOutput[inventree.StockItemDetail], error) {
+			record, err := client.GetStockItemDetail(ctx, input.ID)
 			if err == nil && record.PK != input.ID {
-				return nil, RecordOutput[inventree.StockItem]{}, errors.New("InvenTree returned a mismatched stock-item identity")
+				return nil, RecordOutput[inventree.StockItemDetail]{}, errors.New("InvenTree returned a mismatched stock-item identity")
 			}
-			record = sanitizedStockItem(record)
+			record = sanitizedStockItemDetail(record)
 			return recordOutput(record, err)
 		})
 }

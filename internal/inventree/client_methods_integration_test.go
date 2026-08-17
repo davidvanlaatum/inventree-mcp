@@ -5,6 +5,7 @@ package inventree_test
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"image"
@@ -515,6 +516,77 @@ func TestClientMethodsAgainstInvenTree(t *testing.T) {
 		r.Equal("tray", *stock.Packaging)
 		r.Equal("F-S21 metadata", *stock.Notes)
 		r.Equal("https://example.test/stock", stock.Link)
+	})
+
+	t.Run("stock_item_detail", func(t *testing.T) {
+		r := require.New(t)
+		a := assert.New(t)
+		ctx, _, _ := testhandler.SetupTestHandler(t)
+		fixture := newClientMethodFixture(t, shared)
+		root := fixture.ensure(t, testenv.FixtureLocation)
+		part := fixture.ensure(t, testenv.FixturePart)
+		supplierPart := fixture.ensure(t, testenv.FixtureSupplierPart)
+
+		childName, err := fixture.run.Name("stock-detail-child")
+		r.NoError(err)
+		child, err := fixture.client.CreateStockLocation(ctx, inventree.StockLocationCreate{Name: childName, Parent: &root.ID})
+		r.NoError(err)
+		r.NotZero(child.PK)
+
+		created, err := fixture.client.CreateStockItem(ctx, inventree.StockItemCreate{Part: part.ID, Location: child.PK, Quantity: 3})
+		r.NoError(err)
+		r.NotZero(created.PK)
+
+		bare, err := fixture.client.GetStockItemDetail(ctx, created.PK)
+		r.NoError(err)
+		r.Equal(created.PK, bare.PK)
+		a.Nil(bare.SKU)
+		a.Nil(bare.MPN)
+		a.Nil(bare.SalesOrder)
+		a.Nil(bare.SalesOrderReference)
+		r.Len(bare.LocationPath, 2)
+		a.Equal(root.Name, bare.LocationPath[0].Name)
+		a.Equal(childName, bare.LocationPath[len(bare.LocationPath)-1].Name)
+
+		_, err = fixture.client.UpdateStockItem(ctx, created.PK, inventree.PatchFields{"supplier_part": inventree.Set(supplierPart.ID), "expiry_date": inventree.Set("2020-01-01")})
+		r.NoError(err)
+
+		detail, err := fixture.client.GetStockItemDetail(ctx, created.PK)
+		r.NoError(err)
+		r.NotNil(detail.SKU)
+		a.Equal(supplierPart.Name, *detail.SKU)
+		a.Nil(detail.MPN)
+		r.NotNil(detail.Expired)
+		a.True(*detail.Expired)
+
+		// Live discovery: omitting `location` on create does not leave the
+		// item locationless — pinned InvenTree 1.5.0 falls back to the
+		// part's default_location. This still exercises a real
+		// non-omitted, single-segment location_path.
+		var raw json.RawMessage
+		r.NoError(fixture.client.Post(ctx, "/api/stock/", map[string]any{"part": part.ID, "quantity": 1}, &raw))
+		var defaulted inventree.StockItem
+		if err := json.Unmarshal(raw, &defaulted); err != nil {
+			var batch []inventree.StockItem
+			r.NoError(json.Unmarshal(raw, &batch))
+			r.NotEmpty(batch)
+			defaulted = batch[0]
+		}
+		r.NotZero(defaulted.PK)
+		withDefaultLocation, err := fixture.client.GetStockItemDetail(ctx, defaulted.PK)
+		r.NoError(err)
+		r.NotNil(withDefaultLocation.Location)
+		r.Len(withDefaultLocation.LocationPath, 1)
+		a.Equal(root.Name, withDefaultLocation.LocationPath[0].Name)
+
+		// A stock item with location explicitly cleared is the genuine
+		// null-location, empty-location_path state.
+		_, err = fixture.client.UpdateStockItem(ctx, defaulted.PK, inventree.PatchFields{"location": inventree.Null()})
+		r.NoError(err)
+		noLocation, err := fixture.client.GetStockItemDetail(ctx, defaulted.PK)
+		r.NoError(err)
+		a.Nil(noLocation.Location)
+		a.Empty(noLocation.LocationPath)
 	})
 
 	t.Run("parameter", func(t *testing.T) {
