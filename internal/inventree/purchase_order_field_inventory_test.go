@@ -61,7 +61,7 @@ func TestPurchaseOrderDetailsPreserveNullableFieldsAndOmitUnapprovedData(t *test
 	a := assert.New(t)
 
 	var order inventree.PurchaseOrderDetail
-	r.NoError(json.Unmarshal([]byte(`{"pk":10,"reference":"PO-0001","supplier":30,"supplier_reference":"","description":"","status":10,"created_by":{"pk":7,"username":"admin"},"creation_date":null,"issue_date":null,"start_date":null,"target_date":null,"complete_date":null,"line_items":null,"completed_lines":0,"link":"","status_text":"Pending","status_custom_key":null,"notes":null,"overdue":false,"supplier_name":"Acme","total_price":null,"order_currency":null,"destination":null,"updated_at":null,"barcode_hash":"secret","project_code":null,"responsible":3,"contact":4,"address":null,"address_detail":null,"contact_detail":{"pk":4},"project_code_detail":null,"project_code_label":null,"responsible_detail":{"pk":3},"parameters":[],"tags":["deferred"],"supplier_detail":{"pk":30}}`), &order))
+	r.NoError(json.Unmarshal([]byte(`{"pk":10,"reference":"PO-0001","supplier":30,"supplier_reference":"","description":"","status":10,"created_by":{"pk":7,"username":"admin"},"creation_date":null,"issue_date":null,"start_date":null,"target_date":null,"complete_date":null,"line_items":null,"completed_lines":0,"link":"","status_text":"Pending","status_custom_key":null,"notes":null,"overdue":false,"supplier_name":"Acme","total_price":null,"order_currency":null,"destination":null,"updated_at":null,"barcode_hash":"secret","project_code":50,"responsible":3,"contact":4,"address":null,"address_detail":null,"contact_detail":{"pk":4},"project_code_detail":{"pk":50},"project_code_label":"PRJ-050","responsible_detail":{"pk":3},"parameters":[],"tags":["deferred"],"supplier_detail":{"pk":30}}`), &order))
 	a.Equal(7, order.CreatedBy.PK)
 	a.Nil(order.CreationDate)
 	a.Nil(order.LineItems)
@@ -75,7 +75,10 @@ func TestPurchaseOrderDetailsPreserveNullableFieldsAndOmitUnapprovedData(t *test
 	r.NotNil(order.Contact)
 	a.Equal(4, *order.Contact)
 	a.Nil(order.Address)
-	assertPurchaseOrderJSONOmits(t, order, "barcode_hash", "project_code", "address_detail", "contact_detail", "project_code_detail", "project_code_label", "responsible_detail", "parameters", "tags", "supplier_detail")
+	r.NotNil(order.ProjectCode)
+	a.Equal(50, *order.ProjectCode)
+	a.Equal("PRJ-050", order.ProjectCodeLabel)
+	assertPurchaseOrderJSONOmits(t, order, "barcode_hash", "address_detail", "contact_detail", "project_code_detail", "responsible_detail", "parameters", "tags", "supplier_detail")
 
 	encoded, err := json.Marshal(order)
 	r.NoError(err)
@@ -84,18 +87,24 @@ func TestPurchaseOrderDetailsPreserveNullableFieldsAndOmitUnapprovedData(t *test
 	a.Equal(float64(7), keys["created_by"], "created_by must project to a flat creator user ID")
 
 	var line inventree.PurchaseOrderLineItemDetail
-	r.NoError(json.Unmarshal([]byte(`{"pk":20,"order":10,"part":40,"internal_part":41,"internal_part_name":"Resistor","destination":null,"line":"","reference":"","notes":"","quantity":5,"received":0,"target_date":null,"purchase_price":null,"purchase_price_currency":"AUD","link":"","discount":0,"build_order":null,"overdue":null,"auto_pricing":false,"sku":null,"mpn":null,"ipn":null,"total_price":null,"barcode_hash":"secret","order_detail":{"pk":10},"project_code":null,"project_code_label":null,"project_code_detail":null,"build_order_detail":null,"destination_detail":null,"part_detail":{"pk":40},"supplier_part_detail":{"pk":41},"merge_items":true}`), &line))
+	r.NoError(json.Unmarshal([]byte(`{"pk":20,"order":10,"part":40,"internal_part":41,"internal_part_name":"Resistor","destination":null,"line":"","reference":"","notes":"","quantity":5,"received":0,"target_date":null,"purchase_price":null,"purchase_price_currency":"AUD","link":"","discount":0,"build_order":null,"overdue":null,"auto_pricing":false,"sku":null,"mpn":null,"ipn":null,"total_price":null,"barcode_hash":"secret","order_detail":{"pk":10},"project_code":50,"project_code_label":"PRJ-050","project_code_detail":{"pk":50},"build_order_detail":null,"destination_detail":null,"part_detail":{"pk":40},"supplier_part_detail":{"pk":41},"merge_items":true}`), &line))
 	a.Equal("Resistor", line.InternalPartName)
 	a.Nil(line.SKU)
 	a.Nil(line.TotalPrice)
-	assertPurchaseOrderJSONOmits(t, line, "order_detail", "project_code", "project_code_label", "project_code_detail", "build_order_detail", "destination_detail", "part_detail", "supplier_part_detail", "merge_items")
+	r.NotNil(line.ProjectCode)
+	a.Equal(50, *line.ProjectCode)
+	a.Equal("PRJ-050", line.ProjectCodeLabel)
+	assertPurchaseOrderJSONOmits(t, line, "order_detail", "project_code_detail", "build_order_detail", "destination_detail", "part_detail", "supplier_part_detail", "merge_items")
 
 	var extraLine inventree.PurchaseOrderExtraLine
-	r.NoError(json.Unmarshal([]byte(`{"pk":30,"order":10,"line":"","description":"Freight","discount":0,"link":"","notes":"","price":null,"price_currency":"AUD","quantity":1,"reference":"","target_date":null,"total_price":null,"order_detail":{"pk":10},"project_code":null,"project_code_label":null,"project_code_detail":null}`), &extraLine))
+	r.NoError(json.Unmarshal([]byte(`{"pk":30,"order":10,"line":"","description":"Freight","discount":0,"link":"","notes":"","price":null,"price_currency":"AUD","quantity":1,"reference":"","target_date":null,"total_price":null,"order_detail":{"pk":10},"project_code":50,"project_code_label":"PRJ-050","project_code_detail":{"pk":50}}`), &extraLine))
 	a.Equal("Freight", extraLine.Description)
 	a.Nil(extraLine.Price)
 	a.Nil(extraLine.TotalPrice)
-	assertPurchaseOrderJSONOmits(t, extraLine, "order_detail", "project_code", "project_code_label", "project_code_detail")
+	r.NotNil(extraLine.ProjectCode)
+	a.Equal(50, *extraLine.ProjectCode)
+	a.Equal("PRJ-050", extraLine.ProjectCodeLabel)
+	assertPurchaseOrderJSONOmits(t, extraLine, "order_detail", "project_code_detail")
 }
 
 func purchaseOrderModelFields(model any) map[string]bool {
