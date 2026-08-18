@@ -123,6 +123,9 @@ const (
 	SetCompanyImageToolName                 = "set_company_image"
 	SetCompanyImageFromURLToolName          = "set_company_image_from_url"
 	ClearCompanyImageToolName               = "clear_company_image"
+	SearchOwnersToolName                    = "search_owners"
+	GetOwnerToolName                        = "get_owner"
+	AssignOwnerToolName                     = "assign_owner"
 
 	defaultDownloadMaxBytes int64 = 5 * 1024 * 1024
 	maxDownloadMaxBytes     int64 = 25 * 1024 * 1024
@@ -187,6 +190,8 @@ var lookupToolNames = []string{
 	SearchPurchaseOrderExtraLinesToolName,
 	GetPurchaseOrderExtraLineToolName,
 	GetInstanceInfoToolName,
+	SearchOwnersToolName,
+	GetOwnerToolName,
 }
 
 var writeToolNames = []string{
@@ -249,6 +254,7 @@ var writeToolNames = []string{
 	SetCompanyImageToolName,
 	SetCompanyImageFromURLToolName,
 	ClearCompanyImageToolName,
+	AssignOwnerToolName,
 }
 
 var ToolAuthorizations = map[string]ToolAuthorization{
@@ -296,7 +302,7 @@ func init() {
 		case DepleteStockItemToolName, UpdatePartFamilyRelationshipsToolName:
 			scopes = []string{ScopeInventreeRead, ScopeInventreeWrite, ScopeInventreeOperational, ScopeInventreeDestructive}
 			mutationClass = "destructive"
-		case RemoveCompanyCustomerRoleToolName:
+		case RemoveCompanyCustomerRoleToolName, AssignOwnerToolName:
 			scopes = []string{ScopeInventreeRead, ScopeInventreeWrite, ScopeInventreeDestructive}
 			mutationClass = "destructive"
 		case ReceivePurchaseOrderToolName:
@@ -320,7 +326,7 @@ func init() {
 		if name == UploadAttachmentFromURLToolName || name == SetCompanyImageFromURLToolName {
 			annotations.OpenWorld = true
 		}
-		if name == DeleteAttachmentToolName || name == ClearCompanyImageToolName || name == DeletePartParameterToolName || name == DeleteParameterTemplateToolName || name == MergeParameterTemplatesToolName || name == DeleteCategoryParameterDefaultToolName || name == DeletePurchaseOrderExtraLineToolName || name == DeletePurchaseOrderLineToolName || name == BulkPropagatePartParametersToolName || name == DepleteStockItemToolName || name == UpdatePartFamilyRelationshipsToolName || name == DeletePartToolName || name == DeletePartRelationToolName || name == RemoveCompanyCustomerRoleToolName {
+		if name == DeleteAttachmentToolName || name == ClearCompanyImageToolName || name == DeletePartParameterToolName || name == DeleteParameterTemplateToolName || name == MergeParameterTemplatesToolName || name == DeleteCategoryParameterDefaultToolName || name == DeletePurchaseOrderExtraLineToolName || name == DeletePurchaseOrderLineToolName || name == BulkPropagatePartParametersToolName || name == DepleteStockItemToolName || name == UpdatePartFamilyRelationshipsToolName || name == DeletePartToolName || name == DeletePartRelationToolName || name == RemoveCompanyCustomerRoleToolName || name == AssignOwnerToolName {
 			annotations.Destructive = true
 		}
 		ToolAuthorizations[name] = ToolAuthorization{
@@ -549,6 +555,7 @@ func registerLookupTools(server *mcp.Server, deps Dependencies) {
 	addReadOnlyTool(server, deps, PreviewPurchaseOrderToolName, "Preview purchase order with lines", "Validates supplier-part lines and returns a no-write purchase-order preview.", previewPurchaseOrder(deps))
 	registerPurchasingLookupTools(server, deps)
 	registerInstanceInfoTool(server, deps)
+	registerOwnerLookupTools(server, deps)
 }
 
 func addReadOnlyTool[In, Out any](server *mcp.Server, deps Dependencies, name string, title string, description string, handler mcp.ToolHandlerFor[In, Out]) {

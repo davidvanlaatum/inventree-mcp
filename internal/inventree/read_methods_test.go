@@ -251,6 +251,31 @@ func TestReadMethodsUseExpectedEndpoints(t *testing.T) {
 			response: `{"pk":3,"name":"Shelf"}`,
 		},
 		{
+			name: "search owners page",
+			call: func(ctx context.Context, client *Client) error {
+				page, err := client.SearchOwnersPage(ctx, OwnerQuery{Search: "jdoe", IsActive: dvgoutils.Ptr(true), Limit: 10, Offset: 5})
+				if err == nil && (page.Count != 1 || len(page.Results) != 1 || page.Results[0].OwnerModel != "user" || page.Results[0].OwnerID != 7) {
+					return errors.New("owner search did not preserve exact fields")
+				}
+				return err
+			},
+			wantPath:  "/api/user/owner/",
+			wantQuery: url.Values{"search": []string{"jdoe"}, "is_active": []string{"true"}, "limit": []string{"10"}, "offset": []string{"5"}},
+			response:  `{"count":1,"next":null,"previous":null,"results":[{"pk":9,"owner_id":7,"owner_model":"user","name":"jdoe","label":"User: jdoe"}]}`,
+		},
+		{
+			name: "get owner",
+			call: func(ctx context.Context, client *Client) error {
+				owner, err := client.GetOwner(ctx, 9)
+				if err == nil && (owner.PK != 9 || owner.Label != "User: jdoe") {
+					return errors.New("owner detail did not preserve exact fields")
+				}
+				return err
+			},
+			wantPath: "/api/user/owner/9/",
+			response: `{"pk":9,"owner_id":7,"owner_model":"user","name":"jdoe","label":"User: jdoe"}`,
+		},
+		{
 			name: "search stock items",
 			call: func(ctx context.Context, client *Client) error {
 				_, err := client.SearchStockItems(ctx, StockItemQuery{PartID: 10, LocationID: 40, PurchaseOrderID: 120, SupplierPartID: 40, Limit: 8, Offset: 4})

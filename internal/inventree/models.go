@@ -108,6 +108,7 @@ type PartDetail struct {
 	ExternalStock           *float64       `json:"external_stock"`
 	UnallocatedStock        *float64       `json:"unallocated_stock"`
 	VariantStock            *float64       `json:"variant_stock"`
+	Responsible             *int           `json:"responsible"`
 }
 
 type PartPage struct {
@@ -196,6 +197,18 @@ type StockLocationType struct {
 	Description   string `json:"description"`
 	Icon          string `json:"icon"`
 	LocationCount *int   `json:"location_count"`
+}
+
+// Owner projects InvenTree's read-only "Owner" model, which represents
+// either a user or a group. The serializer intentionally exposes no
+// email, phone, address, or tax identifiers, so this projection is
+// privacy-safe as-is; owner_model distinguishes a user from a group.
+type Owner struct {
+	PK         int    `json:"pk"`
+	OwnerID    int    `json:"owner_id"`
+	OwnerModel string `json:"owner_model"`
+	Name       string `json:"name"`
+	Label      string `json:"label"`
 }
 
 type StockItem struct {
@@ -530,6 +543,7 @@ type PurchaseOrderDetail struct {
 	CompleteDate    *string                `json:"complete_date"`
 	SupplierName    string                 `json:"supplier_name"`
 	UpdatedAt       *string                `json:"updated_at"`
+	Responsible     *int                   `json:"responsible"`
 }
 
 type PurchaseOrderLineItem struct {

@@ -634,6 +634,16 @@ func (c *Client) GetPartStocktake(ctx context.Context, id int) (PartStocktake, e
 	return out, err
 }
 
+func (c *Client) SearchOwnersPage(ctx context.Context, query OwnerQuery) (Page[Owner], error) {
+	return listPage[Owner](ctx, c, "/api/user/owner/", query.values())
+}
+
+func (c *Client) GetOwner(ctx context.Context, id int) (Owner, error) {
+	var out Owner
+	err := c.get(ctx, fmt.Sprintf("/api/user/owner/%d/", id), &out)
+	return out, err
+}
+
 func (c *Client) get(ctx context.Context, path string, out any) error {
 	req, err := c.NewRequest(ctx, http.MethodGet, path, nil, nil)
 	if err != nil {

@@ -61,7 +61,7 @@ var PartFieldInventory = map[string]PartFieldClass{
 	"purchaseable":              PartFieldExposed,
 	"required_for_build_orders": PartFieldExposed,
 	"required_for_sales_orders": PartFieldExposed,
-	"responsible":               PartFieldDeferred,
+	"responsible":               PartFieldExposed,
 	"revision":                  PartFieldExposed,
 	"revision_count":            PartFieldExposed,
 	"revision_of":               PartFieldExposed,

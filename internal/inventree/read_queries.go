@@ -163,6 +163,13 @@ type PartRelationQuery struct {
 	Offset int
 }
 
+type OwnerQuery struct {
+	Search   string
+	IsActive *bool
+	Limit    int
+	Offset   int
+}
+
 func (q SearchQuery) values() url.Values {
 	values := url.Values{}
 	if q.Search != "" {
@@ -439,6 +446,18 @@ func (q PartRelationQuery) values() url.Values {
 	}
 	if q.Part2 != 0 {
 		values.Set("part_2", strconv.Itoa(q.Part2))
+	}
+	setPagination(values, q.Limit, q.Offset)
+	return values
+}
+
+func (q OwnerQuery) values() url.Values {
+	values := url.Values{}
+	if q.Search != "" {
+		values.Set("search", q.Search)
+	}
+	if q.IsActive != nil {
+		values.Set("is_active", strconv.FormatBool(*q.IsActive))
 	}
 	setPagination(values, q.Limit, q.Offset)
 	return values
