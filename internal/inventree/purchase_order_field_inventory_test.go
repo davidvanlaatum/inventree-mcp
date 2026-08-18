@@ -26,6 +26,7 @@ func TestPurchaseOrderFieldInventoriesClassifyPinnedSerializersExactly(t *testin
 	}{
 		{name: "order", schema: "PurchaseOrder", inventory: inventree.PurchaseOrderFieldInventory, model: inventree.PurchaseOrderDetail{}},
 		{name: "line", schema: "PurchaseOrderLineItem", inventory: inventree.PurchaseOrderLineFieldInventory, model: inventree.PurchaseOrderLineItemDetail{}},
+		{name: "extra_line", schema: "PurchaseOrderExtraLine", inventory: inventree.PurchaseOrderExtraLineFieldInventory, model: inventree.PurchaseOrderExtraLine{}},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -88,6 +89,13 @@ func TestPurchaseOrderDetailsPreserveNullableFieldsAndOmitUnapprovedData(t *test
 	a.Nil(line.SKU)
 	a.Nil(line.TotalPrice)
 	assertPurchaseOrderJSONOmits(t, line, "order_detail", "project_code", "project_code_label", "project_code_detail", "build_order_detail", "destination_detail", "part_detail", "supplier_part_detail", "merge_items")
+
+	var extraLine inventree.PurchaseOrderExtraLine
+	r.NoError(json.Unmarshal([]byte(`{"pk":30,"order":10,"line":"","description":"Freight","discount":0,"link":"","notes":"","price":null,"price_currency":"AUD","quantity":1,"reference":"","target_date":null,"total_price":null,"order_detail":{"pk":10},"project_code":null,"project_code_label":null,"project_code_detail":null}`), &extraLine))
+	a.Equal("Freight", extraLine.Description)
+	a.Nil(extraLine.Price)
+	a.Nil(extraLine.TotalPrice)
+	assertPurchaseOrderJSONOmits(t, extraLine, "order_detail", "project_code", "project_code_label", "project_code_detail")
 }
 
 func purchaseOrderModelFields(model any) map[string]bool {
