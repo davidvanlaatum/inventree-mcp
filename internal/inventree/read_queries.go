@@ -184,6 +184,13 @@ type AddressQuery struct {
 	Offset    int
 }
 
+type ProjectCodeQuery struct {
+	Search   string
+	IsActive *bool
+	Limit    int
+	Offset   int
+}
+
 func (q SearchQuery) values() url.Values {
 	values := url.Values{}
 	if q.Search != "" {
@@ -492,6 +499,18 @@ func (q AddressQuery) values() url.Values {
 	values.Set("company", strconv.Itoa(q.CompanyID))
 	if q.Search != "" {
 		values.Set("search", q.Search)
+	}
+	setPagination(values, q.Limit, q.Offset)
+	return values
+}
+
+func (q ProjectCodeQuery) values() url.Values {
+	values := url.Values{}
+	if q.Search != "" {
+		values.Set("search", q.Search)
+	}
+	if q.IsActive != nil {
+		values.Set("active", strconv.FormatBool(*q.IsActive))
 	}
 	setPagination(values, q.Limit, q.Offset)
 	return values

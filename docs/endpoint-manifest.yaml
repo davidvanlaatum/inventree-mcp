@@ -17,6 +17,7 @@ coverage_areas:
   - manufacturing
   - sales_orders
   - instance_info
+  - project_codes
 
 forbidden_paths:
   - /api/notes-image-upload/
@@ -252,6 +253,18 @@ endpoints:
     method: GET
     operation_id: company_address_retrieve
     response_schema: '#/components/schemas/Address'
+  - id: search_project_codes
+    area: project_codes
+    path: /api/project-code/
+    method: GET
+    operation_id: project_code_list
+    response_schema: '#/components/schemas/PaginatedProjectCodeList'
+  - id: get_project_code
+    area: project_codes
+    path: /api/project-code/{id}/
+    method: GET
+    operation_id: project_code_retrieve
+    response_schema: '#/components/schemas/ProjectCode'
   - id: search_supplier_parts
     area: purchasing_preview
     path: /api/company/part/

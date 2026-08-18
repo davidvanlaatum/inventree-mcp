@@ -1052,6 +1052,132 @@ func TestMilestoneHappyPathToolsAgainstInvenTree(t *testing.T) {
 		a.Nil(orderAfter.Record.Address)
 	})
 
+	t.Run("project_code_discovery_and_assignment", func(t *testing.T) {
+		r := require.New(t)
+		a := assert.New(t)
+		ctx, _, _ := testhandler.SetupTestHandler(t)
+		fixture := newMilestoneToolFixture(t, shared)
+		supplier := fixture.ensure(t, testenv.FixtureSupplier)
+		supplierPart := fixture.ensure(t, testenv.FixtureSupplierPart)
+		destination := fixture.ensure(t, testenv.FixtureLocation)
+
+		createProjectCode := func(suffix string) inventree.ProjectCode {
+			code, codeErr := fixture.run.Name(suffix)
+			r.NoError(codeErr)
+			var record inventree.ProjectCode
+			r.NoError(fixture.client.Post(ctx, "/api/project-code/", map[string]any{"code": code, "description": "F-S50 integration", "active": true}, &record))
+			return record
+		}
+		projectCode := createProjectCode("prj-alpha")
+
+		order, err := fixture.client.CreatePurchaseOrder(ctx, inventree.PurchaseOrderCreate{Supplier: supplier.ID})
+		r.NoError(err)
+		lineReference, err := fixture.run.Name("po-line")
+		r.NoError(err)
+		line, err := fixture.client.CreatePurchaseOrderLine(ctx, inventree.PurchaseOrderLineCreate{Order: order.PK, SupplierPart: supplierPart.ID, Reference: &lineReference, Quantity: 1, Destination: &destination.ID})
+		r.NoError(err)
+		extraReference, err := fixture.run.Name("po-extra-line")
+		r.NoError(err)
+		extraLine, err := fixture.client.CreatePurchaseOrderExtraLine(ctx, inventree.PurchaseOrderExtraLineCreate{Order: order.PK, Reference: extraReference, Quantity: 1})
+		r.NoError(err)
+
+		_, projectCodeSearch, err := searchProjectCodes(fixture.deps())(ctx, &mcp.CallToolRequest{}, SearchProjectCodesInput{Query: projectCode.Code})
+		r.NoError(err)
+		a.Equal(StatusOK, projectCodeSearch.Status)
+		r.Len(projectCodeSearch.Results, 1)
+		a.Equal(projectCode.PK, projectCodeSearch.Results[0].PK)
+
+		_, exactProjectCode, err := getProjectCode(fixture.deps())(ctx, &mcp.CallToolRequest{}, IDInput{ID: projectCode.PK})
+		r.NoError(err)
+		a.Equal(StatusOK, exactProjectCode.Status)
+		a.Equal(projectCode.Code, exactProjectCode.Record.Code)
+
+		_, missingProjectCode, err := getProjectCode(fixture.deps())(ctx, &mcp.CallToolRequest{}, IDInput{ID: 999999999})
+		r.NoError(err)
+		a.Equal(StatusNotFound, missingProjectCode.Status)
+
+		_, orderBefore, err := getPurchaseOrder(fixture.deps())(ctx, &mcp.CallToolRequest{}, IDInput{ID: order.PK})
+		r.NoError(err)
+		a.Nil(orderBefore.Record.ProjectCode)
+
+		cases := []struct {
+			name       string
+			shortCode  string
+			objectType string
+			objectID   int
+		}{
+			{name: "purchase_order", shortCode: "po", objectType: ProjectCodeObjectPurchaseOrder, objectID: order.PK},
+			{name: "purchase_order_line", shortCode: "pl", objectType: ProjectCodeObjectPurchaseOrderLine, objectID: line.PK},
+			{name: "purchase_order_extra_line", shortCode: "pe", objectType: ProjectCodeObjectPurchaseOrderExtraLine, objectID: extraLine.PK},
+		}
+		for _, tc := range cases {
+			t.Run(tc.name, func(t *testing.T) {
+				r := require.New(t)
+				a := assert.New(t)
+
+				_, preview, err := assignProjectCode(fixture.deps())(ctx, &mcp.CallToolRequest{}, AssignProjectCodeInput{ObjectType: tc.objectType, ObjectID: tc.objectID, ProjectCodeID: &projectCode.PK})
+				r.NoError(err)
+				r.Equal(StatusClarificationRequired, preview.Status)
+				r.NotEmpty(preview.PlanHash)
+
+				_, confirmed, err := assignProjectCode(fixture.deps())(ctx, &mcp.CallToolRequest{}, AssignProjectCodeInput{ObjectType: tc.objectType, ObjectID: tc.objectID, ProjectCodeID: &projectCode.PK, Confirm: true, PlanHash: preview.PlanHash})
+				r.NoError(err)
+				r.Equal(StatusOK, confirmed.Status)
+				a.True(confirmed.Verified)
+				r.NotNil(confirmed.ProjectCodeID)
+				a.Equal(projectCode.PK, *confirmed.ProjectCodeID)
+
+				_, clearPreview, err := assignProjectCode(fixture.deps())(ctx, &mcp.CallToolRequest{}, AssignProjectCodeInput{ObjectType: tc.objectType, ObjectID: tc.objectID})
+				r.NoError(err)
+				r.Equal(StatusClarificationRequired, clearPreview.Status)
+
+				// The object's project code changes before confirmation, so the stale plan must be refused.
+				otherProjectCode := createProjectCode(tc.shortCode + "-alt")
+				_, restale, err := assignProjectCode(fixture.deps())(ctx, &mcp.CallToolRequest{}, AssignProjectCodeInput{ObjectType: tc.objectType, ObjectID: tc.objectID, ProjectCodeID: &otherProjectCode.PK, Confirm: true, PlanHash: clearPreview.PlanHash})
+				r.NoError(err)
+				a.Equal(StatusClarificationRequired, restale.Status)
+
+				_, freshClearPreview, err := assignProjectCode(fixture.deps())(ctx, &mcp.CallToolRequest{}, AssignProjectCodeInput{ObjectType: tc.objectType, ObjectID: tc.objectID})
+				r.NoError(err)
+				r.Equal(StatusClarificationRequired, freshClearPreview.Status)
+				_, cleared, err := assignProjectCode(fixture.deps())(ctx, &mcp.CallToolRequest{}, AssignProjectCodeInput{ObjectType: tc.objectType, ObjectID: tc.objectID, Confirm: true, PlanHash: freshClearPreview.PlanHash})
+				r.NoError(err)
+				r.Equal(StatusOK, cleared.Status)
+				a.Nil(cleared.ProjectCodeID)
+			})
+		}
+
+		// Confirm the combined-workflow preservation contract end-to-end: assign a
+		// project code to the line, then prove issue_purchase_order's dry-run
+		// carries it into the plan/hash and rejects a stale reassignment.
+		_, linePreview, err := assignProjectCode(fixture.deps())(ctx, &mcp.CallToolRequest{}, AssignProjectCodeInput{ObjectType: ProjectCodeObjectPurchaseOrderLine, ObjectID: line.PK, ProjectCodeID: &projectCode.PK})
+		r.NoError(err)
+		_, lineConfirmed, err := assignProjectCode(fixture.deps())(ctx, &mcp.CallToolRequest{}, AssignProjectCodeInput{ObjectType: ProjectCodeObjectPurchaseOrderLine, ObjectID: line.PK, ProjectCodeID: &projectCode.PK, Confirm: true, PlanHash: linePreview.PlanHash})
+		r.NoError(err)
+		r.Equal(StatusOK, lineConfirmed.Status)
+
+		_, issuePlan, err := issuePurchaseOrder(fixture.deps())(ctx, &mcp.CallToolRequest{}, IssuePurchaseOrderInput{DryRun: true, OrderID: order.PK})
+		r.NoError(err)
+		r.NotEmpty(issuePlan.PlanHash)
+		lineWithProjectCode, ok := findPurchaseOrderLine(issuePlan.Lines, line.PK)
+		r.True(ok)
+		r.NotNil(lineWithProjectCode.ProjectCode)
+		a.Equal(projectCode.PK, *lineWithProjectCode.ProjectCode)
+
+		otherProjectCode := createProjectCode("workflow-drift")
+		_, driftPreview, err := assignProjectCode(fixture.deps())(ctx, &mcp.CallToolRequest{}, AssignProjectCodeInput{ObjectType: ProjectCodeObjectPurchaseOrderLine, ObjectID: line.PK, ProjectCodeID: &otherProjectCode.PK})
+		r.NoError(err)
+		_, driftConfirmed, err := assignProjectCode(fixture.deps())(ctx, &mcp.CallToolRequest{}, AssignProjectCodeInput{ObjectType: ProjectCodeObjectPurchaseOrderLine, ObjectID: line.PK, ProjectCodeID: &otherProjectCode.PK, Confirm: true, PlanHash: driftPreview.PlanHash})
+		r.NoError(err)
+		r.Equal(StatusOK, driftConfirmed.Status)
+
+		// The reviewed issue_purchase_order plan hash bound the line's prior
+		// project code, so it must now be stale.
+		_, staleIssue, err := issuePurchaseOrder(fixture.deps())(ctx, &mcp.CallToolRequest{}, IssuePurchaseOrderInput{OrderID: order.PK, ConfirmIssue: true, PlanHash: issuePlan.PlanHash})
+		r.NoError(err)
+		a.Equal(StatusClarificationRequired, staleIssue.Status)
+	})
+
 	t.Run("company_and_sourcing_link_administration", func(t *testing.T) {
 		r := require.New(t)
 		a := assert.New(t)
@@ -2681,6 +2807,7 @@ type milestoneToolFixture struct {
 	ownerPlanStore        *ownerPlanStore
 	contactPlanStore      *contactPlanStore
 	addressPlanStore      *addressPlanStore
+	projectCodePlanStore  *projectCodePlanStore
 }
 
 type attachmentTarget struct {
@@ -2733,6 +2860,7 @@ func newMilestoneToolFixture(t *testing.T, shared *testenv.SharedInvenTree) mile
 		ownerPlanStore:        newOwnerPlanStore(time.Now, randomStockPlanToken),
 		contactPlanStore:      newContactPlanStore(time.Now, randomStockPlanToken),
 		addressPlanStore:      newAddressPlanStore(time.Now, randomStockPlanToken),
+		projectCodePlanStore:  newProjectCodePlanStore(time.Now, randomStockPlanToken),
 	}
 }
 
@@ -2751,6 +2879,7 @@ func (f milestoneToolFixture) deps() Dependencies {
 		ownerPlanStore:        f.ownerPlanStore,
 		contactPlanStore:      f.contactPlanStore,
 		addressPlanStore:      f.addressPlanStore,
+		projectCodePlanStore:  f.projectCodePlanStore,
 	}
 }
 
@@ -2883,6 +3012,15 @@ func (f milestoneToolFixture) createManufacturerPart(t *testing.T, partID int, m
 	r.NoError(err)
 	r.NotZero(part.PK)
 	return part
+}
+
+func findPurchaseOrderLine(lines []inventree.PurchaseOrderLineItem, id int) (inventree.PurchaseOrderLineItem, bool) {
+	for _, line := range lines {
+		if line.PK == id {
+			return line, true
+		}
+	}
+	return inventree.PurchaseOrderLineItem{}, false
 }
 
 func allowLocalTestServerFetcher(t *testing.T, rawURL string) upload.URLFetcher {

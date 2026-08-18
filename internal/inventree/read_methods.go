@@ -664,6 +664,16 @@ func (c *Client) GetAddress(ctx context.Context, id int) (Address, error) {
 	return out, err
 }
 
+func (c *Client) SearchProjectCodesPage(ctx context.Context, query ProjectCodeQuery) (Page[ProjectCode], error) {
+	return listPage[ProjectCode](ctx, c, "/api/project-code/", query.values())
+}
+
+func (c *Client) GetProjectCode(ctx context.Context, id int) (ProjectCode, error) {
+	var out ProjectCode
+	err := c.get(ctx, fmt.Sprintf("/api/project-code/%d/", id), &out)
+	return out, err
+}
+
 func (c *Client) get(ctx context.Context, path string, out any) error {
 	req, err := c.NewRequest(ctx, http.MethodGet, path, nil, nil)
 	if err != nil {
