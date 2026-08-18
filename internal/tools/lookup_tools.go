@@ -58,6 +58,10 @@ const (
 	GetStockLocationTypeToolName            = "get_stock_location_type"
 	SearchStockItemsToolName                = "search_stock_items"
 	GetStockItemToolName                    = "get_stock_item"
+	ListStockTrackingEntriesToolName        = "list_stock_tracking_entries"
+	GetStockTrackingEntryToolName           = "get_stock_tracking_entry"
+	ListPartStocktakesToolName              = "list_part_stocktakes"
+	GetPartStocktakeToolName                = "get_part_stocktake"
 	ListAttachmentsToolName                 = "list_attachments"
 	GetAttachmentMetadataToolName           = "get_attachment_metadata"
 	DownloadAttachmentToolName              = "download_attachment"
@@ -167,6 +171,10 @@ var lookupToolNames = []string{
 	GetStockLocationTypeToolName,
 	SearchStockItemsToolName,
 	GetStockItemToolName,
+	ListStockTrackingEntriesToolName,
+	GetStockTrackingEntryToolName,
+	ListPartStocktakesToolName,
+	GetPartStocktakeToolName,
 	ListAttachmentsToolName,
 	GetAttachmentMetadataToolName,
 	DownloadAttachmentToolName,
@@ -533,6 +541,7 @@ func registerLookupTools(server *mcp.Server, deps Dependencies) {
 	addReadOnlyTool(server, deps, GetStockLocationTypeToolName, "Get stock location type", "Retrieves one stock location type by stable ID.", getStockLocationType(deps))
 	addReadOnlyTool(server, deps, SearchStockItemsToolName, "Search stock items", "Searches InvenTree stock items.", searchStockItems(deps))
 	addReadOnlyTool(server, deps, GetStockItemToolName, "Get stock item", "Retrieves one stock item with traceability and source context by stable ID.", getStockItem(deps))
+	registerStockTrackingLookupTools(server, deps)
 	addReadOnlyTool(server, deps, ListAttachmentsToolName, "List attachments", "Lists attachment metadata for an in-scope InvenTree object.", listAttachments(deps))
 	addReadOnlyTool(server, deps, GetAttachmentMetadataToolName, "Get attachment metadata", "Retrieves one attachment metadata record by ID.", getAttachmentMetadata(deps))
 	addReadOnlyTool(server, deps, DownloadAttachmentToolName, "Download attachment", "Downloads bounded content for one file attachment.", downloadAttachment(deps))
