@@ -286,6 +286,28 @@ type StockItemDetail struct {
 	LocationPath           []TreePath     `json:"location_path,omitempty"`
 }
 
+// StockItemPage is a bounded single-request page over /api/stock/, used by
+// dependency audits that only need an exact upstream count, not a full scan.
+type StockItemPage struct {
+	Count   int
+	Results []StockItem
+	HasMore bool
+}
+
+// SalesOrderSummary is a minimal read-only projection used solely to let
+// company customer-role removal prove whether sales orders still reference
+// the company as customer. It is not a general sales-order client surface.
+type SalesOrderSummary struct {
+	PK        int    `json:"pk"`
+	Reference string `json:"reference"`
+}
+
+type SalesOrderPage struct {
+	Count   int
+	Results []SalesOrderSummary
+	HasMore bool
+}
+
 type Parameter struct {
 	WebLinkFields
 	PK        int    `json:"pk"`
@@ -364,18 +386,22 @@ type ManufacturerPart struct {
 	Description  string `json:"description"`
 }
 
+// CompanyDetail is the approved complete scalar projection returned by the
+// exact company endpoint. API 530 `primary_address` remains a separate
+// structured-address lookup, and `parameters`/`tags` remain deferred to
+// their dedicated stories; see CompanyFieldInventory for the pinned
+// classification. Deferred/separate-lookup/write-only fields have no
+// corresponding Go field so json.Unmarshal silently drops them and they
+// never appear on re-marshal.
 type CompanyDetail struct {
 	Company
-	Website        string  `json:"website"`
-	Phone          string  `json:"phone"`
-	Email          *string `json:"email"`
-	Contact        string  `json:"contact"`
-	Link           string  `json:"link"`
-	Notes          *string `json:"notes"`
-	TaxID          string  `json:"tax_id"`
-	PrimaryAddress any     `json:"primary_address"`
-	Parameters     any     `json:"parameters"`
-	Tags           any     `json:"tags"`
+	Website string  `json:"website"`
+	Phone   string  `json:"phone"`
+	Email   *string `json:"email"`
+	Contact string  `json:"contact"`
+	Link    string  `json:"link"`
+	Notes   *string `json:"notes"`
+	TaxID   string  `json:"tax_id"`
 }
 
 type SupplierPartDetail struct {

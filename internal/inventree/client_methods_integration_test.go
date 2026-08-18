@@ -408,6 +408,109 @@ func TestClientMethodsAgainstInvenTree(t *testing.T) {
 		r.Equal(manufacturerPart.PK, manufacturerParts[0].PK)
 	})
 
+	t.Run("company_detail_and_role_completeness", func(t *testing.T) {
+		r := require.New(t)
+		a := assert.New(t)
+		ctx, _, _ := testhandler.SetupTestHandler(t)
+		fixture := newClientMethodFixture(t, shared)
+		location := fixture.ensure(t, testenv.FixtureLocation)
+		part := fixture.ensure(t, testenv.FixturePart)
+
+		customerName, err := fixture.run.Name("customer")
+		r.NoError(err)
+		created, err := fixture.client.CreateCompany(ctx, inventree.CompanyCreate{Name: customerName, Currency: "USD"})
+		r.NoError(err)
+		r.NotZero(created.PK)
+		customer, err := fixture.client.UpdateCompany(ctx, created.PK, inventree.PatchFields{"is_customer": inventree.Set(true)})
+		r.NoError(err)
+		r.True(customer.IsCustomer)
+
+		phone, contact, taxID, email, link := "555-0100", "Jane Doe", "ABN123", "ap@example.test", "https://example.test/info"
+		updated, err := fixture.client.UpdateCompany(ctx, customer.PK, inventree.PatchFields{
+			"phone": inventree.Set(phone), "contact": inventree.Set(contact), "tax_id": inventree.Set(taxID),
+			"email": inventree.Set(email), "link": inventree.Set(link),
+		})
+		r.NoError(err)
+		a.Equal(phone, updated.Phone)
+		a.Equal(contact, updated.Contact)
+		a.Equal(taxID, updated.TaxID)
+		r.NotNil(updated.Email)
+		a.Equal(email, *updated.Email)
+		a.Equal(link, updated.Link)
+
+		detail, err := fixture.client.GetCompanyDetail(ctx, customer.PK)
+		r.NoError(err)
+		a.Equal(phone, detail.Phone)
+		a.Equal(contact, detail.Contact)
+		a.Equal(taxID, detail.TaxID)
+		r.NotNil(detail.Email)
+		a.Equal(email, *detail.Email)
+
+		// clear_email and empty-string clears for the plain (non-nullable) fields.
+		_, err = fixture.client.UpdateCompany(ctx, customer.PK, inventree.PatchFields{
+			"phone": inventree.Set(""), "contact": inventree.Set(""), "tax_id": inventree.Set(""), "email": inventree.Null(),
+		})
+		r.NoError(err)
+		cleared, err := fixture.client.GetCompanyDetail(ctx, customer.PK)
+		r.NoError(err)
+		a.Empty(cleared.Phone)
+		a.Empty(cleared.Contact)
+		a.Empty(cleared.TaxID)
+		a.Nil(cleared.Email)
+
+		var companyRaw map[string]any
+		req, err := fixture.client.NewRequest(ctx, "GET", fmt.Sprintf("/api/company/%d/", customer.PK), nil, nil)
+		r.NoError(err)
+		r.NoError(fixture.client.DoJSON(req, &companyRaw))
+		for field, class := range inventree.CompanyFieldInventory {
+			if class == inventree.CompanyFieldExposed {
+				r.Contains(companyRaw, field, "pinned company response field %s", field)
+			}
+		}
+		for field := range companyRaw {
+			r.Contains(inventree.CompanyFieldInventory, field, "unclassified company response field %s", field)
+		}
+		_, hasParameters := companyRaw["parameters"]
+		_, hasTags := companyRaw["tags"]
+		_, hasPrimaryAddress := companyRaw["primary_address"]
+		a.False(hasParameters, "deferred parameters field must not appear in the live raw response the classification was checked against")
+		a.False(hasTags, "deferred tags field must not appear in the live raw response the classification was checked against")
+		a.False(hasPrimaryAddress, "separate-lookup primary_address field must not appear in the live raw response the classification was checked against")
+
+		// Customer-role dependency audit: SearchStockItemsPage and
+		// SearchSalesOrdersPage are new bounded existence-count client
+		// methods introduced solely to gate remove_company_customer_role.
+		noStock, err := fixture.client.SearchStockItemsPage(ctx, inventree.StockItemQuery{Customer: customer.PK, Limit: 1})
+		r.NoError(err)
+		a.Zero(noStock.Count)
+		noSalesOrders, err := fixture.client.SearchSalesOrdersPage(ctx, inventree.SalesOrderQuery{Customer: customer.PK, Limit: 1})
+		r.NoError(err)
+		a.Zero(noSalesOrders.Count)
+
+		stockItem, err := fixture.client.CreateStockItem(ctx, inventree.StockItemCreate{Part: part.ID, Location: location.ID, Quantity: 1})
+		r.NoError(err)
+		r.NotZero(stockItem.PK)
+		_, err = fixture.client.UpdateStockItem(ctx, stockItem.PK, inventree.PatchFields{"customer": inventree.Set(customer.PK)})
+		r.NoError(err)
+		withStock, err := fixture.client.SearchStockItemsPage(ctx, inventree.StockItemQuery{Customer: customer.PK, Limit: 1})
+		r.NoError(err)
+		a.Equal(1, withStock.Count)
+		_, err = fixture.client.UpdateStockItem(ctx, stockItem.PK, inventree.PatchFields{"customer": inventree.Null()})
+		r.NoError(err)
+		afterClear, err := fixture.client.SearchStockItemsPage(ctx, inventree.StockItemQuery{Customer: customer.PK, Limit: 1})
+		r.NoError(err)
+		a.Zero(afterClear.Count)
+
+		var soRaw json.RawMessage
+		r.NoError(fixture.client.Post(ctx, "/api/order/so/", map[string]any{"customer": customer.PK}, &soRaw))
+		var salesOrder inventree.SalesOrderSummary
+		r.NoError(json.Unmarshal(soRaw, &salesOrder))
+		r.NotZero(salesOrder.PK)
+		withSalesOrder, err := fixture.client.SearchSalesOrdersPage(ctx, inventree.SalesOrderQuery{Customer: customer.PK, Limit: 1})
+		r.NoError(err)
+		a.Equal(1, withSalesOrder.Count)
+	})
+
 	t.Run("helpers", func(t *testing.T) {
 		r := require.New(t)
 		ctx, _, _ := testhandler.SetupTestHandler(t)

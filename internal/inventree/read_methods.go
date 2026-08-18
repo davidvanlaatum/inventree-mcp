@@ -185,6 +185,22 @@ func (c *Client) SearchStockItems(ctx context.Context, query StockItemQuery) ([]
 	return listAll[StockItem](ctx, c, "/api/stock/", query.values())
 }
 
+// SearchStockItemsPage fetches a single bounded page and reports the exact
+// upstream Count, unlike SearchStockItems which scans every page.
+func (c *Client) SearchStockItemsPage(ctx context.Context, query StockItemQuery) (StockItemPage, error) {
+	page, err := listPage[StockItem](ctx, c, "/api/stock/", query.values())
+	return StockItemPage{Count: page.Count, Results: page.Results, HasMore: page.Next != nil && *page.Next != ""}, err
+}
+
+// SearchSalesOrdersPage fetches a single bounded page over /api/order/so/
+// and reports the exact upstream Count. This exists solely to support the
+// company customer-role removal dependency audit; it is not a general
+// sales-order search surface.
+func (c *Client) SearchSalesOrdersPage(ctx context.Context, query SalesOrderQuery) (SalesOrderPage, error) {
+	page, err := listPage[SalesOrderSummary](ctx, c, "/api/order/so/", query.values())
+	return SalesOrderPage{Count: page.Count, Results: page.Results, HasMore: page.Next != nil && *page.Next != ""}, err
+}
+
 func (c *Client) GetStockItem(ctx context.Context, id int) (StockItem, error) {
 	var out StockItem
 	err := c.get(ctx, fmt.Sprintf("/api/stock/%d/", id), &out)

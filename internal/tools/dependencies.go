@@ -28,6 +28,7 @@ type Dependencies struct {
 	parameterPlanStore    *parameterPlanStore
 	partFamilyPlanStore   *partFamilyPlanStore
 	partRelationPlanStore *partRelationPlanStore
+	companyRolePlanStore  *companyRolePlanStore
 }
 
 func (d Dependencies) Client(ctx context.Context) (any, error) {

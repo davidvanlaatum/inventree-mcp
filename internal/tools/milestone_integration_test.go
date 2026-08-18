@@ -954,6 +954,65 @@ func TestMilestoneHappyPathToolsAgainstInvenTree(t *testing.T) {
 		a.Nil(clearedCompanyNote.Record.Notes)
 	})
 
+	t.Run("company_customer_role_removal_happy_path", func(t *testing.T) {
+		r := require.New(t)
+		a := assert.New(t)
+		ctx, _, _ := testhandler.SetupTestHandler(t)
+		fixture := newMilestoneToolFixture(t, shared)
+		location := fixture.ensure(t, testenv.FixtureLocation)
+		part := fixture.ensure(t, testenv.FixturePart)
+
+		customerName, err := fixture.run.Name("customer-role-removal")
+		r.NoError(err)
+		created, err := fixture.client.CreateCompany(ctx, inventree.CompanyCreate{Name: customerName, Currency: "USD"})
+		r.NoError(err)
+		add := true
+		_, addRole, err := updateCompanyAdmin(fixture.deps())(ctx, &mcp.CallToolRequest{}, UpdateCompanyInput{ID: created.PK, IsCustomer: &add})
+		r.NoError(err)
+		a.Equal(StatusOK, addRole.Status)
+		r.NotNil(addRole.Record)
+		a.True(addRole.Record.IsCustomer)
+
+		remove := false
+		_, _, err = updateCompanyAdmin(fixture.deps())(ctx, &mcp.CallToolRequest{}, UpdateCompanyInput{ID: created.PK, IsCustomer: &remove})
+		a.Error(err, "update_company must always reject inline customer-role removal")
+
+		// Dependency-blocked: a stock item assigned to this customer must
+		// refuse removal and issue no plan token, then allow removal once
+		// the dependency clears.
+		stockItem, err := fixture.client.CreateStockItem(ctx, inventree.StockItemCreate{Part: part.ID, Location: location.ID, Quantity: 1})
+		r.NoError(err)
+		_, err = fixture.client.UpdateStockItem(ctx, stockItem.PK, inventree.PatchFields{"customer": inventree.Set(created.PK)})
+		r.NoError(err)
+
+		_, blockedPreview, err := removeCompanyCustomerRole(fixture.deps())(ctx, &mcp.CallToolRequest{}, RemoveCompanyCustomerRoleInput{CompanyID: created.PK})
+		r.NoError(err)
+		a.Equal(StatusClarificationRequired, blockedPreview.Status)
+		a.Equal(1, blockedPreview.DependencyStockItems)
+		a.Empty(blockedPreview.PlanHash, "no plan token is issued while a dependency remains")
+
+		_, err = fixture.client.UpdateStockItem(ctx, stockItem.PK, inventree.PatchFields{"customer": inventree.Null()})
+		r.NoError(err)
+
+		_, preview, err := removeCompanyCustomerRole(fixture.deps())(ctx, &mcp.CallToolRequest{}, RemoveCompanyCustomerRoleInput{CompanyID: created.PK})
+		r.NoError(err)
+		a.Equal(StatusClarificationRequired, preview.Status)
+		r.NotEmpty(preview.PlanHash)
+		r.NotNil(preview.Plan)
+		a.Equal(created.PK, preview.Plan.CompanyID)
+
+		_, confirmed, err := removeCompanyCustomerRole(fixture.deps())(ctx, &mcp.CallToolRequest{}, RemoveCompanyCustomerRoleInput{CompanyID: created.PK, Confirm: true, PlanHash: preview.PlanHash})
+		r.NoError(err)
+		a.Equal(StatusOK, confirmed.Status)
+		a.True(confirmed.Verified)
+		r.NotNil(confirmed.Record)
+		a.False(confirmed.Record.IsCustomer)
+
+		_, alreadyRemoved, err := removeCompanyCustomerRole(fixture.deps())(ctx, &mcp.CallToolRequest{}, RemoveCompanyCustomerRoleInput{CompanyID: created.PK})
+		r.NoError(err)
+		a.Equal(StatusValidationFailed, alreadyRemoved.Status)
+	})
+
 	t.Run("purchase_order_create_and_retry_happy_path", func(t *testing.T) {
 		r := require.New(t)
 		a := assert.New(t)
@@ -2348,6 +2407,7 @@ type milestoneToolFixture struct {
 	parameterPlanStore    *parameterPlanStore
 	partFamilyPlanStore   *partFamilyPlanStore
 	partRelationPlanStore *partRelationPlanStore
+	companyRolePlanStore  *companyRolePlanStore
 }
 
 type attachmentTarget struct {
@@ -2396,6 +2456,7 @@ func newMilestoneToolFixture(t *testing.T, shared *testenv.SharedInvenTree) mile
 		parameterPlanStore:    newParameterPlanStore(time.Now, randomStockPlanToken),
 		partFamilyPlanStore:   newPartFamilyPlanStore(time.Now, randomStockPlanToken),
 		partRelationPlanStore: newPartRelationPlanStore(time.Now, randomStockPlanToken),
+		companyRolePlanStore:  newCompanyRolePlanStore(time.Now, randomStockPlanToken),
 	}
 }
 
@@ -2410,6 +2471,7 @@ func (f milestoneToolFixture) deps() Dependencies {
 		parameterPlanStore:    f.parameterPlanStore,
 		partFamilyPlanStore:   f.partFamilyPlanStore,
 		partRelationPlanStore: f.partRelationPlanStore,
+		companyRolePlanStore:  f.companyRolePlanStore,
 	}
 }
 
