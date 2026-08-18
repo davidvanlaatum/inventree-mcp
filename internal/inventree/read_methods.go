@@ -614,6 +614,26 @@ func (c *Client) GetPartRelation(ctx context.Context, id int) (PartRelation, err
 	return out, err
 }
 
+func (c *Client) SearchStockTrackingPage(ctx context.Context, query StockTrackingQuery) (Page[StockTracking], error) {
+	return listPage[StockTracking](ctx, c, "/api/stock/track/", query.values())
+}
+
+func (c *Client) GetStockTrackingEntry(ctx context.Context, id int) (StockTracking, error) {
+	var out StockTracking
+	err := c.get(ctx, fmt.Sprintf("/api/stock/track/%d/", id), &out)
+	return out, err
+}
+
+func (c *Client) SearchPartStocktakesPage(ctx context.Context, query PartStocktakeQuery) (Page[PartStocktake], error) {
+	return listPage[PartStocktake](ctx, c, "/api/part/stocktake/", query.values())
+}
+
+func (c *Client) GetPartStocktake(ctx context.Context, id int) (PartStocktake, error) {
+	var out PartStocktake
+	err := c.get(ctx, fmt.Sprintf("/api/part/stocktake/%d/", id), &out)
+	return out, err
+}
+
 func (c *Client) get(ctx context.Context, path string, out any) error {
 	req, err := c.NewRequest(ctx, http.MethodGet, path, nil, nil)
 	if err != nil {

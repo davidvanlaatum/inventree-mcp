@@ -1709,6 +1709,141 @@ func TestClientMethodsAgainstInvenTree(t *testing.T) {
 		r.Error(err, "a removed/renamed allowlisted key must be reported as an omittable error, not silently succeed")
 		a.True(inventree.IsOmittableFetchError(err), "a missing global setting key must classify as omittable so the instance-info tool omits it instead of failing the call")
 	})
+
+	t.Run("stock_tracking_and_stocktake_history", func(t *testing.T) {
+		r := require.New(t)
+		a := assert.New(t)
+		ctx, _, _ := testhandler.SetupTestHandler(t)
+		fixture := newClientMethodFixture(t, shared)
+
+		// fixture.ensure is idempotent per (run, kind), so this is the same
+		// underlying part used throughout the rest of the subtest. The
+		// empty-history assertion must run first, before any stock item
+		// exists for it.
+		part := fixture.ensure(t, testenv.FixturePart)
+		emptyPage, err := fixture.client.SearchStockTrackingPage(ctx, inventree.StockTrackingQuery{PartID: part.ID, Limit: 100})
+		r.NoError(err)
+		a.Zero(emptyPage.Count, "a part with no stock items must report empty tracking history rather than erroring")
+		a.Empty(emptyPage.Results)
+
+		location := fixture.ensure(t, testenv.FixtureLocation)
+		secondLocationName, err := fixture.run.Name("track-second-location")
+		r.NoError(err)
+		secondLocation, err := fixture.client.CreateStockLocation(ctx, inventree.StockLocationCreate{Name: secondLocationName})
+		r.NoError(err)
+
+		stockItem, err := fixture.client.CreateStockItem(ctx, inventree.StockItemCreate{Part: part.ID, Location: location.ID, Quantity: 10})
+		r.NoError(err)
+
+		r.NoError(fixture.client.AddStock(ctx, inventree.StockAdjustment{Items: []inventree.StockAdjustmentItem{{PK: stockItem.PK, Quantity: "2"}}, Notes: "track-add"}))
+		r.NoError(fixture.client.TransferStock(ctx, inventree.StockTransfer{Items: []inventree.StockAdjustmentItem{{PK: stockItem.PK, Quantity: "12"}}, Notes: "track-transfer", Location: secondLocation.PK}))
+
+		byItem, err := fixture.client.SearchStockTrackingPage(ctx, inventree.StockTrackingQuery{ItemID: stockItem.PK, Limit: 100})
+		r.NoError(err)
+		r.GreaterOrEqual(byItem.Count, 3, "creation plus the two triggered adjustments must all be recorded")
+		byPart, err := fixture.client.SearchStockTrackingPage(ctx, inventree.StockTrackingQuery{PartID: part.ID, Limit: 100})
+		r.NoError(err)
+		a.Equal(byItem.Count, byPart.Count, "the item and part filters must agree for a part with exactly one stock item")
+
+		var created, added, transferred inventree.StockTracking
+		for _, entry := range byItem.Results {
+			r.NotNil(entry.Item)
+			a.Equal(stockItem.PK, *entry.Item)
+			switch entry.Notes {
+			case "track-add":
+				added = entry
+			case "track-transfer":
+				transferred = entry
+			case "":
+				created = entry
+			}
+			// Audit-note safety: the free-text notes field must never leak into the
+			// separately-bounded deltas payload, and vice versa.
+			_, notesKeyInDeltas := entry.Deltas["notes"]
+			a.False(notesKeyInDeltas, "deltas must never carry a notes key; notes is a sibling field")
+		}
+		r.NotZero(created.PK, "the automatic creation event must be present")
+		r.NotZero(added.PK, "the manual add event must be present")
+		r.NotZero(transferred.PK, "the transfer event must be present")
+
+		exactAdded, err := fixture.client.GetStockTrackingEntry(ctx, added.PK)
+		r.NoError(err)
+		a.Equal("track-add", exactAdded.Notes)
+		a.Equal(added.PK, exactAdded.PK)
+		a.EqualValues(2, exactAdded.Deltas["added"])
+
+		// Pinned 2026-08-18 spike finding: a "Location changed" event
+		// unconditionally embeds a full location_detail record. Confirm the
+		// client-layer sanitizer strips it while preserving the stable
+		// location ID sibling key.
+		a.Contains(transferred.Deltas, "location")
+		a.NotContains(transferred.Deltas, "location_detail", "nested location detail must be redacted from deltas")
+		a.EqualValues(secondLocation.PK, transferred.Deltas["location"])
+
+		_, err = fixture.client.GetStockTrackingEntry(ctx, 0)
+		r.Error(err, "a non-existent tracking-event ID must fail rather than silently succeed")
+
+		// Pinned 2026-08-18 spike finding: a purchase-order receipt event
+		// unconditionally embeds a full purchaseorder_detail record,
+		// including a created_by sub-object with the receiving user's email
+		// and username. Confirm both are redacted.
+		supplierPart := fixture.ensure(t, testenv.FixtureSupplierPart)
+		supplier := fixture.ensure(t, testenv.FixtureSupplier)
+		poReference, err := fixture.run.Name("track-po")
+		r.NoError(err)
+		order, err := fixture.client.CreatePurchaseOrder(ctx, inventree.PurchaseOrderCreate{Supplier: supplier.ID, SupplierReference: &poReference})
+		r.NoError(err)
+		line, err := fixture.client.CreatePurchaseOrderLine(ctx, inventree.PurchaseOrderLineCreate{Order: order.PK, SupplierPart: supplierPart.ID, Quantity: 3})
+		r.NoError(err)
+		r.NoError(fixture.client.IssuePurchaseOrder(ctx, order.PK))
+		received, err := fixture.client.ReceivePurchaseOrder(ctx, order.PK, inventree.PurchaseOrderReceive{Items: []inventree.PurchaseOrderReceiveItem{{LineItem: line.PK, Location: &location.ID, Quantity: "3"}}})
+		r.NoError(err)
+		r.NotEmpty(received)
+
+		receivedHistory, err := fixture.client.SearchStockTrackingPage(ctx, inventree.StockTrackingQuery{ItemID: received[0].PK, Limit: 100})
+		r.NoError(err)
+		r.NotEmpty(receivedHistory.Results)
+		receiptEntry := receivedHistory.Results[0]
+		a.Contains(receiptEntry.Deltas, "purchaseorder")
+		a.NotContains(receiptEntry.Deltas, "purchaseorder_detail", "nested purchase-order detail must be redacted from deltas")
+		encoded, err := json.Marshal(receiptEntry.Deltas)
+		r.NoError(err)
+		a.NotContains(string(encoded), "@example", "a redacted deltas payload must never contain the receiving user's email")
+		a.NotContains(string(encoded), "created_by", "created_by must never survive redaction")
+
+		// Historical PartStocktake snapshots have no pinned-InvenTree-1.5.0
+		// path this Testcontainers suite can populate synchronously:
+		// POST /api/part/stocktake/ (the raw create endpoint) crashes with
+		// a 500 on every request regardless of payload -- InvenTree's view
+		// unconditionally passes an unsupported `user` keyword to the
+		// PartStocktake model constructor, which pinned InvenTree 1.5.0's
+		// PartStocktake schema does not declare a field for -- and
+		// POST /api/part/stocktake/generate/ only offloads generation to a
+		// background worker process this suite intentionally does not run
+		// (see internal/testenv; only gunicorn runs, no `invoke worker`).
+		// The MCP tool surface never calls either write endpoint, so this
+		// is pinned as a documented upstream limitation rather than routed
+		// around: prove the empty-history and not-found read paths live,
+		// and prove create is unusable so a future InvenTree fix (which
+		// would need a corresponding follow-up story to add write support)
+		// is caught by this assertion changing.
+		emptyStocktakePage, err := fixture.client.SearchPartStocktakesPage(ctx, inventree.PartStocktakeQuery{PartID: part.ID, Limit: 100})
+		r.NoError(err)
+		a.Zero(emptyStocktakePage.Count, "a part with no generated stocktake snapshots must report an empty history rather than erroring")
+		a.Empty(emptyStocktakePage.Results)
+
+		_, err = fixture.client.GetPartStocktake(ctx, 0)
+		r.Error(err, "a non-existent stocktake ID must fail rather than silently succeed")
+
+		rawCreateReq, err := fixture.client.NewRequest(ctx, http.MethodPost, "/api/part/stocktake/", nil, map[string]any{"part": part.ID, "quantity": 1})
+		r.NoError(err)
+		var rawCreateOut map[string]any
+		rawCreateErr := fixture.client.DoJSON(rawCreateReq, &rawCreateOut)
+		r.Error(rawCreateErr, "pinned InvenTree 1.5.0's raw PartStocktake create endpoint is expected to fail; a future InvenTree release fixing this needs a follow-up story adding stocktake generation/write support")
+		var rawCreateAPIErr *inventree.APIError
+		r.ErrorAs(rawCreateErr, &rawCreateAPIErr)
+		a.Equal(http.StatusInternalServerError, rawCreateAPIErr.StatusCode, "pin the specific 500 failure mode rather than accepting any error, so an unrelated 400/403 regression is also caught")
+	})
 }
 
 // instanceInfoAllowlistedGlobalSettingsForTest and instanceInfoAllowlistedUserSettingsForTest
