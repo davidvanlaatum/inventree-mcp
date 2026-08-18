@@ -29,7 +29,7 @@ var (
 )
 
 type StockAdminClient interface {
-	GetCompany(context.Context, int) (inventree.Company, error)
+	GetOwner(context.Context, int) (inventree.Owner, error)
 	GetStockLocation(context.Context, int) (inventree.StockLocation, error)
 	SearchStockLocationsPage(context.Context, inventree.StockLocationQuery) (inventree.StockLocationPage, error)
 	GetStockLocationType(context.Context, int) (inventree.StockLocationType, error)
@@ -54,8 +54,6 @@ type UpdateStockLocationInput struct {
 	ID                int     `json:"id" jsonschema:"Stable stock-location primary key."`
 	Name              *string `json:"name,omitempty" jsonschema:"Optional replacement name; surrounding whitespace is removed."`
 	Description       *string `json:"description,omitempty" jsonschema:"Optional replacement description; an explicit empty string is preserved."`
-	OwnerID           *int    `json:"owner_id,omitempty" jsonschema:"Optional existing company owner primary key."`
-	ClearOwner        bool    `json:"clear_owner,omitempty" jsonschema:"Explicitly clear owner; mutually exclusive with owner_id."`
 	CustomIcon        *string `json:"custom_icon,omitempty" jsonschema:"Optional replacement custom icon; an explicit empty string is preserved."`
 	ClearCustomIcon   bool    `json:"clear_custom_icon,omitempty" jsonschema:"Explicitly clear custom_icon; mutually exclusive with custom_icon."`
 	LocationTypeID    *int    `json:"location_type_id,omitempty" jsonschema:"Optional existing stock-location-type primary key."`
@@ -177,7 +175,7 @@ type StockMetadataMutationOutput struct {
 
 func registerStockAdminTools(server *mcp.Server, deps Dependencies) {
 	addWriteTool(server, deps, CreateStockLocationToolName, "Create stock location", "Creates a guarded stock location after bounded same-parent duplicate and reference checks.", createStockLocation(deps))
-	addWriteTool(server, deps, UpdateStockLocationToolName, "Update stock location", "Updates ordinary stock-location metadata without changing hierarchy, structural, or external state.", updateStockLocation(deps))
+	addWriteTool(server, deps, UpdateStockLocationToolName, "Update stock location", "Updates ordinary stock-location metadata without changing hierarchy, structural, external, or owner state. Use assign_owner to replace or clear the location owner.", updateStockLocation(deps))
 	addWriteTool(server, deps, RestructureStockLocationToolName, "Restructure stock location", "Plans or confirms operational parent, structural, or external changes for one stock location.", restructureStockLocation(deps))
 	addWriteTool(server, deps, UpdateStockItemMetadataToolName, "Update stock item metadata", "Plans or confirms a constrained non-location stock metadata update.", updateStockItemMetadata(deps))
 }
@@ -227,9 +225,9 @@ func updateStockLocation(deps Dependencies) mcp.ToolHandlerFor[UpdateStockLocati
 			if err != nil {
 				return stockLocationClarification("Which ordinary stock-location fields should change?", "patch", err.Error(), "id", map[string]any{"id": input.ID})
 			}
-			if err := validateLocationReferences(ctx, client, nil, input.OwnerID, input.LocationTypeID); err != nil {
+			if err := validateLocationReferences(ctx, client, nil, nil, input.LocationTypeID); err != nil {
 				if errors.Is(err, errStockAdminInvalidReference) {
-					return stockLocationClarification("Which existing owner or location type should be used?", "reference", err.Error(), "id", map[string]any{"id": input.ID})
+					return stockLocationClarification("Which existing location type should be used?", "reference", err.Error(), "id", map[string]any{"id": input.ID})
 				}
 				return nil, StockLocationMutationOutput{}, safeStockAdminError("stock-location reference lookup")
 			}
@@ -394,10 +392,10 @@ func validateLocationReferences(ctx context.Context, client StockAdminClient, pa
 		}
 	}
 	if ownerID != nil {
-		value, err := client.GetCompany(ctx, *ownerID)
+		value, err := client.GetOwner(ctx, *ownerID)
 		if err != nil {
 			if categoryReferenceInvalid(err) {
-				return fmt.Errorf("%w: owner_id %d does not identify a readable company", errStockAdminInvalidReference, *ownerID)
+				return fmt.Errorf("%w: owner_id %d does not identify a readable owner", errStockAdminInvalidReference, *ownerID)
 			}
 			return err
 		}
@@ -482,7 +480,7 @@ func validateStockLocationParent(ctx context.Context, client StockAdminClient, l
 }
 
 func ordinaryLocationPatch(input UpdateStockLocationInput, before inventree.StockLocation) (inventree.PatchFields, string, error) {
-	if input.OwnerID != nil && input.ClearOwner || input.CustomIcon != nil && input.ClearCustomIcon || input.LocationTypeID != nil && input.ClearLocationType {
+	if input.CustomIcon != nil && input.ClearCustomIcon || input.LocationTypeID != nil && input.ClearLocationType {
 		return nil, "", errors.New("replacement values conflict with their clear flags")
 	}
 	fields := inventree.PatchFields{}
@@ -497,7 +495,6 @@ func ordinaryLocationPatch(input UpdateStockLocationInput, before inventree.Stoc
 	if input.Description != nil {
 		fields["description"] = inventree.Set(*input.Description)
 	}
-	setNullableIntPatch(fields, "owner", input.OwnerID, input.ClearOwner)
 	setNullableStringPatch(fields, "custom_icon", input.CustomIcon, input.ClearCustomIcon)
 	setNullableIntPatch(fields, "location_type", input.LocationTypeID, input.ClearLocationType)
 	if len(fields) == 0 {

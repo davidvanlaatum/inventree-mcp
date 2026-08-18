@@ -518,7 +518,7 @@ func TestMilestoneHappyPathToolsAgainstInvenTree(t *testing.T) {
 		a := assert.New(t)
 		ctx, _, _ := testhandler.SetupTestHandler(t)
 		fixture := newMilestoneToolFixture(t, shared)
-		owner := fixture.ensure(t, testenv.FixtureSupplier)
+		ownerPK := currentUserOwnerPK(t, ctx, fixture.client)
 		part := fixture.ensure(t, testenv.FixturePart)
 
 		typeName, err := fixture.run.Name("stock-admin-type")
@@ -536,12 +536,12 @@ func TestMilestoneHappyPathToolsAgainstInvenTree(t *testing.T) {
 
 		childName, err := fixture.run.Name("stock-admin-child")
 		r.NoError(err)
-		_, childOut, err := createStockLocation(fixture.deps())(ctx, &mcp.CallToolRequest{}, CreateStockLocationInput{Name: childName, Description: dvgoutils.Ptr("child"), ParentID: &root.PK, OwnerID: &owner.ID, LocationTypeID: &locationType.PK, Structural: dvgoutils.Ptr(false), External: dvgoutils.Ptr(false)})
+		_, childOut, err := createStockLocation(fixture.deps())(ctx, &mcp.CallToolRequest{}, CreateStockLocationInput{Name: childName, Description: dvgoutils.Ptr("child"), ParentID: &root.PK, OwnerID: &ownerPK, LocationTypeID: &locationType.PK, Structural: dvgoutils.Ptr(false), External: dvgoutils.Ptr(false)})
 		r.NoError(err)
 		r.NotNil(childOut.Record)
 		child := *childOut.Record
 		r.Equal(root.PK, *child.Parent)
-		r.Equal(owner.ID, *child.Owner)
+		r.Equal(ownerPK, *child.Owner)
 		r.Equal(locationType.PK, *child.LocationType)
 
 		matrixName, err := fixture.run.Name("stock-admin-namespace")
@@ -575,13 +575,27 @@ func TestMilestoneHappyPathToolsAgainstInvenTree(t *testing.T) {
 		a.Equal(StatusClarificationRequired, invalidReference.Status)
 
 		updatedName := childName + "-updated"
-		_, ordinaryUpdate, err := updateStockLocation(fixture.deps())(ctx, &mcp.CallToolRequest{}, UpdateStockLocationInput{ID: child.PK, Name: &updatedName, Description: dvgoutils.Ptr("ordinary update"), ClearOwner: true, ClearLocationType: true})
+		_, ordinaryUpdate, err := updateStockLocation(fixture.deps())(ctx, &mcp.CallToolRequest{}, UpdateStockLocationInput{ID: child.PK, Name: &updatedName, Description: dvgoutils.Ptr("ordinary update"), ClearLocationType: true})
 		r.NoError(err)
 		r.NotNil(ordinaryUpdate.Record)
 		a.Equal(updatedName, ordinaryUpdate.Record.Name)
-		a.Nil(ordinaryUpdate.Record.Owner)
+		a.Equal(ownerPK, *ordinaryUpdate.Record.Owner)
 		a.Nil(ordinaryUpdate.Record.LocationType)
 		child = *ordinaryUpdate.Record
+
+		_, clearedOwner, err := assignOwner(fixture.deps())(ctx, &mcp.CallToolRequest{}, AssignOwnerInput{ObjectType: OwnerObjectStockLocation, ObjectID: child.PK})
+		r.NoError(err)
+		a.Equal(StatusClarificationRequired, clearedOwner.Status)
+		r.NotNil(clearedOwner.Plan)
+		_, clearedOwner, err = assignOwner(fixture.deps())(ctx, &mcp.CallToolRequest{}, AssignOwnerInput{ObjectType: OwnerObjectStockLocation, ObjectID: child.PK, Confirm: true, PlanHash: clearedOwner.PlanHash})
+		r.NoError(err)
+		a.Equal(StatusOK, clearedOwner.Status)
+		a.True(clearedOwner.Verified)
+		a.Nil(clearedOwner.OwnerID)
+		refreshedChild, err := fixture.client.GetStockLocation(ctx, child.PK)
+		r.NoError(err)
+		a.Nil(refreshedChild.Owner)
+		child = refreshedChild
 
 		targetName, err := fixture.run.Name("stock-admin-reparent-target")
 		r.NoError(err)
@@ -780,6 +794,107 @@ func TestMilestoneHappyPathToolsAgainstInvenTree(t *testing.T) {
 		a.NotContains(keys, "stale")
 		a.NotContains(keys, "location_path")
 		a.NotContains(keys, "sales_order_reference")
+	})
+
+	t.Run("owner_discovery_and_cross_object_responsibility_assignment", func(t *testing.T) {
+		r := require.New(t)
+		a := assert.New(t)
+		ctx, _, _ := testhandler.SetupTestHandler(t)
+		fixture := newMilestoneToolFixture(t, shared)
+		part := fixture.ensure(t, testenv.FixturePart)
+		order := fixture.ensure(t, testenv.FixturePurchaseOrder)
+		location := fixture.ensure(t, testenv.FixtureLocation)
+		stockItem, err := fixture.client.CreateStockItem(ctx, inventree.StockItemCreate{Part: part.ID, Location: location.ID, Quantity: 1})
+		r.NoError(err)
+
+		user, err := fixture.client.GetCurrentUser(ctx)
+		r.NoError(err)
+		_, byQuery, err := searchOwners(fixture.deps())(ctx, &mcp.CallToolRequest{}, SearchOwnersInput{Query: user.Username})
+		r.NoError(err)
+		a.Equal(StatusOK, byQuery.Status)
+		r.NotEmpty(byQuery.Results)
+		ownerID := byQuery.Results[0].PK
+
+		_, byObjectType, err := searchOwners(fixture.deps())(ctx, &mcp.CallToolRequest{}, SearchOwnersInput{ObjectType: OwnerObjectPart, Limit: 5})
+		r.NoError(err)
+		a.Equal(StatusOK, byObjectType.Status)
+		r.NotEmpty(byObjectType.Results)
+
+		_, _, err = searchOwners(fixture.deps())(ctx, &mcp.CallToolRequest{}, SearchOwnersInput{})
+		require.Error(t, err)
+
+		_, exactOwner, err := getOwner(fixture.deps())(ctx, &mcp.CallToolRequest{}, IDInput{ID: ownerID})
+		r.NoError(err)
+		a.Equal(StatusOK, exactOwner.Status)
+		a.Equal(ownerID, exactOwner.Record.PK)
+
+		// is_active is a list-level query filter on InvenTree's Owner endpoint
+		// (the Owner record itself carries no per-record active flag), so this
+		// proves the filter reaches the live API and narrows results rather
+		// than proving any single owner's active/disabled state.
+		_, activeOnly, err := searchOwners(fixture.deps())(ctx, &mcp.CallToolRequest{}, SearchOwnersInput{Query: user.Username, IsActive: dvgoutils.Ptr(true)})
+		r.NoError(err)
+		a.Equal(StatusOK, activeOnly.Status)
+		r.NotEmpty(activeOnly.Results)
+
+		anotherLocation, err := fixture.run.Name("owner-discovery-location")
+		r.NoError(err)
+		_, anotherLocationOut, err := createStockLocation(fixture.deps())(ctx, &mcp.CallToolRequest{}, CreateStockLocationInput{Name: anotherLocation})
+		r.NoError(err)
+		r.Equal(StatusOK, anotherLocationOut.Status)
+
+		for _, tc := range []struct {
+			objectType string
+			objectID   int
+			readBack   func() *int
+		}{
+			{objectType: OwnerObjectPart, objectID: part.ID, readBack: func() *int {
+				_, out, getErr := getPart(fixture.deps())(ctx, &mcp.CallToolRequest{}, IDInput{ID: part.ID})
+				r.NoError(getErr)
+				return out.Record.Responsible
+			}},
+			{objectType: OwnerObjectPurchaseOrder, objectID: order.ID, readBack: func() *int {
+				_, out, getErr := getPurchaseOrder(fixture.deps())(ctx, &mcp.CallToolRequest{}, IDInput{ID: order.ID})
+				r.NoError(getErr)
+				return out.Record.Responsible
+			}},
+			{objectType: OwnerObjectStockItem, objectID: stockItem.PK, readBack: func() *int {
+				_, out, getErr := getStockItem(fixture.deps())(ctx, &mcp.CallToolRequest{}, IDInput{ID: stockItem.PK})
+				r.NoError(getErr)
+				return out.Record.Owner
+			}},
+			{objectType: OwnerObjectStockLocation, objectID: anotherLocationOut.Record.PK, readBack: func() *int {
+				_, out, getErr := getStockLocation(fixture.deps())(ctx, &mcp.CallToolRequest{}, IDInput{ID: anotherLocationOut.Record.PK})
+				r.NoError(getErr)
+				return out.Record.Owner
+			}},
+		} {
+			t.Run(tc.objectType, func(t *testing.T) {
+				a := assert.New(t)
+				r := require.New(t)
+				a.Nil(tc.readBack())
+
+				_, preview, assignErr := assignOwner(fixture.deps())(ctx, &mcp.CallToolRequest{}, AssignOwnerInput{ObjectType: tc.objectType, ObjectID: tc.objectID, OwnerID: &ownerID})
+				r.NoError(assignErr)
+				r.Equal(StatusClarificationRequired, preview.Status)
+				r.NotEmpty(preview.PlanHash)
+
+				_, confirmed, assignErr := assignOwner(fixture.deps())(ctx, &mcp.CallToolRequest{}, AssignOwnerInput{ObjectType: tc.objectType, ObjectID: tc.objectID, OwnerID: &ownerID, Confirm: true, PlanHash: preview.PlanHash})
+				r.NoError(assignErr)
+				r.Equal(StatusOK, confirmed.Status)
+				a.True(confirmed.Verified)
+				r.NotNil(tc.readBack())
+				a.Equal(ownerID, *tc.readBack())
+
+				_, clearPreview, assignErr := assignOwner(fixture.deps())(ctx, &mcp.CallToolRequest{}, AssignOwnerInput{ObjectType: tc.objectType, ObjectID: tc.objectID})
+				r.NoError(assignErr)
+				r.Equal(StatusClarificationRequired, clearPreview.Status)
+				_, cleared, assignErr := assignOwner(fixture.deps())(ctx, &mcp.CallToolRequest{}, AssignOwnerInput{ObjectType: tc.objectType, ObjectID: tc.objectID, Confirm: true, PlanHash: clearPreview.PlanHash})
+				r.NoError(assignErr)
+				r.Equal(StatusOK, cleared.Status)
+				a.Nil(tc.readBack())
+			})
+		}
 	})
 
 	t.Run("company_and_sourcing_link_administration", func(t *testing.T) {
@@ -2408,6 +2523,7 @@ type milestoneToolFixture struct {
 	partFamilyPlanStore   *partFamilyPlanStore
 	partRelationPlanStore *partRelationPlanStore
 	companyRolePlanStore  *companyRolePlanStore
+	ownerPlanStore        *ownerPlanStore
 }
 
 type attachmentTarget struct {
@@ -2457,6 +2573,7 @@ func newMilestoneToolFixture(t *testing.T, shared *testenv.SharedInvenTree) mile
 		partFamilyPlanStore:   newPartFamilyPlanStore(time.Now, randomStockPlanToken),
 		partRelationPlanStore: newPartRelationPlanStore(time.Now, randomStockPlanToken),
 		companyRolePlanStore:  newCompanyRolePlanStore(time.Now, randomStockPlanToken),
+		ownerPlanStore:        newOwnerPlanStore(time.Now, randomStockPlanToken),
 	}
 }
 
@@ -2472,6 +2589,7 @@ func (f milestoneToolFixture) deps() Dependencies {
 		partFamilyPlanStore:   f.partFamilyPlanStore,
 		partRelationPlanStore: f.partRelationPlanStore,
 		companyRolePlanStore:  f.companyRolePlanStore,
+		ownerPlanStore:        f.ownerPlanStore,
 	}
 }
 
@@ -2664,4 +2782,14 @@ func outputRoleCompany(t *testing.T, ctx context.Context, client *inventree.Clie
 	company, err := client.GetCompanyDetail(ctx, id)
 	require.NoError(t, err)
 	return company
+}
+
+func currentUserOwnerPK(t *testing.T, ctx context.Context, client *inventree.Client) int {
+	t.Helper()
+	user, err := client.GetCurrentUser(ctx)
+	require.NoError(t, err)
+	page, err := client.SearchOwnersPage(ctx, inventree.OwnerQuery{Search: user.Username, Limit: 50})
+	require.NoError(t, err)
+	require.NotEmpty(t, page.Results, "expected at least one owner match for username %q", user.Username)
+	return page.Results[0].PK
 }

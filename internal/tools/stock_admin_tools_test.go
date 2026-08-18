@@ -21,7 +21,7 @@ func TestCreateStockLocationUsesExactParentDuplicateMatrixAndReferences(t *testi
 	a := assert.New(t)
 	fake := newStockAdminFake()
 	fake.locations[10] = inventree.StockLocation{PK: 10, Name: "Warehouse"}
-	fake.companies[20] = inventree.Company{PK: 20, Name: "Owner"}
+	fake.owners[20] = inventree.Owner{PK: 20, Name: "Owner"}
 	fake.locationTypes[30] = inventree.StockLocationType{PK: 30, Name: "Shelf"}
 	fake.pages[0] = inventree.StockLocationPage{Count: 101, Results: []inventree.StockLocation{{PK: 1, Name: "Other", Parent: dvgoutils.Ptr(10)}}, HasMore: true}
 	fake.pages[100] = inventree.StockLocationPage{Count: 101}
@@ -85,14 +85,14 @@ func TestUpdateStockLocationKeepsOperationalFieldsOutOfOrdinaryPatch(t *testing.
 	fake := newStockAdminFake()
 	fake.locations[40] = inventree.StockLocation{PK: 40, Name: "Bin", Description: "old", Parent: dvgoutils.Ptr(10), Owner: dvgoutils.Ptr(20), CustomIcon: dvgoutils.Ptr("box"), LocationType: dvgoutils.Ptr(30), Structural: true, External: true}
 
-	_, out, err := updateStockLocation(stockAdminDeps(fake))(ctx, &mcp.CallToolRequest{}, UpdateStockLocationInput{ID: 40, Name: dvgoutils.Ptr(" Bin A "), Description: dvgoutils.Ptr(""), ClearOwner: true, ClearCustomIcon: true, ClearLocationType: true})
+	_, out, err := updateStockLocation(stockAdminDeps(fake))(ctx, &mcp.CallToolRequest{}, UpdateStockLocationInput{ID: 40, Name: dvgoutils.Ptr(" Bin A "), Description: dvgoutils.Ptr(""), ClearCustomIcon: true, ClearLocationType: true})
 	r.NoError(err)
 	a.Equal(StatusOK, out.Status)
 	a.True(fake.lastPatchHas("name"))
 	a.True(fake.lastPatchHas("description"))
-	a.True(fake.lastPatchNull("owner"))
 	a.True(fake.lastPatchNull("custom_icon"))
 	a.True(fake.lastPatchNull("location_type"))
+	a.False(fake.lastPatchHas("owner"))
 	a.False(fake.lastPatchHas("parent"))
 	a.False(fake.lastPatchHas("structural"))
 	a.False(fake.lastPatchHas("external"))
@@ -370,7 +370,7 @@ func TestStockAdministrationPatchValidationEdges(t *testing.T) {
 		require.ErrorContains(t, err, "at least one")
 		_, _, err = ordinaryLocationPatch(UpdateStockLocationInput{Name: dvgoutils.Ptr("   ")}, before)
 		require.ErrorContains(t, err, "nonblank")
-		_, _, err = ordinaryLocationPatch(UpdateStockLocationInput{OwnerID: dvgoutils.Ptr(1), ClearOwner: true}, before)
+		_, _, err = ordinaryLocationPatch(UpdateStockLocationInput{CustomIcon: dvgoutils.Ptr("box"), ClearCustomIcon: true}, before)
 		require.ErrorContains(t, err, "conflict")
 	})
 	t.Run("create fields preserve explicit values", func(t *testing.T) {
@@ -402,10 +402,10 @@ func TestStockAdministrationPatchValidationEdges(t *testing.T) {
 		err = validateLocationReferences(ctx, fake, dvgoutils.Ptr(1), nil, nil)
 		require.ErrorIs(t, err, errStockAdminInvalidReference)
 		fake.locations[1] = inventree.StockLocation{PK: 1}
-		fake.companies[2] = inventree.Company{PK: 9}
+		fake.owners[2] = inventree.Owner{PK: 9}
 		err = validateLocationReferences(ctx, fake, dvgoutils.Ptr(1), dvgoutils.Ptr(2), nil)
 		require.ErrorIs(t, err, errStockAdminInvalidReference)
-		fake.companies[2] = inventree.Company{PK: 2}
+		fake.owners[2] = inventree.Owner{PK: 2}
 		fake.locationTypes[3] = inventree.StockLocationType{PK: 9}
 		err = validateLocationReferences(ctx, fake, dvgoutils.Ptr(1), dvgoutils.Ptr(2), dvgoutils.Ptr(3))
 		require.ErrorIs(t, err, errStockAdminInvalidReference)
@@ -431,7 +431,7 @@ type stockAdminFake struct {
 	locations             map[int]inventree.StockLocation
 	stockItems            map[int]inventree.StockItem
 	stockItemDetails      map[int]inventree.StockItemDetail
-	companies             map[int]inventree.Company
+	owners                map[int]inventree.Owner
 	locationTypes         map[int]inventree.StockLocationType
 	pages                 map[int]inventree.StockLocationPage
 	pageOffsets           []int
@@ -447,17 +447,17 @@ type stockAdminFake struct {
 }
 
 func newStockAdminFake() *stockAdminFake {
-	return &stockAdminFake{locations: map[int]inventree.StockLocation{}, stockItems: map[int]inventree.StockItem{}, stockItemDetails: map[int]inventree.StockItemDetail{}, companies: map[int]inventree.Company{}, locationTypes: map[int]inventree.StockLocationType{}, pages: map[int]inventree.StockLocationPage{}}
+	return &stockAdminFake{locations: map[int]inventree.StockLocation{}, stockItems: map[int]inventree.StockItem{}, stockItemDetails: map[int]inventree.StockItemDetail{}, owners: map[int]inventree.Owner{}, locationTypes: map[int]inventree.StockLocationType{}, pages: map[int]inventree.StockLocationPage{}}
 }
 
 func stockAdminDeps(fake *stockAdminFake) Dependencies {
 	return Dependencies{ClientFromContext: func(context.Context) (any, error) { return fake, nil }}
 }
 
-func (f *stockAdminFake) GetCompany(_ context.Context, id int) (inventree.Company, error) {
-	value, ok := f.companies[id]
+func (f *stockAdminFake) GetOwner(_ context.Context, id int) (inventree.Owner, error) {
+	value, ok := f.owners[id]
 	if !ok {
-		return inventree.Company{}, errors.New("not found")
+		return inventree.Owner{}, errors.New("not found")
 	}
 	return value, nil
 }
