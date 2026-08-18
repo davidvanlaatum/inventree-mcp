@@ -170,6 +170,20 @@ type OwnerQuery struct {
 	Offset   int
 }
 
+type ContactQuery struct {
+	CompanyID int
+	Search    string
+	Limit     int
+	Offset    int
+}
+
+type AddressQuery struct {
+	CompanyID int
+	Search    string
+	Limit     int
+	Offset    int
+}
+
 func (q SearchQuery) values() url.Values {
 	values := url.Values{}
 	if q.Search != "" {
@@ -458,6 +472,26 @@ func (q OwnerQuery) values() url.Values {
 	}
 	if q.IsActive != nil {
 		values.Set("is_active", strconv.FormatBool(*q.IsActive))
+	}
+	setPagination(values, q.Limit, q.Offset)
+	return values
+}
+
+func (q ContactQuery) values() url.Values {
+	values := url.Values{}
+	values.Set("company", strconv.Itoa(q.CompanyID))
+	if q.Search != "" {
+		values.Set("search", q.Search)
+	}
+	setPagination(values, q.Limit, q.Offset)
+	return values
+}
+
+func (q AddressQuery) values() url.Values {
+	values := url.Values{}
+	values.Set("company", strconv.Itoa(q.CompanyID))
+	if q.Search != "" {
+		values.Set("search", q.Search)
 	}
 	setPagination(values, q.Limit, q.Offset)
 	return values

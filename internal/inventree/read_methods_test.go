@@ -276,6 +276,56 @@ func TestReadMethodsUseExpectedEndpoints(t *testing.T) {
 			response: `{"pk":9,"owner_id":7,"owner_model":"user","name":"jdoe","label":"User: jdoe"}`,
 		},
 		{
+			name: "search contacts page",
+			call: func(ctx context.Context, client *Client) error {
+				page, err := client.SearchContactsPage(ctx, ContactQuery{CompanyID: 30, Search: "jane", Limit: 10, Offset: 5})
+				if err == nil && (page.Count != 1 || len(page.Results) != 1 || page.Results[0].Name != "Jane Doe" || page.Results[0].Company != 30) {
+					return errors.New("contact search did not preserve exact fields")
+				}
+				return err
+			},
+			wantPath:  "/api/company/contact/",
+			wantQuery: url.Values{"company": []string{"30"}, "search": []string{"jane"}, "limit": []string{"10"}, "offset": []string{"5"}},
+			response:  `{"count":1,"next":null,"previous":null,"results":[{"pk":4,"company":30,"company_name":"Acme","name":"Jane Doe","phone":"555-0100","email":"jane@example.com","role":"Purchasing"}]}`,
+		},
+		{
+			name: "get contact",
+			call: func(ctx context.Context, client *Client) error {
+				contact, err := client.GetContact(ctx, 4)
+				if err == nil && (contact.PK != 4 || contact.Role != "Purchasing") {
+					return errors.New("contact detail did not preserve exact fields")
+				}
+				return err
+			},
+			wantPath: "/api/company/contact/4/",
+			response: `{"pk":4,"company":30,"company_name":"Acme","name":"Jane Doe","phone":"555-0100","email":"jane@example.com","role":"Purchasing"}`,
+		},
+		{
+			name: "search addresses page",
+			call: func(ctx context.Context, client *Client) error {
+				page, err := client.SearchAddressesPage(ctx, AddressQuery{CompanyID: 30, Search: "head", Limit: 10, Offset: 5})
+				if err == nil && (page.Count != 1 || len(page.Results) != 1 || page.Results[0].Title != "Head Office" || page.Results[0].Company != 30) {
+					return errors.New("address search did not preserve exact fields")
+				}
+				return err
+			},
+			wantPath:  "/api/company/address/",
+			wantQuery: url.Values{"company": []string{"30"}, "search": []string{"head"}, "limit": []string{"10"}, "offset": []string{"5"}},
+			response:  `{"count":1,"next":null,"previous":null,"results":[{"pk":6,"company":30,"title":"Head Office","primary":true,"line1":"1 Test Street","postal_code":"5000","postal_city":"Adelaide","province":"SA","country":"AU","shipping_notes":"","internal_shipping_notes":"","link":""}]}`,
+		},
+		{
+			name: "get address",
+			call: func(ctx context.Context, client *Client) error {
+				address, err := client.GetAddress(ctx, 6)
+				if err == nil && (address.PK != 6 || address.Title != "Head Office") {
+					return errors.New("address detail did not preserve exact fields")
+				}
+				return err
+			},
+			wantPath: "/api/company/address/6/",
+			response: `{"pk":6,"company":30,"title":"Head Office","primary":true,"line1":"1 Test Street","postal_code":"5000","postal_city":"Adelaide","province":"SA","country":"AU","shipping_notes":"","internal_shipping_notes":"","link":""}`,
+		},
+		{
 			name: "search stock items",
 			call: func(ctx context.Context, client *Client) error {
 				_, err := client.SearchStockItems(ctx, StockItemQuery{PartID: 10, LocationID: 40, PurchaseOrderID: 120, SupplierPartID: 40, Limit: 8, Offset: 4})

@@ -369,6 +369,8 @@ func registerWriteTools(server *mcp.Server, deps Dependencies) {
 	registerAttachmentWriteTools(server, deps)
 	registerPurchasingWriteTools(server, deps)
 	registerOwnerWriteTools(server, deps)
+	registerContactWriteTools(server, deps)
+	registerAddressWriteTools(server, deps)
 }
 
 func addWriteTool[In, Out any](server *mcp.Server, deps Dependencies, name string, title string, description string, handler mcp.ToolHandlerFor[In, Out]) {

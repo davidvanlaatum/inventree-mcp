@@ -897,6 +897,161 @@ func TestMilestoneHappyPathToolsAgainstInvenTree(t *testing.T) {
 		}
 	})
 
+	t.Run("structured_contact_and_address_references", func(t *testing.T) {
+		r := require.New(t)
+		a := assert.New(t)
+		ctx, _, _ := testhandler.SetupTestHandler(t)
+		fixture := newMilestoneToolFixture(t, shared)
+		supplier := fixture.ensure(t, testenv.FixtureSupplier)
+		order := fixture.ensure(t, testenv.FixturePurchaseOrder)
+		otherCompany := fixture.ensure(t, testenv.FixtureManufacturer)
+
+		createContact := func(companyID int, suffix string) inventree.Contact {
+			name, nameErr := fixture.run.Name(suffix)
+			r.NoError(nameErr)
+			var contact inventree.Contact
+			r.NoError(fixture.client.Post(ctx, "/api/company/contact/", map[string]any{"company": companyID, "name": name, "role": "Purchasing"}, &contact))
+			return contact
+		}
+		createAddress := func(companyID int, suffix string) inventree.Address {
+			title, titleErr := fixture.run.Name(suffix)
+			r.NoError(titleErr)
+			var address inventree.Address
+			r.NoError(fixture.client.Post(ctx, "/api/company/address/", map[string]any{"company": companyID, "title": title, "line1": "1 Test Street", "postal_city": "Testville", "country": "AU"}, &address))
+			return address
+		}
+
+		// contact2/address2 (a second same-company record used only to force plan
+		// staleness below) are created later, right before they are needed: InvenTree's
+		// contact/address "search" matches on shared run-scoped name prefixes rather
+		// than strict substrings, so a second same-company record created up front
+		// would make the single-result search assertions below ambiguous.
+		contact := createContact(supplier.ID, "contact-alpha")
+		otherContact := createContact(otherCompany.ID, "contact-external")
+		address := createAddress(supplier.ID, "address-alpha")
+		otherAddress := createAddress(otherCompany.ID, "address-external")
+
+		_, contactSearch, err := searchContacts(fixture.deps())(ctx, &mcp.CallToolRequest{}, SearchContactsInput{CompanyID: supplier.ID, Search: contact.Name})
+		r.NoError(err)
+		a.Equal(StatusOK, contactSearch.Status)
+		r.Len(contactSearch.Results, 1)
+		a.Equal(contact.PK, contactSearch.Results[0].PK)
+		a.Equal(supplier.ID, contactSearch.Results[0].Company)
+
+		_, _, err = searchContacts(fixture.deps())(ctx, &mcp.CallToolRequest{}, SearchContactsInput{})
+		a.Error(err)
+
+		_, exactContact, err := getContact(fixture.deps())(ctx, &mcp.CallToolRequest{}, IDInput{ID: contact.PK})
+		r.NoError(err)
+		a.Equal(StatusOK, exactContact.Status)
+		a.Equal(contact.Name, exactContact.Record.Name)
+
+		_, missingContact, err := getContact(fixture.deps())(ctx, &mcp.CallToolRequest{}, IDInput{ID: 999999999})
+		r.NoError(err)
+		a.Equal(StatusNotFound, missingContact.Status)
+
+		_, addressSearch, err := searchAddresses(fixture.deps())(ctx, &mcp.CallToolRequest{}, SearchAddressesInput{CompanyID: supplier.ID, Search: address.Title})
+		r.NoError(err)
+		a.Equal(StatusOK, addressSearch.Status)
+		r.Len(addressSearch.Results, 1)
+		a.Equal(address.PK, addressSearch.Results[0].PK)
+		a.Equal(supplier.ID, addressSearch.Results[0].Company)
+
+		_, _, err = searchAddresses(fixture.deps())(ctx, &mcp.CallToolRequest{}, SearchAddressesInput{})
+		a.Error(err)
+
+		_, exactAddress, err := getAddress(fixture.deps())(ctx, &mcp.CallToolRequest{}, IDInput{ID: address.PK})
+		r.NoError(err)
+		a.Equal(StatusOK, exactAddress.Status)
+		a.Equal(address.Title, exactAddress.Record.Title)
+
+		_, missingAddress, err := getAddress(fixture.deps())(ctx, &mcp.CallToolRequest{}, IDInput{ID: 999999999})
+		r.NoError(err)
+		a.Equal(StatusNotFound, missingAddress.Status)
+
+		_, orderBefore, err := getPurchaseOrder(fixture.deps())(ctx, &mcp.CallToolRequest{}, IDInput{ID: order.ID})
+		r.NoError(err)
+		a.Nil(orderBefore.Record.Contact)
+		a.Nil(orderBefore.Record.Address)
+
+		_, missingOrder, err := assignContact(fixture.deps())(ctx, &mcp.CallToolRequest{}, AssignContactInput{PurchaseOrderID: 999999999, ContactID: &contact.PK})
+		r.NoError(err)
+		a.Equal(StatusNotFound, missingOrder.Status)
+
+		_, contactMismatch, err := assignContact(fixture.deps())(ctx, &mcp.CallToolRequest{}, AssignContactInput{PurchaseOrderID: order.ID, ContactID: &otherContact.PK})
+		r.NoError(err)
+		a.Equal(StatusValidationFailed, contactMismatch.Status)
+
+		_, contactPreview, err := assignContact(fixture.deps())(ctx, &mcp.CallToolRequest{}, AssignContactInput{PurchaseOrderID: order.ID, ContactID: &contact.PK})
+		r.NoError(err)
+		r.Equal(StatusClarificationRequired, contactPreview.Status)
+		r.NotEmpty(contactPreview.PlanHash)
+
+		_, contactConfirmed, err := assignContact(fixture.deps())(ctx, &mcp.CallToolRequest{}, AssignContactInput{PurchaseOrderID: order.ID, ContactID: &contact.PK, Confirm: true, PlanHash: contactPreview.PlanHash})
+		r.NoError(err)
+		r.Equal(StatusOK, contactConfirmed.Status)
+		a.True(contactConfirmed.Verified)
+		r.NotNil(contactConfirmed.ContactID)
+		a.Equal(contact.PK, *contactConfirmed.ContactID)
+
+		_, contactClearPreview, err := assignContact(fixture.deps())(ctx, &mcp.CallToolRequest{}, AssignContactInput{PurchaseOrderID: order.ID})
+		r.NoError(err)
+		r.Equal(StatusClarificationRequired, contactClearPreview.Status)
+		contact2 := createContact(supplier.ID, "contact-bravo")
+		_, err = fixture.client.UpdatePurchaseOrderDetail(ctx, order.ID, inventree.PatchFields{"contact": inventree.Set(contact2.PK)})
+		r.NoError(err)
+		_, staleContactClear, err := assignContact(fixture.deps())(ctx, &mcp.CallToolRequest{}, AssignContactInput{PurchaseOrderID: order.ID, Confirm: true, PlanHash: contactClearPreview.PlanHash})
+		r.NoError(err)
+		a.Equal(StatusClarificationRequired, staleContactClear.Status)
+
+		_, freshContactClearPreview, err := assignContact(fixture.deps())(ctx, &mcp.CallToolRequest{}, AssignContactInput{PurchaseOrderID: order.ID})
+		r.NoError(err)
+		r.Equal(StatusClarificationRequired, freshContactClearPreview.Status)
+		_, contactCleared, err := assignContact(fixture.deps())(ctx, &mcp.CallToolRequest{}, AssignContactInput{PurchaseOrderID: order.ID, Confirm: true, PlanHash: freshContactClearPreview.PlanHash})
+		r.NoError(err)
+		r.Equal(StatusOK, contactCleared.Status)
+		a.Nil(contactCleared.ContactID)
+
+		_, addressMismatch, err := assignAddress(fixture.deps())(ctx, &mcp.CallToolRequest{}, AssignAddressInput{PurchaseOrderID: order.ID, AddressID: &otherAddress.PK})
+		r.NoError(err)
+		a.Equal(StatusValidationFailed, addressMismatch.Status)
+
+		_, addressPreview, err := assignAddress(fixture.deps())(ctx, &mcp.CallToolRequest{}, AssignAddressInput{PurchaseOrderID: order.ID, AddressID: &address.PK})
+		r.NoError(err)
+		r.Equal(StatusClarificationRequired, addressPreview.Status)
+		r.NotEmpty(addressPreview.PlanHash)
+
+		_, addressConfirmed, err := assignAddress(fixture.deps())(ctx, &mcp.CallToolRequest{}, AssignAddressInput{PurchaseOrderID: order.ID, AddressID: &address.PK, Confirm: true, PlanHash: addressPreview.PlanHash})
+		r.NoError(err)
+		r.Equal(StatusOK, addressConfirmed.Status)
+		a.True(addressConfirmed.Verified)
+		r.NotNil(addressConfirmed.AddressID)
+		a.Equal(address.PK, *addressConfirmed.AddressID)
+
+		_, addressClearPreview, err := assignAddress(fixture.deps())(ctx, &mcp.CallToolRequest{}, AssignAddressInput{PurchaseOrderID: order.ID})
+		r.NoError(err)
+		r.Equal(StatusClarificationRequired, addressClearPreview.Status)
+		address2 := createAddress(supplier.ID, "address-bravo")
+		_, err = fixture.client.UpdatePurchaseOrderDetail(ctx, order.ID, inventree.PatchFields{"address": inventree.Set(address2.PK)})
+		r.NoError(err)
+		_, staleAddressClear, err := assignAddress(fixture.deps())(ctx, &mcp.CallToolRequest{}, AssignAddressInput{PurchaseOrderID: order.ID, Confirm: true, PlanHash: addressClearPreview.PlanHash})
+		r.NoError(err)
+		a.Equal(StatusClarificationRequired, staleAddressClear.Status)
+
+		_, freshAddressClearPreview, err := assignAddress(fixture.deps())(ctx, &mcp.CallToolRequest{}, AssignAddressInput{PurchaseOrderID: order.ID})
+		r.NoError(err)
+		r.Equal(StatusClarificationRequired, freshAddressClearPreview.Status)
+		_, addressCleared, err := assignAddress(fixture.deps())(ctx, &mcp.CallToolRequest{}, AssignAddressInput{PurchaseOrderID: order.ID, Confirm: true, PlanHash: freshAddressClearPreview.PlanHash})
+		r.NoError(err)
+		r.Equal(StatusOK, addressCleared.Status)
+		a.Nil(addressCleared.AddressID)
+
+		_, orderAfter, err := getPurchaseOrder(fixture.deps())(ctx, &mcp.CallToolRequest{}, IDInput{ID: order.ID})
+		r.NoError(err)
+		a.Nil(orderAfter.Record.Contact)
+		a.Nil(orderAfter.Record.Address)
+	})
+
 	t.Run("company_and_sourcing_link_administration", func(t *testing.T) {
 		r := require.New(t)
 		a := assert.New(t)
@@ -2524,6 +2679,8 @@ type milestoneToolFixture struct {
 	partRelationPlanStore *partRelationPlanStore
 	companyRolePlanStore  *companyRolePlanStore
 	ownerPlanStore        *ownerPlanStore
+	contactPlanStore      *contactPlanStore
+	addressPlanStore      *addressPlanStore
 }
 
 type attachmentTarget struct {
@@ -2574,6 +2731,8 @@ func newMilestoneToolFixture(t *testing.T, shared *testenv.SharedInvenTree) mile
 		partRelationPlanStore: newPartRelationPlanStore(time.Now, randomStockPlanToken),
 		companyRolePlanStore:  newCompanyRolePlanStore(time.Now, randomStockPlanToken),
 		ownerPlanStore:        newOwnerPlanStore(time.Now, randomStockPlanToken),
+		contactPlanStore:      newContactPlanStore(time.Now, randomStockPlanToken),
+		addressPlanStore:      newAddressPlanStore(time.Now, randomStockPlanToken),
 	}
 }
 
@@ -2590,6 +2749,8 @@ func (f milestoneToolFixture) deps() Dependencies {
 		partRelationPlanStore: f.partRelationPlanStore,
 		companyRolePlanStore:  f.companyRolePlanStore,
 		ownerPlanStore:        f.ownerPlanStore,
+		contactPlanStore:      f.contactPlanStore,
+		addressPlanStore:      f.addressPlanStore,
 	}
 }
 
