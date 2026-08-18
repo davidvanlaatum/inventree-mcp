@@ -242,6 +242,51 @@ func TestReceivePurchaseOrderCanExplicitlyCompleteFinalReceipt(t *testing.T) {
 	a.Equal(1, fake.completeCalls)
 }
 
+// TestReceivePurchaseOrderCompletionPreservesAndRevalidatesProjectCode proves
+// the F-S50 combined-workflow preservation requirement for the receive/
+// complete path: a completion line's project_code is carried into the
+// dry-run read-back and its plan hash, and reassigning it between preview
+// and confirm invalidates the reviewed completion plan.
+func TestReceivePurchaseOrderCompletionPreservesAndRevalidatesProjectCode(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	locationID := 40
+	fake := &fakePurchasingClient{
+		orders: []inventree.PurchaseOrder{{PK: 120, Status: inventree.PurchaseOrderStatusPlaced}},
+		lines: []inventree.PurchaseOrderLineItem{
+			{PK: 130, Order: 120, Part: 40, Quantity: 2, Received: 1, Destination: &locationID, ProjectCode: dvgoutils.Ptr(9), ProjectCodeLabel: "PRJ-009"},
+		},
+		stockItems: []inventree.StockItem{{PK: 50, Part: 10, Quantity: 1}},
+	}
+	input := ReceivePurchaseOrderInput{DryRun: true, CompleteOrder: true, OrderID: 120, Items: []ReceivePurchaseOrderItem{{LineItemID: 130, Quantity: 1}}}
+	handler := receivePurchaseOrderItems(purchasingDeps(fake))
+
+	_, plan, err := handler(ctx, &mcp.CallToolRequest{}, input)
+	r.NoError(err)
+	r.Len(plan.CompletionLines, 1)
+	r.NotNil(plan.CompletionLines[0].ProjectCode)
+	a.Equal(9, *plan.CompletionLines[0].ProjectCode)
+	r.NotEmpty(plan.PlanHash)
+
+	// Reassigning the remaining outstanding line's project code before confirmation must invalidate the reviewed plan.
+	fake.lines[0].ProjectCode = dvgoutils.Ptr(1)
+	input.DryRun, input.ConfirmReceive, input.PlanHash = false, true, plan.PlanHash
+	_, stale, err := handler(ctx, &mcp.CallToolRequest{}, input)
+	r.NoError(err)
+	a.Equal(StatusClarificationRequired, stale.Status)
+	a.Zero(fake.receiveCalls)
+
+	// Reverting the drift lets the same reviewed plan confirm successfully.
+	fake.lines[0].ProjectCode = dvgoutils.Ptr(9)
+	_, completed, err := handler(ctx, &mcp.CallToolRequest{}, input)
+	r.NoError(err)
+	a.Equal(StatusOK, completed.Status)
+	a.Equal(1, fake.receiveCalls)
+	a.Equal(1, fake.completeCalls)
+}
+
 func TestReceivePurchaseOrderCompletionPlanRequiresAllOutstandingLinesAndBindsIntent(t *testing.T) {
 	t.Parallel()
 	r := require.New(t)
@@ -757,6 +802,56 @@ func TestIssuePurchaseOrderRejectsStaleExtraLinePlan(t *testing.T) {
 	r.NotNil(stale.Clarification)
 	a.Equal("dry_run", stale.Clarification.Retry)
 	a.Zero(fake.issueCalls)
+}
+
+// TestIssuePurchaseOrderPreservesAndRevalidatesProjectCode proves the F-S50
+// combined-workflow preservation requirement: project_code on a line or
+// extra line is carried into the dry-run read-back and its plan hash, and
+// reassigning project_code between preview and confirm invalidates the
+// reviewed plan exactly like any other line/extra-line field change.
+func TestIssuePurchaseOrderPreservesAndRevalidatesProjectCode(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	fake := &fakePurchasingClient{
+		orders:     []inventree.PurchaseOrder{{PK: 120, Reference: "PO-1", Supplier: 30, Status: inventree.PurchaseOrderStatusPending}},
+		lines:      []inventree.PurchaseOrderLineItem{{PK: 130, Order: 120, Part: 40, Reference: "LINE-1", Quantity: 2, ProjectCode: dvgoutils.Ptr(9), ProjectCodeLabel: "PRJ-009"}},
+		extraLines: []inventree.PurchaseOrderExtraLine{{PK: 140, Order: 120, Reference: "FREIGHT", Quantity: 1, Price: dvgoutils.Ptr(inventree.DecimalString("12.50")), PriceCurrency: "AUD", ProjectCode: dvgoutils.Ptr(9), ProjectCodeLabel: "PRJ-009"}},
+	}
+	handler := issuePurchaseOrder(purchasingDeps(fake))
+
+	_, plan, err := handler(ctx, &mcp.CallToolRequest{}, IssuePurchaseOrderInput{DryRun: true, OrderID: 120})
+	r.NoError(err)
+	r.NotEmpty(plan.PlanHash)
+	r.Len(plan.Lines, 1)
+	r.NotNil(plan.Lines[0].ProjectCode)
+	a.Equal(9, *plan.Lines[0].ProjectCode)
+	r.Len(plan.ExtraLines, 1)
+	r.NotNil(plan.ExtraLines[0].ProjectCode)
+	a.Equal(9, *plan.ExtraLines[0].ProjectCode)
+
+	// Reassigning the line's project code before confirmation must invalidate the reviewed plan.
+	fake.lines[0].ProjectCode = dvgoutils.Ptr(1)
+	_, staleLine, err := handler(ctx, &mcp.CallToolRequest{}, IssuePurchaseOrderInput{OrderID: 120, ConfirmIssue: true, PlanHash: plan.PlanHash})
+	r.NoError(err)
+	a.Equal(StatusClarificationRequired, staleLine.Status)
+	a.Zero(fake.issueCalls)
+	fake.lines[0].ProjectCode = dvgoutils.Ptr(9)
+
+	// Reassigning the extra line's project code before confirmation must also invalidate the reviewed plan.
+	fake.extraLines[0].ProjectCode = nil
+	_, staleExtraLine, err := handler(ctx, &mcp.CallToolRequest{}, IssuePurchaseOrderInput{OrderID: 120, ConfirmIssue: true, PlanHash: plan.PlanHash})
+	r.NoError(err)
+	a.Equal(StatusClarificationRequired, staleExtraLine.Status)
+	a.Zero(fake.issueCalls)
+	fake.extraLines[0].ProjectCode = dvgoutils.Ptr(9)
+
+	// Reverting the drift lets the same reviewed plan confirm successfully.
+	_, issued, err := handler(ctx, &mcp.CallToolRequest{}, IssuePurchaseOrderInput{OrderID: 120, ConfirmIssue: true, PlanHash: plan.PlanHash})
+	r.NoError(err)
+	a.Equal(StatusOK, issued.Status)
+	a.Equal(1, fake.issueCalls)
 }
 
 func TestIssuePurchaseOrderGuardsNonPendingOrders(t *testing.T) {

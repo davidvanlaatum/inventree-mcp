@@ -242,6 +242,18 @@ type Address struct {
 	Link                  string `json:"link"`
 }
 
+// ProjectCode projects InvenTree's ProjectCode model. Per the F-S48 operator
+// decision, ProjectCode was excluded from the owner/responsible object
+// matrix, so its own `responsible`/`responsible_detail` fields stay out of
+// scope here too; see ProjectCodeFieldInventory for the pinned
+// classification.
+type ProjectCode struct {
+	PK          int    `json:"pk"`
+	Code        string `json:"code"`
+	Description string `json:"description"`
+	Active      bool   `json:"active"`
+}
+
 type StockItem struct {
 	WebLinkFields
 	PK                     int            `json:"pk"`
@@ -562,21 +574,23 @@ func (value PurchaseOrderCreatedBy) MarshalJSON() ([]byte, error) {
 // pinned classification.
 type PurchaseOrderDetail struct {
 	PurchaseOrder
-	CreatedBy       PurchaseOrderCreatedBy `json:"created_by"`
-	IssueDate       *string                `json:"issue_date"`
-	LineItems       *int                   `json:"line_items"`
-	CompletedLines  *int                   `json:"completed_lines"`
-	Link            string                 `json:"link"`
-	StatusText      *string                `json:"status_text"`
-	StatusCustomKey *int                   `json:"status_custom_key"`
-	Notes           *string                `json:"notes"`
-	Overdue         *bool                  `json:"overdue"`
-	CompleteDate    *string                `json:"complete_date"`
-	SupplierName    string                 `json:"supplier_name"`
-	UpdatedAt       *string                `json:"updated_at"`
-	Responsible     *int                   `json:"responsible"`
-	Contact         *int                   `json:"contact"`
-	Address         *int                   `json:"address"`
+	CreatedBy        PurchaseOrderCreatedBy `json:"created_by"`
+	IssueDate        *string                `json:"issue_date"`
+	LineItems        *int                   `json:"line_items"`
+	CompletedLines   *int                   `json:"completed_lines"`
+	Link             string                 `json:"link"`
+	StatusText       *string                `json:"status_text"`
+	StatusCustomKey  *int                   `json:"status_custom_key"`
+	Notes            *string                `json:"notes"`
+	Overdue          *bool                  `json:"overdue"`
+	CompleteDate     *string                `json:"complete_date"`
+	SupplierName     string                 `json:"supplier_name"`
+	UpdatedAt        *string                `json:"updated_at"`
+	Responsible      *int                   `json:"responsible"`
+	Contact          *int                   `json:"contact"`
+	Address          *int                   `json:"address"`
+	ProjectCode      *int                   `json:"project_code"`
+	ProjectCodeLabel string                 `json:"project_code_label"`
 }
 
 type PurchaseOrderLineItem struct {
@@ -596,6 +610,8 @@ type PurchaseOrderLineItem struct {
 	PurchasePriceCurrency string         `json:"purchase_price_currency"`
 	Link                  string         `json:"link"`
 	Discount              float64        `json:"discount"`
+	ProjectCode           *int           `json:"project_code"`
+	ProjectCodeLabel      string         `json:"project_code_label"`
 }
 
 // PurchaseOrderLineItemDetail is the approved complete scalar projection
@@ -616,19 +632,21 @@ type PurchaseOrderLineItemDetail struct {
 
 type PurchaseOrderExtraLine struct {
 	WebLinkFields
-	PK            int            `json:"pk"`
-	Order         int            `json:"order"`
-	Line          string         `json:"line"`
-	Reference     string         `json:"reference"`
-	Description   string         `json:"description"`
-	Link          string         `json:"link"`
-	Notes         string         `json:"notes"`
-	Quantity      float64        `json:"quantity"`
-	Price         *DecimalString `json:"price"`
-	PriceCurrency string         `json:"price_currency"`
-	TargetDate    *string        `json:"target_date"`
-	Discount      float64        `json:"discount"`
-	TotalPrice    *DecimalString `json:"total_price"`
+	PK               int            `json:"pk"`
+	Order            int            `json:"order"`
+	Line             string         `json:"line"`
+	Reference        string         `json:"reference"`
+	Description      string         `json:"description"`
+	Link             string         `json:"link"`
+	Notes            string         `json:"notes"`
+	Quantity         float64        `json:"quantity"`
+	Price            *DecimalString `json:"price"`
+	PriceCurrency    string         `json:"price_currency"`
+	TargetDate       *string        `json:"target_date"`
+	Discount         float64        `json:"discount"`
+	TotalPrice       *DecimalString `json:"total_price"`
+	ProjectCode      *int           `json:"project_code"`
+	ProjectCodeLabel string         `json:"project_code_label"`
 }
 
 // BomItem is read-only in this client: it exists solely to let delete_part

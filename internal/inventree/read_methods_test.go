@@ -326,6 +326,31 @@ func TestReadMethodsUseExpectedEndpoints(t *testing.T) {
 			response: `{"pk":6,"company":30,"title":"Head Office","primary":true,"line1":"1 Test Street","postal_code":"5000","postal_city":"Adelaide","province":"SA","country":"AU","shipping_notes":"","internal_shipping_notes":"","link":""}`,
 		},
 		{
+			name: "search project codes page",
+			call: func(ctx context.Context, client *Client) error {
+				page, err := client.SearchProjectCodesPage(ctx, ProjectCodeQuery{Search: "PRJ", IsActive: dvgoutils.Ptr(true), Limit: 10, Offset: 5})
+				if err == nil && (page.Count != 1 || len(page.Results) != 1 || page.Results[0].Code != "PRJ-001" || !page.Results[0].Active) {
+					return errors.New("project code search did not preserve exact fields")
+				}
+				return err
+			},
+			wantPath:  "/api/project-code/",
+			wantQuery: url.Values{"search": []string{"PRJ"}, "active": []string{"true"}, "limit": []string{"10"}, "offset": []string{"5"}},
+			response:  `{"count":1,"next":null,"previous":null,"results":[{"pk":8,"code":"PRJ-001","description":"Widget rollout","active":true}]}`,
+		},
+		{
+			name: "get project code",
+			call: func(ctx context.Context, client *Client) error {
+				code, err := client.GetProjectCode(ctx, 8)
+				if err == nil && (code.PK != 8 || code.Code != "PRJ-001") {
+					return errors.New("project code detail did not preserve exact fields")
+				}
+				return err
+			},
+			wantPath: "/api/project-code/8/",
+			response: `{"pk":8,"code":"PRJ-001","description":"Widget rollout","active":true}`,
+		},
+		{
 			name: "search stock items",
 			call: func(ctx context.Context, client *Client) error {
 				_, err := client.SearchStockItems(ctx, StockItemQuery{PartID: 10, LocationID: 40, PurchaseOrderID: 120, SupplierPartID: 40, Limit: 8, Offset: 4})

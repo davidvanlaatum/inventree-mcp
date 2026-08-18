@@ -456,3 +456,20 @@ func TestPurchaseOrderExtraLineInputsExcludeProjectCode(t *testing.T) {
 		}
 	}
 }
+
+// TestPurchaseOrderLineInputsExcludeProjectCode proves project_code is absent
+// from every ordinary purchase-order-line creation/update input, matching
+// TestPurchaseOrderExtraLineInputsExcludeProjectCode's line-level analog:
+// project_code is mutated only through assign_project_code, never through
+// add_purchase_order_line, update_purchase_order_line, or the combined
+// create_purchase_order_with_lines workflow's line input.
+func TestPurchaseOrderLineInputsExcludeProjectCode(t *testing.T) {
+	t.Parallel()
+	a := assert.New(t)
+	for _, schemaType := range []reflect.Type{reflect.TypeOf(AddPurchaseOrderLineInput{}), reflect.TypeOf(UpdatePurchaseOrderLineInput{}), reflect.TypeOf(PurchaseOrderWorkflowLine{}), reflect.TypeOf(inventree.PurchaseOrderLineCreate{})} {
+		for _, field := range reflect.VisibleFields(schemaType) {
+			a.NotContains(strings.ToLower(field.Name), "project")
+			a.NotContains(strings.ToLower(jsonFieldName(field.Tag.Get("json"))), "project")
+		}
+	}
+}
