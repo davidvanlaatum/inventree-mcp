@@ -1,9 +1,9 @@
 package inventree
 
 // PurchaseOrderFieldClass records the approved handling for every field in the
-// pinned API 530 PurchaseOrder and PurchaseOrderLineItem serializers. These
-// inventories are exhaustive so schema drift cannot silently widen exact
-// purchase-order output or ordinary mutation inputs.
+// pinned API 530 PurchaseOrder, PurchaseOrderLineItem, and PurchaseOrderExtraLine
+// serializers. These inventories are exhaustive so schema drift cannot silently
+// widen exact purchase-order output or ordinary mutation inputs.
 type PurchaseOrderFieldClass string
 
 const (
@@ -88,4 +88,24 @@ var PurchaseOrderLineFieldInventory = map[string]PurchaseOrderFieldClass{
 	"destination_detail":      PurchaseOrderFieldSeparateLookup,
 	"part_detail":             PurchaseOrderFieldSeparateLookup,
 	"supplier_part_detail":    PurchaseOrderFieldSeparateLookup,
+}
+
+var PurchaseOrderExtraLineFieldInventory = map[string]PurchaseOrderFieldClass{
+	"pk":                  PurchaseOrderFieldExposed,
+	"line":                PurchaseOrderFieldExposed,
+	"description":         PurchaseOrderFieldExposed,
+	"discount":            PurchaseOrderFieldExposed,
+	"link":                PurchaseOrderFieldExposed,
+	"notes":               PurchaseOrderFieldExposed,
+	"order":               PurchaseOrderFieldExposed,
+	"price":               PurchaseOrderFieldExposed,
+	"price_currency":      PurchaseOrderFieldExposed,
+	"project_code":        PurchaseOrderFieldExposed,
+	"quantity":            PurchaseOrderFieldExposed,
+	"reference":           PurchaseOrderFieldExposed,
+	"target_date":         PurchaseOrderFieldExposed,
+	"total_price":         PurchaseOrderFieldExposed,
+	"order_detail":        PurchaseOrderFieldSeparateLookup,
+	"project_code_label":  PurchaseOrderFieldExposed,
+	"project_code_detail": PurchaseOrderFieldSeparateLookup,
 }
