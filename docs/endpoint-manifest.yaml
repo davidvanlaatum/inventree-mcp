@@ -224,6 +224,34 @@ endpoints:
     request_schema: '#/components/schemas/PatchedCompany'
     request_content_type: application/json
     response_schema: '#/components/schemas/Company'
+  - id: search_contacts
+    area: companies
+    path: /api/company/contact/
+    method: GET
+    operation_id: company_contact_list
+    required_query:
+      - company
+    response_schema: '#/components/schemas/PaginatedContactList'
+  - id: get_contact
+    area: companies
+    path: /api/company/contact/{id}/
+    method: GET
+    operation_id: company_contact_retrieve
+    response_schema: '#/components/schemas/Contact'
+  - id: search_addresses
+    area: companies
+    path: /api/company/address/
+    method: GET
+    operation_id: company_address_list
+    required_query:
+      - company
+    response_schema: '#/components/schemas/PaginatedAddressList'
+  - id: get_address
+    area: companies
+    path: /api/company/address/{id}/
+    method: GET
+    operation_id: company_address_retrieve
+    response_schema: '#/components/schemas/Address'
   - id: search_supplier_parts
     area: purchasing_preview
     path: /api/company/part/

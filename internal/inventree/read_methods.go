@@ -644,6 +644,26 @@ func (c *Client) GetOwner(ctx context.Context, id int) (Owner, error) {
 	return out, err
 }
 
+func (c *Client) SearchContactsPage(ctx context.Context, query ContactQuery) (Page[Contact], error) {
+	return listPage[Contact](ctx, c, "/api/company/contact/", query.values())
+}
+
+func (c *Client) GetContact(ctx context.Context, id int) (Contact, error) {
+	var out Contact
+	err := c.get(ctx, fmt.Sprintf("/api/company/contact/%d/", id), &out)
+	return out, err
+}
+
+func (c *Client) SearchAddressesPage(ctx context.Context, query AddressQuery) (Page[Address], error) {
+	return listPage[Address](ctx, c, "/api/company/address/", query.values())
+}
+
+func (c *Client) GetAddress(ctx context.Context, id int) (Address, error) {
+	var out Address
+	err := c.get(ctx, fmt.Sprintf("/api/company/address/%d/", id), &out)
+	return out, err
+}
+
 func (c *Client) get(ctx context.Context, path string, out any) error {
 	req, err := c.NewRequest(ctx, http.MethodGet, path, nil, nil)
 	if err != nil {

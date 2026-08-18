@@ -211,6 +211,37 @@ type Owner struct {
 	Label      string `json:"label"`
 }
 
+// Contact projects InvenTree's structured company Contact model. Per the
+// F-S49 operator decision, phone and email are intentionally absent from
+// every MCP projection (search results and exact reads alike) so contact PII
+// never reaches agent context; only enough identity remains (name, role, and
+// the owning company) to select the correct record for reference assignment.
+type Contact struct {
+	PK          int    `json:"pk"`
+	Company     int    `json:"company"`
+	CompanyName string `json:"company_name"`
+	Name        string `json:"name"`
+	Role        string `json:"role"`
+}
+
+// Address projects InvenTree's structured company Address model. Per the
+// F-S49 operator decision, the street-address lines (line1/line2) and postal
+// code are intentionally absent from every MCP projection so precise
+// physical-address PII never reaches agent context; city/region, country,
+// and shipping notes remain to disambiguate between a company's addresses.
+type Address struct {
+	PK                    int    `json:"pk"`
+	Company               int    `json:"company"`
+	Title                 string `json:"title"`
+	Primary               bool   `json:"primary"`
+	PostalCity            string `json:"postal_city"`
+	Province              string `json:"province"`
+	Country               string `json:"country"`
+	ShippingNotes         string `json:"shipping_notes"`
+	InternalShippingNotes string `json:"internal_shipping_notes"`
+	Link                  string `json:"link"`
+}
+
 type StockItem struct {
 	WebLinkFields
 	PK                     int            `json:"pk"`
@@ -544,6 +575,8 @@ type PurchaseOrderDetail struct {
 	SupplierName    string                 `json:"supplier_name"`
 	UpdatedAt       *string                `json:"updated_at"`
 	Responsible     *int                   `json:"responsible"`
+	Contact         *int                   `json:"contact"`
+	Address         *int                   `json:"address"`
 }
 
 type PurchaseOrderLineItem struct {

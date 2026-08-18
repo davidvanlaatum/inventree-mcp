@@ -126,6 +126,12 @@ const (
 	SearchOwnersToolName                    = "search_owners"
 	GetOwnerToolName                        = "get_owner"
 	AssignOwnerToolName                     = "assign_owner"
+	SearchContactsToolName                  = "search_contacts"
+	GetContactToolName                      = "get_contact"
+	AssignContactToolName                   = "assign_contact"
+	SearchAddressesToolName                 = "search_addresses"
+	GetAddressToolName                      = "get_address"
+	AssignAddressToolName                   = "assign_address"
 
 	defaultDownloadMaxBytes int64 = 5 * 1024 * 1024
 	maxDownloadMaxBytes     int64 = 25 * 1024 * 1024
@@ -192,6 +198,10 @@ var lookupToolNames = []string{
 	GetInstanceInfoToolName,
 	SearchOwnersToolName,
 	GetOwnerToolName,
+	SearchContactsToolName,
+	GetContactToolName,
+	SearchAddressesToolName,
+	GetAddressToolName,
 }
 
 var writeToolNames = []string{
@@ -255,6 +265,8 @@ var writeToolNames = []string{
 	SetCompanyImageFromURLToolName,
 	ClearCompanyImageToolName,
 	AssignOwnerToolName,
+	AssignContactToolName,
+	AssignAddressToolName,
 }
 
 var ToolAuthorizations = map[string]ToolAuthorization{
@@ -302,7 +314,7 @@ func init() {
 		case DepleteStockItemToolName, UpdatePartFamilyRelationshipsToolName:
 			scopes = []string{ScopeInventreeRead, ScopeInventreeWrite, ScopeInventreeOperational, ScopeInventreeDestructive}
 			mutationClass = "destructive"
-		case RemoveCompanyCustomerRoleToolName, AssignOwnerToolName:
+		case RemoveCompanyCustomerRoleToolName, AssignOwnerToolName, AssignContactToolName, AssignAddressToolName:
 			scopes = []string{ScopeInventreeRead, ScopeInventreeWrite, ScopeInventreeDestructive}
 			mutationClass = "destructive"
 		case ReceivePurchaseOrderToolName:
@@ -326,7 +338,7 @@ func init() {
 		if name == UploadAttachmentFromURLToolName || name == SetCompanyImageFromURLToolName {
 			annotations.OpenWorld = true
 		}
-		if name == DeleteAttachmentToolName || name == ClearCompanyImageToolName || name == DeletePartParameterToolName || name == DeleteParameterTemplateToolName || name == MergeParameterTemplatesToolName || name == DeleteCategoryParameterDefaultToolName || name == DeletePurchaseOrderExtraLineToolName || name == DeletePurchaseOrderLineToolName || name == BulkPropagatePartParametersToolName || name == DepleteStockItemToolName || name == UpdatePartFamilyRelationshipsToolName || name == DeletePartToolName || name == DeletePartRelationToolName || name == RemoveCompanyCustomerRoleToolName || name == AssignOwnerToolName {
+		if name == DeleteAttachmentToolName || name == ClearCompanyImageToolName || name == DeletePartParameterToolName || name == DeleteParameterTemplateToolName || name == MergeParameterTemplatesToolName || name == DeleteCategoryParameterDefaultToolName || name == DeletePurchaseOrderExtraLineToolName || name == DeletePurchaseOrderLineToolName || name == BulkPropagatePartParametersToolName || name == DepleteStockItemToolName || name == UpdatePartFamilyRelationshipsToolName || name == DeletePartToolName || name == DeletePartRelationToolName || name == RemoveCompanyCustomerRoleToolName || name == AssignOwnerToolName || name == AssignContactToolName || name == AssignAddressToolName {
 			annotations.Destructive = true
 		}
 		ToolAuthorizations[name] = ToolAuthorization{
@@ -556,6 +568,8 @@ func registerLookupTools(server *mcp.Server, deps Dependencies) {
 	registerPurchasingLookupTools(server, deps)
 	registerInstanceInfoTool(server, deps)
 	registerOwnerLookupTools(server, deps)
+	registerContactLookupTools(server, deps)
+	registerAddressLookupTools(server, deps)
 }
 
 func addReadOnlyTool[In, Out any](server *mcp.Server, deps Dependencies, name string, title string, description string, handler mcp.ToolHandlerFor[In, Out]) {

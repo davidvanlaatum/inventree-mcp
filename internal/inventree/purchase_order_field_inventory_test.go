@@ -60,7 +60,7 @@ func TestPurchaseOrderDetailsPreserveNullableFieldsAndOmitUnapprovedData(t *test
 	a := assert.New(t)
 
 	var order inventree.PurchaseOrderDetail
-	r.NoError(json.Unmarshal([]byte(`{"pk":10,"reference":"PO-0001","supplier":30,"supplier_reference":"","description":"","status":10,"created_by":{"pk":7,"username":"admin"},"creation_date":null,"issue_date":null,"start_date":null,"target_date":null,"complete_date":null,"line_items":null,"completed_lines":0,"link":"","status_text":"Pending","status_custom_key":null,"notes":null,"overdue":false,"supplier_name":"Acme","total_price":null,"order_currency":null,"destination":null,"updated_at":null,"barcode_hash":"secret","project_code":null,"responsible":3,"contact":null,"address":null,"address_detail":null,"contact_detail":null,"project_code_detail":null,"project_code_label":null,"responsible_detail":{"pk":3},"parameters":[],"tags":["deferred"],"supplier_detail":{"pk":30}}`), &order))
+	r.NoError(json.Unmarshal([]byte(`{"pk":10,"reference":"PO-0001","supplier":30,"supplier_reference":"","description":"","status":10,"created_by":{"pk":7,"username":"admin"},"creation_date":null,"issue_date":null,"start_date":null,"target_date":null,"complete_date":null,"line_items":null,"completed_lines":0,"link":"","status_text":"Pending","status_custom_key":null,"notes":null,"overdue":false,"supplier_name":"Acme","total_price":null,"order_currency":null,"destination":null,"updated_at":null,"barcode_hash":"secret","project_code":null,"responsible":3,"contact":4,"address":null,"address_detail":null,"contact_detail":{"pk":4},"project_code_detail":null,"project_code_label":null,"responsible_detail":{"pk":3},"parameters":[],"tags":["deferred"],"supplier_detail":{"pk":30}}`), &order))
 	a.Equal(7, order.CreatedBy.PK)
 	a.Nil(order.CreationDate)
 	a.Nil(order.LineItems)
@@ -71,7 +71,10 @@ func TestPurchaseOrderDetailsPreserveNullableFieldsAndOmitUnapprovedData(t *test
 	a.Equal("Acme", order.SupplierName)
 	r.NotNil(order.Responsible)
 	a.Equal(3, *order.Responsible)
-	assertPurchaseOrderJSONOmits(t, order, "barcode_hash", "project_code", "contact", "address", "address_detail", "contact_detail", "project_code_detail", "project_code_label", "responsible_detail", "parameters", "tags", "supplier_detail")
+	r.NotNil(order.Contact)
+	a.Equal(4, *order.Contact)
+	a.Nil(order.Address)
+	assertPurchaseOrderJSONOmits(t, order, "barcode_hash", "project_code", "address_detail", "contact_detail", "project_code_detail", "project_code_label", "responsible_detail", "parameters", "tags", "supplier_detail")
 
 	encoded, err := json.Marshal(order)
 	r.NoError(err)
