@@ -386,16 +386,29 @@ type PartParameterPage struct {
 	HasMore bool
 }
 
+// ParameterUniqueness mirrors docs/api-schema.yaml's UniqueEnum for
+// ParameterTemplate.Unique: 0 means no uniqueness is enforced, 1 means values
+// must be unique per model type, and 2 means values must be globally unique
+// across every model type sharing the template.
+type ParameterUniqueness int
+
+const (
+	ParameterUniquenessNone      ParameterUniqueness = 0
+	ParameterUniquenessModelType ParameterUniqueness = 1
+	ParameterUniquenessGlobal    ParameterUniqueness = 2
+)
+
 type ParameterTemplate struct {
-	PK            int     `json:"pk"`
-	Name          string  `json:"name"`
-	Units         *string `json:"units"`
-	Description   string  `json:"description"`
-	ModelType     *string `json:"model_type"`
-	Choices       string  `json:"choices"`
-	Checkbox      bool    `json:"checkbox"`
-	SelectionList *int    `json:"selectionlist"`
-	Enabled       bool    `json:"enabled"`
+	PK            int                 `json:"pk"`
+	Name          string              `json:"name"`
+	Units         *string             `json:"units"`
+	Description   string              `json:"description"`
+	ModelType     *string             `json:"model_type"`
+	Choices       string              `json:"choices"`
+	Checkbox      bool                `json:"checkbox"`
+	SelectionList *int                `json:"selectionlist"`
+	Enabled       bool                `json:"enabled"`
+	Unique        ParameterUniqueness `json:"unique"`
 }
 
 type CategoryParameterTemplate struct {

@@ -2784,6 +2784,91 @@ func TestMilestoneHappyPathToolsAgainstInvenTree(t *testing.T) {
 		a.True(parentDeleted.Verified)
 	})
 
+	t.Run("object_parameter_and_template_uniqueness", func(t *testing.T) {
+		r := require.New(t)
+		a := assert.New(t)
+		ctx, _, _ := testhandler.SetupTestHandler(t)
+		fixture := newMilestoneToolFixture(t, shared)
+		location := fixture.ensure(t, testenv.FixtureLocation)
+		supplier := fixture.ensure(t, testenv.FixtureSupplier)
+		secondLocationName, err := fixture.run.Name("object-parameter-second-location")
+		r.NoError(err)
+		secondLocation, err := fixture.client.CreateStockLocation(ctx, inventree.StockLocationCreate{Name: secondLocationName})
+		r.NoError(err)
+		templateName, err := fixture.run.Name("object-parameter-tool")
+		r.NoError(err)
+		units, description, modelType, choices, checkbox, enabled := "", "object-parameter integration", "", "", false, true
+		unique := int(inventree.ParameterUniquenessModelType)
+		_, templateOutput, err := createParameterTemplate(fixture.deps())(ctx, &mcp.CallToolRequest{}, CreateParameterTemplateInput{
+			Name: templateName, Units: &units, Description: &description, ModelType: &modelType, Choices: &choices, Checkbox: &checkbox, Enabled: &enabled, Unique: &unique,
+		})
+		r.NoError(err)
+		r.NotNil(templateOutput.Record)
+		a.Equal(inventree.ParameterUniquenessModelType, templateOutput.Record.Unique)
+		templateID := templateOutput.Record.PK
+
+		_, created, err := createObjectParameter(fixture.deps())(ctx, &mcp.CallToolRequest{}, CreateObjectParameterInput{ModelType: "stock.stocklocation", ModelID: location.ID, TemplateID: templateID, Value: dvgoutils.Ptr("bin-a")})
+		r.NoError(err)
+		a.Equal(StatusOK, created.Status)
+		a.Equal("bin-a", created.Record.Value)
+		parameterID := created.Record.ParameterID
+
+		// A different object of the SAME model type sharing this value conflicts under unique:1 (model-type scope).
+		_, conflict, err := createObjectParameter(fixture.deps())(ctx, &mcp.CallToolRequest{}, CreateObjectParameterInput{ModelType: "stock.stocklocation", ModelID: secondLocation.PK, TemplateID: templateID, Value: dvgoutils.Ptr("bin-a")})
+		r.NoError(err)
+		a.Equal(StatusClarificationRequired, conflict.Status)
+
+		// The same value on a DIFFERENT model type does not conflict at unique:1 (model-type scope).
+		_, companyCreated, err := createObjectParameter(fixture.deps())(ctx, &mcp.CallToolRequest{}, CreateObjectParameterInput{ModelType: "company.company", ModelID: supplier.ID, TemplateID: templateID, Value: dvgoutils.Ptr("bin-a")})
+		r.NoError(err)
+		a.Equal(StatusOK, companyCreated.Status)
+
+		// Re-calling create_object_parameter for the same object/template upserts in place instead of duplicating.
+		_, updated, err := createObjectParameter(fixture.deps())(ctx, &mcp.CallToolRequest{}, CreateObjectParameterInput{ModelType: "stock.stocklocation", ModelID: location.ID, TemplateID: templateID, Value: dvgoutils.Ptr("bin-b")})
+		r.NoError(err)
+		a.Equal(StatusOK, updated.Status)
+		a.Equal(parameterID, updated.Record.ParameterID)
+		a.Equal("bin-b", updated.Record.Value)
+
+		_, listed, err := searchObjectParameterValues(fixture.deps())(ctx, &mcp.CallToolRequest{}, SearchObjectParametersInput{ModelType: "stock.stocklocation", ModelID: location.ID, TemplateID: templateID})
+		r.NoError(err)
+		a.Equal(StatusOK, listed.Status)
+		r.Len(listed.Results, 1)
+		a.Equal("bin-b", listed.Results[0].Value)
+
+		// Attempting to tighten uniqueness to global now finds the cross-model-type "bin-a"/"bin-b" values do not conflict
+		// (they differ), but flipping back to model-type scope after making them equal demonstrates the conflict guard.
+		_, dryRun, err := updateParameterTemplateUniqueness(fixture.deps())(ctx, &mcp.CallToolRequest{}, UpdateParameterTemplateUniquenessInput{TemplateID: templateID, Unique: int(inventree.ParameterUniquenessGlobal), DryRun: true})
+		r.NoError(err)
+		a.Equal(StatusOK, dryRun.Status)
+		a.Empty(dryRun.Conflicts)
+		r.NotEmpty(dryRun.PlanHash)
+
+		_, confirmed, err := updateParameterTemplateUniqueness(fixture.deps())(ctx, &mcp.CallToolRequest{}, UpdateParameterTemplateUniquenessInput{TemplateID: templateID, Unique: int(inventree.ParameterUniquenessGlobal), Confirm: true, PlanHash: dryRun.PlanHash})
+		r.NoError(err)
+		a.Equal(StatusOK, confirmed.Status)
+		a.True(confirmed.Verified)
+		a.Equal(inventree.ParameterUniquenessGlobal, confirmed.Record.Unique)
+
+		// Now that unique is global, the same value across any model type conflicts.
+		_, globalConflict, err := createObjectParameter(fixture.deps())(ctx, &mcp.CallToolRequest{}, CreateObjectParameterInput{ModelType: "company.company", ModelID: supplier.ID, TemplateID: templateID, Value: dvgoutils.Ptr("bin-b")})
+		r.NoError(err)
+		a.Equal(StatusClarificationRequired, globalConflict.Status)
+
+		_, preview, err := deleteObjectParameter(fixture.deps())(ctx, &mcp.CallToolRequest{}, DeleteObjectParameterInput{ParameterID: parameterID})
+		r.NoError(err)
+		a.Equal(StatusClarificationRequired, preview.Status)
+		r.NotEmpty(preview.PlanHash)
+		_, deleted, err := deleteObjectParameter(fixture.deps())(ctx, &mcp.CallToolRequest{}, DeleteObjectParameterInput{ParameterID: parameterID, Confirm: true, PlanHash: preview.PlanHash})
+		r.NoError(err)
+		a.Equal(StatusOK, deleted.Status)
+		a.True(deleted.Verified)
+		_, err = fixture.client.GetPartParameter(ctx, parameterID)
+		var apiErr *inventree.APIError
+		r.ErrorAs(err, &apiErr)
+		a.Equal(inventree.ErrorKindNotFound, apiErr.Kind)
+	})
+
 	t.Run("bulk_parameter_propagation_and_audit", func(t *testing.T) {
 		r := require.New(t)
 		a := assert.New(t)
@@ -2896,20 +2981,22 @@ func TestMilestoneHappyPathToolsAgainstInvenTree(t *testing.T) {
 }
 
 type milestoneToolFixture struct {
-	shared                   *testenv.SharedInvenTree
-	run                      *testenv.Run
-	account                  *testenv.Account
-	client                   *inventree.Client
-	stockPlanStore           *stockPlanStore
-	stockProvenancePlanStore *stockProvenancePlanStore
-	parameterPlanStore       *parameterPlanStore
-	partFamilyPlanStore      *partFamilyPlanStore
-	partRelationPlanStore    *partRelationPlanStore
-	companyRolePlanStore     *companyRolePlanStore
-	ownerPlanStore           *ownerPlanStore
-	contactPlanStore         *contactPlanStore
-	addressPlanStore         *addressPlanStore
-	projectCodePlanStore     *projectCodePlanStore
+	shared                               *testenv.SharedInvenTree
+	run                                  *testenv.Run
+	account                              *testenv.Account
+	client                               *inventree.Client
+	stockPlanStore                       *stockPlanStore
+	stockProvenancePlanStore             *stockProvenancePlanStore
+	parameterPlanStore                   *parameterPlanStore
+	partFamilyPlanStore                  *partFamilyPlanStore
+	partRelationPlanStore                *partRelationPlanStore
+	companyRolePlanStore                 *companyRolePlanStore
+	ownerPlanStore                       *ownerPlanStore
+	contactPlanStore                     *contactPlanStore
+	addressPlanStore                     *addressPlanStore
+	projectCodePlanStore                 *projectCodePlanStore
+	objectParameterDeletePlanStore       *objectParameterDeletePlanStore
+	parameterTemplateUniquenessPlanStore *parameterTemplateUniquenessPlanStore
 }
 
 type attachmentTarget struct {
@@ -2950,20 +3037,22 @@ func newMilestoneToolFixture(t *testing.T, shared *testenv.SharedInvenTree) mile
 	r.NoError(err)
 
 	return milestoneToolFixture{
-		shared:                   shared,
-		run:                      run,
-		account:                  account,
-		client:                   client,
-		stockPlanStore:           newStockPlanStore(time.Now, randomStockPlanToken),
-		stockProvenancePlanStore: newStockProvenancePlanStore(time.Now, randomStockPlanToken),
-		parameterPlanStore:       newParameterPlanStore(time.Now, randomStockPlanToken),
-		partFamilyPlanStore:      newPartFamilyPlanStore(time.Now, randomStockPlanToken),
-		partRelationPlanStore:    newPartRelationPlanStore(time.Now, randomStockPlanToken),
-		companyRolePlanStore:     newCompanyRolePlanStore(time.Now, randomStockPlanToken),
-		ownerPlanStore:           newOwnerPlanStore(time.Now, randomStockPlanToken),
-		contactPlanStore:         newContactPlanStore(time.Now, randomStockPlanToken),
-		addressPlanStore:         newAddressPlanStore(time.Now, randomStockPlanToken),
-		projectCodePlanStore:     newProjectCodePlanStore(time.Now, randomStockPlanToken),
+		shared:                               shared,
+		run:                                  run,
+		account:                              account,
+		client:                               client,
+		stockPlanStore:                       newStockPlanStore(time.Now, randomStockPlanToken),
+		stockProvenancePlanStore:             newStockProvenancePlanStore(time.Now, randomStockPlanToken),
+		parameterPlanStore:                   newParameterPlanStore(time.Now, randomStockPlanToken),
+		partFamilyPlanStore:                  newPartFamilyPlanStore(time.Now, randomStockPlanToken),
+		partRelationPlanStore:                newPartRelationPlanStore(time.Now, randomStockPlanToken),
+		companyRolePlanStore:                 newCompanyRolePlanStore(time.Now, randomStockPlanToken),
+		ownerPlanStore:                       newOwnerPlanStore(time.Now, randomStockPlanToken),
+		contactPlanStore:                     newContactPlanStore(time.Now, randomStockPlanToken),
+		addressPlanStore:                     newAddressPlanStore(time.Now, randomStockPlanToken),
+		projectCodePlanStore:                 newProjectCodePlanStore(time.Now, randomStockPlanToken),
+		objectParameterDeletePlanStore:       newObjectParameterDeletePlanStore(time.Now, randomStockPlanToken),
+		parameterTemplateUniquenessPlanStore: newParameterTemplateUniquenessPlanStore(time.Now, randomStockPlanToken),
 	}
 }
 
@@ -2972,18 +3061,20 @@ func (f milestoneToolFixture) deps() Dependencies {
 		ClientFromContext: func(context.Context) (any, error) {
 			return f.client, nil
 		},
-		UploadMode:               upload.ModeStdio,
-		UploadMaxBytes:           upload.DefaultMaxBytes,
-		stockPlanStore:           f.stockPlanStore,
-		stockProvenancePlanStore: f.stockProvenancePlanStore,
-		parameterPlanStore:       f.parameterPlanStore,
-		partFamilyPlanStore:      f.partFamilyPlanStore,
-		partRelationPlanStore:    f.partRelationPlanStore,
-		companyRolePlanStore:     f.companyRolePlanStore,
-		ownerPlanStore:           f.ownerPlanStore,
-		contactPlanStore:         f.contactPlanStore,
-		addressPlanStore:         f.addressPlanStore,
-		projectCodePlanStore:     f.projectCodePlanStore,
+		UploadMode:                           upload.ModeStdio,
+		UploadMaxBytes:                       upload.DefaultMaxBytes,
+		stockPlanStore:                       f.stockPlanStore,
+		stockProvenancePlanStore:             f.stockProvenancePlanStore,
+		parameterPlanStore:                   f.parameterPlanStore,
+		partFamilyPlanStore:                  f.partFamilyPlanStore,
+		partRelationPlanStore:                f.partRelationPlanStore,
+		companyRolePlanStore:                 f.companyRolePlanStore,
+		ownerPlanStore:                       f.ownerPlanStore,
+		contactPlanStore:                     f.contactPlanStore,
+		addressPlanStore:                     f.addressPlanStore,
+		projectCodePlanStore:                 f.projectCodePlanStore,
+		objectParameterDeletePlanStore:       f.objectParameterDeletePlanStore,
+		parameterTemplateUniquenessPlanStore: f.parameterTemplateUniquenessPlanStore,
 	}
 }
 

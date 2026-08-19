@@ -5,9 +5,12 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/davidvanlaatum/inventree-mcp/internal/inventree"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -38,6 +41,7 @@ type CreateParameterTemplateInput struct {
 	Choices         *string `json:"choices" jsonschema:"Explicit comma-separated choices; use an empty string for free-form values."`
 	SelectionListID *int    `json:"selection_list_id,omitempty" jsonschema:"Optional existing InvenTree selection-list primary key."`
 	Enabled         *bool   `json:"enabled" jsonschema:"Explicit enabled state."`
+	Unique          *int    `json:"unique,omitempty" jsonschema:"Optional uniqueness policy for newly created templates: 0 none, 1 unique per model type, 2 globally unique. Omit to accept the InvenTree default. Changing an existing template's uniqueness policy requires update_parameter_template_uniqueness instead."`
 }
 
 type UpdateParameterTemplateInput struct {
@@ -112,8 +116,12 @@ type MergeParameterTemplatesOutput struct {
 }
 
 func registerParameterTemplateTools(server *mcp.Server, deps Dependencies) {
+	if deps.parameterTemplateUniquenessPlanStore == nil {
+		deps.parameterTemplateUniquenessPlanStore = newParameterTemplateUniquenessPlanStore(time.Now, randomStockPlanToken)
+	}
 	addWriteTool(server, deps, CreateParameterTemplateToolName, "Create parameter template", "Creates an explicit parameter template after collision preflight.", createParameterTemplate(deps))
 	addWriteTool(server, deps, UpdateParameterTemplateToolName, "Update parameter template", "Partially updates one parameter template while preserving omitted fields.", updateParameterTemplate(deps))
+	addWriteTool(server, deps, UpdateParameterTemplateUniquenessToolName, "Update parameter template uniqueness", "Plans or confirms changing an existing parameter template's uniqueness policy after a bounded conflict scan.", updateParameterTemplateUniqueness(deps))
 	addWriteTool(server, deps, DeleteParameterTemplateToolName, "Delete parameter template", "Deletes one unreferenced parameter template after explicit confirmation.", deleteParameterTemplate(deps))
 	addWriteTool(server, deps, MergeParameterTemplatesToolName, "Merge parameter templates", "Plans or confirms migration of non-conflicting part-parameter rows and deletes the source only when empty.", mergeParameterTemplates(deps))
 }
@@ -130,6 +138,14 @@ func createParameterTemplate(deps Dependencies) mcp.ToolHandlerFor[CreateParamet
 			if input.SelectionListID != nil && *input.SelectionListID <= 0 {
 				return templateClarification("Which selection list should be linked?", "selection_list_id", "selection_list_id must be positive when provided", "selection_list_id", map[string]any{"name": input.Name})
 			}
+			var unique *inventree.ParameterUniqueness
+			if input.Unique != nil {
+				if !validParameterUniqueness(*input.Unique) {
+					return templateClarification("Which supported uniqueness policy should this template use?", "unique", "unique must be 0 (none), 1 (unique for model type), or 2 (globally unique) when provided", "unique", map[string]any{"name": input.Name})
+				}
+				value := inventree.ParameterUniqueness(*input.Unique)
+				unique = &value
+			}
 			collisions, err := exactTemplateNameMatches(ctx, client, input.Name, 0)
 			if err != nil {
 				return nil, ParameterTemplateOutput{}, err
@@ -137,7 +153,7 @@ func createParameterTemplate(deps Dependencies) mcp.ToolHandlerFor[CreateParamet
 			if len(collisions) > 0 {
 				return templateCandidatesClarification("Should an existing parameter template be used instead?", "template", "one or more templates already use this case-insensitive name", "template_id", collisions, map[string]any{"name": input.Name})
 			}
-			record, err := client.CreateParameterTemplate(ctx, inventree.ParameterTemplateCreate{Name: strings.TrimSpace(input.Name), Units: *input.Units, Description: *input.Description, ModelType: *input.ModelType, Checkbox: *input.Checkbox, Choices: *input.Choices, SelectionList: input.SelectionListID, Enabled: *input.Enabled})
+			record, err := client.CreateParameterTemplate(ctx, inventree.ParameterTemplateCreate{Name: strings.TrimSpace(input.Name), Units: *input.Units, Description: *input.Description, ModelType: *input.ModelType, Checkbox: *input.Checkbox, Choices: *input.Choices, SelectionList: input.SelectionListID, Enabled: *input.Enabled, Unique: unique})
 			if err != nil {
 				return nil, ParameterTemplateOutput{}, err
 			}
@@ -448,6 +464,15 @@ func validParameterTemplateModelType(modelType string) bool {
 	}
 }
 
+func validParameterUniqueness(value int) bool {
+	switch inventree.ParameterUniqueness(value) {
+	case inventree.ParameterUniquenessNone, inventree.ParameterUniquenessModelType, inventree.ParameterUniquenessGlobal:
+		return true
+	default:
+		return false
+	}
+}
+
 func exactTemplateNameMatches(ctx context.Context, client ParameterTemplateAdminClient, name string, excludeID int) ([]inventree.ParameterTemplate, error) {
 	records, err := client.SearchParameterTemplates(ctx, inventree.SearchQuery{Search: strings.TrimSpace(name), Limit: MaxLookupLimit})
 	if err != nil {
@@ -528,4 +553,268 @@ func mergeClarification(out MergeParameterTemplatesOutput, question, field, reas
 	out.Status = StatusClarificationRequired
 	out.Clarification = &clarification
 	return TextResult(StatusClarificationRequired), out, nil
+}
+
+const (
+	parameterTemplateUniquenessPlanLifetime               = 5 * time.Minute
+	parameterTemplateUniquenessPlanMaxEntries             = 4096
+	parameterTemplateUniquenessPlanMaxEntriesPerPrincipal = 64
+)
+
+type UpdateParameterTemplateUniquenessInput struct {
+	TemplateID int    `json:"template_id" jsonschema:"Stable parameter-template primary key."`
+	Unique     int    `json:"unique" jsonschema:"Target uniqueness policy: 0 none, 1 unique per model type, 2 globally unique."`
+	DryRun     bool   `json:"dry_run,omitempty" jsonschema:"Return the current plan, including any value conflicts under the target policy, without writing."`
+	Confirm    bool   `json:"confirm,omitempty" jsonschema:"Required true to execute a reviewed plan with no remaining conflicts."`
+	PlanHash   string `json:"plan_hash,omitempty" jsonschema:"Exact current-state hash returned by dry_run:true."`
+}
+
+type ParameterTemplateUniquenessConflict struct {
+	ModelType    string `json:"model_type,omitempty"`
+	Value        string `json:"value"`
+	ParameterIDs []int  `json:"parameter_ids"`
+}
+
+// ParameterTemplateUniquenessPlan binds the exact current template
+// definition, the target policy, every currently linked row ID, and the
+// complete conflict snapshot computed under the target policy. Any drift in
+// any of these between preview and confirm changes this plan's digest, so a
+// stale token is rejected rather than silently applying a policy the
+// operator never reviewed against current data.
+type ParameterTemplateUniquenessPlan struct {
+	Action       string                                `json:"action"`
+	Template     inventree.ParameterTemplate           `json:"template"`
+	TargetUnique inventree.ParameterUniqueness         `json:"target_unique"`
+	RowIDs       []int                                 `json:"row_ids"`
+	Conflicts    []ParameterTemplateUniquenessConflict `json:"conflicts,omitempty"`
+}
+
+type ParameterTemplateUniquenessOutput struct {
+	Status        string                                `json:"status"`
+	Record        *inventree.ParameterTemplate          `json:"record,omitempty"`
+	RowCount      int                                   `json:"row_count,omitempty"`
+	Conflicts     []ParameterTemplateUniquenessConflict `json:"conflicts,omitempty"`
+	PlanHash      string                                `json:"plan_hash,omitempty"`
+	DryRun        bool                                  `json:"dry_run,omitempty"`
+	Verified      bool                                  `json:"verified,omitempty"`
+	RecoveryPlan  string                                `json:"recovery_plan,omitempty"`
+	Clarification *ClarificationResponse                `json:"clarification,omitempty"`
+}
+
+type parameterTemplateUniquenessConfirmation struct {
+	digest     string
+	principal  string
+	templateID int
+	expiresAt  time.Time
+}
+
+type parameterTemplateUniquenessPlanStore struct {
+	mu                     sync.Mutex
+	entries                map[string]parameterTemplateUniquenessConfirmation
+	now                    func() time.Time
+	token                  func() (string, error)
+	principal              func(context.Context) string
+	maxEntries             int
+	maxEntriesPerPrincipal int
+}
+
+func newParameterTemplateUniquenessPlanStore(now func() time.Time, token func() (string, error)) *parameterTemplateUniquenessPlanStore {
+	return &parameterTemplateUniquenessPlanStore{
+		entries: map[string]parameterTemplateUniquenessConfirmation{}, now: now, token: token, principal: stockPlanPrincipal,
+		maxEntries: parameterTemplateUniquenessPlanMaxEntries, maxEntriesPerPrincipal: parameterTemplateUniquenessPlanMaxEntriesPerPrincipal,
+	}
+}
+
+func (s *parameterTemplateUniquenessPlanStore) issue(ctx context.Context, plan ParameterTemplateUniquenessPlan) (string, error) {
+	digest, err := parameterTemplateUniquenessPlanDigest(plan)
+	if err != nil {
+		return "", err
+	}
+	token, err := s.token()
+	if err != nil {
+		return "", err
+	}
+	now, principal := s.now(), s.principal(ctx)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	principalEntries := 0
+	for key, entry := range s.entries {
+		if !now.Before(entry.expiresAt) || entry.principal == principal && entry.templateID == plan.Template.PK {
+			delete(s.entries, key)
+			continue
+		}
+		if entry.principal == principal {
+			principalEntries++
+		}
+	}
+	if len(s.entries) >= s.maxEntries || principalEntries >= s.maxEntriesPerPrincipal {
+		return "", errors.New("too many outstanding parameter-template uniqueness confirmation plans")
+	}
+	s.entries[token] = parameterTemplateUniquenessConfirmation{digest: digest, principal: principal, templateID: plan.Template.PK, expiresAt: now.Add(parameterTemplateUniquenessPlanLifetime)}
+	return token, nil
+}
+
+func (s *parameterTemplateUniquenessPlanStore) consume(ctx context.Context, token string, plan ParameterTemplateUniquenessPlan) bool {
+	digest, err := parameterTemplateUniquenessPlanDigest(plan)
+	if err != nil {
+		return false
+	}
+	now := s.now()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for key, entry := range s.entries {
+		if !now.Before(entry.expiresAt) {
+			delete(s.entries, key)
+		}
+	}
+	entry, ok := s.entries[token]
+	if !ok || entry.digest != digest || entry.principal != s.principal(ctx) || entry.templateID != plan.Template.PK || !now.Before(entry.expiresAt) {
+		return false
+	}
+	delete(s.entries, token)
+	return true
+}
+
+func parameterTemplateUniquenessPlanDigest(plan ParameterTemplateUniquenessPlan) (string, error) {
+	data, err := json.Marshal(plan)
+	if err != nil {
+		return "", err
+	}
+	digest := sha256.Sum256(data)
+	return hex.EncodeToString(digest[:]), nil
+}
+
+func updateParameterTemplateUniqueness(deps Dependencies) mcp.ToolHandlerFor[UpdateParameterTemplateUniquenessInput, ParameterTemplateUniquenessOutput] {
+	return LookupHandler[ParameterTemplateAdminClient, UpdateParameterTemplateUniquenessInput, ParameterTemplateUniquenessOutput](deps, UpdateParameterTemplateUniquenessToolName,
+		func(ctx context.Context, _ *mcp.CallToolRequest, client ParameterTemplateAdminClient, input UpdateParameterTemplateUniquenessInput) (*mcp.CallToolResult, ParameterTemplateUniquenessOutput, error) {
+			if input.TemplateID <= 0 {
+				return parameterTemplateUniquenessClarification("Which parameter template should change uniqueness policy?", "template_id", "template_id must be positive", nil, input)
+			}
+			if !validParameterUniqueness(input.Unique) {
+				return parameterTemplateUniquenessClarification("Which supported uniqueness policy should this template use?", "unique", "unique must be 0 (none), 1 (unique for model type), or 2 (globally unique)", nil, input)
+			}
+			plan, notFound, err := buildParameterTemplateUniquenessPlan(ctx, client, input)
+			if notFound {
+				return TextResult(StatusNotFound), ParameterTemplateUniquenessOutput{Status: StatusNotFound}, nil
+			}
+			if err != nil {
+				return nil, ParameterTemplateUniquenessOutput{}, err
+			}
+			if input.DryRun {
+				if len(plan.Conflicts) > 0 {
+					return parameterTemplateUniquenessConflictClarification(plan, input)
+				}
+				if deps.parameterTemplateUniquenessPlanStore == nil {
+					return nil, ParameterTemplateUniquenessOutput{}, errors.New("parameter-template uniqueness plan store is unavailable")
+				}
+				token, err := deps.parameterTemplateUniquenessPlanStore.issue(ctx, plan)
+				if err != nil {
+					return nil, ParameterTemplateUniquenessOutput{}, err
+				}
+				return TextResult(StatusOK), ParameterTemplateUniquenessOutput{Status: StatusOK, Record: &plan.Template, RowCount: len(plan.RowIDs), PlanHash: token, DryRun: true}, nil
+			}
+			if !input.Confirm {
+				return parameterTemplateUniquenessClarification("Should this reviewed uniqueness-policy change now be executed?", "confirm", "confirm must be true after reviewing dry_run:true output", &plan.Template, input)
+			}
+			if len(plan.Conflicts) > 0 {
+				return parameterTemplateUniquenessConflictClarification(plan, input)
+			}
+			if deps.parameterTemplateUniquenessPlanStore == nil || input.PlanHash == "" || !deps.parameterTemplateUniquenessPlanStore.consume(ctx, input.PlanHash, plan) {
+				clarification := NewClarification("Which current dry-run plan should authorize this uniqueness change?", "confirmation", "plan_hash must be the unexpired single-use token from a matching dry run by the same principal; changed template or row state requires a new dry run", "plan_hash", false, []ClarificationCandidate{templateCandidate(plan.Template)}, map[string]any{"template_id": input.TemplateID, "unique": input.Unique, "dry_run": true})
+				return TextResult(StatusClarificationRequired), ParameterTemplateUniquenessOutput{Status: StatusClarificationRequired, Record: &plan.Template, RowCount: len(plan.RowIDs), Clarification: &clarification}, nil
+			}
+			updated, err := client.UpdateParameterTemplate(ctx, input.TemplateID, inventree.PatchFields{"unique": inventree.Set(int(plan.TargetUnique))})
+			if err != nil {
+				return nil, ParameterTemplateUniquenessOutput{}, err
+			}
+			if updated.PK == input.TemplateID && updated.Unique == plan.TargetUnique {
+				return TextResult(StatusOK), ParameterTemplateUniquenessOutput{Status: StatusOK, Record: &updated, RowCount: len(plan.RowIDs), Verified: true}, nil
+			}
+			fresh, freshErr := client.GetParameterTemplate(ctx, input.TemplateID)
+			if freshErr == nil && fresh.PK == input.TemplateID && fresh.Unique == plan.TargetUnique {
+				return TextResult(StatusOK), ParameterTemplateUniquenessOutput{Status: StatusOK, Record: &fresh, RowCount: len(plan.RowIDs), Verified: true}, nil
+			}
+			return TextResult(StatusPartialFailure), ParameterTemplateUniquenessOutput{Status: StatusPartialFailure, Record: &updated, RowCount: len(plan.RowIDs), RecoveryPlan: fmt.Sprintf("Uniqueness patch result for template %d is ambiguous; read the template's exact stable ID before retrying.", input.TemplateID)}, nil
+		})
+}
+
+func buildParameterTemplateUniquenessPlan(ctx context.Context, client ParameterTemplateAdminClient, input UpdateParameterTemplateUniquenessInput) (ParameterTemplateUniquenessPlan, bool, error) {
+	template, err := client.GetParameterTemplate(ctx, input.TemplateID)
+	if err != nil {
+		if isNotFound(err) {
+			return ParameterTemplateUniquenessPlan{}, true, nil
+		}
+		return ParameterTemplateUniquenessPlan{}, false, err
+	}
+	if template.PK != input.TemplateID {
+		return ParameterTemplateUniquenessPlan{}, false, fmt.Errorf("parameter template identity mismatch: requested %d, received %d", input.TemplateID, template.PK)
+	}
+	rows, err := scanTemplateParameters(ctx, client, input.TemplateID)
+	if err != nil {
+		return ParameterTemplateUniquenessPlan{}, false, err
+	}
+	target := inventree.ParameterUniqueness(input.Unique)
+	rowIDs := make([]int, 0, len(rows))
+	for _, row := range rows {
+		rowIDs = append(rowIDs, row.PK)
+	}
+	slices.Sort(rowIDs)
+	plan := ParameterTemplateUniquenessPlan{Action: UpdateParameterTemplateUniquenessToolName, Template: template, TargetUnique: target, RowIDs: rowIDs, Conflicts: parameterTemplateUniquenessConflicts(rows, target)}
+	return plan, false, nil
+}
+
+// parameterTemplateUniquenessConflicts groups rows by (model_type, value) for
+// a model-type-scoped target policy, or by value alone for a global target
+// policy, and reports any group with two or more rows as a conflict that
+// must be resolved before the policy change can be confirmed.
+func parameterTemplateUniquenessConflicts(rows []inventree.Parameter, target inventree.ParameterUniqueness) []ParameterTemplateUniquenessConflict {
+	if target == inventree.ParameterUniquenessNone {
+		return nil
+	}
+	type group struct {
+		modelType string
+		value     string
+	}
+	groups := map[group][]int{}
+	order := make([]group, 0)
+	for _, row := range rows {
+		key := group{value: row.Data}
+		if target == inventree.ParameterUniquenessModelType {
+			key.modelType = row.ModelType
+		}
+		if _, ok := groups[key]; !ok {
+			order = append(order, key)
+		}
+		groups[key] = append(groups[key], row.PK)
+	}
+	slices.SortFunc(order, func(a, b group) int {
+		if a.modelType != b.modelType {
+			return strings.Compare(a.modelType, b.modelType)
+		}
+		return strings.Compare(a.value, b.value)
+	})
+	conflicts := make([]ParameterTemplateUniquenessConflict, 0)
+	for _, key := range order {
+		ids := groups[key]
+		if len(ids) < 2 {
+			continue
+		}
+		slices.Sort(ids)
+		conflicts = append(conflicts, ParameterTemplateUniquenessConflict{ModelType: key.modelType, Value: key.value, ParameterIDs: ids})
+	}
+	return conflicts
+}
+
+func parameterTemplateUniquenessConflictClarification(plan ParameterTemplateUniquenessPlan, input UpdateParameterTemplateUniquenessInput) (*mcp.CallToolResult, ParameterTemplateUniquenessOutput, error) {
+	clarification := NewClarification("How should these existing value conflicts be resolved before changing uniqueness policy?", "conflicts", fmt.Sprintf("%d value group(s) already violate the target uniqueness policy; resolve or remove the conflicting rows before this change can be planned for confirmation", len(plan.Conflicts)), "unique", true, []ClarificationCandidate{templateCandidate(plan.Template)}, map[string]any{"template_id": input.TemplateID, "unique": input.Unique, "dry_run": true})
+	return TextResult(StatusClarificationRequired), ParameterTemplateUniquenessOutput{Status: StatusClarificationRequired, Record: &plan.Template, RowCount: len(plan.RowIDs), Conflicts: plan.Conflicts, Clarification: &clarification}, nil
+}
+
+func parameterTemplateUniquenessClarification(question, field, reason string, template *inventree.ParameterTemplate, input UpdateParameterTemplateUniquenessInput) (*mcp.CallToolResult, ParameterTemplateUniquenessOutput, error) {
+	var candidates []ClarificationCandidate
+	if template != nil {
+		candidates = []ClarificationCandidate{templateCandidate(*template)}
+	}
+	clarification := NewClarification(question, field, reason, field, true, candidates, map[string]any{"template_id": input.TemplateID, "unique": input.Unique, "dry_run": input.DryRun})
+	return TextResult(StatusClarificationRequired), ParameterTemplateUniquenessOutput{Status: StatusClarificationRequired, Record: template, Clarification: &clarification}, nil
 }

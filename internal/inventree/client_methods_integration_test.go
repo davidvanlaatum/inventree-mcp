@@ -897,6 +897,74 @@ func TestClientMethodsAgainstInvenTree(t *testing.T) {
 		r.Equal(inventree.ErrorKindNotFound, apiErr.Kind)
 	})
 
+	t.Run("object_parameter", func(t *testing.T) {
+		r := require.New(t)
+		ctx, _, _ := testhandler.SetupTestHandler(t)
+		fixture := newClientMethodFixture(t, shared)
+		location := fixture.ensure(t, testenv.FixtureLocation)
+		supplier := fixture.ensure(t, testenv.FixtureSupplier)
+		template := createParameterTemplate(t, fixture.client, fixture.run, "object-parameter", "", "")
+
+		locationParameter, err := fixture.client.CreatePartParameter(ctx, inventree.ParameterCreate{Template: template.PK, ModelType: "stock.stocklocation", ModelID: location.ID, Data: "shelf-a"})
+		r.NoError(err)
+		r.Equal("stock.stocklocation", locationParameter.ModelType)
+		r.Equal(location.ID, locationParameter.ModelID)
+
+		companyParameter, err := fixture.client.CreatePartParameter(ctx, inventree.ParameterCreate{Template: template.PK, ModelType: "company.company", ModelID: supplier.ID, Data: "vendor-code"})
+		r.NoError(err)
+		r.Equal("company.company", companyParameter.ModelType)
+		r.Equal(supplier.ID, companyParameter.ModelID)
+
+		locationPage, err := fixture.client.SearchObjectParametersPage(ctx, inventree.ObjectParameterQuery{ModelType: "stock.stocklocation", ModelID: location.ID, TemplateID: template.PK, Limit: 10})
+		r.NoError(err)
+		r.Len(locationPage.Results, 1)
+		r.Equal(locationParameter.PK, locationPage.Results[0].PK)
+		r.Equal("shelf-a", locationPage.Results[0].Data)
+
+		companyPage, err := fixture.client.SearchObjectParametersPage(ctx, inventree.ObjectParameterQuery{ModelType: "company.company", ModelID: supplier.ID, TemplateID: template.PK, Limit: 10})
+		r.NoError(err)
+		r.Len(companyPage.Results, 1)
+		r.Equal(companyParameter.PK, companyPage.Results[0].PK)
+
+		// A model_type-scoped query for one object type never returns rows belonging to another.
+		scopedPage, err := fixture.client.SearchObjectParametersPage(ctx, inventree.ObjectParameterQuery{ModelType: "stock.stocklocation", TemplateID: template.PK, Limit: 100})
+		r.NoError(err)
+		for _, row := range scopedPage.Results {
+			r.Equal("stock.stocklocation", row.ModelType)
+		}
+
+		r.NoError(fixture.client.DeletePartParameter(ctx, locationParameter.PK))
+		_, err = fixture.client.GetPartParameter(ctx, locationParameter.PK)
+		var apiErr *inventree.APIError
+		r.ErrorAs(err, &apiErr)
+		r.Equal(inventree.ErrorKindNotFound, apiErr.Kind)
+		r.NoError(fixture.client.DeletePartParameter(ctx, companyParameter.PK))
+	})
+
+	t.Run("parameter_template_uniqueness", func(t *testing.T) {
+		r := require.New(t)
+		ctx, _, _ := testhandler.SetupTestHandler(t)
+		fixture := newClientMethodFixture(t, shared)
+		name, err := fixture.run.Name("uniqueness-admin")
+		r.NoError(err)
+		created, err := fixture.client.CreateParameterTemplate(ctx, inventree.ParameterTemplateCreate{
+			Name: name, Units: "", Description: "uniqueness integration template", ModelType: "", Checkbox: false, Choices: "", Enabled: true, Unique: dvgoutils.Ptr(inventree.ParameterUniquenessModelType),
+		})
+		r.NoError(err)
+		r.NotZero(created.PK)
+		r.Equal(inventree.ParameterUniquenessModelType, created.Unique)
+
+		updated, err := fixture.client.UpdateParameterTemplate(ctx, created.PK, inventree.PatchFields{"unique": inventree.Set(int(inventree.ParameterUniquenessGlobal))})
+		r.NoError(err)
+		r.Equal(inventree.ParameterUniquenessGlobal, updated.Unique)
+
+		got, err := fixture.client.GetParameterTemplate(ctx, created.PK)
+		r.NoError(err)
+		r.Equal(inventree.ParameterUniquenessGlobal, got.Unique)
+
+		r.NoError(fixture.client.DeleteParameterTemplate(ctx, created.PK))
+	})
+
 	t.Run("attachment", func(t *testing.T) {
 		r := require.New(t)
 		ctx, _, _ := testhandler.SetupTestHandler(t)

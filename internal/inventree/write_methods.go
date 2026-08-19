@@ -93,14 +93,15 @@ type ParameterCreate struct {
 }
 
 type ParameterTemplateCreate struct {
-	Name          string `json:"name"`
-	Units         string `json:"units"`
-	Description   string `json:"description"`
-	ModelType     string `json:"model_type"`
-	Checkbox      bool   `json:"checkbox"`
-	Choices       string `json:"choices"`
-	SelectionList *int   `json:"selectionlist,omitempty"`
-	Enabled       bool   `json:"enabled"`
+	Name          string               `json:"name"`
+	Units         string               `json:"units"`
+	Description   string               `json:"description"`
+	ModelType     string               `json:"model_type"`
+	Checkbox      bool                 `json:"checkbox"`
+	Choices       string               `json:"choices"`
+	SelectionList *int                 `json:"selectionlist,omitempty"`
+	Enabled       bool                 `json:"enabled"`
+	Unique        *ParameterUniqueness `json:"unique,omitempty"`
 }
 
 type CategoryParameterTemplateCreate struct {

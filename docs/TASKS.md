@@ -145,7 +145,7 @@ Before assigning a new story ID, inspect `git worktree list --porcelain`, search
 | [F-S61](#f-s61-adopt-inventree-150-api-530-baseline) | Adopt InvenTree 1.5.0 and API 530 as the blocking compatibility baseline. | Done |
 | [F-S62](#f-s62-guarded-purchase-order-hold-resume-and-cancellation) | Add explicit current-state-planned hold, resume, and cancellation workflows without generic status editing or whole-order deletion. | Ready |
 | [F-S63](#f-s63-guarded-purchase-order-duplication-discovery) | Investigate a deferred, low-frequency workflow for safely duplicating selected purchase-order state. | Future |
-| [F-S64](#f-s64-cross-object-generic-parameter-values-and-uniqueness) | Add bounded generic parameter values across supported non-part-row object types and administer template uniqueness. | Ready |
+| [F-S64](#f-s64-cross-object-generic-parameter-values-and-uniqueness) | Add bounded generic parameter values across supported non-part-row object types and administer template uniqueness. | Active |
 | [F-S65](#f-s65-guarded-stock-custom-status-management) | Extend the guarded stock-status workflow to assign or clear compatible custom status keys. | Ready |
 | [F-S66](#f-s66-guarded-stock-item-merge-discovery) | Investigate a deferred, fail-closed merge workflow for explicitly selected compatible stock items. | Future |
 | [F-S67](#f-s67-stock-location-detail-and-type-administration) | Complete stock-location icon detail and add guarded stock-location-type administration. | Done |
@@ -2576,10 +2576,11 @@ Tasks:
 
 ### F-S64: Cross-Object Generic Parameter Values And Uniqueness
 
-- Status: `Ready`
+- Status: `Active`
 - Issue: [#146](https://github.com/davidvanlaatum/inventree-mcp/issues/146)
 - Depends on: F-S11, F-S12, F-S13, F-S20, F-S21, F-S47, F-S61
 - Decisions: approved by the operator on 2026-08-15 as one generic cross-object story. API 530 makes generic parameter values visible on purchase orders, stock locations, companies, supplier parts, manufacturer parts, and part categories; all supported non-part families use existing compatible templates. Part-row values remain in F-S12 and category parameter-template/default links remain in F-S13. API 530 parameter-template `unique` is exposed and writable here because value writes must understand and preserve its uniqueness policy.
+- Progress: implementing on `claude/f-s64-cross-object-parameters`. Design: one shared `model_type`-gated tool set (`search_object_parameters`, `create_object_parameter`, `delete_object_parameter`) covers all six object families instead of per-object duplication; `create_object_parameter` upserts (zero/one/multiple existing-value resolution) rather than separate create/update tools; template uniqueness-policy changes go through a new dedicated guarded `update_parameter_template_uniqueness` tool (dry_run/confirm/plan_hash), while ordinary `create_parameter_template` gains an optional `unique` field and `update_parameter_template` stays unchanged.
 - Scope: extend generic parameter lookup and maintenance to `order.purchaseorder`, `stock.stocklocation`, `company.company`, `company.supplierpart`, `company.manufacturerpart`, and `part.partcategory`, and extend existing parameter-template reads/writes for `unique`, without creating templates implicitly or opening deferred object domains.
 - Acceptance:
   - Add bounded object-scoped list and stable exact reads for parameter values on one purchase order, stock location, company, supplier part, manufacturer part, or part category; embedded API 530 parameter arrays are classified as separate lookups and preserve null/omitted/empty behavior in raw-key contracts.
