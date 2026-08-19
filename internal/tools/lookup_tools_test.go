@@ -287,6 +287,85 @@ func TestSearchStockItemsUsesStableFilters(t *testing.T) {
 	a.Equal(120, *output.Results[0].PurchaseOrder)
 }
 
+func TestSearchStockSerialsUsesPartScopedFilters(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	serial := "42"
+	fake := &fakeMilestoneLookupClient{stockItems: []inventree.StockItem{{PK: 50, Part: 10, Quantity: 1, Serial: &serial}}}
+	gte, lte := 1, 100
+	serialized := true
+
+	result, output, err := searchStockSerials(depsForFake(fake))(ctx, &mcp.CallToolRequest{}, StockSerialsInput{PartID: 10, Serial: "42", SerialGTE: &gte, SerialLTE: &lte, Serialized: &serialized})
+	r.NoError(err)
+	r.NotNil(result)
+	a.Equal(StatusOK, output.Status)
+	a.Equal(1, output.Count)
+	a.Equal(inventree.StockItemQuery{PartID: 10, Serial: "42", SerialGTE: &gte, SerialLTE: &lte, Serialized: &serialized, Limit: DefaultLookupLimit}, fake.lastSearchStockItemsQuery)
+	r.NotNil(output.Results[0].Serial)
+	a.Equal("42", *output.Results[0].Serial)
+}
+
+func TestSearchStockSerialsRequiresPositivePartID(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	fake := &fakeMilestoneLookupClient{}
+
+	_, output, err := searchStockSerials(depsForFake(fake))(ctx, &mcp.CallToolRequest{}, StockSerialsInput{})
+	r.NoError(err)
+	a.Equal(StatusClarificationRequired, output.Status)
+	a.Equal("part", output.Clarification.Field)
+}
+
+func TestGetPartNextSerialReturnsLatestAndNext(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	latest := "9"
+	fake := &fakeMilestoneLookupClient{
+		part:              inventree.Part{PK: 10, Trackable: true},
+		partSerialNumbers: inventree.PartSerialNumbers{Latest: &latest, Next: "10"},
+	}
+
+	_, output, err := getPartNextSerial(depsForFake(fake))(ctx, &mcp.CallToolRequest{}, PartNextSerialInput{PartID: 10})
+	r.NoError(err)
+	a.Equal(StatusOK, output.Status)
+	a.Equal(10, output.PartID)
+	r.NotNil(output.Latest)
+	a.Equal("9", *output.Latest)
+	a.Equal("10", output.Next)
+	a.Equal(10, fake.lastGetPartSerialNumbersID)
+}
+
+func TestGetPartNextSerialRejectsNonTrackablePart(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	fake := &fakeMilestoneLookupClient{part: inventree.Part{PK: 10, Trackable: false}}
+
+	_, output, err := getPartNextSerial(depsForFake(fake))(ctx, &mcp.CallToolRequest{}, PartNextSerialInput{PartID: 10})
+	r.NoError(err)
+	a.Equal(StatusNotTrackable, output.Status)
+	a.Zero(fake.lastGetPartSerialNumbersID)
+}
+
+func TestGetPartNextSerialReportsNotFound(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	fake := &fakeMilestoneLookupClient{getPartErr: &inventree.APIError{StatusCode: http.StatusNotFound, Kind: inventree.ErrorKindNotFound}}
+
+	_, output, err := getPartNextSerial(depsForFake(fake))(ctx, &mcp.CallToolRequest{}, PartNextSerialInput{PartID: 999})
+	r.NoError(err)
+	a.Equal(StatusNotFound, output.Status)
+}
+
 func TestPreviewPurchaseOrderUsesSupplierPartIDWithoutWrites(t *testing.T) {
 	t.Parallel()
 	r := require.New(t)
@@ -682,6 +761,9 @@ type fakeMilestoneLookupClient struct {
 	updatePartParameterCount                  int
 	lastAttachmentMaxBytes                    int64
 	lastPartImageMaxBytes                     int64
+	partSerialNumbers                         inventree.PartSerialNumbers
+	getPartSerialNumbersErr                   error
+	lastGetPartSerialNumbersID                int
 }
 
 func (f *fakeMilestoneLookupClient) SearchParts(_ context.Context, query inventree.SearchQuery) ([]inventree.Part, error) {
@@ -851,6 +933,14 @@ func (f *fakeMilestoneLookupClient) GetStockLocation(_ context.Context, id int) 
 func (f *fakeMilestoneLookupClient) SearchStockItems(_ context.Context, query inventree.StockItemQuery) ([]inventree.StockItem, error) {
 	f.lastSearchStockItemsQuery = query
 	return f.stockItems, nil
+}
+
+func (f *fakeMilestoneLookupClient) GetPartSerialNumbers(_ context.Context, id int) (inventree.PartSerialNumbers, error) {
+	f.lastGetPartSerialNumbersID = id
+	if f.getPartSerialNumbersErr != nil {
+		return inventree.PartSerialNumbers{}, f.getPartSerialNumbersErr
+	}
+	return f.partSerialNumbers, nil
 }
 
 func (f *fakeMilestoneLookupClient) ListAttachments(_ context.Context, query inventree.AttachmentQuery) ([]inventree.Attachment, error) {

@@ -1811,6 +1811,109 @@ func TestClientMethodsAgainstInvenTree(t *testing.T) {
 		r.Equal(inventree.ErrorKindNotFound, apiErr.Kind)
 	})
 
+	t.Run("stock_serial_management", func(t *testing.T) {
+		r := require.New(t)
+		a := assert.New(t)
+		ctx, _, _ := testhandler.SetupTestHandler(t)
+		fixture := newClientMethodFixture(t, shared)
+		category := fixture.ensure(t, testenv.FixtureCategory)
+		location := fixture.ensure(t, testenv.FixtureLocation)
+
+		trackableName, err := fixture.run.Name("serial-trackable-part")
+		r.NoError(err)
+		trackablePart, err := fixture.client.CreatePart(ctx, inventree.PartCreate{Name: trackableName, Category: dvgoutils.Ptr(category.ID), Active: dvgoutils.Ptr(true), Trackable: dvgoutils.Ptr(true)})
+		r.NoError(err)
+		a.True(trackablePart.Trackable)
+
+		untrackableName, err := fixture.run.Name("serial-untrackable-part")
+		r.NoError(err)
+		untrackablePart, err := fixture.client.CreatePart(ctx, inventree.PartCreate{Name: untrackableName, Category: dvgoutils.Ptr(category.ID), Active: dvgoutils.Ptr(true), Trackable: dvgoutils.Ptr(false)})
+		r.NoError(err)
+
+		// Pinned InvenTree 1.5.1 does not reject /api/part/{id}/serial-numbers/
+		// for a non-trackable part; it returns an ordinary 200 with no latest
+		// serial. The tool-layer trackability preflight exists to give a
+		// clearer, more actionable client-side signal than this silent
+		// no-latest-serial response.
+		untrackableSerials, err := fixture.client.GetPartSerialNumbers(ctx, untrackablePart.PK)
+		r.NoError(err)
+		a.Nil(untrackableSerials.Latest)
+
+		unserialized, err := fixture.client.CreateStockItem(ctx, inventree.StockItemCreate{Part: trackablePart.PK, Location: location.ID, Quantity: 1})
+		r.NoError(err)
+		r.Nil(unserialized.Serial)
+
+		noneYet, err := fixture.client.GetPartSerialNumbers(ctx, trackablePart.PK)
+		r.NoError(err)
+		a.Nil(noneYet.Latest)
+
+		assigned, err := fixture.client.UpdateStockItem(ctx, unserialized.PK, inventree.PatchFields{"serial": inventree.Set("101")})
+		r.NoError(err)
+		r.NotNil(assigned.Serial)
+		a.Equal("101", *assigned.Serial)
+
+		withLatest, err := fixture.client.GetPartSerialNumbers(ctx, trackablePart.PK)
+		r.NoError(err)
+		r.NotNil(withLatest.Latest)
+		a.Equal("101", *withLatest.Latest)
+		a.NotEmpty(withLatest.Next)
+
+		found, err := fixture.client.SearchStockItems(ctx, inventree.StockItemQuery{PartID: trackablePart.PK, Serial: "101"})
+		r.NoError(err)
+		r.Len(found, 1)
+		a.Equal(unserialized.PK, found[0].PK)
+
+		serializedOnly, err := fixture.client.SearchStockItems(ctx, inventree.StockItemQuery{PartID: trackablePart.PK, Serialized: dvgoutils.Ptr(true)})
+		r.NoError(err)
+		r.Len(serializedOnly, 1)
+		unserializedOnly, err := fixture.client.SearchStockItems(ctx, inventree.StockItemQuery{PartID: trackablePart.PK, Serialized: dvgoutils.Ptr(false)})
+		r.NoError(err)
+		r.Empty(unserializedOnly)
+
+		replaced, err := fixture.client.UpdateStockItem(ctx, unserialized.PK, inventree.PatchFields{"serial": inventree.Set("150")})
+		r.NoError(err)
+		r.NotNil(replaced.Serial)
+		a.Equal("150", *replaced.Serial)
+
+		// Pinned InvenTree 1.5.1 rejects a same-part duplicate serial at
+		// write time, proving stockSerialCollision's best-effort client-side
+		// preflight has real server-side backing.
+		duplicateAttempt, err := fixture.client.CreateStockItem(ctx, inventree.StockItemCreate{Part: trackablePart.PK, Location: location.ID, Quantity: 1})
+		r.NoError(err)
+		_, err = fixture.client.UpdateStockItem(ctx, duplicateAttempt.PK, inventree.PatchFields{"serial": inventree.Set("150")})
+		r.Error(err, "InvenTree must reject assigning an already-used serial to a second stock item of the same part")
+		var duplicateErr *inventree.APIError
+		r.ErrorAs(err, &duplicateErr)
+		a.Equal(inventree.ErrorKindValidation, duplicateErr.Kind)
+		afterFailedDuplicate, err := fixture.client.GetStockItem(ctx, duplicateAttempt.PK)
+		r.NoError(err)
+		a.Nil(afterFailedDuplicate.Serial, "the rejected PATCH must not have partially applied")
+
+		// serial_gte/serial_lte bound the same numeric-comparable range
+		// InvenTree itself uses for serial ordering.
+		low, err := fixture.client.UpdateStockItem(ctx, duplicateAttempt.PK, inventree.PatchFields{"serial": inventree.Set("10")})
+		r.NoError(err)
+		r.NotNil(low.Serial)
+		highItemBase, err := fixture.client.CreateStockItem(ctx, inventree.StockItemCreate{Part: trackablePart.PK, Location: location.ID, Quantity: 1})
+		r.NoError(err)
+		highItem, err := fixture.client.UpdateStockItem(ctx, highItemBase.PK, inventree.PatchFields{"serial": inventree.Set("500")})
+		r.NoError(err)
+		r.NotNil(highItem.Serial)
+
+		gte, lte := 100, 300
+		inRange, err := fixture.client.SearchStockItems(ctx, inventree.StockItemQuery{PartID: trackablePart.PK, SerialGTE: &gte, SerialLTE: &lte})
+		r.NoError(err)
+		r.Len(inRange, 1, "only the %q serial falls within [100,300]", "150")
+		a.Equal(unserialized.PK, inRange[0].PK)
+
+		cleared, err := fixture.client.UpdateStockItem(ctx, unserialized.PK, inventree.PatchFields{"serial": inventree.Null()})
+		r.NoError(err)
+		a.Nil(cleared.Serial)
+		reread, err := fixture.client.GetStockItem(ctx, unserialized.PK)
+		r.NoError(err)
+		a.Nil(reread.Serial)
+	})
+
 	t.Run("instance_info", func(t *testing.T) {
 		r := require.New(t)
 		a := assert.New(t)

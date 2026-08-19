@@ -56,6 +56,10 @@ type StockItemQuery struct {
 	PurchaseOrderID int
 	SupplierPartID  int
 	Customer        int
+	Serial          string
+	SerialGTE       *int
+	SerialLTE       *int
+	Serialized      *bool
 	Limit           int
 	Offset          int
 }
@@ -287,6 +291,18 @@ func (q StockItemQuery) values() url.Values {
 	}
 	if q.Customer != 0 {
 		values.Set("customer", strconv.Itoa(q.Customer))
+	}
+	if q.Serial != "" {
+		values.Set("serial", q.Serial)
+	}
+	if q.SerialGTE != nil {
+		values.Set("serial_gte", strconv.Itoa(*q.SerialGTE))
+	}
+	if q.SerialLTE != nil {
+		values.Set("serial_lte", strconv.Itoa(*q.SerialLTE))
+	}
+	if q.Serialized != nil {
+		values.Set("serialized", strconv.FormatBool(*q.Serialized))
 	}
 	return values
 }

@@ -106,6 +106,10 @@ const (
 	SetStockDeleteOnDepleteToolName         = "set_stock_delete_on_deplete"
 	DepleteStockItemToolName                = "deplete_stock_item"
 	TransferStockItemToolName               = "transfer_stock_item"
+	SearchStockSerialsToolName              = "search_stock_serials"
+	GetPartNextSerialToolName               = "get_part_next_serial"
+	AssignStockSerialToolName               = "assign_stock_serial"
+	SetStockSerialToolName                  = "set_stock_serial"
 	CreatePurchaseOrderToolName             = "create_purchase_order"
 	UpdatePurchaseOrderToolName             = "update_purchase_order"
 	AddPurchaseOrderLineToolName            = "add_purchase_order_line"
@@ -189,6 +193,8 @@ var lookupToolNames = []string{
 	GetStockItemToolName,
 	ListStockTrackingEntriesToolName,
 	GetStockTrackingEntryToolName,
+	SearchStockSerialsToolName,
+	GetPartNextSerialToolName,
 	ListPartStocktakesToolName,
 	GetPartStocktakeToolName,
 	ListAttachmentsToolName,
@@ -256,6 +262,8 @@ var writeToolNames = []string{
 	SetStockDeleteOnDepleteToolName,
 	DepleteStockItemToolName,
 	TransferStockItemToolName,
+	AssignStockSerialToolName,
+	SetStockSerialToolName,
 	CreatePurchaseOrderToolName,
 	UpdatePurchaseOrderToolName,
 	AddPurchaseOrderLineToolName,
@@ -322,10 +330,10 @@ func init() {
 		case CreateStockItemToolName, InitialStockWorkflowToolName:
 			scopes = []string{ScopeInventreeWrite, ScopeInventreeOperational}
 			mutationClass = "operational"
-		case AdjustStockQuantityToolName, SetStockStatusToolName, StocktakeAdjustmentToolName, TransferStockItemToolName, RestructureStockLocationToolName, UpdateStockItemMetadataToolName:
+		case AdjustStockQuantityToolName, SetStockStatusToolName, StocktakeAdjustmentToolName, TransferStockItemToolName, RestructureStockLocationToolName, UpdateStockItemMetadataToolName, AssignStockSerialToolName:
 			scopes = []string{ScopeInventreeRead, ScopeInventreeWrite, ScopeInventreeOperational}
 			mutationClass = "operational"
-		case SetStockDeleteOnDepleteToolName, DepleteStockItemToolName, UpdatePartFamilyRelationshipsToolName:
+		case SetStockDeleteOnDepleteToolName, DepleteStockItemToolName, UpdatePartFamilyRelationshipsToolName, SetStockSerialToolName:
 			scopes = []string{ScopeInventreeRead, ScopeInventreeWrite, ScopeInventreeOperational, ScopeInventreeDestructive}
 			mutationClass = "destructive"
 		case RemoveCompanyCustomerRoleToolName, AssignOwnerToolName, AssignContactToolName, AssignAddressToolName, AssignProjectCodeToolName:
@@ -352,7 +360,7 @@ func init() {
 		if name == UploadAttachmentFromURLToolName || name == SetCompanyImageFromURLToolName {
 			annotations.OpenWorld = true
 		}
-		if name == DeleteAttachmentToolName || name == ClearCompanyImageToolName || name == DeletePartParameterToolName || name == DeleteParameterTemplateToolName || name == MergeParameterTemplatesToolName || name == DeleteCategoryParameterDefaultToolName || name == DeletePurchaseOrderExtraLineToolName || name == DeletePurchaseOrderLineToolName || name == BulkPropagatePartParametersToolName || name == SetStockDeleteOnDepleteToolName || name == DepleteStockItemToolName || name == UpdatePartFamilyRelationshipsToolName || name == DeletePartToolName || name == DeletePartRelationToolName || name == RemoveCompanyCustomerRoleToolName || name == AssignOwnerToolName || name == AssignContactToolName || name == AssignAddressToolName || name == AssignProjectCodeToolName || name == DeleteStockLocationTypeToolName {
+		if name == DeleteAttachmentToolName || name == ClearCompanyImageToolName || name == DeletePartParameterToolName || name == DeleteParameterTemplateToolName || name == MergeParameterTemplatesToolName || name == DeleteCategoryParameterDefaultToolName || name == DeletePurchaseOrderExtraLineToolName || name == DeletePurchaseOrderLineToolName || name == BulkPropagatePartParametersToolName || name == SetStockDeleteOnDepleteToolName || name == DepleteStockItemToolName || name == UpdatePartFamilyRelationshipsToolName || name == DeletePartToolName || name == DeletePartRelationToolName || name == RemoveCompanyCustomerRoleToolName || name == AssignOwnerToolName || name == AssignContactToolName || name == AssignAddressToolName || name == AssignProjectCodeToolName || name == DeleteStockLocationTypeToolName || name == SetStockSerialToolName {
 			annotations.Destructive = true
 		}
 		ToolAuthorizations[name] = ToolAuthorization{
@@ -428,6 +436,15 @@ type StockItemExactLookupClient interface {
 	GetStockItemDetail(context.Context, int) (inventree.StockItemDetail, error)
 }
 
+type StockSerialLookupClient interface {
+	SearchStockItems(context.Context, inventree.StockItemQuery) ([]inventree.StockItem, error)
+}
+
+type PartSerialLookupClient interface {
+	GetPart(context.Context, int) (inventree.Part, error)
+	GetPartSerialNumbers(context.Context, int) (inventree.PartSerialNumbers, error)
+}
+
 type AttachmentLookupClient interface {
 	ListAttachments(context.Context, inventree.AttachmentQuery) ([]inventree.Attachment, error)
 	GetAttachmentMetadata(context.Context, int) (inventree.Attachment, error)
@@ -453,6 +470,27 @@ type StockItemsInput struct {
 	PurchaseOrderID int    `json:"purchase_order_id,omitempty" jsonschema:"Optional source purchase-order primary key filter for receipt recovery."`
 	Limit           int    `json:"limit,omitempty" jsonschema:"Maximum number of records to return. Defaults to 20 and is capped at 100."`
 	Offset          int    `json:"offset,omitempty" jsonschema:"Pagination offset for deterministic retries."`
+}
+
+type StockSerialsInput struct {
+	PartID     int    `json:"part_id" jsonschema:"Existing part primary key to scope serial discovery to."`
+	Serial     string `json:"serial,omitempty" jsonschema:"Optional exact serial-number filter."`
+	SerialGTE  *int   `json:"serial_gte,omitempty" jsonschema:"Optional inclusive lower bound for numeric-comparable serial numbers."`
+	SerialLTE  *int   `json:"serial_lte,omitempty" jsonschema:"Optional inclusive upper bound for numeric-comparable serial numbers."`
+	Serialized *bool  `json:"serialized,omitempty" jsonschema:"Optional filter: true for serialized stock only, false for unserialized stock only. Omit for both."`
+	Limit      int    `json:"limit,omitempty" jsonschema:"Maximum number of records to return. Defaults to 20 and is capped at 100."`
+	Offset     int    `json:"offset,omitempty" jsonschema:"Pagination offset for deterministic retries."`
+}
+
+type PartNextSerialInput struct {
+	PartID int `json:"part_id" jsonschema:"Existing trackable part primary key."`
+}
+
+type PartNextSerialOutput struct {
+	Status string  `json:"status"`
+	PartID int     `json:"part_id,omitempty"`
+	Latest *string `json:"latest_serial,omitempty"`
+	Next   string  `json:"next_serial,omitempty"`
 }
 
 type DownloadInput struct {
@@ -573,6 +611,8 @@ func registerLookupTools(server *mcp.Server, deps Dependencies) {
 	addReadOnlyTool(server, deps, GetStockLocationTypeToolName, "Get stock location type", "Retrieves one stock location type by stable ID.", getStockLocationType(deps))
 	addReadOnlyTool(server, deps, SearchStockItemsToolName, "Search stock items", "Searches InvenTree stock items.", searchStockItems(deps))
 	addReadOnlyTool(server, deps, GetStockItemToolName, "Get stock item", "Retrieves one stock item with traceability and source context by stable ID.", getStockItem(deps))
+	addReadOnlyTool(server, deps, SearchStockSerialsToolName, "Search stock serials", "Searches existing stock items for one part by serial number, serial range, or serialized state.", searchStockSerials(deps))
+	addReadOnlyTool(server, deps, GetPartNextSerialToolName, "Get part next serial", "Retrieves the latest assigned and next available serial number for one trackable part.", getPartNextSerial(deps))
 	registerStockTrackingLookupTools(server, deps)
 	addReadOnlyTool(server, deps, ListAttachmentsToolName, "List attachments", "Lists attachment metadata for an in-scope InvenTree object.", listAttachments(deps))
 	addReadOnlyTool(server, deps, GetAttachmentMetadataToolName, "Get attachment metadata", "Retrieves one attachment metadata record by ID.", getAttachmentMetadata(deps))
@@ -740,6 +780,50 @@ func searchStockItems(deps Dependencies) mcp.ToolHandlerFor[StockItemsInput, Loo
 				records[i] = sanitizedStockItem(records[i])
 			}
 			return listOutput(records, err)
+		})
+}
+
+func searchStockSerials(deps Dependencies) mcp.ToolHandlerFor[StockSerialsInput, LookupOutput[inventree.StockItem]] {
+	return LookupHandler[StockSerialLookupClient, StockSerialsInput, LookupOutput[inventree.StockItem]](deps, SearchStockSerialsToolName,
+		func(ctx context.Context, _ *mcp.CallToolRequest, client StockSerialLookupClient, input StockSerialsInput) (*mcp.CallToolResult, LookupOutput[inventree.StockItem], error) {
+			if input.PartID <= 0 {
+				clarification := NewClarification("Which part should stock serials be searched for?", "part", "part_id must be positive", "part_id", true, nil, map[string]any{"part_id": input.PartID})
+				return TextResult(StatusClarificationRequired), LookupOutput[inventree.StockItem]{Status: StatusClarificationRequired, Clarification: &clarification}, nil
+			}
+			records, err := client.SearchStockItems(ctx, inventree.StockItemQuery{
+				PartID:     input.PartID,
+				Serial:     input.Serial,
+				SerialGTE:  input.SerialGTE,
+				SerialLTE:  input.SerialLTE,
+				Serialized: input.Serialized,
+				Limit:      NormalizeLookupLimit(input.Limit),
+				Offset:     input.Offset,
+			})
+			for i := range records {
+				records[i] = sanitizedStockItem(records[i])
+			}
+			return listOutput(records, err)
+		})
+}
+
+func getPartNextSerial(deps Dependencies) mcp.ToolHandlerFor[PartNextSerialInput, PartNextSerialOutput] {
+	return LookupHandler[PartSerialLookupClient, PartNextSerialInput, PartNextSerialOutput](deps, GetPartNextSerialToolName,
+		func(ctx context.Context, _ *mcp.CallToolRequest, client PartSerialLookupClient, input PartNextSerialInput) (*mcp.CallToolResult, PartNextSerialOutput, error) {
+			part, err := client.GetPart(ctx, input.PartID)
+			if err != nil {
+				if isNotFound(err) {
+					return TextResult(StatusNotFound), PartNextSerialOutput{Status: StatusNotFound}, nil
+				}
+				return nil, PartNextSerialOutput{}, err
+			}
+			if !part.Trackable {
+				return TextResult(StatusNotTrackable), PartNextSerialOutput{Status: StatusNotTrackable, PartID: input.PartID}, nil
+			}
+			info, err := client.GetPartSerialNumbers(ctx, input.PartID)
+			if err != nil {
+				return nil, PartNextSerialOutput{}, err
+			}
+			return TextResult(StatusOK), PartNextSerialOutput{Status: StatusOK, PartID: input.PartID, Latest: info.Latest, Next: info.Next}, nil
 		})
 }
 
