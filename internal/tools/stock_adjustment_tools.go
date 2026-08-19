@@ -159,6 +159,9 @@ type StockAdjustmentClient interface {
 	CountStock(context.Context, inventree.StockAdjustment) error
 	ChangeStockStatus(context.Context, inventree.StockStatusChange) error
 	UpdateStockItem(context.Context, int, inventree.PatchFields) (inventree.StockItem, error)
+	SearchStockItems(context.Context, inventree.StockItemQuery) ([]inventree.StockItem, error)
+	GetPart(context.Context, int) (inventree.Part, error)
+	GetGlobalSetting(context.Context, string) (inventree.SettingValue, error)
 }
 
 type AdjustStockQuantityInput struct {
@@ -329,6 +332,8 @@ func registerStockAdjustmentTools(server *mcp.Server, deps Dependencies) {
 	addWriteTool(server, deps, SetStockDeleteOnDepleteToolName, "Set stock delete-on-deplete policy", "Plans or confirms one delete-on-deplete policy change for a stock item with an audit reason.", setStockDeleteOnDeplete(deps))
 	addWriteTool(server, deps, DepleteStockItemToolName, "Deplete delete-on-deplete stock item", "Plans or confirms complete removal of one safe delete-on-deplete stock item with an audit reason.", depleteStockItem(deps))
 	addWriteTool(server, deps, TransferStockItemToolName, "Transfer complete stock item", "Plans or confirms relocation of one safe stock item's complete quantity to an explicit destination.", transferStockItem(deps))
+	addWriteTool(server, deps, AssignStockSerialToolName, "Assign stock serial number", "Plans or confirms assigning a serial number to one currently-unserialized stock item.", assignStockSerial(deps))
+	addWriteTool(server, deps, SetStockSerialToolName, "Replace or clear stock serial number", "Plans or confirms replacing or clearing the serial number on one already-serialized stock item.", setStockSerial(deps))
 }
 
 func adjustStockQuantity(deps Dependencies) mcp.ToolHandlerFor[AdjustStockQuantityInput, StockAdjustmentOutput] {

@@ -361,6 +361,41 @@ func TestReadMethodsUseExpectedEndpoints(t *testing.T) {
 			response:  `{"count":1,"next":null,"previous":null,"results":[{"pk":50,"part":10,"quantity":2,"purchase_order":120,"purchase_order_reference":"PO-1"}]}`,
 		},
 		{
+			name: "search stock items by serial",
+			call: func(ctx context.Context, client *Client) error {
+				gte, lte := 100, 300
+				_, err := client.SearchStockItems(ctx, StockItemQuery{PartID: 10, Serial: "150", SerialGTE: &gte, SerialLTE: &lte, Serialized: dvgoutils.Ptr(true), Limit: 8, Offset: 4})
+				return err
+			},
+			wantPath:  "/api/stock/",
+			wantQuery: url.Values{"part": []string{"10"}, "serial": []string{"150"}, "serial_gte": []string{"100"}, "serial_lte": []string{"300"}, "serialized": []string{"true"}, "limit": []string{"8"}, "offset": []string{"4"}},
+			response:  `{"count":1,"next":null,"previous":null,"results":[{"pk":50,"part":10,"quantity":1,"serial":"150"}]}`,
+		},
+		{
+			name: "get part next serial",
+			call: func(ctx context.Context, client *Client) error {
+				info, err := client.GetPartSerialNumbers(ctx, 10)
+				if err == nil && (info.Latest == nil || *info.Latest != "9" || info.Next != "10") {
+					return errors.New("unexpected part-serial-number decode")
+				}
+				return err
+			},
+			wantPath: "/api/part/10/serial-numbers/",
+			response: `{"latest":"9","next":"10"}`,
+		},
+		{
+			name: "get part next serial with no latest",
+			call: func(ctx context.Context, client *Client) error {
+				info, err := client.GetPartSerialNumbers(ctx, 11)
+				if err == nil && info.Latest != nil {
+					return errors.New("expected nil latest serial")
+				}
+				return err
+			},
+			wantPath: "/api/part/11/serial-numbers/",
+			response: `{"latest":null,"next":"1"}`,
+		},
+		{
 			name: "get stock item",
 			call: func(ctx context.Context, client *Client) error {
 				_, err := client.GetStockItem(ctx, 50)
