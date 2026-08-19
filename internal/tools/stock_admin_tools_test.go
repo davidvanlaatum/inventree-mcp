@@ -5,6 +5,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/davidvanlaatum/dvgoutils"
 	"github.com/davidvanlaatum/dvgoutils/logging/testhandler"
@@ -427,12 +428,243 @@ func TestStockAdministrationPatchValidationEdges(t *testing.T) {
 	})
 }
 
+func TestUpdateStockItemProvenancePlansValidatesSupplierAndOrder(t *testing.T) {
+	t.Parallel()
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	fake := newStockAdminFake()
+	fake.stockItems[50] = inventree.StockItem{PK: 50, Part: 10, SupplierPart: dvgoutils.Ptr(40), PurchaseOrder: dvgoutils.Ptr(120), PurchasePrice: decimalPtr("1.25"), PurchasePriceCurrency: "AUD"}
+	fake.supplierParts[41] = inventree.SupplierPartDetail{PK: 41, Part: 10, Supplier: 30}
+	fake.purchaseOrders[120] = inventree.PurchaseOrderDetail{PurchaseOrder: inventree.PurchaseOrder{PK: 120, Supplier: 30}}
+
+	input := UpdateStockItemProvenanceInput{StockItemID: 50, SupplierPartID: dvgoutils.Ptr(41), PurchasePrice: dvgoutils.Ptr("2.50"), DryRun: true}
+	_, planned, err := updateStockItemProvenance(stockAdminDeps(fake))(ctx, &mcp.CallToolRequest{}, input)
+	require.NoError(t, err)
+	require.Equal(t, StatusOK, planned.Status)
+	require.NotNil(t, planned.Plan)
+	require.NotEmpty(t, planned.PlanHash)
+	require.Equal(t, 41, *planned.Plan.After.SupplierPartID)
+	require.Equal(t, "2.5", string(*planned.Plan.After.PurchasePrice))
+
+	input.DryRun = false
+	input.Confirm = true
+	input.PlanHash = planned.PlanHash
+	_, executed, err := updateStockItemProvenance(stockAdminDeps(fake))(ctx, &mcp.CallToolRequest{}, input)
+	require.NoError(t, err)
+	assert.Equal(t, StatusOK, executed.Status)
+	assert.Equal(t, 41, *fake.stockItems[50].SupplierPart)
+	assert.Equal(t, "2.50", string(*fake.stockItems[50].PurchasePrice))
+}
+
+func TestCanonicalStockDecimalNormalizesLeadingIntegerForms(t *testing.T) {
+	t.Parallel()
+	for input, expected := range map[string]string{
+		".500":   "0.5",
+		"00.500": "0.5",
+		"000":    "0",
+		"-0.00":  "0",
+	} {
+		value := decimalPtr(input)
+		canonical := canonicalStockDecimal(value)
+		require.NotNil(t, canonical)
+		assert.Equal(t, expected, string(*canonical))
+	}
+}
+
+func TestUpdateStockItemProvenanceRefusesPartMismatch(t *testing.T) {
+	t.Parallel()
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	fake := newStockAdminFake()
+	fake.stockItems[50] = inventree.StockItem{PK: 50, Part: 10}
+	fake.supplierParts[41] = inventree.SupplierPartDetail{PK: 41, Part: 11, Supplier: 30}
+	_, out, err := updateStockItemProvenance(stockAdminDeps(fake))(ctx, &mcp.CallToolRequest{}, UpdateStockItemProvenanceInput{StockItemID: 50, SupplierPartID: dvgoutils.Ptr(41), DryRun: true})
+	require.NoError(t, err)
+	assert.Equal(t, StatusClarificationRequired, out.Status)
+	assert.Contains(t, out.Clarification.Reason, "base part")
+	assert.Zero(t, fake.updateStockCalls)
+}
+
+func TestUpdateStockItemProvenanceUnknownStockIDClarifies(t *testing.T) {
+	t.Parallel()
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	fake := newStockAdminFake()
+	fake.stockItemErr = &inventree.APIError{Kind: inventree.ErrorKindNotFound, StatusCode: 404}
+	_, out, err := updateStockItemProvenance(stockAdminDeps(fake))(ctx, &mcp.CallToolRequest{}, UpdateStockItemProvenanceInput{StockItemID: 50, PurchasePrice: dvgoutils.Ptr("2.50"), DryRun: true})
+	require.NoError(t, err)
+	assert.Equal(t, StatusClarificationRequired, out.Status)
+	assert.Equal(t, "stock_item_id", out.Clarification.Retry)
+	assert.Contains(t, out.Clarification.Reason, "does not identify")
+}
+
+func TestUpdateStockItemProvenanceCoversClearsStalePlansAndFailures(t *testing.T) {
+	t.Parallel()
+	t.Run("explicit nullable clears preserve unrelated state", func(t *testing.T) {
+		ctx, _, _ := testhandler.SetupTestHandler(t)
+		fake := newStockAdminFake()
+		fake.stockItems[50] = inventree.StockItem{PK: 50, Part: 10, Location: dvgoutils.Ptr(7), Quantity: 3, Serial: dvgoutils.Ptr("S-1"), Status: 10, SupplierPart: dvgoutils.Ptr(40), PurchaseOrder: dvgoutils.Ptr(120), PurchasePrice: decimalPtr("1.25"), PurchasePriceCurrency: "AUD"}
+		fake.supplierParts[40] = inventree.SupplierPartDetail{PK: 40, Part: 10, Supplier: 30}
+		fake.purchaseOrders[120] = inventree.PurchaseOrderDetail{PurchaseOrder: inventree.PurchaseOrder{PK: 120, Supplier: 30}}
+
+		input := UpdateStockItemProvenanceInput{StockItemID: 50, ClearSupplierPart: true, ClearPurchaseOrder: true, ClearPurchasePrice: true, PurchasePriceCurrency: dvgoutils.Ptr("USD"), DryRun: true}
+		_, plan, err := updateStockItemProvenance(stockAdminDeps(fake))(ctx, &mcp.CallToolRequest{}, input)
+		require.NoError(t, err)
+		require.Equal(t, StatusOK, plan.Status)
+		input.DryRun = false
+		input.Confirm = true
+		input.PlanHash = plan.PlanHash
+		_, out, err := updateStockItemProvenance(stockAdminDeps(fake))(ctx, &mcp.CallToolRequest{}, input)
+		require.NoError(t, err)
+		assert.Equal(t, StatusOK, out.Status)
+		assert.True(t, fake.lastPatchNull("supplier_part"))
+		assert.True(t, fake.lastPatchNull("purchase_order"))
+		assert.True(t, fake.lastPatchNull("purchase_price"))
+		assert.False(t, fake.lastPatchNull("purchase_price_currency"))
+		assert.Equal(t, 7, *fake.stockItems[50].Location)
+		assert.Equal(t, 3.0, fake.stockItems[50].Quantity)
+		assert.Equal(t, "USD", fake.stockItems[50].PurchasePriceCurrency)
+	})
+	t.Run("stale state refuses the write", func(t *testing.T) {
+		ctx, _, _ := testhandler.SetupTestHandler(t)
+		fake := newStockAdminFake()
+		fake.stockItems[50] = inventree.StockItem{PK: 50, Part: 10, Quantity: 3, PurchasePriceCurrency: "AUD"}
+		input := UpdateStockItemProvenanceInput{StockItemID: 50, PurchasePrice: dvgoutils.Ptr("2.50"), DryRun: true}
+		_, plan, err := updateStockItemProvenance(stockAdminDeps(fake))(ctx, &mcp.CallToolRequest{}, input)
+		require.NoError(t, err)
+		fake.stockItems[50] = inventree.StockItem{PK: 50, Part: 10, Quantity: 4, PurchasePriceCurrency: "AUD"}
+		input.DryRun = false
+		input.Confirm = true
+		input.PlanHash = plan.PlanHash
+		_, out, err := updateStockItemProvenance(stockAdminDeps(fake))(ctx, &mcp.CallToolRequest{}, input)
+		require.NoError(t, err)
+		assert.Equal(t, StatusClarificationRequired, out.Status)
+		assert.Zero(t, fake.updateStockCalls)
+	})
+	t.Run("supplier order mismatch refuses before write", func(t *testing.T) {
+		ctx, _, _ := testhandler.SetupTestHandler(t)
+		fake := newStockAdminFake()
+		fake.stockItems[50] = inventree.StockItem{PK: 50, Part: 10}
+		fake.supplierParts[41] = inventree.SupplierPartDetail{PK: 41, Part: 10, Supplier: 30}
+		fake.purchaseOrders[121] = inventree.PurchaseOrderDetail{PurchaseOrder: inventree.PurchaseOrder{PK: 121, Supplier: 31}}
+		_, out, err := updateStockItemProvenance(stockAdminDeps(fake))(ctx, &mcp.CallToolRequest{}, UpdateStockItemProvenanceInput{StockItemID: 50, SupplierPartID: dvgoutils.Ptr(41), PurchaseOrderID: dvgoutils.Ptr(121), DryRun: true})
+		require.NoError(t, err)
+		assert.Equal(t, StatusClarificationRequired, out.Status)
+		assert.Contains(t, out.Clarification.Reason, "supplier")
+		assert.Zero(t, fake.updateStockCalls)
+	})
+	t.Run("invalid price and nonnullable currency clear refuse", func(t *testing.T) {
+		ctx, _, _ := testhandler.SetupTestHandler(t)
+		fake := newStockAdminFake()
+		fake.stockItems[50] = inventree.StockItem{PK: 50, Part: 10, PurchasePriceCurrency: "AUD"}
+		for _, input := range []UpdateStockItemProvenanceInput{
+			{StockItemID: 50, PurchasePrice: dvgoutils.Ptr("1.1234567"), DryRun: true},
+			{StockItemID: 50, PurchasePrice: dvgoutils.Ptr("."), DryRun: true},
+			{StockItemID: 50, PurchasePrice: dvgoutils.Ptr("-"), DryRun: true},
+			{StockItemID: 50, PurchasePrice: dvgoutils.Ptr("-."), DryRun: true},
+			{StockItemID: 50, ClearPurchasePriceCurrency: true, DryRun: true},
+		} {
+			_, out, err := updateStockItemProvenance(stockAdminDeps(fake))(ctx, &mcp.CallToolRequest{}, input)
+			require.NoError(t, err)
+			assert.Equal(t, StatusClarificationRequired, out.Status)
+		}
+		assert.Zero(t, fake.updateStockCalls)
+	})
+	t.Run("ambiguous persisted update is recovered", func(t *testing.T) {
+		ctx, _, _ := testhandler.SetupTestHandler(t)
+		fake := newStockAdminFake()
+		fake.stockItems[50] = inventree.StockItem{PK: 50, Part: 10, PurchasePriceCurrency: "AUD"}
+		input := UpdateStockItemProvenanceInput{StockItemID: 50, PurchasePrice: dvgoutils.Ptr("2.50"), DryRun: true}
+		_, plan, err := updateStockItemProvenance(stockAdminDeps(fake))(ctx, &mcp.CallToolRequest{}, input)
+		require.NoError(t, err)
+		fake.updateStockErr = errors.New("connection reset after persist")
+		input.DryRun = false
+		input.Confirm = true
+		input.PlanHash = plan.PlanHash
+		_, out, err := updateStockItemProvenance(stockAdminDeps(fake))(ctx, &mcp.CallToolRequest{}, input)
+		require.NoError(t, err)
+		assert.Equal(t, StatusOK, out.Status)
+		assert.True(t, out.Recovered)
+		assert.Equal(t, "2.50", string(*out.Record.PurchasePrice))
+	})
+	t.Run("definite update rejection is returned without recovery", func(t *testing.T) {
+		ctx, _, _ := testhandler.SetupTestHandler(t)
+		fake := newStockAdminFake()
+		fake.stockItems[50] = inventree.StockItem{PK: 50, Part: 10, PurchasePriceCurrency: "AUD"}
+		input := UpdateStockItemProvenanceInput{StockItemID: 50, PurchasePrice: dvgoutils.Ptr("2.50"), DryRun: true}
+		_, plan, err := updateStockItemProvenance(stockAdminDeps(fake))(ctx, &mcp.CallToolRequest{}, input)
+		require.NoError(t, err)
+		fake.updateStockErr = &inventree.APIError{StatusCode: 400, Kind: inventree.ErrorKindValidation}
+		input.DryRun = false
+		input.Confirm = true
+		input.PlanHash = plan.PlanHash
+		_, _, err = updateStockItemProvenance(stockAdminDeps(fake))(ctx, &mcp.CallToolRequest{}, input)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "stock provenance update failed")
+	})
+	t.Run("readback mismatch is partial failure", func(t *testing.T) {
+		ctx, _, _ := testhandler.SetupTestHandler(t)
+		fake := newStockAdminFake()
+		fake.stockItems[50] = inventree.StockItem{PK: 50, Part: 10, PurchasePriceCurrency: "AUD"}
+		input := UpdateStockItemProvenanceInput{StockItemID: 50, PurchasePrice: dvgoutils.Ptr("2.50"), DryRun: true}
+		_, plan, err := updateStockItemProvenance(stockAdminDeps(fake))(ctx, &mcp.CallToolRequest{}, input)
+		require.NoError(t, err)
+		fake.afterStockPatch = func(item *inventree.StockItem) { item.PurchasePriceCurrency = "USD" }
+		input.DryRun = false
+		input.Confirm = true
+		input.PlanHash = plan.PlanHash
+		_, out, err := updateStockItemProvenance(stockAdminDeps(fake))(ctx, &mcp.CallToolRequest{}, input)
+		require.NoError(t, err)
+		assert.Equal(t, StatusPartialFailure, out.Status)
+		assert.Contains(t, out.RecoveryPlan, "read-back")
+	})
+	t.Run("reference state drift invalidates the token", func(t *testing.T) {
+		ctx, _, _ := testhandler.SetupTestHandler(t)
+		fake := newStockAdminFake()
+		fake.stockItems[50] = inventree.StockItem{PK: 50, Part: 10, SupplierPart: dvgoutils.Ptr(41), PurchaseOrder: dvgoutils.Ptr(121), PurchasePriceCurrency: "AUD"}
+		fake.supplierParts[41] = inventree.SupplierPartDetail{PK: 41, Part: 10, Supplier: 30}
+		fake.purchaseOrders[121] = inventree.PurchaseOrderDetail{PurchaseOrder: inventree.PurchaseOrder{PK: 121, Supplier: 30}}
+		input := UpdateStockItemProvenanceInput{StockItemID: 50, PurchasePrice: dvgoutils.Ptr("2.50"), DryRun: true}
+		_, plan, err := updateStockItemProvenance(stockAdminDeps(fake))(ctx, &mcp.CallToolRequest{}, input)
+		require.NoError(t, err)
+		fake.supplierParts[41] = inventree.SupplierPartDetail{PK: 41, Part: 10, Supplier: 31}
+		fake.purchaseOrders[121] = inventree.PurchaseOrderDetail{PurchaseOrder: inventree.PurchaseOrder{PK: 121, Supplier: 31}}
+		input.DryRun = false
+		input.Confirm = true
+		input.PlanHash = plan.PlanHash
+		_, out, err := updateStockItemProvenance(stockAdminDeps(fake))(ctx, &mcp.CallToolRequest{}, input)
+		require.NoError(t, err)
+		assert.Equal(t, StatusClarificationRequired, out.Status)
+		assert.Zero(t, fake.updateStockCalls)
+	})
+}
+
+func TestStockProvenancePlanStoreBindsPrincipalAndSingleUse(t *testing.T) {
+	t.Parallel()
+	store := newStockProvenancePlanStore(time.Now, randomStockPlanToken)
+	principal := "first"
+	store.principal = func(context.Context) string { return principal }
+	plan := StockProvenancePlan{Before: StockMetadataState{ID: 50}, After: StockMetadataState{ID: 50, PriceCurrency: "USD"}}
+	token, err := store.issue(context.Background(), plan)
+	require.NoError(t, err)
+	principal = "second"
+	assert.False(t, store.consume(context.Background(), token, plan))
+	principal = "first"
+	assert.True(t, store.consume(context.Background(), token, plan))
+	assert.False(t, store.consume(context.Background(), token, plan))
+}
+
+func decimalPtr(value string) *inventree.DecimalString {
+	result := inventree.DecimalString(value)
+	return &result
+}
+
 type stockAdminFake struct {
 	locations             map[int]inventree.StockLocation
 	stockItems            map[int]inventree.StockItem
 	stockItemDetails      map[int]inventree.StockItemDetail
 	owners                map[int]inventree.Owner
 	locationTypes         map[int]inventree.StockLocationType
+	supplierParts         map[int]inventree.SupplierPartDetail
+	purchaseOrders        map[int]inventree.PurchaseOrderDetail
+	provenancePlanStore   *stockProvenancePlanStore
 	pages                 map[int]inventree.StockLocationPage
 	pageOffsets           []int
 	createResult          inventree.StockLocation
@@ -441,17 +673,22 @@ type stockAdminFake struct {
 	updateLocationCalls   int
 	updateStockCalls      int
 	updateStockErr        error
+	stockItemErr          error
+	afterStockPatch       func(*inventree.StockItem)
 	suppressLocationPatch bool
 	lastCreate            inventree.StockLocationCreate
 	lastPatch             inventree.PatchFields
 }
 
 func newStockAdminFake() *stockAdminFake {
-	return &stockAdminFake{locations: map[int]inventree.StockLocation{}, stockItems: map[int]inventree.StockItem{}, stockItemDetails: map[int]inventree.StockItemDetail{}, owners: map[int]inventree.Owner{}, locationTypes: map[int]inventree.StockLocationType{}, pages: map[int]inventree.StockLocationPage{}}
+	return &stockAdminFake{locations: map[int]inventree.StockLocation{}, stockItems: map[int]inventree.StockItem{}, stockItemDetails: map[int]inventree.StockItemDetail{}, owners: map[int]inventree.Owner{}, locationTypes: map[int]inventree.StockLocationType{}, pages: map[int]inventree.StockLocationPage{}, supplierParts: map[int]inventree.SupplierPartDetail{}, purchaseOrders: map[int]inventree.PurchaseOrderDetail{}}
 }
 
 func stockAdminDeps(fake *stockAdminFake) Dependencies {
-	return Dependencies{ClientFromContext: func(context.Context) (any, error) { return fake, nil }}
+	if fake.provenancePlanStore == nil {
+		fake.provenancePlanStore = newStockProvenancePlanStore(time.Now, randomStockPlanToken)
+	}
+	return Dependencies{ClientFromContext: func(context.Context) (any, error) { return fake, nil }, stockProvenancePlanStore: fake.provenancePlanStore}
 }
 
 func (f *stockAdminFake) GetOwner(_ context.Context, id int) (inventree.Owner, error) {
@@ -524,6 +761,9 @@ func (f *stockAdminFake) UpdateStockLocation(_ context.Context, id int, fields i
 }
 
 func (f *stockAdminFake) GetStockItem(_ context.Context, id int) (inventree.StockItem, error) {
+	if f.stockItemErr != nil {
+		return inventree.StockItem{}, f.stockItemErr
+	}
 	value, ok := f.stockItems[id]
 	if !ok {
 		return inventree.StockItem{}, errors.New("not found")
@@ -539,11 +779,30 @@ func (f *stockAdminFake) GetStockItemDetail(_ context.Context, id int) (inventre
 	return value, nil
 }
 
+func (f *stockAdminFake) GetSupplierPartDetail(_ context.Context, id int) (inventree.SupplierPartDetail, error) {
+	value, ok := f.supplierParts[id]
+	if !ok {
+		return inventree.SupplierPartDetail{}, errors.New("not found")
+	}
+	return value, nil
+}
+
+func (f *stockAdminFake) GetPurchaseOrderDetail(_ context.Context, id int) (inventree.PurchaseOrderDetail, error) {
+	value, ok := f.purchaseOrders[id]
+	if !ok {
+		return inventree.PurchaseOrderDetail{}, errors.New("not found")
+	}
+	return value, nil
+}
+
 func (f *stockAdminFake) UpdateStockItem(_ context.Context, id int, fields inventree.PatchFields) (inventree.StockItem, error) {
 	f.updateStockCalls++
 	f.lastPatch = fields
 	value := f.stockItems[id]
 	applyStockPatch(&value, fields)
+	if f.afterStockPatch != nil {
+		f.afterStockPatch(&value)
+	}
 	f.stockItems[id] = value
 	return value, f.updateStockErr
 }
@@ -591,6 +850,18 @@ func applyStockPatch(value *inventree.StockItem, fields inventree.PatchFields) {
 			value.Notes = stockTestStringPointer(patch.Value())
 		case "link":
 			value.Link = patch.Value().(string)
+		case "supplier_part":
+			value.SupplierPart = stockTestIntPointer(patch.Value())
+		case "purchase_order":
+			value.PurchaseOrder = stockTestIntPointer(patch.Value())
+		case "purchase_price":
+			value.PurchasePrice = stockTestDecimalPointer(patch.Value())
+		case "purchase_price_currency":
+			if patch.Value() == nil {
+				value.PurchasePriceCurrency = ""
+			} else {
+				value.PurchasePriceCurrency = patch.Value().(string)
+			}
 		}
 	}
 }
@@ -608,5 +879,13 @@ func stockTestStringPointer(value any) *string {
 		return nil
 	}
 	result := value.(string)
+	return &result
+}
+
+func stockTestDecimalPointer(value any) *inventree.DecimalString {
+	if value == nil {
+		return nil
+	}
+	result := inventree.DecimalString(value.(string))
 	return &result
 }
