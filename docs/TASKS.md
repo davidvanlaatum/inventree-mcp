@@ -134,7 +134,7 @@ Before assigning a new story ID, inspect `git worktree list --porcelain`, search
 | [F-S50](#f-s50-project-code-discovery-and-assignment) | Discover existing project codes and support consistent guarded assignment across purchase-order records. | Done |
 | [F-S51](#f-s51-guarded-delete-on-deplete-policy-updates) | Add a reviewed workflow for enabling or disabling delete-on-deplete behavior on one stock item. | Done |
 | [F-S52](#f-s52-stock-serial-number-management) | Add dedicated discovery and guarded mutation workflows for stock serial numbers. | Ready |
-| [F-S53](#f-s53-guarded-stock-provenance-correction) | Add reviewed correction of supplier, purchase-order, and purchase-price provenance on eligible stock items. | Ready |
+| [F-S53](#f-s53-guarded-stock-provenance-correction) | Add reviewed correction of supplier, purchase-order, and purchase-price provenance on eligible stock items. | Done |
 | [F-S54](#f-s54-stock-install-and-uninstall-workflows) | Add dedicated guarded workflows for parent/child stock installation relationships. | Ready |
 | [F-S55](#f-s55-barcode-workflow-discovery) | Investigate safe barcode presence, generation, resolution, assignment, removal, and scan-history tooling. | Future |
 | [F-S56](#f-s56-cross-object-tag-workflow-discovery) | Investigate tag discovery and consistent assignment/removal across supported object types. | Future |
@@ -2378,19 +2378,21 @@ Tasks:
 
 ### F-S53: Guarded Stock Provenance Correction
 
-- Status: `Ready`
+- Status: `Done`
 - Issue: [#134](https://github.com/davidvanlaatum/inventree-mcp/issues/134)
 - Depends on: F-S43, F-S45, F-S47
-- Decisions: approved by the operator on 2026-08-15. Supplier part, purchase order, purchase price, and currency corrections require a dedicated guarded story; stock base-part reassignment remains unsupported.
+- Decisions: approved by the operator on 2026-08-15. Supplier part, purchase order, purchase price, and currency corrections require a dedicated guarded story; stock base-part reassignment remains unsupported. Confirmation uses the established principal-bound, five-minute, single-use stock plan token. The native PATCH changes current provenance but does not create a stock-tracking event; the operator-facing boundary is documented rather than implying a new audit record.
 - Scope: validate and correct eligible stock provenance fields with current-state plans, cross-record consistency, confirmation, and exact recovery.
 - Acceptance:
   - Dry run binds stock identity, base part, supplier part, purchase order, price/currency, quantity, serial, allocation, and relevant relationships.
   - Supplier-part corrections match the stock base part and selected order supplier; purchase-order and pricing changes satisfy pinned upstream constraints.
-  - Execution requires confirmation and a matching current-state token, supports explicit nullable clears only where proven safe, and verifies exact read-back.
+  - Execution requires confirmation and a matching opaque principal-bound five-minute single-use current-state token, supports explicit nullable clears only where proven safe, and verifies exact read-back.
   - The workflow requires `inventree.read`, `inventree.write`, `inventree.operational`, and `inventree.destructive`, remains closed-world and non-idempotent, and publishes `destructiveHint:true` because it rewrites provenance/audit context.
   - Base `part_id`, location, quantity, status, build/consumption, installation, customer, and sales provenance remain outside this tool.
   - Pinned integration tests cover mismatches, clears, definite/ambiguous failures, concurrent changes, audit implications, and aligned docs.
-- Residual risk: provenance corrections change audit context after stock creation and may not rewrite historical tracking entries; outputs and documentation must make that boundary explicit.
+- Validation: focused provenance unit tests cover supplier/base-part and supplier/order mismatches, decimal normalization and invalid forms, explicit nullable clears, stale plans, definite rejection, ambiguous response recovery, read-back mismatch, token principal binding and single-use replay rejection; the pinned `stock_provenance_correction` Testcontainers subtest passes against InvenTree 1.5.1/API 530 and verifies isolated fixtures, stale confirmation, correction, clears, unchanged tracking-event count, and response-loss recovery. Compile-only package tests, focused package tests, and `git diff --check` pass. `internal/tools` short coverage is flat at 84.2% on the feature branch versus 84.2% on clean `main`; no package-level reduction requires recovery.
+- Review: Senior QA / Test Architect review completed during implementation; no unresolved actionable findings remain. The review covered current-state binding, supplier/order mismatch, clears, decimal normalization, stale/concurrent changes, definite and ambiguous failures, audit-history implications, fixture isolation, and package coverage.
+- Residual risk: provenance corrections change audit context after stock creation and may not rewrite historical tracking entries; outputs and documentation make that boundary explicit. Preflight and mutation remain separate upstream requests, so concurrent writers must still be coordinated and any partial failure requires a fresh exact read before retry.
 
 ### F-S54: Stock Install And Uninstall Workflows
 

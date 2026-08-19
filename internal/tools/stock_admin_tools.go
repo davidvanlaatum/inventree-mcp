@@ -7,8 +7,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"regexp"
 	"slices"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/davidvanlaatum/inventree-mcp/internal/inventree"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -26,6 +29,7 @@ var (
 	errStockLocationParentCycle   = errors.New("a stock location cannot be moved beneath one of its descendants")
 	errStockLocationDepth         = errors.New("stock-location parent validation exceeds the safety bound")
 	errStockAdminInvalidReference = errors.New("stock administration reference is invalid")
+	stockPurchasePricePattern     = regexp.MustCompile(`^-?(?:\d{1,13}(?:\.\d{0,6})?|\.\d{1,6})$`)
 )
 
 type StockAdminClient interface {
@@ -174,10 +178,14 @@ type StockMetadataMutationOutput struct {
 }
 
 func registerStockAdminTools(server *mcp.Server, deps Dependencies) {
+	if deps.stockProvenancePlanStore == nil {
+		deps.stockProvenancePlanStore = newStockProvenancePlanStore(time.Now, randomStockPlanToken)
+	}
 	addWriteTool(server, deps, CreateStockLocationToolName, "Create stock location", "Creates a guarded stock location after bounded same-parent duplicate and reference checks.", createStockLocation(deps))
 	addWriteTool(server, deps, UpdateStockLocationToolName, "Update stock location", "Updates ordinary stock-location metadata without changing hierarchy, structural, external, or owner state. Use assign_owner to replace or clear the location owner.", updateStockLocation(deps))
 	addWriteTool(server, deps, RestructureStockLocationToolName, "Restructure stock location", "Plans or confirms operational parent, structural, or external changes for one stock location.", restructureStockLocation(deps))
 	addWriteTool(server, deps, UpdateStockItemMetadataToolName, "Update stock item metadata", "Plans or confirms a constrained non-location stock metadata update.", updateStockItemMetadata(deps))
+	addWriteTool(server, deps, UpdateStockItemProvenanceToolName, "Update stock item provenance", "Plans or confirms a guarded supplier, purchase-order, and purchase-price provenance correction.", updateStockItemProvenance(deps))
 }
 
 func createStockLocation(deps Dependencies) mcp.ToolHandlerFor[CreateStockLocationInput, StockLocationMutationOutput] {
@@ -371,6 +379,293 @@ func updateStockItemMetadata(deps Dependencies) mcp.ToolHandlerFor[UpdateStockIt
 			out.Recovered = err != nil
 			return TextResult(StatusOK), out, nil
 		})
+}
+
+// StockProvenanceClient is the narrow client surface needed to validate and
+// correct stock provenance without exposing generic stock PATCH semantics.
+type StockProvenanceClient interface {
+	GetStockItem(context.Context, int) (inventree.StockItem, error)
+	GetSupplierPartDetail(context.Context, int) (inventree.SupplierPartDetail, error)
+	GetPurchaseOrderDetail(context.Context, int) (inventree.PurchaseOrderDetail, error)
+	UpdateStockItem(context.Context, int, inventree.PatchFields) (inventree.StockItem, error)
+}
+
+type stockProvenancePlanConfirmation struct {
+	digest      string
+	principal   string
+	expiresAt   time.Time
+	stockItemID int
+}
+
+type stockProvenancePlanStore struct {
+	mu                     sync.Mutex
+	entries                map[string]stockProvenancePlanConfirmation
+	now                    func() time.Time
+	token                  func() (string, error)
+	principal              func(context.Context) string
+	maxEntries             int
+	maxEntriesPerPrincipal int
+}
+
+func newStockProvenancePlanStore(now func() time.Time, token func() (string, error)) *stockProvenancePlanStore {
+	return &stockProvenancePlanStore{
+		entries:                map[string]stockProvenancePlanConfirmation{},
+		now:                    now,
+		token:                  token,
+		principal:              stockPlanPrincipal,
+		maxEntries:             stockPlanMaxEntries,
+		maxEntriesPerPrincipal: stockPlanMaxEntriesPerPrincipal,
+	}
+}
+
+func (s *stockProvenancePlanStore) issue(ctx context.Context, plan StockProvenancePlan) (string, error) {
+	digest, err := stockAdminPlanHash(plan)
+	if err != nil {
+		return "", err
+	}
+	token, err := s.token()
+	if err != nil {
+		return "", err
+	}
+	now, principal := s.now(), s.principal(ctx)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.deleteExpired(now)
+	principalEntries := 0
+	for existingToken, entry := range s.entries {
+		if entry.principal == principal && entry.stockItemID == plan.Before.ID {
+			delete(s.entries, existingToken)
+			continue
+		}
+		if entry.principal == principal {
+			principalEntries++
+		}
+	}
+	if len(s.entries) >= s.maxEntries || principalEntries >= s.maxEntriesPerPrincipal {
+		return "", errStockPlanCapacity
+	}
+	s.entries[token] = stockProvenancePlanConfirmation{digest: digest, principal: principal, stockItemID: plan.Before.ID, expiresAt: now.Add(stockPlanLifetime)}
+	return token, nil
+}
+
+func (s *stockProvenancePlanStore) consume(ctx context.Context, token string, plan StockProvenancePlan) bool {
+	digest, err := stockAdminPlanHash(plan)
+	if err != nil {
+		return false
+	}
+	now, principal := s.now(), s.principal(ctx)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.deleteExpired(now)
+	entry, ok := s.entries[token]
+	if !ok || entry.digest != digest || entry.principal != principal || entry.stockItemID != plan.Before.ID || !now.Before(entry.expiresAt) {
+		return false
+	}
+	delete(s.entries, token)
+	return true
+}
+
+func (s *stockProvenancePlanStore) deleteExpired(now time.Time) {
+	for token, entry := range s.entries {
+		if !now.Before(entry.expiresAt) {
+			delete(s.entries, token)
+		}
+	}
+}
+
+type UpdateStockItemProvenanceInput struct {
+	StockItemID                int     `json:"stock_item_id" jsonschema:"Existing stock-item primary key."`
+	SupplierPartID             *int    `json:"supplier_part_id,omitempty" jsonschema:"Replacement supplier-part primary key; omit to preserve it."`
+	ClearSupplierPart          bool    `json:"clear_supplier_part,omitempty" jsonschema:"Explicitly clear supplier_part."`
+	PurchaseOrderID            *int    `json:"purchase_order_id,omitempty" jsonschema:"Replacement purchase-order primary key; omit to preserve it."`
+	ClearPurchaseOrder         bool    `json:"clear_purchase_order,omitempty" jsonschema:"Explicitly clear purchase_order."`
+	PurchasePrice              *string `json:"purchase_price,omitempty" jsonschema:"Replacement purchase price as a decimal string."`
+	ClearPurchasePrice         bool    `json:"clear_purchase_price,omitempty" jsonschema:"Explicitly clear purchase_price."`
+	PurchasePriceCurrency      *string `json:"purchase_price_currency,omitempty" jsonschema:"Replacement ISO-like purchase currency code."`
+	ClearPurchasePriceCurrency bool    `json:"clear_purchase_price_currency,omitempty" jsonschema:"Explicitly clear purchase_price_currency."`
+	DryRun                     bool    `json:"dry_run,omitempty" jsonschema:"Return the current-state-bound provenance plan without writing."`
+	Confirm                    bool    `json:"confirm,omitempty" jsonschema:"Required true to execute the reviewed provenance plan."`
+	PlanHash                   string  `json:"plan_hash,omitempty" jsonschema:"Opaque principal-bound, single-use confirmation token returned by dry_run:true."`
+}
+
+type StockProvenancePlan struct {
+	Before        StockMetadataState               `json:"before"`
+	After         StockMetadataState               `json:"after"`
+	SupplierPart  *StockProvenanceSupplierPartRef  `json:"supplier_part,omitempty"`
+	PurchaseOrder *StockProvenancePurchaseOrderRef `json:"purchase_order,omitempty"`
+}
+
+type StockProvenanceSupplierPartRef struct {
+	ID       int `json:"id"`
+	PartID   int `json:"part_id"`
+	Supplier int `json:"supplier_id"`
+}
+
+type StockProvenancePurchaseOrderRef struct {
+	ID       int `json:"id"`
+	Supplier int `json:"supplier_id"`
+}
+
+func updateStockItemProvenance(deps Dependencies) mcp.ToolHandlerFor[UpdateStockItemProvenanceInput, StockMetadataMutationOutput] {
+	return LookupHandler[StockProvenanceClient, UpdateStockItemProvenanceInput, StockMetadataMutationOutput](deps, UpdateStockItemProvenanceToolName,
+		func(ctx context.Context, _ *mcp.CallToolRequest, client StockProvenanceClient, input UpdateStockItemProvenanceInput) (*mcp.CallToolResult, StockMetadataMutationOutput, error) {
+			if input.StockItemID <= 0 {
+				return stockMetadataClarification("Which stock item should have its provenance corrected?", "stock_item_id", "stock_item_id must be positive", "stock_item_id", map[string]any{"stock_item_id": input.StockItemID})
+			}
+			before, err := client.GetStockItem(ctx, input.StockItemID)
+			if err != nil || before.PK != input.StockItemID {
+				if categoryReferenceInvalid(err) {
+					return stockMetadataClarification("Which existing stock item should have its provenance corrected?", "stock_item_id", "stock_item_id does not identify a readable stock item", "stock_item_id", map[string]any{"stock_item_id": input.StockItemID})
+				}
+				return nil, StockMetadataMutationOutput{}, safeStockAdminError("stock-item provenance lookup")
+			}
+			fields, after, err := stockProvenancePatch(ctx, client, input, before)
+			if err != nil {
+				return stockMetadataClarification("Which valid stock provenance correction should be applied?", "provenance", err.Error(), "stock_item_id", map[string]any{"stock_item_id": input.StockItemID})
+			}
+			refs, refErr := stockProvenanceReferences(ctx, client, after)
+			if refErr != nil {
+				return stockMetadataClarification("Which valid stock provenance references should be used?", "provenance", refErr.Error(), "stock_item_id", map[string]any{"stock_item_id": input.StockItemID})
+			}
+			plan := StockProvenancePlan{Before: stockMetadataState(before), After: stockMetadataState(after), SupplierPart: refs.SupplierPart, PurchaseOrder: refs.PurchaseOrder}
+			public := StockMetadataPlan{Before: plan.Before, After: plan.After}
+			public = projectStockMetadataPlan(public)
+			out := StockMetadataMutationOutput{Status: StatusOK, DryRun: input.DryRun, Plan: &public}
+			if input.DryRun {
+				if deps.stockProvenancePlanStore == nil {
+					return nil, StockMetadataMutationOutput{}, safeStockAdminError("stock provenance confirmation plan")
+				}
+				token, issueErr := deps.stockProvenancePlanStore.issue(ctx, plan)
+				if issueErr != nil {
+					return nil, StockMetadataMutationOutput{}, safeStockAdminError("stock provenance confirmation plan")
+				}
+				out.PlanHash = token
+				return TextResult(StatusOK), out, nil
+			}
+			if !input.Confirm || deps.stockProvenancePlanStore == nil || !deps.stockProvenancePlanStore.consume(ctx, input.PlanHash, plan) {
+				return stockMetadataPlanClarification(out, "Run dry_run:true and provide its unexpired, single-use plan_hash with confirm:true")
+			}
+			_, updateErr := client.UpdateStockItem(ctx, input.StockItemID, fields)
+			if updateErr != nil && !ambiguousCategoryMutation(updateErr) {
+				return nil, StockMetadataMutationOutput{}, safeStockAdminError("stock provenance update")
+			}
+			current, readErr := client.GetStockItem(ctx, input.StockItemID)
+			if readErr != nil || current.PK != input.StockItemID {
+				out.Status = StatusPartialFailure
+				out.RecoveryPlan = fmt.Sprintf("Stock item %d may have changed; call get_stock_item before retrying provenance correction", input.StockItemID)
+				redactStockMetadataOutputURLs(&out)
+				return TextResult(StatusPartialFailure), out, nil
+			}
+			if !stockMetadataStateEqual(stockMetadataState(current), plan.After) {
+				out.Status = StatusPartialFailure
+				recovery := stockItemRecoveryProjection(current)
+				out.Record = &recovery
+				out.RecoveryPlan = fmt.Sprintf("Stock item %d read-back does not match the reviewed provenance plan; inspect it before another write", input.StockItemID)
+				redactStockMetadataOutputURLs(&out)
+				return TextResult(StatusPartialFailure), out, nil
+			}
+			sanitized := sanitizedStockItem(current)
+			out.Record = &sanitized
+			out.Recovered = updateErr != nil
+			return TextResult(StatusOK), out, nil
+		})
+}
+
+type stockProvenanceReferencesResult struct {
+	SupplierPart  *StockProvenanceSupplierPartRef
+	PurchaseOrder *StockProvenancePurchaseOrderRef
+}
+
+func stockProvenanceReferences(ctx context.Context, client StockProvenanceClient, item inventree.StockItem) (stockProvenanceReferencesResult, error) {
+	var refs stockProvenanceReferencesResult
+	if item.SupplierPart != nil {
+		part, err := client.GetSupplierPartDetail(ctx, *item.SupplierPart)
+		if err != nil || part.PK != *item.SupplierPart {
+			return refs, errors.New("supplier part could not be verified for the current plan")
+		}
+		refs.SupplierPart = &StockProvenanceSupplierPartRef{ID: part.PK, PartID: part.Part, Supplier: part.Supplier}
+	}
+	if item.PurchaseOrder != nil {
+		order, err := client.GetPurchaseOrderDetail(ctx, *item.PurchaseOrder)
+		if err != nil || order.PK != *item.PurchaseOrder {
+			return refs, errors.New("purchase order could not be verified for the current plan")
+		}
+		refs.PurchaseOrder = &StockProvenancePurchaseOrderRef{ID: order.PK, Supplier: order.Supplier}
+	}
+	return refs, nil
+}
+
+func stockProvenancePatch(ctx context.Context, client StockProvenanceClient, input UpdateStockItemProvenanceInput, before inventree.StockItem) (inventree.PatchFields, inventree.StockItem, error) {
+	if input.SupplierPartID != nil && input.ClearSupplierPart || input.PurchaseOrderID != nil && input.ClearPurchaseOrder || input.PurchasePrice != nil && input.ClearPurchasePrice || input.PurchasePriceCurrency != nil && input.ClearPurchasePriceCurrency {
+		return nil, before, errors.New("replacement values conflict with their clear flags")
+	}
+	fields := inventree.PatchFields{}
+	after := before
+	if input.SupplierPartID != nil {
+		part, err := client.GetSupplierPartDetail(ctx, *input.SupplierPartID)
+		if err != nil || part.PK != *input.SupplierPartID {
+			return nil, before, errors.New("supplier_part_id could not be verified")
+		}
+		if part.Part != before.Part {
+			return nil, before, errors.New("supplier_part_id does not belong to the stock item's base part")
+		}
+		fields["supplier_part"] = inventree.Set(*input.SupplierPartID)
+		after.SupplierPart = input.SupplierPartID
+	}
+	if input.ClearSupplierPart {
+		fields["supplier_part"] = inventree.Null()
+		after.SupplierPart = nil
+	}
+	if input.PurchaseOrderID != nil {
+		order, err := client.GetPurchaseOrderDetail(ctx, *input.PurchaseOrderID)
+		if err != nil || order.PK != *input.PurchaseOrderID {
+			return nil, before, errors.New("purchase_order_id could not be verified")
+		}
+		fields["purchase_order"] = inventree.Set(*input.PurchaseOrderID)
+		after.PurchaseOrder = input.PurchaseOrderID
+	}
+	if input.ClearPurchaseOrder {
+		fields["purchase_order"] = inventree.Null()
+		after.PurchaseOrder = nil
+	}
+	if after.SupplierPart != nil && after.PurchaseOrder != nil {
+		part, err := client.GetSupplierPartDetail(ctx, *after.SupplierPart)
+		if err != nil {
+			return nil, before, errors.New("supplier part could not be revalidated against the purchase order")
+		}
+		order, err := client.GetPurchaseOrderDetail(ctx, *after.PurchaseOrder)
+		if err != nil || part.Supplier != order.Supplier {
+			return nil, before, errors.New("supplier part supplier does not match the purchase-order supplier")
+		}
+	}
+	if input.PurchasePrice != nil {
+		value := strings.TrimSpace(*input.PurchasePrice)
+		if value == "" || !stockPurchasePricePattern.MatchString(value) {
+			return nil, before, errors.New("purchase_price must be a nonblank decimal or explicitly cleared")
+		}
+		fields["purchase_price"] = inventree.Set(value)
+		parsed := inventree.DecimalString(value)
+		after.PurchasePrice = &parsed
+	}
+	if input.ClearPurchasePrice {
+		fields["purchase_price"] = inventree.Null()
+		after.PurchasePrice = nil
+	}
+	if input.PurchasePriceCurrency != nil {
+		value := strings.TrimSpace(*input.PurchasePriceCurrency)
+		if value == "" {
+			return nil, before, errors.New("purchase_price_currency must be nonblank or explicitly cleared")
+		}
+		fields["purchase_price_currency"] = inventree.Set(value)
+		after.PurchasePriceCurrency = value
+	}
+	if input.ClearPurchasePriceCurrency {
+		return nil, before, errors.New("purchase_price_currency is not nullable in the pinned stock serializer and cannot be cleared")
+	}
+	if len(fields) == 0 || stockMetadataStateEqual(stockMetadataState(before), stockMetadataState(after)) {
+		return nil, before, errors.New("at least one non-no-op provenance field is required")
+	}
+	return fields, after, nil
 }
 
 func validateLocationReferences(ctx context.Context, client StockAdminClient, parentID, ownerID, typeID *int) error {
@@ -621,7 +916,22 @@ func locationFieldsMatch(location inventree.StockLocation, fields inventree.Patc
 }
 
 func stockMetadataState(item inventree.StockItem) StockMetadataState {
-	return StockMetadataState{ID: item.PK, PartID: item.Part, LocationID: item.Location, Quantity: item.Quantity, Serial: item.Serial, Status: item.Status, StatusText: item.StatusText, StatusCustomKey: item.StatusCustomKey, DeleteOnDeplete: item.DeleteOnDeplete, Allocated: item.Allocated, OwnerID: item.Owner, SupplierPartID: item.SupplierPart, BuildID: item.Build, ConsumedByID: item.ConsumedBy, CustomerID: item.Customer, SalesOrderID: item.SalesOrder, BelongsToID: item.BelongsTo, ParentID: item.Parent, PurchaseOrderID: item.PurchaseOrder, PurchasePrice: item.PurchasePrice, PriceCurrency: item.PurchasePriceCurrency, InStock: item.InStock, IsBuilding: item.IsBuilding, Batch: item.Batch, ExpiryDate: item.ExpiryDate, Packaging: item.Packaging, Notes: item.Notes, Link: item.Link}
+	return StockMetadataState{ID: item.PK, PartID: item.Part, LocationID: item.Location, Quantity: item.Quantity, Serial: item.Serial, Status: item.Status, StatusText: item.StatusText, StatusCustomKey: item.StatusCustomKey, DeleteOnDeplete: item.DeleteOnDeplete, Allocated: item.Allocated, OwnerID: item.Owner, SupplierPartID: item.SupplierPart, BuildID: item.Build, ConsumedByID: item.ConsumedBy, CustomerID: item.Customer, SalesOrderID: item.SalesOrder, BelongsToID: item.BelongsTo, ParentID: item.Parent, PurchaseOrderID: item.PurchaseOrder, PurchasePrice: canonicalStockDecimal(item.PurchasePrice), PriceCurrency: item.PurchasePriceCurrency, InStock: item.InStock, IsBuilding: item.IsBuilding, Batch: item.Batch, ExpiryDate: item.ExpiryDate, Packaging: item.Packaging, Notes: item.Notes, Link: item.Link}
+}
+
+func canonicalStockDecimal(value *inventree.DecimalString) *inventree.DecimalString {
+	if value == nil {
+		return nil
+	}
+	canonical := string(*value)
+	if strings.Contains(canonical, ".") {
+		canonical = strings.TrimRight(strings.TrimRight(canonical, "0"), ".")
+	}
+	if canonical == "" || canonical == "-0" {
+		canonical = "0"
+	}
+	result := inventree.DecimalString(canonical)
+	return &result
 }
 
 func stockLocationPlanState(location inventree.StockLocation) StockLocationPlanState {

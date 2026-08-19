@@ -25,6 +25,7 @@ type Dependencies struct {
 	URLFetcher                       upload.URLFetcher
 	WebLinks                         *weblinks.Resolver
 	stockPlanStore                   *stockPlanStore
+	stockProvenancePlanStore         *stockProvenancePlanStore
 	parameterPlanStore               *parameterPlanStore
 	partFamilyPlanStore              *partFamilyPlanStore
 	partRelationPlanStore            *partRelationPlanStore

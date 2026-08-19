@@ -730,6 +730,107 @@ func TestMilestoneHappyPathToolsAgainstInvenTree(t *testing.T) {
 		a.Contains(clarificationCandidateIDs(*duplicateOut.Clarification), fmt.Sprint(laterDuplicate.PK))
 	})
 
+	t.Run("stock_provenance_correction", func(t *testing.T) {
+		r := require.New(t)
+		a := assert.New(t)
+		ctx, _, _ := testhandler.SetupTestHandler(t)
+		fixture := newMilestoneToolFixture(t, shared)
+		part := fixture.ensure(t, testenv.FixturePart)
+		location := fixture.ensure(t, testenv.FixtureLocation)
+		supplierPart := fixture.ensure(t, testenv.FixtureSupplierPart)
+		order := fixture.ensure(t, testenv.FixturePurchaseOrder)
+
+		stock, err := fixture.client.CreateStockItem(ctx, inventree.StockItemCreate{Part: part.ID, Location: location.ID, Quantity: 3})
+		r.NoError(err)
+		_, err = fixture.client.UpdateStockItem(ctx, stock.PK, inventree.PatchFields{
+			"supplier_part":           inventree.Set(supplierPart.ID),
+			"purchase_order":          inventree.Set(order.ID),
+			"purchase_price":          inventree.Set("1.25"),
+			"purchase_price_currency": inventree.Set("AUD"),
+		})
+		r.NoError(err)
+
+		plannedInput := UpdateStockItemProvenanceInput{StockItemID: stock.PK, PurchasePrice: dvgoutils.Ptr("2.50"), DryRun: true}
+		_, plan, err := updateStockItemProvenance(fixture.deps())(ctx, &mcp.CallToolRequest{}, plannedInput)
+		r.NoError(err)
+		a.Equal(StatusOK, plan.Status)
+		a.Equal(part.ID, plan.Plan.Before.PartID)
+		a.Equal(3.0, plan.Plan.Before.Quantity)
+		a.Equal(supplierPart.ID, *plan.Plan.Before.SupplierPartID)
+		a.Equal(order.ID, *plan.Plan.Before.PurchaseOrderID)
+		a.Equal("AUD", plan.Plan.Before.PriceCurrency)
+
+		_, err = fixture.client.UpdateStockItem(ctx, stock.PK, inventree.PatchFields{"quantity": inventree.Set(4.0)})
+		r.NoError(err)
+		plannedInput.DryRun = false
+		plannedInput.Confirm = true
+		plannedInput.PlanHash = plan.PlanHash
+		_, stale, err := updateStockItemProvenance(fixture.deps())(ctx, &mcp.CallToolRequest{}, plannedInput)
+		r.NoError(err)
+		a.Equal(StatusClarificationRequired, stale.Status)
+
+		plannedInput.DryRun = true
+		plannedInput.Confirm = false
+		plannedInput.PlanHash = ""
+		_, plan, err = updateStockItemProvenance(fixture.deps())(ctx, &mcp.CallToolRequest{}, plannedInput)
+		r.NoError(err)
+		plannedInput.DryRun = false
+		plannedInput.Confirm = true
+		plannedInput.PlanHash = plan.PlanHash
+		_, corrected, err := updateStockItemProvenance(fixture.deps())(ctx, &mcp.CallToolRequest{}, plannedInput)
+		r.NoError(err)
+		a.Equal(StatusOK, corrected.Status)
+		a.Equal("2.5", string(*corrected.Record.PurchasePrice))
+
+		otherSupplierName, err := fixture.run.Name("stock-provenance-other-supplier")
+		r.NoError(err)
+		otherSupplier, err := fixture.client.CreateCompany(ctx, inventree.CompanyCreate{Name: otherSupplierName, Currency: "AUD", IsSupplier: true})
+		r.NoError(err)
+		otherOrder, err := fixture.client.CreatePurchaseOrder(ctx, inventree.PurchaseOrderCreate{Supplier: otherSupplier.PK})
+		r.NoError(err)
+		_, mismatch, err := updateStockItemProvenance(fixture.deps())(ctx, &mcp.CallToolRequest{}, UpdateStockItemProvenanceInput{StockItemID: stock.PK, PurchaseOrderID: &otherOrder.PK, DryRun: true})
+		r.NoError(err)
+		a.Equal(StatusClarificationRequired, mismatch.Status)
+		a.Contains(mismatch.Clarification.Reason, "supplier")
+
+		trackingBefore, err := fixture.client.SearchStockTrackingPage(ctx, inventree.StockTrackingQuery{ItemID: stock.PK, Limit: 100})
+		r.NoError(err)
+		clearInput := UpdateStockItemProvenanceInput{StockItemID: stock.PK, ClearSupplierPart: true, ClearPurchaseOrder: true, ClearPurchasePrice: true, PurchasePriceCurrency: dvgoutils.Ptr("USD"), DryRun: true}
+		_, clearPlan, err := updateStockItemProvenance(fixture.deps())(ctx, &mcp.CallToolRequest{}, clearInput)
+		r.NoError(err)
+		clearInput.DryRun = false
+		clearInput.Confirm = true
+		clearInput.PlanHash = clearPlan.PlanHash
+		_, cleared, err := updateStockItemProvenance(fixture.deps())(ctx, &mcp.CallToolRequest{}, clearInput)
+		r.NoError(err)
+		a.Equal(StatusOK, cleared.Status)
+		a.Nil(cleared.Record.SupplierPart)
+		a.Nil(cleared.Record.PurchaseOrder)
+		a.Nil(cleared.Record.PurchasePrice)
+		a.Equal("USD", cleared.Record.PurchasePriceCurrency)
+		trackingAfter, err := fixture.client.SearchStockTrackingPage(ctx, inventree.StockTrackingQuery{ItemID: stock.PK, Limit: 100})
+		r.NoError(err)
+		a.Len(trackingAfter.Results, len(trackingBefore.Results), "provenance PATCH must not imply a rewritten historical tracking event")
+
+		ambiguousStock, err := fixture.client.CreateStockItem(ctx, inventree.StockItemCreate{Part: part.ID, Location: location.ID, Quantity: 1})
+		r.NoError(err)
+		ambiguousInput := UpdateStockItemProvenanceInput{StockItemID: ambiguousStock.PK, PurchasePrice: dvgoutils.Ptr("3.75"), DryRun: true}
+		_, ambiguousPlan, err := updateStockItemProvenance(fixture.deps())(ctx, &mcp.CallToolRequest{}, ambiguousInput)
+		r.NoError(err)
+		lostClient, err := shared.ClientWithHTTPClient(fixture.account, &http.Client{Transport: &loseMutationResponseTransport{base: http.DefaultTransport, method: http.MethodPatch, path: fmt.Sprintf("/api/stock/%d/", ambiguousStock.PK)}})
+		r.NoError(err)
+		lostFixture := fixture
+		lostFixture.client = lostClient
+		ambiguousInput.DryRun = false
+		ambiguousInput.Confirm = true
+		ambiguousInput.PlanHash = ambiguousPlan.PlanHash
+		_, recovered, err := updateStockItemProvenance(lostFixture.deps())(ctx, &mcp.CallToolRequest{}, ambiguousInput)
+		r.NoError(err)
+		a.Equal(StatusOK, recovered.Status)
+		a.True(recovered.Recovered)
+		a.Equal("3.75", string(*recovered.Record.PurchasePrice))
+	})
+
 	t.Run("stock_item_detail_completeness", func(t *testing.T) {
 		r := require.New(t)
 		a := assert.New(t)
@@ -2795,19 +2896,20 @@ func TestMilestoneHappyPathToolsAgainstInvenTree(t *testing.T) {
 }
 
 type milestoneToolFixture struct {
-	shared                *testenv.SharedInvenTree
-	run                   *testenv.Run
-	account               *testenv.Account
-	client                *inventree.Client
-	stockPlanStore        *stockPlanStore
-	parameterPlanStore    *parameterPlanStore
-	partFamilyPlanStore   *partFamilyPlanStore
-	partRelationPlanStore *partRelationPlanStore
-	companyRolePlanStore  *companyRolePlanStore
-	ownerPlanStore        *ownerPlanStore
-	contactPlanStore      *contactPlanStore
-	addressPlanStore      *addressPlanStore
-	projectCodePlanStore  *projectCodePlanStore
+	shared                   *testenv.SharedInvenTree
+	run                      *testenv.Run
+	account                  *testenv.Account
+	client                   *inventree.Client
+	stockPlanStore           *stockPlanStore
+	stockProvenancePlanStore *stockProvenancePlanStore
+	parameterPlanStore       *parameterPlanStore
+	partFamilyPlanStore      *partFamilyPlanStore
+	partRelationPlanStore    *partRelationPlanStore
+	companyRolePlanStore     *companyRolePlanStore
+	ownerPlanStore           *ownerPlanStore
+	contactPlanStore         *contactPlanStore
+	addressPlanStore         *addressPlanStore
+	projectCodePlanStore     *projectCodePlanStore
 }
 
 type attachmentTarget struct {
@@ -2848,19 +2950,20 @@ func newMilestoneToolFixture(t *testing.T, shared *testenv.SharedInvenTree) mile
 	r.NoError(err)
 
 	return milestoneToolFixture{
-		shared:                shared,
-		run:                   run,
-		account:               account,
-		client:                client,
-		stockPlanStore:        newStockPlanStore(time.Now, randomStockPlanToken),
-		parameterPlanStore:    newParameterPlanStore(time.Now, randomStockPlanToken),
-		partFamilyPlanStore:   newPartFamilyPlanStore(time.Now, randomStockPlanToken),
-		partRelationPlanStore: newPartRelationPlanStore(time.Now, randomStockPlanToken),
-		companyRolePlanStore:  newCompanyRolePlanStore(time.Now, randomStockPlanToken),
-		ownerPlanStore:        newOwnerPlanStore(time.Now, randomStockPlanToken),
-		contactPlanStore:      newContactPlanStore(time.Now, randomStockPlanToken),
-		addressPlanStore:      newAddressPlanStore(time.Now, randomStockPlanToken),
-		projectCodePlanStore:  newProjectCodePlanStore(time.Now, randomStockPlanToken),
+		shared:                   shared,
+		run:                      run,
+		account:                  account,
+		client:                   client,
+		stockPlanStore:           newStockPlanStore(time.Now, randomStockPlanToken),
+		stockProvenancePlanStore: newStockProvenancePlanStore(time.Now, randomStockPlanToken),
+		parameterPlanStore:       newParameterPlanStore(time.Now, randomStockPlanToken),
+		partFamilyPlanStore:      newPartFamilyPlanStore(time.Now, randomStockPlanToken),
+		partRelationPlanStore:    newPartRelationPlanStore(time.Now, randomStockPlanToken),
+		companyRolePlanStore:     newCompanyRolePlanStore(time.Now, randomStockPlanToken),
+		ownerPlanStore:           newOwnerPlanStore(time.Now, randomStockPlanToken),
+		contactPlanStore:         newContactPlanStore(time.Now, randomStockPlanToken),
+		addressPlanStore:         newAddressPlanStore(time.Now, randomStockPlanToken),
+		projectCodePlanStore:     newProjectCodePlanStore(time.Now, randomStockPlanToken),
 	}
 }
 
@@ -2869,17 +2972,18 @@ func (f milestoneToolFixture) deps() Dependencies {
 		ClientFromContext: func(context.Context) (any, error) {
 			return f.client, nil
 		},
-		UploadMode:            upload.ModeStdio,
-		UploadMaxBytes:        upload.DefaultMaxBytes,
-		stockPlanStore:        f.stockPlanStore,
-		parameterPlanStore:    f.parameterPlanStore,
-		partFamilyPlanStore:   f.partFamilyPlanStore,
-		partRelationPlanStore: f.partRelationPlanStore,
-		companyRolePlanStore:  f.companyRolePlanStore,
-		ownerPlanStore:        f.ownerPlanStore,
-		contactPlanStore:      f.contactPlanStore,
-		addressPlanStore:      f.addressPlanStore,
-		projectCodePlanStore:  f.projectCodePlanStore,
+		UploadMode:               upload.ModeStdio,
+		UploadMaxBytes:           upload.DefaultMaxBytes,
+		stockPlanStore:           f.stockPlanStore,
+		stockProvenancePlanStore: f.stockProvenancePlanStore,
+		parameterPlanStore:       f.parameterPlanStore,
+		partFamilyPlanStore:      f.partFamilyPlanStore,
+		partRelationPlanStore:    f.partRelationPlanStore,
+		companyRolePlanStore:     f.companyRolePlanStore,
+		ownerPlanStore:           f.ownerPlanStore,
+		contactPlanStore:         f.contactPlanStore,
+		addressPlanStore:         f.addressPlanStore,
+		projectCodePlanStore:     f.projectCodePlanStore,
 	}
 }
 
