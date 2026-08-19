@@ -17,6 +17,7 @@ const (
 	StatusClarificationRequired = "clarification_required"
 	StatusNotFound              = "not_found"
 	StatusNoImage               = "no_image"
+	StatusNotTrackable          = "not_trackable"
 )
 
 type SearchInput struct {

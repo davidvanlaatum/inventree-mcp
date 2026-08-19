@@ -423,22 +423,30 @@ func TestStockAdjustmentToolAuthorizationsAreOperational(t *testing.T) {
 }
 
 type fakeStockAdjustmentClient struct {
-	item             inventree.StockItem
-	lastAdjustment   inventree.StockAdjustment
-	lastStatusChange inventree.StockStatusChange
-	lastPatch        inventree.PatchFields
-	addCalls         int
-	removeCalls      int
-	countCalls       int
-	statusCalls      int
-	updateCalls      int
-	mutateErr        error
-	getCalls         int
-	getErrAt         map[int]error
-	beforeMutation   func(*fakeStockAdjustmentClient)
-	deleted          bool
-	responseLoss     bool
-	planStore        *stockPlanStore
+	item                  inventree.StockItem
+	lastAdjustment        inventree.StockAdjustment
+	lastStatusChange      inventree.StockStatusChange
+	lastPatch             inventree.PatchFields
+	addCalls              int
+	removeCalls           int
+	countCalls            int
+	statusCalls           int
+	updateCalls           int
+	mutateErr             error
+	getCalls              int
+	getErrAt              map[int]error
+	beforeMutation        func(*fakeStockAdjustmentClient)
+	deleted               bool
+	responseLoss          bool
+	planStore             *stockPlanStore
+	searchResults         []inventree.StockItem
+	searchResultsSequence [][]inventree.StockItem
+	searchCalls           int
+	searchErr             error
+	part                  inventree.Part
+	getPartErr            error
+	setting               inventree.SettingValue
+	getSettingErr         error
 }
 
 func (f *fakeStockAdjustmentClient) GetStockItem(context.Context, int) (inventree.StockItem, error) {
@@ -512,10 +520,43 @@ func (f *fakeStockAdjustmentClient) UpdateStockItem(_ context.Context, id int, f
 	if value, ok := fields["delete_on_deplete"]; ok {
 		f.item.DeleteOnDeplete = value.Value().(bool)
 	}
+	if value, ok := fields["serial"]; ok {
+		if value.Value() == nil {
+			f.item.Serial = nil
+		} else {
+			serial, _ := value.Value().(string)
+			f.item.Serial = &serial
+		}
+	}
 	if f.deleted || id != f.item.PK {
 		return inventree.StockItem{}, &inventree.APIError{StatusCode: http.StatusNotFound, Kind: inventree.ErrorKindNotFound}
 	}
 	return f.item, nil
+}
+
+func (f *fakeStockAdjustmentClient) SearchStockItems(context.Context, inventree.StockItemQuery) ([]inventree.StockItem, error) {
+	f.searchCalls++
+	if f.searchErr != nil {
+		return nil, f.searchErr
+	}
+	if len(f.searchResultsSequence) >= f.searchCalls {
+		return f.searchResultsSequence[f.searchCalls-1], nil
+	}
+	return f.searchResults, nil
+}
+
+func (f *fakeStockAdjustmentClient) GetPart(context.Context, int) (inventree.Part, error) {
+	if f.getPartErr != nil {
+		return inventree.Part{}, f.getPartErr
+	}
+	return f.part, nil
+}
+
+func (f *fakeStockAdjustmentClient) GetGlobalSetting(context.Context, string) (inventree.SettingValue, error) {
+	if f.getSettingErr != nil {
+		return inventree.SettingValue{}, f.getSettingErr
+	}
+	return f.setting, nil
 }
 
 func (f *fakeStockAdjustmentClient) runBeforeMutation() {
