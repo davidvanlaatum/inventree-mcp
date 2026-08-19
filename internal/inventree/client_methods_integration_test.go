@@ -1914,6 +1914,166 @@ func TestClientMethodsAgainstInvenTree(t *testing.T) {
 		a.Nil(reread.Serial)
 	})
 
+	t.Run("stock_install_uninstall", func(t *testing.T) {
+		r := require.New(t)
+		a := assert.New(t)
+		ctx, _, _ := testhandler.SetupTestHandler(t)
+		fixture := newClientMethodFixture(t, shared)
+		category := fixture.ensure(t, testenv.FixtureCategory)
+		location := fixture.ensure(t, testenv.FixtureLocation)
+		otherLocationName, err := fixture.run.Name("install-other-location")
+		r.NoError(err)
+		otherLocation, err := fixture.client.CreateStockLocation(ctx, inventree.StockLocationCreate{Name: otherLocationName})
+		r.NoError(err)
+
+		assemblyName, err := fixture.run.Name("install-assembly")
+		r.NoError(err)
+		assemblyPart, err := fixture.client.CreatePart(ctx, inventree.PartCreate{Name: assemblyName, Category: dvgoutils.Ptr(category.ID), Active: dvgoutils.Ptr(true), Assembly: dvgoutils.Ptr(true), Trackable: dvgoutils.Ptr(true)})
+		r.NoError(err)
+
+		componentName, err := fixture.run.Name("install-component")
+		r.NoError(err)
+		componentPart, err := fixture.client.CreatePart(ctx, inventree.PartCreate{Name: componentName, Category: dvgoutils.Ptr(category.ID), Active: dvgoutils.Ptr(true), Component: dvgoutils.Ptr(true), Trackable: dvgoutils.Ptr(true)})
+		r.NoError(err)
+
+		outOfBOMName, err := fixture.run.Name("install-out-of-bom")
+		r.NoError(err)
+		outOfBOMPart, err := fixture.client.CreatePart(ctx, inventree.PartCreate{Name: outOfBOMName, Category: dvgoutils.Ptr(category.ID), Active: dvgoutils.Ptr(true), Component: dvgoutils.Ptr(true), Trackable: dvgoutils.Ptr(true)})
+		r.NoError(err)
+
+		var bomItem inventree.BomItem
+		r.NoError(fixture.client.Post(ctx, "/api/bom/", map[string]any{"part": assemblyPart.PK, "sub_part": componentPart.PK, "quantity": 1}, &bomItem))
+		r.NotZero(bomItem.PK)
+
+		newSerializedStock := func(partID int, serial string) inventree.StockItem {
+			item, createErr := fixture.client.CreateStockItem(ctx, inventree.StockItemCreate{Part: partID, Location: location.ID, Quantity: 1})
+			r.NoError(createErr)
+			item, updateErr := fixture.client.UpdateStockItem(ctx, item.PK, inventree.PatchFields{"serial": inventree.Set(serial)})
+			r.NoError(updateErr)
+			r.NotNil(item.Serial)
+			return item
+		}
+
+		parentStock := newSerializedStock(assemblyPart.PK, "1")
+		outOfBOMStock := newSerializedStock(outOfBOMPart.PK, "1")
+
+		// InvenTree 1.5.1 enforces BOM membership itself: a child part not on
+		// the parent's BOM is rejected before any relationship is written.
+		childStock := newSerializedStock(componentPart.PK, "1")
+		outOfBOMErr := fixture.client.InstallStockItem(ctx, parentStock.PK, inventree.InstallStockItem{StockItem: outOfBOMStock.PK, Quantity: 1})
+		r.Error(outOfBOMErr, "InvenTree must reject installing a child whose part is not in the parent's BOM")
+		var bomAPIErr *inventree.APIError
+		r.ErrorAs(outOfBOMErr, &bomAPIErr)
+		a.Equal([]string{"Selected part is not in the Bill of Materials"}, bomAPIErr.FieldErrors["stock_item"])
+
+		// The 201 response only echoes the request (InstallStockItem), not
+		// resulting stock-item state, so the applied effect must be observed
+		// via a follow-up GetStockItem on both sides.
+		r.NoError(fixture.client.InstallStockItem(ctx, parentStock.PK, inventree.InstallStockItem{StockItem: childStock.PK, Quantity: 1}))
+		afterInstallParent, err := fixture.client.GetStockItem(ctx, parentStock.PK)
+		r.NoError(err)
+		r.NotNil(afterInstallParent.InstalledItems)
+		a.Equal(1, *afterInstallParent.InstalledItems, "install increments the parent's installed_items count")
+		r.NotNil(afterInstallParent.ChildItems)
+		a.Zero(*afterInstallParent.ChildItems, "install does not touch the unrelated split-lineage child_items count")
+		a.InDelta(1.0, afterInstallParent.Quantity, 1e-9, "install does not change the parent's own quantity")
+
+		afterInstallChild, err := fixture.client.GetStockItem(ctx, childStock.PK)
+		r.NoError(err)
+		r.NotNil(afterInstallChild.BelongsTo)
+		a.Equal(parentStock.PK, *afterInstallChild.BelongsTo)
+		a.Nil(afterInstallChild.Location, "an installed child loses its own independent location")
+		a.False(afterInstallChild.InStock, "an installed child is no longer independently in stock")
+
+		// Pin install's stock-tracking history on both sides of the
+		// relationship: InvenTree 1.5.1 records a distinct native tracking
+		// event type for each side (30 "Installed into assembly" on the
+		// child, 35 "Installed component item" on the parent) rather than
+		// leaving either side's install unaudited. F-S54's acceptance
+		// criteria call out "tracking events"/"history behavior" explicitly.
+		childTrackingAfterInstall, err := fixture.client.SearchStockTrackingPage(ctx, inventree.StockTrackingQuery{ItemID: childStock.PK, Limit: 100})
+		r.NoError(err)
+		a.True(hasStockTrackingType(childTrackingAfterInstall.Results, 30), "install must record a native tracking event on the child stock item")
+		parentTrackingAfterInstall, err := fixture.client.SearchStockTrackingPage(ctx, inventree.StockTrackingQuery{ItemID: parentStock.PK, Limit: 100})
+		r.NoError(err)
+		a.True(hasStockTrackingType(parentTrackingAfterInstall.Results, 35), "install must record a native tracking event on the parent stock item")
+
+		// A now-unavailable (installed) child cannot be installed again;
+		// InvenTree reports this as an availability error, not a
+		// belongs_to-specific one, which is why the MCP-side guard checks
+		// belongs_to directly for a clearer clarification.
+		reinstallErr := fixture.client.InstallStockItem(ctx, parentStock.PK, inventree.InstallStockItem{StockItem: childStock.PK, Quantity: 1})
+		r.Error(reinstallErr, "InvenTree must reject re-installing an already-installed child")
+		var unavailableAPIErr *inventree.APIError
+		r.ErrorAs(reinstallErr, &unavailableAPIErr)
+		a.Equal([]string{"Stock item is unavailable"}, unavailableAPIErr.FieldErrors["stock_item"])
+
+		// quantity is validated against the CHILD's own available quantity,
+		// not the BOM's required quantity: a serialized (quantity-1) child
+		// cannot satisfy a request for more than 1.
+		quantityChild := newSerializedStock(componentPart.PK, "2")
+		quantityErr := fixture.client.InstallStockItem(ctx, parentStock.PK, inventree.InstallStockItem{StockItem: quantityChild.PK, Quantity: 5})
+		r.Error(quantityErr, "InvenTree must reject an install quantity exceeding the child's own available quantity")
+		var quantityAPIErr *inventree.APIError
+		r.ErrorAs(quantityErr, &quantityAPIErr)
+		a.Equal([]string{"Quantity to install must not exceed available quantity"}, quantityAPIErr.FieldErrors["quantity"])
+
+		// Despite the endpoint's docstring describing the child as required
+		// to be serialized, InvenTree 1.5.1 does not actually enforce that:
+		// an ordinary unserialized quantity-1 stock item installs
+		// successfully. This tool intentionally does not require a serial
+		// either; it only requires quantity exactly 1, to avoid the
+		// unrelated partial-quantity/split-identity workflow this story
+		// does not cover.
+		unserializedChild, err := fixture.client.CreateStockItem(ctx, inventree.StockItemCreate{Part: componentPart.PK, Location: location.ID, Quantity: 1})
+		r.NoError(err)
+		r.Nil(unserializedChild.Serial)
+		r.NoError(fixture.client.InstallStockItem(ctx, parentStock.PK, inventree.InstallStockItem{StockItem: unserializedChild.PK, Quantity: 1}))
+		afterUnserializedChild, err := fixture.client.GetStockItem(ctx, unserializedChild.PK)
+		r.NoError(err)
+		r.NotNil(afterUnserializedChild.BelongsTo)
+		a.Equal(parentStock.PK, *afterUnserializedChild.BelongsTo)
+
+		// Uninstall targets the currently-installed CHILD item's own id
+		// (there is no separate child-id body field to disambiguate), and
+		// clears belongs_to while setting the item's location to the
+		// supplied destination.
+		r.NoError(fixture.client.UninstallStockItem(ctx, childStock.PK, inventree.UninstallStockItem{Location: otherLocation.PK}))
+		afterUninstallChild, err := fixture.client.GetStockItem(ctx, childStock.PK)
+		r.NoError(err)
+		a.Nil(afterUninstallChild.BelongsTo)
+		r.NotNil(afterUninstallChild.Location)
+		a.Equal(otherLocation.PK, *afterUninstallChild.Location)
+
+		// Uninstalling releases the parent's installed_items count back down.
+		afterUninstallParent, err := fixture.client.GetStockItem(ctx, parentStock.PK)
+		r.NoError(err)
+		r.NotNil(afterUninstallParent.InstalledItems)
+		a.Equal(1, *afterUninstallParent.InstalledItems, "uninstalling one of two remaining installed children (childStock, unserializedChild) leaves one behind")
+
+		// Pin uninstall's own tracking event (31 "Removed from assembly"),
+		// alongside the install event (30) still present in the same
+		// item's history.
+		childTrackingAfterUninstall, err := fixture.client.SearchStockTrackingPage(ctx, inventree.StockTrackingQuery{ItemID: childStock.PK, Limit: 100})
+		r.NoError(err)
+		a.True(hasStockTrackingType(childTrackingAfterUninstall.Results, 31), "uninstall must record a native tracking event on the child stock item")
+		a.True(hasStockTrackingType(childTrackingAfterUninstall.Results, 30), "the earlier install tracking event must remain in history")
+
+		// InvenTree does not itself reject uninstalling an item that was
+		// never installed anywhere (belongs_to already nil) -- it silently
+		// sets the location anyway. This is a real safety gap the MCP-side
+		// guard must close by requiring belongs_to != nil before allowing
+		// uninstall, rather than relying on upstream rejection.
+		neverInstalledErr := fixture.client.UninstallStockItem(ctx, quantityChild.PK, inventree.UninstallStockItem{Location: otherLocation.PK})
+		a.NoError(neverInstalledErr, "pinning: InvenTree accepts uninstalling a never-installed item rather than rejecting it")
+
+		badLocationErr := fixture.client.UninstallStockItem(ctx, unserializedChild.PK, inventree.UninstallStockItem{Location: 9999999})
+		r.Error(badLocationErr, "InvenTree must reject uninstalling to a nonexistent location")
+		var locationAPIErr *inventree.APIError
+		r.ErrorAs(badLocationErr, &locationAPIErr)
+		a.Contains(locationAPIErr.FieldErrors["location"][0], "does not exist")
+	})
+
 	t.Run("instance_info", func(t *testing.T) {
 		r := require.New(t)
 		a := assert.New(t)
@@ -2311,6 +2471,15 @@ func stockLocationTypeIDs(types []inventree.StockLocationType) []int {
 		ids = append(ids, locationType.PK)
 	}
 	return ids
+}
+
+func hasStockTrackingType(entries []inventree.StockTracking, trackingType int) bool {
+	for _, entry := range entries {
+		if entry.TrackingType == trackingType {
+			return true
+		}
+	}
+	return false
 }
 
 func bomItemIDs(items []inventree.BomItem) []int {

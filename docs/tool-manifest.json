@@ -1445,6 +1445,30 @@
       ]
     },
     {
+      "name": "install_stock_item",
+      "milestone_status": "milestone_1",
+      "mutation_class": "operational",
+      "scopes": [
+        "inventree.read",
+        "inventree.write",
+        "inventree.operational"
+      ],
+      "annotations": {
+        "read_only": false,
+        "destructive": false,
+        "idempotent": false,
+        "open_world": false
+      },
+      "upload_sources": null,
+      "http_registration": "registered_with_oauth_scope_guard",
+      "icons": [
+        {
+          "src": "https://docs.inventree.org/en/latest/assets/logo.png",
+          "mimeType": "image/png"
+        }
+      ]
+    },
+    {
       "name": "issue_purchase_order",
       "milestone_status": "milestone_1",
       "mutation_class": "write",
@@ -2345,6 +2369,31 @@
       "annotations": {
         "read_only": false,
         "destructive": false,
+        "idempotent": false,
+        "open_world": false
+      },
+      "upload_sources": null,
+      "http_registration": "registered_with_oauth_scope_guard",
+      "icons": [
+        {
+          "src": "https://docs.inventree.org/en/latest/assets/logo.png",
+          "mimeType": "image/png"
+        }
+      ]
+    },
+    {
+      "name": "uninstall_stock_item",
+      "milestone_status": "milestone_1",
+      "mutation_class": "destructive",
+      "scopes": [
+        "inventree.read",
+        "inventree.write",
+        "inventree.operational",
+        "inventree.destructive"
+      ],
+      "annotations": {
+        "read_only": false,
+        "destructive": true,
         "idempotent": false,
         "open_world": false
       },
