@@ -700,8 +700,68 @@ func TestUpdateParameterTemplateUniquenessDryRunReportsConflicts(t *testing.T) {
 	a.Equal(StatusClarificationRequired, out.Status)
 	a.Empty(out.PlanHash)
 	r.Len(out.Conflicts, 1)
-	a.Equal("same", out.Conflicts[0].Value)
-	a.ElementsMatch([]int{80, 81}, out.Conflicts[0].ParameterIDs)
+	r.Len(out.Conflicts[0].Rows, 2)
+	a.ElementsMatch([]int{80, 81}, conflictParameterIDs(out.Conflicts[0]))
+	for _, row := range out.Conflicts[0].Rows {
+		a.Equal("part.part", row.ModelType)
+	}
+}
+
+func TestUpdateParameterTemplateUniquenessConflictNeverDisclosesTheSharedValue(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	fake := newFakeParameterTemplateAdminClient()
+	fake.templates[70] = inventree.ParameterTemplate{PK: 70, Name: "Resistance", Enabled: true}
+	fake.parameters[80] = inventree.Parameter{PK: 80, Template: 70, ModelType: "part.part", ModelID: 10, Data: "super-secret-value"}
+	fake.parameters[81] = inventree.Parameter{PK: 81, Template: 70, ModelType: "part.part", ModelID: 11, Data: "super-secret-value"}
+	deps := parameterTemplateUniquenessDeps(fake)
+
+	_, out, err := updateParameterTemplateUniqueness(deps)(ctx, &mcp.CallToolRequest{}, UpdateParameterTemplateUniquenessInput{TemplateID: 70, Unique: 2, DryRun: true})
+	r.NoError(err)
+	r.Len(out.Conflicts, 1)
+	payload, err := json.Marshal(out.Conflicts)
+	r.NoError(err)
+	a.NotContains(string(payload), "super-secret-value")
+}
+
+func TestUpdateParameterTemplateUniquenessGlobalScopeConflictSpansModelTypes(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	fake := newFakeParameterTemplateAdminClient()
+	fake.templates[70] = inventree.ParameterTemplate{PK: 70, Name: "Resistance", Enabled: true}
+	fake.parameters[80] = inventree.Parameter{PK: 80, Template: 70, ModelType: "stock.stocklocation", ModelID: 10, Data: "same"}
+	fake.parameters[81] = inventree.Parameter{PK: 81, Template: 70, ModelType: "company.company", ModelID: 11, Data: "same"}
+	deps := parameterTemplateUniquenessDeps(fake)
+
+	// A global-scope target must catch this cross-model-type conflict; a model-type-scoped target must not.
+	_, global, err := updateParameterTemplateUniqueness(deps)(ctx, &mcp.CallToolRequest{}, UpdateParameterTemplateUniquenessInput{TemplateID: 70, Unique: 2, DryRun: true})
+	r.NoError(err)
+	r.Len(global.Conflicts, 1)
+	a.ElementsMatch([]string{"stock.stocklocation", "company.company"}, conflictModelTypes(global.Conflicts[0]))
+
+	_, scoped, err := updateParameterTemplateUniqueness(deps)(ctx, &mcp.CallToolRequest{}, UpdateParameterTemplateUniquenessInput{TemplateID: 70, Unique: 1, DryRun: true})
+	r.NoError(err)
+	a.Empty(scoped.Conflicts)
+}
+
+func conflictParameterIDs(conflict ParameterTemplateUniquenessConflict) []int {
+	ids := make([]int, 0, len(conflict.Rows))
+	for _, row := range conflict.Rows {
+		ids = append(ids, row.ParameterID)
+	}
+	return ids
+}
+
+func conflictModelTypes(conflict ParameterTemplateUniquenessConflict) []string {
+	types := make([]string, 0, len(conflict.Rows))
+	for _, row := range conflict.Rows {
+		types = append(types, row.ModelType)
+	}
+	return types
 }
 
 func TestUpdateParameterTemplateUniquenessModelTypeScopeDoesNotConflictAcrossModelTypes(t *testing.T) {
@@ -776,6 +836,19 @@ func TestUpdateParameterTemplateUniquenessConfirmRejectsStaleToken(t *testing.T)
 	_, out, err := updateParameterTemplateUniqueness(deps)(ctx, &mcp.CallToolRequest{}, UpdateParameterTemplateUniquenessInput{TemplateID: 70, Unique: 2, Confirm: true, PlanHash: plan.PlanHash})
 	r.NoError(err)
 	a.Equal(StatusClarificationRequired, out.Status)
+}
+
+func TestUpdateParameterTemplateUniquenessRejectsMalformedOrUnknownToken(t *testing.T) {
+	t.Parallel()
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	fake := newFakeParameterTemplateAdminClient()
+	fake.templates[70] = inventree.ParameterTemplate{PK: 70, Name: "Resistance", Enabled: true}
+	deps := parameterTemplateUniquenessDeps(fake)
+
+	_, out, err := updateParameterTemplateUniqueness(deps)(ctx, &mcp.CallToolRequest{}, UpdateParameterTemplateUniquenessInput{TemplateID: 70, Unique: 2, Confirm: true, PlanHash: "not-a-real-token"})
+	require.NoError(t, err)
+	assert.Equal(t, StatusClarificationRequired, out.Status)
+	assert.Equal(t, inventree.ParameterUniquenessNone, fake.templates[70].Unique)
 }
 
 func TestUpdateParameterTemplateUniquenessConfirmRefusesRemainingConflicts(t *testing.T) {

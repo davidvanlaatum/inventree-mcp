@@ -569,10 +569,26 @@ type UpdateParameterTemplateUniquenessInput struct {
 	PlanHash   string `json:"plan_hash,omitempty" jsonschema:"Exact current-state hash returned by dry_run:true."`
 }
 
+// ParameterTemplateUniquenessConflictRow identifies one row within a
+// conflicting group by stable IDs only. The row's Data value is
+// intentionally never exposed here: the caller may not otherwise be
+// authorized to read every object in a global-scope group, and the group
+// membership itself (which rows currently share a value) is enough context
+// to locate and resolve the conflict via search_object_parameters,
+// search_part_parameters, or a direct get by parameter_id.
+type ParameterTemplateUniquenessConflictRow struct {
+	ParameterID int    `json:"parameter_id"`
+	ModelType   string `json:"model_type"`
+	ModelID     int    `json:"model_id"`
+}
+
+// ParameterTemplateUniquenessConflict is one group of rows that currently
+// share a value and would violate the target uniqueness policy. Group is an
+// opaque per-response index distinguishing conflict groups from each other;
+// it carries no meaning beyond that and is not stable across calls.
 type ParameterTemplateUniquenessConflict struct {
-	ModelType    string `json:"model_type,omitempty"`
-	Value        string `json:"value"`
-	ParameterIDs []int  `json:"parameter_ids"`
+	Group int                                      `json:"group"`
+	Rows  []ParameterTemplateUniquenessConflictRow `json:"rows"`
 }
 
 // ParameterTemplateUniquenessPlan binds the exact current template
@@ -775,7 +791,7 @@ func parameterTemplateUniquenessConflicts(rows []inventree.Parameter, target inv
 		modelType string
 		value     string
 	}
-	groups := map[group][]int{}
+	groups := map[group][]inventree.Parameter{}
 	order := make([]group, 0)
 	for _, row := range rows {
 		key := group{value: row.Data}
@@ -785,7 +801,7 @@ func parameterTemplateUniquenessConflicts(rows []inventree.Parameter, target inv
 		if _, ok := groups[key]; !ok {
 			order = append(order, key)
 		}
-		groups[key] = append(groups[key], row.PK)
+		groups[key] = append(groups[key], row)
 	}
 	slices.SortFunc(order, func(a, b group) int {
 		if a.modelType != b.modelType {
@@ -795,12 +811,16 @@ func parameterTemplateUniquenessConflicts(rows []inventree.Parameter, target inv
 	})
 	conflicts := make([]ParameterTemplateUniquenessConflict, 0)
 	for _, key := range order {
-		ids := groups[key]
-		if len(ids) < 2 {
+		members := groups[key]
+		if len(members) < 2 {
 			continue
 		}
-		slices.Sort(ids)
-		conflicts = append(conflicts, ParameterTemplateUniquenessConflict{ModelType: key.modelType, Value: key.value, ParameterIDs: ids})
+		slices.SortFunc(members, func(a, b inventree.Parameter) int { return a.PK - b.PK })
+		conflictRows := make([]ParameterTemplateUniquenessConflictRow, 0, len(members))
+		for _, member := range members {
+			conflictRows = append(conflictRows, ParameterTemplateUniquenessConflictRow{ParameterID: member.PK, ModelType: member.ModelType, ModelID: member.ModelID})
+		}
+		conflicts = append(conflicts, ParameterTemplateUniquenessConflict{Group: len(conflicts) + 1, Rows: conflictRows})
 	}
 	return conflicts
 }

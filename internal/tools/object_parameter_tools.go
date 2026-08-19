@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -379,7 +380,7 @@ func createObjectParameter(deps Dependencies) mcp.ToolHandlerFor[CreateObjectPar
 					return nil, WriteRecordOutput[ObjectParameterResult]{}, err
 				}
 				if conflict != nil {
-					clarification := NewClarification("Which value should be used to satisfy this template's uniqueness policy?", "value", fmt.Sprintf("value already exists on parameter row %d under this template's uniqueness policy", conflict.PK), "value", true, []ClarificationCandidate{candidateFor(objectParameterResult(*conflict, template))}, objectParameterWriteRetry(input))
+					clarification := NewClarification("Which value should be used to satisfy this template's uniqueness policy?", "value", fmt.Sprintf("the requested value already exists on parameter row %d under this template's uniqueness policy", conflict.PK), "value", true, []ClarificationCandidate{objectParameterCandidate(*conflict, template)}, objectParameterWriteRetry(input))
 					return TextResult(StatusClarificationRequired), WriteRecordOutput[ObjectParameterResult]{Status: StatusClarificationRequired, Clarification: &clarification}, nil
 				}
 			}
@@ -459,9 +460,23 @@ func objectParameterWriteRetry(input CreateObjectParameterInput) map[string]any 
 func objectParameterCandidates(rows []inventree.Parameter, template inventree.ParameterTemplate) []ClarificationCandidate {
 	candidates := make([]ClarificationCandidate, 0, len(rows))
 	for _, row := range rows {
-		candidates = append(candidates, candidateFor(objectParameterResult(row, template)))
+		candidates = append(candidates, objectParameterCandidate(row, template))
 	}
 	return candidates
+}
+
+// objectParameterCandidate builds a stable-ID clarification candidate for one
+// parameter row without disclosing its value: candidates surface identity
+// (parameter/model/template IDs) only, never Data, so a caller reviewing a
+// clarification about rows they may not otherwise be authorized to read
+// never learns what another row's value is.
+func objectParameterCandidate(row inventree.Parameter, template inventree.ParameterTemplate) ClarificationCandidate {
+	return ClarificationCandidate{
+		ID:     strconv.Itoa(row.PK),
+		Label:  fmt.Sprintf("%s:%d", row.ModelType, row.ModelID),
+		APIURL: fmt.Sprintf("/api/parameter/%d/", row.PK),
+		Fields: map[string]any{"parameter_id": row.PK, "model_type": row.ModelType, "model_id": row.ModelID, "template_id": template.PK},
+	}
 }
 
 // objectParameterUniquenessConflict scans every other row sharing templateID
@@ -564,8 +579,20 @@ func issueObjectParameterDeletePlan(ctx context.Context, store *objectParameterD
 	if err != nil {
 		return nil, ObjectParameterDeleteOutput{}, err
 	}
-	clarification := NewClarification("Delete this exact object parameter row?", "confirmation", "review the exact current parameter row and template, then provide confirm:true with this plan_hash", "plan_hash", false, []ClarificationCandidate{candidateFor(record)}, map[string]any{"parameter_id": plan.Parameter.PK, "confirm": true, "plan_hash": token})
+	clarification := NewClarification("Delete this exact object parameter row?", "confirmation", "review the exact current parameter row and template, then provide confirm:true with this plan_hash", "plan_hash", false, []ClarificationCandidate{objectParameterDeleteCandidate(record)}, map[string]any{"parameter_id": plan.Parameter.PK, "confirm": true, "plan_hash": token})
 	return TextResult(StatusClarificationRequired), ObjectParameterDeleteOutput{Status: StatusClarificationRequired, Record: &record, PlanHash: token, Clarification: &clarification}, nil
+}
+
+// objectParameterDeleteCandidate shows the row's own value: unlike the
+// cross-object uniqueness-conflict and multiple-existing-rows candidates,
+// this row belongs to the exact object/template the caller targeted, and its
+// value is already returned in the surrounding Record — hiding it here would
+// add no privacy benefit while making the preview harder to review.
+func objectParameterDeleteCandidate(record ObjectParameterResult) ClarificationCandidate {
+	return ClarificationCandidate{
+		ID: strconv.Itoa(record.ParameterID), Label: record.TemplateName, APIURL: fmt.Sprintf("/api/parameter/%d/", record.ParameterID),
+		Fields: map[string]any{"model_type": record.ModelType, "model_id": record.ModelID, "template_id": record.TemplateID, "value": record.Value},
+	}
 }
 
 func objectParameterDeleteStaleClarification(record ObjectParameterResult) (*mcp.CallToolResult, ObjectParameterDeleteOutput, error) {

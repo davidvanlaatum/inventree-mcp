@@ -2,6 +2,7 @@ package tools
 
 import (
 	"context"
+	"encoding/json"
 	"sort"
 	"strings"
 	"testing"
@@ -23,6 +24,8 @@ type fakeObjectParameterClient struct {
 	updateCalls     int
 	deleteCalls     int
 	lastPatch       inventree.PatchFields
+	forceCount      int  // when nonzero, overrides the reported Count on every SearchObjectParametersPage/SearchTemplateParametersPage response.
+	forceHasMore    bool // when true, SearchObjectParametersPage always reports HasMore:true with a full synthetic page, simulating a scan that never terminates within the bound.
 }
 
 func newFakeObjectParameterClient() *fakeObjectParameterClient {
@@ -37,6 +40,13 @@ func objectParameterDeps(fake *fakeObjectParameterClient) Dependencies {
 }
 
 func (f *fakeObjectParameterClient) SearchObjectParametersPage(_ context.Context, query inventree.ObjectParameterQuery) (inventree.PartParameterPage, error) {
+	if f.forceHasMore {
+		results := make([]inventree.Parameter, 0, query.Limit)
+		for i := 0; i < query.Limit; i++ {
+			results = append(results, inventree.Parameter{PK: query.Offset + i + 1, Template: query.TemplateID, ModelType: query.ModelType, ModelID: 1, Data: "scan-limit-filler"})
+		}
+		return inventree.PartParameterPage{Count: maxObjectParameterScan + 1, Results: results, HasMore: true}, nil
+	}
 	var rows []inventree.Parameter
 	for _, row := range f.parameters {
 		if row.ModelType != query.ModelType {
@@ -59,7 +69,11 @@ func (f *fakeObjectParameterClient) SearchObjectParametersPage(_ context.Context
 	if query.Limit == 0 {
 		end = len(rows)
 	}
-	return inventree.PartParameterPage{Count: len(rows), Results: rows[start:end], HasMore: end < len(rows)}, nil
+	count := len(rows)
+	if f.forceCount != 0 {
+		count = f.forceCount
+	}
+	return inventree.PartParameterPage{Count: count, Results: rows[start:end], HasMore: end < len(rows)}, nil
 }
 
 func (f *fakeObjectParameterClient) SearchTemplateParametersPage(_ context.Context, query inventree.TemplateParameterQuery) (inventree.PartParameterPage, error) {
@@ -75,7 +89,11 @@ func (f *fakeObjectParameterClient) SearchTemplateParametersPage(_ context.Conte
 	if query.Limit == 0 {
 		end = len(rows)
 	}
-	return inventree.PartParameterPage{Count: len(rows), Results: rows[start:end], HasMore: end < len(rows)}, nil
+	count := len(rows)
+	if f.forceCount != 0 {
+		count = f.forceCount
+	}
+	return inventree.PartParameterPage{Count: count, Results: rows[start:end], HasMore: end < len(rows)}, nil
 }
 
 func (f *fakeObjectParameterClient) SearchParameterTemplates(_ context.Context, query inventree.SearchQuery) ([]inventree.ParameterTemplate, error) {
@@ -394,4 +412,73 @@ func TestCreateObjectParameterRefusesMultipleExistingRows(t *testing.T) {
 	assert.Equal(t, StatusClarificationRequired, out.Status)
 	assert.Zero(t, fake.createCalls)
 	assert.Zero(t, fake.updateCalls)
+}
+
+func TestSearchObjectParametersFailsClosedWhenScanBoundExceeded(t *testing.T) {
+	t.Parallel()
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	fake := newFakeObjectParameterClient()
+	fake.templates[70] = inventree.ParameterTemplate{PK: 70, Name: "Voltage"}
+	fake.forceHasMore = true
+
+	_, out, err := searchObjectParameterValues(objectParameterDeps(fake))(ctx, &mcp.CallToolRequest{}, SearchObjectParametersInput{ModelType: "stock.stocklocation", TemplateID: 70})
+	require.NoError(t, err)
+	assert.Equal(t, StatusClarificationRequired, out.Status)
+}
+
+func TestCreateObjectParameterFailsClosedWhenModelTypeUniquenessScanBoundExceeded(t *testing.T) {
+	t.Parallel()
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	fake := newFakeObjectParameterClient()
+	fake.templates[70] = inventree.ParameterTemplate{PK: 70, Name: "SerialTag", Enabled: true, Unique: inventree.ParameterUniquenessModelType}
+	fake.forceCount = maxObjectParameterScan + 1
+
+	_, out, err := createObjectParameter(objectParameterDeps(fake))(ctx, &mcp.CallToolRequest{}, CreateObjectParameterInput{ModelType: "stock.stocklocation", ModelID: 5, TemplateID: 70, Value: dvgoutils.Ptr("5V")})
+	require.NoError(t, err)
+	assert.Equal(t, StatusClarificationRequired, out.Status)
+	assert.Zero(t, fake.createCalls)
+}
+
+func TestCreateObjectParameterFailsClosedWhenGlobalUniquenessScanBoundExceeded(t *testing.T) {
+	t.Parallel()
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	fake := newFakeObjectParameterClient()
+	fake.templates[70] = inventree.ParameterTemplate{PK: 70, Name: "GlobalTag", Enabled: true, Unique: inventree.ParameterUniquenessGlobal}
+	fake.forceCount = maxObjectParameterScan + 1
+
+	_, out, err := createObjectParameter(objectParameterDeps(fake))(ctx, &mcp.CallToolRequest{}, CreateObjectParameterInput{ModelType: "stock.stocklocation", ModelID: 5, TemplateID: 70, Value: dvgoutils.Ptr("5V")})
+	require.NoError(t, err)
+	assert.Equal(t, StatusClarificationRequired, out.Status)
+	assert.Zero(t, fake.createCalls)
+}
+
+func TestDeleteObjectParameterRejectsMalformedOrUnknownToken(t *testing.T) {
+	t.Parallel()
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	fake := newFakeObjectParameterClient()
+	fake.templates[70] = inventree.ParameterTemplate{PK: 70, Name: "Voltage", Enabled: true}
+	fake.parameters[80] = inventree.Parameter{PK: 80, Template: 70, ModelType: "stock.stocklocation", ModelID: 5, Data: "5V"}
+
+	_, out, err := deleteObjectParameter(objectParameterDeps(fake))(ctx, &mcp.CallToolRequest{}, DeleteObjectParameterInput{ParameterID: 80, Confirm: true, PlanHash: "not-a-real-token"})
+	require.NoError(t, err)
+	assert.Equal(t, StatusClarificationRequired, out.Status)
+	assert.Zero(t, fake.deleteCalls)
+}
+
+func TestCreateObjectParameterConflictClarificationNeverDisclosesTheConflictingValue(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	fake := newFakeObjectParameterClient()
+	fake.templates[70] = inventree.ParameterTemplate{PK: 70, Name: "SerialTag", Enabled: true, Unique: inventree.ParameterUniquenessModelType}
+	fake.parameters[80] = inventree.Parameter{PK: 80, Template: 70, ModelType: "stock.stocklocation", ModelID: 5, Data: "super-secret-value"}
+
+	_, out, err := createObjectParameter(objectParameterDeps(fake))(ctx, &mcp.CallToolRequest{}, CreateObjectParameterInput{ModelType: "stock.stocklocation", ModelID: 6, TemplateID: 70, Value: dvgoutils.Ptr("super-secret-value")})
+	r.NoError(err)
+	r.Equal(StatusClarificationRequired, out.Status)
+	r.NotNil(out.Clarification)
+	payload, err := json.Marshal(out.Clarification.Candidates)
+	r.NoError(err)
+	a.NotContains(string(payload), "super-secret-value")
 }

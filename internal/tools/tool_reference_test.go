@@ -63,6 +63,7 @@ func TestToolReferenceDocumentsLookupFrameworkSchema(t *testing.T) {
 		reflect.TypeOf(UpdateParameterTemplateInput{}),
 		reflect.TypeOf(UpdateParameterTemplateUniquenessInput{}),
 		reflect.TypeOf(ParameterTemplateUniquenessConflict{}),
+		reflect.TypeOf(ParameterTemplateUniquenessConflictRow{}),
 		reflect.TypeOf(ParameterTemplateUniquenessOutput{}),
 		reflect.TypeOf(DeleteParameterTemplateInput{}),
 		reflect.TypeOf(ParameterTemplateOutput{}),
