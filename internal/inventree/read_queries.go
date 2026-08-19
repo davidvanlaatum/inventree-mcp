@@ -67,12 +67,13 @@ type SalesOrderQuery struct {
 }
 
 type StockLocationQuery struct {
-	Search     string
-	Parent     *int
-	TopLevel   *bool
-	PathDetail *bool
-	Limit      int
-	Offset     int
+	Search       string
+	Parent       *int
+	TopLevel     *bool
+	PathDetail   *bool
+	LocationType *int
+	Limit        int
+	Offset       int
 }
 
 type AttachmentQuery struct {
@@ -308,6 +309,9 @@ func (q StockLocationQuery) values() url.Values {
 	}
 	if q.PathDetail != nil {
 		values.Set("path_detail", strconv.FormatBool(*q.PathDetail))
+	}
+	if q.LocationType != nil {
+		values.Set("location_type", strconv.Itoa(*q.LocationType))
 	}
 	return values
 }

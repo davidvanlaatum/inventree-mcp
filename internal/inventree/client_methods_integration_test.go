@@ -621,6 +621,91 @@ func TestClientMethodsAgainstInvenTree(t *testing.T) {
 		r.Equal("https://example.test/stock", stock.Link)
 	})
 
+	t.Run("stock_location_effective_icon", func(t *testing.T) {
+		r := require.New(t)
+		a := assert.New(t)
+		ctx, _, _ := testhandler.SetupTestHandler(t)
+		fixture := newClientMethodFixture(t, shared)
+		parent := fixture.ensure(t, testenv.FixtureLocation)
+
+		typeName, err := fixture.run.Name("icon-location-type")
+		r.NoError(err)
+		locationType, err := fixture.client.CreateStockLocationType(ctx, inventree.StockLocationTypeCreate{Name: typeName, Icon: "ti:box:outline"})
+		r.NoError(err)
+		r.NotZero(locationType.PK)
+
+		name, err := fixture.run.Name("icon-location")
+		r.NoError(err)
+		created, err := fixture.client.CreateStockLocation(ctx, inventree.StockLocationCreate{Name: name, Parent: &parent.ID, LocationType: &locationType.PK})
+		r.NoError(err)
+
+		// F-S67: a location with no custom_icon falls back to its
+		// location type's icon as the InvenTree-computed effective icon.
+		withType, err := fixture.client.GetStockLocation(ctx, created.PK)
+		r.NoError(err)
+		a.Nil(withType.CustomIcon)
+		a.Equal("ti:box:outline", withType.Icon)
+
+		customIcon := "ti:archive:filled"
+		_, err = fixture.client.UpdateStockLocation(ctx, created.PK, inventree.PatchFields{"custom_icon": inventree.Set(customIcon)})
+		r.NoError(err)
+
+		// A configured custom_icon takes precedence over the location
+		// type's icon in the effective icon InvenTree reports.
+		withCustomIcon, err := fixture.client.GetStockLocation(ctx, created.PK)
+		r.NoError(err)
+		r.NotNil(withCustomIcon.CustomIcon)
+		a.Equal(customIcon, *withCustomIcon.CustomIcon)
+		a.Equal(customIcon, withCustomIcon.Icon)
+	})
+
+	t.Run("stock_location_type_administration", func(t *testing.T) {
+		r := require.New(t)
+		a := assert.New(t)
+		ctx, _, _ := testhandler.SetupTestHandler(t)
+		fixture := newClientMethodFixture(t, shared)
+		parent := fixture.ensure(t, testenv.FixtureLocation)
+
+		name, err := fixture.run.Name("admin-location-type")
+		r.NoError(err)
+		created, err := fixture.client.CreateStockLocationType(ctx, inventree.StockLocationTypeCreate{Name: name, Description: "F-S67 integration location type", Icon: "ti:box:outline"})
+		r.NoError(err)
+		r.NotZero(created.PK)
+		r.Equal(name, created.Name)
+		r.Equal("F-S67 integration location type", created.Description)
+		r.Equal("ti:box:outline", created.Icon)
+
+		page, err := fixture.client.SearchStockLocationTypesPage(ctx, inventree.SearchQuery{Limit: 100})
+		r.NoError(err)
+		r.Contains(stockLocationTypeIDs(page.Results), created.PK)
+
+		updated, err := fixture.client.UpdateStockLocationType(ctx, created.PK, inventree.PatchFields{"description": inventree.Set("updated by F-S67 integration"), "icon": inventree.Set("")})
+		r.NoError(err)
+		r.Equal("updated by F-S67 integration", updated.Description)
+		r.Empty(updated.Icon)
+
+		locationName, err := fixture.run.Name("admin-typed-location")
+		r.NoError(err)
+		typedLocation, err := fixture.client.CreateStockLocation(ctx, inventree.StockLocationCreate{Name: locationName, Parent: &parent.ID, LocationType: &created.PK})
+		r.NoError(err)
+		r.Equal(created.PK, *typedLocation.LocationType)
+
+		// Live discovery (F-S67): InvenTree 1.5.0 safely SET_NULLs
+		// location_type on every referencing location when the type is
+		// deleted rather than refusing the delete or cascading further;
+		// this is why delete_stock_location_type reports referencing
+		// locations for operator review instead of blocking on them.
+		r.NoError(fixture.client.DeleteStockLocationType(ctx, created.PK))
+		_, err = fixture.client.GetStockLocationType(ctx, created.PK)
+		var apiErr *inventree.APIError
+		r.ErrorAs(err, &apiErr)
+		a.Equal(inventree.ErrorKindNotFound, apiErr.Kind)
+
+		afterDelete, err := fixture.client.GetStockLocation(ctx, typedLocation.PK)
+		r.NoError(err)
+		a.Nil(afterDelete.LocationType)
+	})
+
 	t.Run("stock_item_detail", func(t *testing.T) {
 		r := require.New(t)
 		a := assert.New(t)

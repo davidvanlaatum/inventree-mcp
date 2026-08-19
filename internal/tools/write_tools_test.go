@@ -586,7 +586,7 @@ func TestWriteToolAuthorizationsUseWriteScope(t *testing.T) {
 		auth, ok := ToolAuthorizations[name]
 		r.True(ok, "missing authorization for %s", name)
 		switch name {
-		case CreatePartToolName, UpdatePartToolName, CreatePartRelationToolName, UpdatePartRelationToolName, CreateCompanyToolName, CreateSupplierPartToolName, CreateManufacturerPartToolName, UpsertPartWorkflowToolName, CreateParameterTemplateToolName, UpdateParameterTemplateToolName, CreateCategoryParameterDefaultToolName, UpdateCategoryParameterDefaultToolName, CreatePartCategoryToolName, CreateStockLocationToolName, CreatePurchaseOrderExtraLineToolName, CreatePurchaseOrderWorkflowToolName, IssuePurchaseOrderToolName, CompletePurchaseOrderToolName:
+		case CreatePartToolName, UpdatePartToolName, CreatePartRelationToolName, UpdatePartRelationToolName, CreateCompanyToolName, CreateSupplierPartToolName, CreateManufacturerPartToolName, UpsertPartWorkflowToolName, CreateParameterTemplateToolName, UpdateParameterTemplateToolName, CreateCategoryParameterDefaultToolName, UpdateCategoryParameterDefaultToolName, CreatePartCategoryToolName, CreateStockLocationToolName, CreateStockLocationTypeToolName, CreatePurchaseOrderExtraLineToolName, CreatePurchaseOrderWorkflowToolName, IssuePurchaseOrderToolName, CompletePurchaseOrderToolName:
 			a.Equal("write", auth.MutationClass)
 			a.Equal([]string{ScopeInventreeRead, ScopeInventreeWrite}, auth.Scopes)
 			a.Equal(WriteAnnotations, auth.Annotations)
@@ -596,7 +596,7 @@ func TestWriteToolAuthorizationsUseWriteScope(t *testing.T) {
 			expected := WriteAnnotations
 			expected.Idempotent = true
 			a.Equal(expected, auth.Annotations)
-		case UpdateCompanyToolName, UpdateSupplierPartToolName, UpdateManufacturerPartToolName, UpdateStockLocationToolName, UpdatePurchaseOrderExtraLineToolName, UpdatePurchaseOrderToolName:
+		case UpdateCompanyToolName, UpdateSupplierPartToolName, UpdateManufacturerPartToolName, UpdateStockLocationToolName, UpdateStockLocationTypeToolName, UpdatePurchaseOrderExtraLineToolName, UpdatePurchaseOrderToolName:
 			a.Equal("write", auth.MutationClass)
 			a.Equal([]string{ScopeInventreeRead, ScopeInventreeWrite}, auth.Scopes)
 			expected := WriteAnnotations
@@ -644,7 +644,7 @@ func TestWriteToolAuthorizationsUseWriteScope(t *testing.T) {
 			a.Equal("destructive", auth.MutationClass)
 			a.Equal([]string{ScopeInventreeRead, ScopeInventreeWrite, ScopeInventreeUpload, ScopeInventreeDestructive}, auth.Scopes)
 			a.True(auth.Annotations.Destructive)
-		case DeletePartParameterToolName, DeleteParameterTemplateToolName, MergeParameterTemplatesToolName, DeleteCategoryParameterDefaultToolName, DeletePurchaseOrderExtraLineToolName, DeletePurchaseOrderLineToolName, DeletePartToolName, DeletePartRelationToolName, RemoveCompanyCustomerRoleToolName, AssignOwnerToolName, AssignContactToolName, AssignAddressToolName, AssignProjectCodeToolName:
+		case DeletePartParameterToolName, DeleteParameterTemplateToolName, MergeParameterTemplatesToolName, DeleteCategoryParameterDefaultToolName, DeletePurchaseOrderExtraLineToolName, DeletePurchaseOrderLineToolName, DeletePartToolName, DeletePartRelationToolName, DeleteStockLocationTypeToolName, RemoveCompanyCustomerRoleToolName, AssignOwnerToolName, AssignContactToolName, AssignAddressToolName, AssignProjectCodeToolName:
 			a.Equal("destructive", auth.MutationClass)
 			a.Equal([]string{ScopeInventreeRead, ScopeInventreeWrite, ScopeInventreeDestructive}, auth.Scopes)
 			a.True(auth.Annotations.Destructive)
