@@ -290,6 +290,22 @@ type StockTransferContext struct {
 	WillSplit   bool                    `json:"will_split"`
 }
 
+// StockInstallContext captures the cross-record relationship context for
+// install_stock_item and uninstall_stock_item. Plan.Before/Plan.After always
+// describe the CHILD stock item (the one being installed or uninstalled);
+// ParentID identifies the other side of the belongs_to relationship.
+type StockInstallContext struct {
+	ParentID                   int                    `json:"parent_id"`
+	ParentPartID               int                    `json:"parent_part_id"`
+	ParentInstalledItemsBefore *int                   `json:"parent_installed_items_before,omitempty"`
+	ChildPartID                int                    `json:"child_part_id"`
+	ChildBelongsToBefore       *int                   `json:"child_belongs_to_before,omitempty"`
+	ChildBelongsToAfter        *int                   `json:"child_belongs_to_after,omitempty"`
+	Destination                *StockTransferLocation `json:"destination,omitempty"`
+	BOMConfirmed               bool                   `json:"bom_confirmed"`
+	Safety                     StockTransferSafety    `json:"safety"`
+}
+
 type StockAdjustmentPlan struct {
 	Action     string                 `json:"action"`
 	Before     StockStateSnapshot     `json:"before"`
@@ -300,6 +316,7 @@ type StockAdjustmentPlan struct {
 	WillDelete bool                   `json:"will_delete,omitempty"`
 	Depletion  *StockDepletionContext `json:"depletion,omitempty"`
 	Transfer   *StockTransferContext  `json:"transfer,omitempty"`
+	Install    *StockInstallContext   `json:"install,omitempty"`
 }
 
 type StockAdjustmentFailure struct {
@@ -334,6 +351,8 @@ func registerStockAdjustmentTools(server *mcp.Server, deps Dependencies) {
 	addWriteTool(server, deps, TransferStockItemToolName, "Transfer complete stock item", "Plans or confirms relocation of one safe stock item's complete quantity to an explicit destination.", transferStockItem(deps))
 	addWriteTool(server, deps, AssignStockSerialToolName, "Assign stock serial number", "Plans or confirms assigning a serial number to one currently-unserialized stock item.", assignStockSerial(deps))
 	addWriteTool(server, deps, SetStockSerialToolName, "Replace or clear stock serial number", "Plans or confirms replacing or clearing the serial number on one already-serialized stock item.", setStockSerial(deps))
+	addWriteTool(server, deps, InstallStockItemToolName, "Install stock item", "Plans or confirms installing one available BOM-eligible child stock item into a parent stock item.", installStockItem(deps))
+	addWriteTool(server, deps, UninstallStockItemToolName, "Uninstall stock item", "Plans or confirms removing one currently-installed child stock item to an explicit destination location.", uninstallStockItem(deps))
 }
 
 func adjustStockQuantity(deps Dependencies) mcp.ToolHandlerFor[AdjustStockQuantityInput, StockAdjustmentOutput] {

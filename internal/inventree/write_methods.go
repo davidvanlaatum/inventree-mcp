@@ -160,6 +160,23 @@ type StockStatusChange struct {
 	Note   string `json:"note"`
 }
 
+// InstallStockItem mirrors docs/api-schema.yaml's InstallStockItem serializer
+// for POST /api/stock/{id}/install/, where {id} is the parent stock item
+// receiving the install and StockItem is the child being installed into it.
+type InstallStockItem struct {
+	StockItem int    `json:"stock_item"`
+	Quantity  int    `json:"quantity,omitempty"`
+	Note      string `json:"note,omitempty"`
+}
+
+// UninstallStockItem mirrors docs/api-schema.yaml's UninstallStockItem
+// serializer for POST /api/stock/{id}/uninstall/, where {id} is the
+// currently-installed child stock item being removed to Location.
+type UninstallStockItem struct {
+	Location int    `json:"location"`
+	Note     string `json:"note,omitempty"`
+}
+
 type PurchaseOrderCreate struct {
 	Reference         string  `json:"reference,omitempty"`
 	Supplier          int     `json:"supplier"`
@@ -470,6 +487,21 @@ func (c *Client) TransferStock(ctx context.Context, input StockTransfer) error {
 
 func (c *Client) ChangeStockStatus(ctx context.Context, input StockStatusChange) error {
 	return c.Post(ctx, "/api/stock/change_status/", input, nil)
+}
+
+// InstallStockItem's 201 response echoes the InstallStockItem request body
+// (per docs/api-schema.yaml), not the resulting stock-item state, so callers
+// must re-fetch the affected stock items to observe the applied change.
+func (c *Client) InstallStockItem(ctx context.Context, parentID int, input InstallStockItem) error {
+	return c.Post(ctx, fmt.Sprintf("/api/stock/%d/install/", parentID), input, nil)
+}
+
+// UninstallStockItem's 201 response echoes the UninstallStockItem request
+// body (per docs/api-schema.yaml), not the resulting stock-item state, so
+// callers must re-fetch the affected stock item to observe the applied
+// change.
+func (c *Client) UninstallStockItem(ctx context.Context, childID int, input UninstallStockItem) error {
+	return c.Post(ctx, fmt.Sprintf("/api/stock/%d/uninstall/", childID), input, nil)
 }
 
 func (c *Client) CreatePurchaseOrder(ctx context.Context, input PurchaseOrderCreate) (PurchaseOrder, error) {
