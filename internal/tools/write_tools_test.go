@@ -606,7 +606,7 @@ func TestWriteToolAuthorizationsUseWriteScope(t *testing.T) {
 			a.Equal("destructive", auth.MutationClass)
 			a.Equal([]string{ScopeInventreeRead, ScopeInventreeWrite, ScopeInventreeDestructive}, auth.Scopes)
 			a.True(auth.Annotations.Destructive)
-		case DepleteStockItemToolName, UpdatePartFamilyRelationshipsToolName:
+		case SetStockDeleteOnDepleteToolName, DepleteStockItemToolName, UpdatePartFamilyRelationshipsToolName:
 			a.Equal("destructive", auth.MutationClass)
 			a.Equal([]string{ScopeInventreeRead, ScopeInventreeWrite, ScopeInventreeOperational, ScopeInventreeDestructive}, auth.Scopes)
 			a.True(auth.Annotations.Destructive)
@@ -673,6 +673,7 @@ func TestWriteToolInputsExcludeSalesAndCustomerWorkflowFields(t *testing.T) {
 		reflect.TypeOf(AdjustStockQuantityInput{}),
 		reflect.TypeOf(SetStockStatusInput{}),
 		reflect.TypeOf(StocktakeAdjustmentInput{}),
+		reflect.TypeOf(SetStockDeleteOnDepleteInput{}),
 		reflect.TypeOf(DepleteStockItemInput{}),
 		reflect.TypeOf(IssuePurchaseOrderInput{}),
 		reflect.TypeOf(ReceivePurchaseOrderInput{}),

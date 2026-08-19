@@ -158,6 +158,7 @@ type StockAdjustmentClient interface {
 	RemoveStock(context.Context, inventree.StockAdjustment) error
 	CountStock(context.Context, inventree.StockAdjustment) error
 	ChangeStockStatus(context.Context, inventree.StockStatusChange) error
+	UpdateStockItem(context.Context, int, inventree.PatchFields) (inventree.StockItem, error)
 }
 
 type AdjustStockQuantityInput struct {
@@ -325,6 +326,7 @@ func registerStockAdjustmentTools(server *mcp.Server, deps Dependencies) {
 	addWriteTool(server, deps, AdjustStockQuantityToolName, "Adjust stock quantity", "Plans or confirms one relative stock quantity adjustment with an audit reason.", adjustStockQuantity(deps))
 	addWriteTool(server, deps, SetStockStatusToolName, "Set stock status", "Plans or confirms one status-only stock change with an audit reason.", setStockStatus(deps))
 	addWriteTool(server, deps, StocktakeAdjustmentToolName, "Record stocktake adjustment", "Plans or confirms one absolute quantity-only stocktake count with an audit reason.", stocktakeAdjustment(deps))
+	addWriteTool(server, deps, SetStockDeleteOnDepleteToolName, "Set stock delete-on-deplete policy", "Plans or confirms one delete-on-deplete policy change for a stock item with an audit reason.", setStockDeleteOnDeplete(deps))
 	addWriteTool(server, deps, DepleteStockItemToolName, "Deplete delete-on-deplete stock item", "Plans or confirms complete removal of one safe delete-on-deplete stock item with an audit reason.", depleteStockItem(deps))
 	addWriteTool(server, deps, TransferStockItemToolName, "Transfer complete stock item", "Plans or confirms relocation of one safe stock item's complete quantity to an explicit destination.", transferStockItem(deps))
 }

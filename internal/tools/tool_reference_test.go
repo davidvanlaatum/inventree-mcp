@@ -157,7 +157,7 @@ func TestToolReferenceDocumentsRegisteredWriteTools(t *testing.T) {
 		case BulkPropagatePartParametersToolName:
 			a.Equal("destructive", auth.MutationClass)
 			a.Equal([]string{ScopeInventreeRead, ScopeInventreeWrite, ScopeInventreeDestructive}, auth.Scopes)
-		case DepleteStockItemToolName, UpdatePartFamilyRelationshipsToolName:
+		case SetStockDeleteOnDepleteToolName, DepleteStockItemToolName, UpdatePartFamilyRelationshipsToolName:
 			a.Equal("destructive", auth.MutationClass)
 			a.Equal([]string{ScopeInventreeRead, ScopeInventreeWrite, ScopeInventreeOperational, ScopeInventreeDestructive}, auth.Scopes)
 		case CreateStockItemToolName, InitialStockWorkflowToolName:

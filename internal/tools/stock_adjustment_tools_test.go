@@ -426,10 +426,12 @@ type fakeStockAdjustmentClient struct {
 	item             inventree.StockItem
 	lastAdjustment   inventree.StockAdjustment
 	lastStatusChange inventree.StockStatusChange
+	lastPatch        inventree.PatchFields
 	addCalls         int
 	removeCalls      int
 	countCalls       int
 	statusCalls      int
+	updateCalls      int
 	mutateErr        error
 	getCalls         int
 	getErrAt         map[int]error
@@ -498,6 +500,22 @@ func (f *fakeStockAdjustmentClient) ChangeStockStatus(_ context.Context, input i
 	f.runBeforeMutation()
 	f.item.Status = input.Status
 	return nil
+}
+
+func (f *fakeStockAdjustmentClient) UpdateStockItem(_ context.Context, id int, fields inventree.PatchFields) (inventree.StockItem, error) {
+	f.updateCalls++
+	f.lastPatch = fields
+	if f.mutateErr != nil {
+		return inventree.StockItem{}, f.mutateErr
+	}
+	f.runBeforeMutation()
+	if value, ok := fields["delete_on_deplete"]; ok {
+		f.item.DeleteOnDeplete = value.Value().(bool)
+	}
+	if f.deleted || id != f.item.PK {
+		return inventree.StockItem{}, &inventree.APIError{StatusCode: http.StatusNotFound, Kind: inventree.ErrorKindNotFound}
+	}
+	return f.item, nil
 }
 
 func (f *fakeStockAdjustmentClient) runBeforeMutation() {

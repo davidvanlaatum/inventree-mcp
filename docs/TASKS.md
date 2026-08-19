@@ -132,7 +132,7 @@ Before assigning a new story ID, inspect `git worktree list --porcelain`, search
 | [F-S48](#f-s48-owner-discovery-and-cross-object-responsibility) | Discover InvenTree owners and support consistent guarded responsibility assignment across applicable objects. | Done |
 | [F-S49](#f-s49-structured-contact-and-address-references) | Discover structured company contacts and addresses and support guarded assignment on applicable objects. | Done |
 | [F-S50](#f-s50-project-code-discovery-and-assignment) | Discover existing project codes and support consistent guarded assignment across purchase-order records. | Done |
-| [F-S51](#f-s51-guarded-delete-on-deplete-policy-updates) | Add a reviewed workflow for enabling or disabling delete-on-deplete behavior on one stock item. | Ready |
+| [F-S51](#f-s51-guarded-delete-on-deplete-policy-updates) | Add a reviewed workflow for enabling or disabling delete-on-deplete behavior on one stock item. | Done |
 | [F-S52](#f-s52-stock-serial-number-management) | Add dedicated discovery and guarded mutation workflows for stock serial numbers. | Ready |
 | [F-S53](#f-s53-guarded-stock-provenance-correction) | Add reviewed correction of supplier, purchase-order, and purchase-price provenance on eligible stock items. | Ready |
 | [F-S54](#f-s54-stock-install-and-uninstall-workflows) | Add dedicated guarded workflows for parent/child stock installation relationships. | Ready |
@@ -2343,19 +2343,22 @@ Tasks:
 
 ### F-S51: Guarded Delete-On-Deplete Policy Updates
 
-- Status: `Ready`
+- Status: `Done`
 - Issue: [#132](https://github.com/davidvanlaatum/inventree-mcp/issues/132)
 - Depends on: F-S24, F-S45
 - Decisions: approved by the operator on 2026-08-15. `delete_on_deplete` is not ordinary metadata because it controls future record deletion; changes require a dedicated reviewed workflow.
+- Branch: `codex/f-s51-guarded-delete-on-deplete-policy`.
 - Scope: add dry-run/current-state planning, confirmation, PATCH, and exact read-back for one stock item's delete-on-deplete policy.
 - Acceptance:
-  - Dry run returns the exact stock identity, quantity, allocations, relationships, current/effective policy, planned change, and a current-state plan token.
-  - Execution requires explicit confirmation and matching plan token, validates the same stable item, and verifies the resulting boolean exactly.
-  - The workflow requires `inventree.read`, `inventree.write`, `inventree.operational`, and `inventree.destructive`, remains closed-world and non-idempotent, and publishes `destructiveHint:true`.
-  - No-op requests are factual and do not mutate; ambiguous PATCH results use read-back before retry guidance.
-  - Pinned integration tests establish behavior for positive and zero quantities and interaction with the existing guarded depletion workflow.
-  - Tool annotations/scopes, plan/schema/tool/operator docs, and coverage/review evidence are aligned.
-- Residual risk: enabling the flag authorizes future InvenTree quantity operations to delete the record at depletion; this story can verify the policy change but cannot bind or predict every later upstream mutation.
+  - [x] Dry run returns the exact stock identity, quantity, allocations, relationships, current/effective policy, planned change, and a current-state plan token.
+  - [x] Execution requires explicit confirmation and matching plan token, validates the same stable item, and verifies the resulting boolean exactly.
+  - [x] The workflow requires `inventree.read`, `inventree.write`, `inventree.operational`, and `inventree.destructive`, remains closed-world and non-idempotent, and publishes `destructiveHint:true`.
+  - [x] No-op requests are factual and do not mutate; ambiguous PATCH results use read-back before retry guidance.
+  - [x] Pinned integration tests establish behavior for positive and zero quantities and interaction with the existing guarded depletion workflow.
+  - [x] Tool annotations/scopes, plan/schema/tool/operator docs, and coverage/review evidence are aligned.
+- Validation: `go build ./...`, `go vet ./...`, `gofmt -l .` clean; `golangci-lint run ./...` reported 0 issues; `go test ./... -short` passed for every package. `go test ./internal/inventree/... -run TestClientMethodsAgainstInvenTree -v` (real Docker/Testcontainers InvenTree 1.5.0) passed, including the new `stock_delete_on_deplete_policy` subtest covering positive-quantity enable/disable, disable-then-full-depletion survival, enable-at-zero-quantity non-deletion, and restock-then-depletion-after-toggle deletion. Per-package coverage compared against `main` via `go test ./internal/tools/... ./internal/inventree/... -short -coverprofile=... -covermode=atomic`: `internal/tools` 84.2%→84.2%, `internal/inventree` 85.8%→85.8% — no reduction.
+- Review: full Go/QA/Product/Infosec panel per AGENTS.md (new destructive tool-surface change). Senior Go Developer found the no-op clarification's `retry` field pointed at `stock_item_id` instead of `delete_on_deplete` (inconsistent with the sibling `set_stock_status`/`stocktake_adjustment` no-op convention); fixed, with a new assertion added. Senior QA / Test Architect found no actionable issues; confirmed every acceptance bullet is covered by an executable test and that `delete_on_deplete` remains excluded from `update_stock_item_metadata`'s patchable fields. Senior Product Manager found `docs/operator-recipes.md` was not updated to surface the tool or the `STOCK_DELETE_ON_DEPLETE` default-true discovery to operators; fixed with a `set_stock_delete_on_deplete` flow bullet in "Review And Apply A Stocktake Adjustment" and a pointer from "Create Initial Stock". Senior Infosec Reviewer found no actionable issues; confirmed the OAuth scope guard covers the new tool through the existing generic `ToolAuthorizations` mechanism with no bypass path, the `StockAdjustmentClient` interface widening leaks no new capability to other callers, and no credential/upload/URL-fetch logic was touched. Focused rerun after the two fixes: unit tests, `go build`/`vet`/`gofmt`/lint, and `git diff --check` on docs all passed.
+- Residual risk: enabling the flag authorizes future InvenTree quantity operations to delete the record at depletion; this story can verify the policy change but cannot bind or predict every later upstream mutation. Live Testcontainers verification against pinned InvenTree 1.5.0 found the global `STOCK_DELETE_ON_DEPLETE` setting defaults to enabled, so stock created via `create_stock_item`/`create_initial_stock_entry` (neither exposes this field) already carries `delete_on_deplete:true` unless an operator explicitly disables it with this tool; documented in `docs/api-schema.md` and `docs/operator-recipes.md`, but no MCP-level warning is surfaced at creation time itself.
 
 ### F-S52: Stock Serial-Number Management
 
