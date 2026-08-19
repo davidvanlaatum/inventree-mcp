@@ -924,9 +924,33 @@ func canonicalStockDecimal(value *inventree.DecimalString) *inventree.DecimalStr
 		return nil
 	}
 	canonical := string(*value)
-	if strings.Contains(canonical, ".") {
-		canonical = strings.TrimRight(strings.TrimRight(canonical, "0"), ".")
+	sign := ""
+	if strings.HasPrefix(canonical, "-") {
+		sign = "-"
+		canonical = strings.TrimPrefix(canonical, "-")
 	}
+	if strings.HasPrefix(canonical, ".") {
+		canonical = "0" + canonical
+	}
+	integer, fraction, hasFraction := strings.Cut(canonical, ".")
+	integer = strings.TrimLeft(integer, "0")
+	if integer == "" {
+		integer = "0"
+	}
+	if hasFraction {
+		fraction = strings.TrimRight(fraction, "0")
+		if fraction != "" {
+			canonical = integer + "." + fraction
+		} else {
+			canonical = integer
+		}
+	} else {
+		canonical = integer
+	}
+	if canonical == "0" {
+		sign = ""
+	}
+	canonical = sign + canonical
 	if canonical == "" || canonical == "-0" {
 		canonical = "0"
 	}

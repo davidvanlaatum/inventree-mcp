@@ -455,6 +455,21 @@ func TestUpdateStockItemProvenancePlansValidatesSupplierAndOrder(t *testing.T) {
 	assert.Equal(t, "2.50", string(*fake.stockItems[50].PurchasePrice))
 }
 
+func TestCanonicalStockDecimalNormalizesLeadingIntegerForms(t *testing.T) {
+	t.Parallel()
+	for input, expected := range map[string]string{
+		".500":   "0.5",
+		"00.500": "0.5",
+		"000":    "0",
+		"-0.00":  "0",
+	} {
+		value := decimalPtr(input)
+		canonical := canonicalStockDecimal(value)
+		require.NotNil(t, canonical)
+		assert.Equal(t, expected, string(*canonical))
+	}
+}
+
 func TestUpdateStockItemProvenanceRefusesPartMismatch(t *testing.T) {
 	t.Parallel()
 	ctx, _, _ := testhandler.SetupTestHandler(t)
