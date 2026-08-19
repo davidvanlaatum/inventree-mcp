@@ -733,7 +733,7 @@ func TestHTTPHelpersFetchVersionCreateAndProveToken(t *testing.T) {
 		switch req.URL.Path {
 		case "/api/version/":
 			assertBasicAuth(t, req)
-			return http.StatusOK, `{"version":{"server":"1.5.0","api":530}}`
+			return http.StatusOK, fmt.Sprintf(`{"version":{"server":%q,"api":%s}}`, DefaultVersion, DefaultAPIVersion)
 		case "/api/user/me/token/":
 			assertBasicAuth(t, req)
 			r.Equal(defaultTokenName, req.URL.Query().Get("name"))
