@@ -132,6 +132,12 @@ type StockLocationCreate struct {
 	LocationType *int    `json:"location_type,omitempty"`
 }
 
+type StockLocationTypeCreate struct {
+	Name        string `json:"name"`
+	Description string `json:"description,omitempty"`
+	Icon        string `json:"icon,omitempty"`
+}
+
 type StockAdjustmentItem struct {
 	PK       int    `json:"pk"`
 	Quantity string `json:"quantity"`
@@ -424,6 +430,26 @@ func (c *Client) UpdateStockLocation(ctx context.Context, id int, fields PatchFi
 	var out StockLocation
 	err := c.Patch(ctx, fmt.Sprintf("/api/stock/location/%d/", id), fields, &out)
 	return out, err
+}
+
+func (c *Client) CreateStockLocationType(ctx context.Context, input StockLocationTypeCreate) (StockLocationType, error) {
+	var out StockLocationType
+	err := c.Post(ctx, "/api/stock/location-type/", input, &out)
+	return out, err
+}
+
+func (c *Client) UpdateStockLocationType(ctx context.Context, id int, fields PatchFields) (StockLocationType, error) {
+	var out StockLocationType
+	err := c.Patch(ctx, fmt.Sprintf("/api/stock/location-type/%d/", id), fields, &out)
+	return out, err
+}
+
+func (c *Client) DeleteStockLocationType(ctx context.Context, id int) error {
+	req, err := c.NewRequest(ctx, http.MethodDelete, fmt.Sprintf("/api/stock/location-type/%d/", id), nil, nil)
+	if err != nil {
+		return err
+	}
+	return c.DoJSON(req, nil)
 }
 
 func (c *Client) AddStock(ctx context.Context, input StockAdjustment) error {

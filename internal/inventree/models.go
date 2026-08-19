@@ -177,6 +177,7 @@ type StockLocation struct {
 	Items              int                `json:"items"`
 	Sublocations       int                `json:"sublocations"`
 	Owner              *int               `json:"owner"`
+	Icon               string             `json:"icon"`
 	CustomIcon         *string            `json:"custom_icon"`
 	Structural         bool               `json:"structural"`
 	External           bool               `json:"external"`
@@ -197,6 +198,12 @@ type StockLocationType struct {
 	Description   string `json:"description"`
 	Icon          string `json:"icon"`
 	LocationCount *int   `json:"location_count"`
+}
+
+type StockLocationTypePage struct {
+	Count   int
+	Results []StockLocationType
+	HasMore bool
 }
 
 // Owner projects InvenTree's read-only "Owner" model, which represents

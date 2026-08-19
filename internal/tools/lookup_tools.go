@@ -95,6 +95,9 @@ const (
 	CreateStockLocationToolName             = "create_stock_location"
 	UpdateStockLocationToolName             = "update_stock_location"
 	RestructureStockLocationToolName        = "restructure_stock_location"
+	CreateStockLocationTypeToolName         = "create_stock_location_type"
+	UpdateStockLocationTypeToolName         = "update_stock_location_type"
+	DeleteStockLocationTypeToolName         = "delete_stock_location_type"
 	UpdateStockItemMetadataToolName         = "update_stock_item_metadata"
 	InitialStockWorkflowToolName            = "create_initial_stock_entry"
 	AdjustStockQuantityToolName             = "adjust_stock_quantity"
@@ -242,6 +245,9 @@ var writeToolNames = []string{
 	CreateStockLocationToolName,
 	UpdateStockLocationToolName,
 	RestructureStockLocationToolName,
+	CreateStockLocationTypeToolName,
+	UpdateStockLocationTypeToolName,
+	DeleteStockLocationTypeToolName,
 	UpdateStockItemMetadataToolName,
 	InitialStockWorkflowToolName,
 	AdjustStockQuantityToolName,
@@ -308,7 +314,7 @@ func init() {
 		scopes := []string{ScopeInventreeWrite}
 		mutationClass := "write"
 		switch name {
-		case CreatePartToolName, UpdatePartToolName, CreatePartRelationToolName, UpdatePartRelationToolName, CreateCompanyToolName, CreateSupplierPartToolName, CreateManufacturerPartToolName, UpsertPartWorkflowToolName, CreateParameterTemplateToolName, UpdateParameterTemplateToolName, CreateCategoryParameterDefaultToolName, UpdateCategoryParameterDefaultToolName, CreatePartCategoryToolName, UpdatePartCategoryToolName, UpdateCompanyToolName, UpdateSupplierPartToolName, UpdateManufacturerPartToolName, CreateStockLocationToolName, UpdateStockLocationToolName, CreatePurchaseOrderExtraLineToolName, UpdatePurchaseOrderExtraLineToolName, UpdatePurchaseOrderToolName, CreatePurchaseOrderWorkflowToolName, IssuePurchaseOrderToolName, CompletePurchaseOrderToolName:
+		case CreatePartToolName, UpdatePartToolName, CreatePartRelationToolName, UpdatePartRelationToolName, CreateCompanyToolName, CreateSupplierPartToolName, CreateManufacturerPartToolName, UpsertPartWorkflowToolName, CreateParameterTemplateToolName, UpdateParameterTemplateToolName, CreateCategoryParameterDefaultToolName, UpdateCategoryParameterDefaultToolName, CreatePartCategoryToolName, UpdatePartCategoryToolName, UpdateCompanyToolName, UpdateSupplierPartToolName, UpdateManufacturerPartToolName, CreateStockLocationToolName, UpdateStockLocationToolName, CreateStockLocationTypeToolName, UpdateStockLocationTypeToolName, CreatePurchaseOrderExtraLineToolName, UpdatePurchaseOrderExtraLineToolName, UpdatePurchaseOrderToolName, CreatePurchaseOrderWorkflowToolName, IssuePurchaseOrderToolName, CompletePurchaseOrderToolName:
 			scopes = []string{ScopeInventreeRead, ScopeInventreeWrite}
 		case BulkPropagatePartParametersToolName:
 			scopes = []string{ScopeInventreeRead, ScopeInventreeWrite, ScopeInventreeDestructive}
@@ -332,7 +338,7 @@ func init() {
 			scopes = []string{ScopeInventreeWrite, ScopeInventreeUpload}
 		case SetCompanyImageToolName, SetCompanyImageFromURLToolName:
 			scopes = []string{ScopeInventreeRead, ScopeInventreeWrite, ScopeInventreeUpload}
-		case DeletePartParameterToolName, DeleteParameterTemplateToolName, MergeParameterTemplatesToolName, DeleteCategoryParameterDefaultToolName, DeletePurchaseOrderExtraLineToolName, DeletePurchaseOrderLineToolName, DeletePartToolName, DeletePartRelationToolName:
+		case DeletePartParameterToolName, DeleteParameterTemplateToolName, MergeParameterTemplatesToolName, DeleteCategoryParameterDefaultToolName, DeletePurchaseOrderExtraLineToolName, DeletePurchaseOrderLineToolName, DeletePartToolName, DeletePartRelationToolName, DeleteStockLocationTypeToolName:
 			scopes = []string{ScopeInventreeRead, ScopeInventreeWrite, ScopeInventreeDestructive}
 			mutationClass = "destructive"
 		case DeleteAttachmentToolName:
@@ -346,7 +352,7 @@ func init() {
 		if name == UploadAttachmentFromURLToolName || name == SetCompanyImageFromURLToolName {
 			annotations.OpenWorld = true
 		}
-		if name == DeleteAttachmentToolName || name == ClearCompanyImageToolName || name == DeletePartParameterToolName || name == DeleteParameterTemplateToolName || name == MergeParameterTemplatesToolName || name == DeleteCategoryParameterDefaultToolName || name == DeletePurchaseOrderExtraLineToolName || name == DeletePurchaseOrderLineToolName || name == BulkPropagatePartParametersToolName || name == SetStockDeleteOnDepleteToolName || name == DepleteStockItemToolName || name == UpdatePartFamilyRelationshipsToolName || name == DeletePartToolName || name == DeletePartRelationToolName || name == RemoveCompanyCustomerRoleToolName || name == AssignOwnerToolName || name == AssignContactToolName || name == AssignAddressToolName || name == AssignProjectCodeToolName {
+		if name == DeleteAttachmentToolName || name == ClearCompanyImageToolName || name == DeletePartParameterToolName || name == DeleteParameterTemplateToolName || name == MergeParameterTemplatesToolName || name == DeleteCategoryParameterDefaultToolName || name == DeletePurchaseOrderExtraLineToolName || name == DeletePurchaseOrderLineToolName || name == BulkPropagatePartParametersToolName || name == SetStockDeleteOnDepleteToolName || name == DepleteStockItemToolName || name == UpdatePartFamilyRelationshipsToolName || name == DeletePartToolName || name == DeletePartRelationToolName || name == RemoveCompanyCustomerRoleToolName || name == AssignOwnerToolName || name == AssignContactToolName || name == AssignAddressToolName || name == AssignProjectCodeToolName || name == DeleteStockLocationTypeToolName {
 			annotations.Destructive = true
 		}
 		ToolAuthorizations[name] = ToolAuthorization{
@@ -365,7 +371,7 @@ func init() {
 		auth.Annotations.Idempotent = true
 		ToolAuthorizations[name] = auth
 	}
-	for _, name := range []string{UpdateStockLocationToolName, RestructureStockLocationToolName, UpdateStockItemMetadataToolName} {
+	for _, name := range []string{UpdateStockLocationToolName, RestructureStockLocationToolName, UpdateStockLocationTypeToolName, UpdateStockItemMetadataToolName} {
 		auth := ToolAuthorizations[name]
 		auth.Annotations.Idempotent = true
 		ToolAuthorizations[name] = auth

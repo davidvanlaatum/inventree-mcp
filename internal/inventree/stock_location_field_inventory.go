@@ -1,0 +1,54 @@
+package inventree
+
+// StockLocationFieldClass records the approved handling for every field in
+// the pinned API 530 Location and StockLocationType serializers. These
+// inventories are exhaustive so schema drift cannot silently widen exact
+// stock-location output or ordinary mutation inputs.
+type StockLocationFieldClass string
+
+const (
+	StockLocationFieldExposed        StockLocationFieldClass = "exposed"
+	StockLocationFieldSeparateLookup StockLocationFieldClass = "separate_lookup"
+	StockLocationFieldDeferred       StockLocationFieldClass = "deferred"
+	StockLocationFieldWriteOnly      StockLocationFieldClass = "write_only"
+	StockLocationFieldExcluded       StockLocationFieldClass = "excluded"
+)
+
+// StockLocationFieldInventory classifies every pinned Location serializer
+// field. barcode_hash stays excluded pending F-S55; tags and parameters stay
+// deferred to F-S56 and F-S64 respectively. location_type_detail is exposed
+// rather than a separate lookup because InvenTree always embeds it in this
+// serializer and the existing get_stock_location/search_stock_locations
+// projection already carries it.
+var StockLocationFieldInventory = map[string]StockLocationFieldClass{
+	"pk":                   StockLocationFieldExposed,
+	"barcode_hash":         StockLocationFieldExcluded,
+	"name":                 StockLocationFieldExposed,
+	"level":                StockLocationFieldExposed,
+	"description":          StockLocationFieldExposed,
+	"parent":               StockLocationFieldExposed,
+	"pathstring":           StockLocationFieldExposed,
+	"path":                 StockLocationFieldExposed,
+	"items":                StockLocationFieldExposed,
+	"sublocations":         StockLocationFieldExposed,
+	"owner":                StockLocationFieldExposed,
+	"icon":                 StockLocationFieldExposed,
+	"custom_icon":          StockLocationFieldExposed,
+	"structural":           StockLocationFieldExposed,
+	"external":             StockLocationFieldExposed,
+	"location_type":        StockLocationFieldExposed,
+	"location_type_detail": StockLocationFieldExposed,
+	"tags":                 StockLocationFieldDeferred,
+	"parameters":           StockLocationFieldDeferred,
+}
+
+// StockLocationTypeFieldInventory classifies every pinned StockLocationType
+// serializer field. Every field is exposed; the type is a small reference
+// record with no deferred or nested content.
+var StockLocationTypeFieldInventory = map[string]StockLocationFieldClass{
+	"pk":             StockLocationFieldExposed,
+	"name":           StockLocationFieldExposed,
+	"description":    StockLocationFieldExposed,
+	"icon":           StockLocationFieldExposed,
+	"location_count": StockLocationFieldExposed,
+}

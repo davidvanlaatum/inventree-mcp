@@ -151,7 +151,7 @@ func TestToolReferenceDocumentsRegisteredWriteTools(t *testing.T) {
 		auth, ok := ToolAuthorizations[name]
 		r.True(ok, "missing authorization for %s", name)
 		switch name {
-		case CreatePartToolName, UpdatePartToolName, CreatePartRelationToolName, UpdatePartRelationToolName, CreateCompanyToolName, CreateSupplierPartToolName, CreateManufacturerPartToolName, UpsertPartWorkflowToolName, CreateParameterTemplateToolName, UpdateParameterTemplateToolName, CreateCategoryParameterDefaultToolName, UpdateCategoryParameterDefaultToolName, CreatePartCategoryToolName, UpdatePartCategoryToolName, UpdateCompanyToolName, UpdateSupplierPartToolName, UpdateManufacturerPartToolName, CreateStockLocationToolName, UpdateStockLocationToolName, CreatePurchaseOrderExtraLineToolName, UpdatePurchaseOrderExtraLineToolName, UpdatePurchaseOrderToolName, CreatePurchaseOrderWorkflowToolName, IssuePurchaseOrderToolName, CompletePurchaseOrderToolName:
+		case CreatePartToolName, UpdatePartToolName, CreatePartRelationToolName, UpdatePartRelationToolName, CreateCompanyToolName, CreateSupplierPartToolName, CreateManufacturerPartToolName, UpsertPartWorkflowToolName, CreateParameterTemplateToolName, UpdateParameterTemplateToolName, CreateCategoryParameterDefaultToolName, UpdateCategoryParameterDefaultToolName, CreatePartCategoryToolName, UpdatePartCategoryToolName, UpdateCompanyToolName, UpdateSupplierPartToolName, UpdateManufacturerPartToolName, CreateStockLocationToolName, UpdateStockLocationToolName, CreateStockLocationTypeToolName, UpdateStockLocationTypeToolName, CreatePurchaseOrderExtraLineToolName, UpdatePurchaseOrderExtraLineToolName, UpdatePurchaseOrderToolName, CreatePurchaseOrderWorkflowToolName, IssuePurchaseOrderToolName, CompletePurchaseOrderToolName:
 			a.Equal("write", auth.MutationClass)
 			a.Equal([]string{ScopeInventreeRead, ScopeInventreeWrite}, auth.Scopes)
 		case BulkPropagatePartParametersToolName:
@@ -181,7 +181,7 @@ func TestToolReferenceDocumentsRegisteredWriteTools(t *testing.T) {
 		case ClearCompanyImageToolName:
 			a.Equal("destructive", auth.MutationClass)
 			a.Equal([]string{ScopeInventreeRead, ScopeInventreeWrite, ScopeInventreeUpload, ScopeInventreeDestructive}, auth.Scopes)
-		case DeletePartParameterToolName, DeleteParameterTemplateToolName, MergeParameterTemplatesToolName, DeleteCategoryParameterDefaultToolName, DeletePurchaseOrderExtraLineToolName, DeletePurchaseOrderLineToolName, DeletePartToolName, DeletePartRelationToolName, RemoveCompanyCustomerRoleToolName, AssignOwnerToolName, AssignContactToolName, AssignAddressToolName, AssignProjectCodeToolName:
+		case DeletePartParameterToolName, DeleteParameterTemplateToolName, MergeParameterTemplatesToolName, DeleteCategoryParameterDefaultToolName, DeletePurchaseOrderExtraLineToolName, DeletePurchaseOrderLineToolName, DeletePartToolName, DeletePartRelationToolName, DeleteStockLocationTypeToolName, RemoveCompanyCustomerRoleToolName, AssignOwnerToolName, AssignContactToolName, AssignAddressToolName, AssignProjectCodeToolName:
 			a.Equal("destructive", auth.MutationClass)
 			a.Equal([]string{ScopeInventreeRead, ScopeInventreeWrite, ScopeInventreeDestructive}, auth.Scopes)
 		default:

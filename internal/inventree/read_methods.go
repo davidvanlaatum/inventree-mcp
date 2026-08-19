@@ -181,6 +181,15 @@ func (c *Client) GetStockLocationType(ctx context.Context, id int) (StockLocatio
 	return out, err
 }
 
+// SearchStockLocationTypesPage fetches a single bounded page over
+// /api/stock/location-type/ and reports the exact upstream Count, unlike
+// SearchStockLocationTypes which scans every page. This backs bounded
+// same-name duplicate preflight for location-type administration.
+func (c *Client) SearchStockLocationTypesPage(ctx context.Context, query SearchQuery) (StockLocationTypePage, error) {
+	page, err := listPage[StockLocationType](ctx, c, "/api/stock/location-type/", query.values())
+	return StockLocationTypePage{Count: page.Count, Results: page.Results, HasMore: page.Next != nil && *page.Next != ""}, err
+}
+
 func (c *Client) SearchStockItems(ctx context.Context, query StockItemQuery) ([]StockItem, error) {
 	return listAll[StockItem](ctx, c, "/api/stock/", query.values())
 }
