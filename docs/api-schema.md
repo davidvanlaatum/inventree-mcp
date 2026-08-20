@@ -235,6 +235,15 @@ The manifest is endpoint-level schema coverage, not a complete upload authorizat
 - Structural-state changes require explicit confirmation. A non-structural category with directly assigned parts cannot be promoted to structural through this workflow.
 - Category create/update require `inventree.read` and `inventree.write`, are closed-world non-destructive writes, read back the exact stable record, recheck duplicate/hierarchy policy after successful responses, and return read-before-retry recovery guidance for ambiguous mutation results. `update_part_category` is idempotent for absolute fields on one stable ID; category creation remains non-idempotent. These preflight and post-write checks are not atomic with InvenTree mutations, so operators must prevent concurrent category administration across MCP servers, the UI, and direct API clients.
 
+## Verified Part-Category Deletion
+
+`DELETE /api/part/category/{id}/` diverges from `docs/api-schema.yaml`, which declares it with no request body at all. Pinned live behavior against InvenTree 1.5.0 (`TestClientMethodsAgainstInvenTree/part_category_delete`):
+
+- The endpoint requires an explicit JSON body with boolean `delete_parts` and `delete_child_categories`; omitting either is rejected with `400` (`{"delete_parts": ["This field is required."], "delete_child_categories": ["This field is required."]}`) before any reference is even considered. `internal/inventree.Client.DeletePartCategory` always sends both `false`.
+- Even with both explicitly `false`, InvenTree does not refuse deleting a referenced category, and the outcome differs by reference type, isolating one reference per category exactly as `part_delete`'s pinned subtest does: a direct part or a direct child category is silently **reparented one level up**, to the deleted category's own parent (never orphaned to `null`, and never destroyed); a category-parameter-template link and a generic `part.partcategory` parameter value (`/api/parameter/`, from F-S64) are both **cascade-deleted** along with the category, with no way to recover them afterward.
+- `delete_part_category` therefore treats all four reference categories -- direct parts, direct child categories, category-parameter-template links, and generic parameter values -- as blocking in its own preflight, and never calls `DeletePartCategory` while any of them is non-empty. This is a stricter policy than InvenTree itself enforces (which would happily reparent parts/children or destroy template links/parameter values), matching the operator-approved scope of deleting only an already-empty leaf category rather than depending on InvenTree's reparent-on-delete behavior the way `delete_stock_location_type` depends on its SET_NULL behavior.
+- Deleting a genuinely empty category (all four surfaces empty) succeeds with `204` and the deleted ID subsequently `404`s on read, exactly like the ordinary `delete_part`/`delete_stock_location_type` deletion contract.
+
 ## Verified Stock Adjustment Endpoints
 
 - `POST /api/stock/add/` adds a positive relative quantity to one or more stock items through `StockAdd`.

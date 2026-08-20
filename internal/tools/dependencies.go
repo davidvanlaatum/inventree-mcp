@@ -38,6 +38,7 @@ type Dependencies struct {
 	objectParameterDeletePlanStore       *objectParameterDeletePlanStore
 	parameterTemplateUniquenessPlanStore *parameterTemplateUniquenessPlanStore
 	purchaseOrderLifecyclePlanStore      *purchaseOrderLifecyclePlanStore
+	categoryDeletePlanStore              *categoryDeletePlanStore
 }
 
 func (d Dependencies) Client(ctx context.Context) (any, error) {
