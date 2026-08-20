@@ -576,6 +576,14 @@ func (c *Client) IssuePurchaseOrder(ctx context.Context, id int) error {
 	return c.Post(ctx, fmt.Sprintf("/api/order/po/%d/issue/", id), struct{}{}, nil)
 }
 
+func (c *Client) HoldPurchaseOrder(ctx context.Context, id int) error {
+	return c.Post(ctx, fmt.Sprintf("/api/order/po/%d/hold/", id), struct{}{}, nil)
+}
+
+func (c *Client) CancelPurchaseOrder(ctx context.Context, id int) error {
+	return c.Post(ctx, fmt.Sprintf("/api/order/po/%d/cancel/", id), struct{}{}, nil)
+}
+
 func (c *Client) UploadAttachment(ctx context.Context, input AttachmentCreate) (Attachment, error) {
 	fields := map[string]string{
 		"model_type": input.ModelType,

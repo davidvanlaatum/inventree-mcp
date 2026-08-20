@@ -3,9 +3,11 @@ package inventree
 import "encoding/json"
 
 const (
-	PurchaseOrderStatusPending  = 10
-	PurchaseOrderStatusPlaced   = 20
-	PurchaseOrderStatusComplete = 30
+	PurchaseOrderStatusPending   = 10
+	PurchaseOrderStatusPlaced    = 20
+	PurchaseOrderStatusOnHold    = 25
+	PurchaseOrderStatusComplete  = 30
+	PurchaseOrderStatusCancelled = 40
 )
 
 // DecimalString preserves schema decimal values while accepting InvenTree

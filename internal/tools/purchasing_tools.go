@@ -360,6 +360,7 @@ func registerPurchasingWriteTools(server *mcp.Server, deps Dependencies) {
 	addWriteTool(server, deps, IssuePurchaseOrderToolName, "Issue purchase order", "Plans or explicitly confirms placing a pending purchase order with its supplier.", issuePurchaseOrder(deps))
 	addWriteTool(server, deps, ReceivePurchaseOrderToolName, "Receive purchase order items", "Plans or explicitly confirms creation of new stock items from outstanding purchase-order line quantities.", receivePurchaseOrderItems(deps))
 	addWriteTool(server, deps, CompletePurchaseOrderToolName, "Complete purchase order", "Plans or explicitly completes one fully received placed purchase order without allowing incomplete completion.", completePurchaseOrder(deps))
+	registerPurchaseOrderLifecycleTools(server, deps)
 }
 
 func searchPurchaseOrders(deps Dependencies) mcp.ToolHandlerFor[PurchaseOrderSearchInput, LookupOutput[inventree.PurchaseOrder]] {

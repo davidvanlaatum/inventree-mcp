@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/davidvanlaatum/dvgoutils"
 	"github.com/davidvanlaatum/dvgoutils/logging/testhandler"
@@ -1187,7 +1188,10 @@ func TestUpdatePurchaseOrderLineRejectsMalformedLink(t *testing.T) {
 }
 
 func purchasingDeps(fake *fakePurchasingClient) Dependencies {
-	return Dependencies{ClientFromContext: func(context.Context) (any, error) { return fake, nil }}
+	return Dependencies{
+		ClientFromContext:               func(context.Context) (any, error) { return fake, nil },
+		purchaseOrderLifecyclePlanStore: newPurchaseOrderLifecyclePlanStore(time.Now, randomStockPlanToken),
+	}
 }
 
 type fakePurchasingClient struct {
@@ -1236,16 +1240,65 @@ type fakePurchasingClient struct {
 	updateOrderDetailCalls               int
 	updateOrderDetailErr                 error
 	updateOrderDetailMismatchPK          bool
+	holdCalls                            int
+	holdErr                              error
+	holdErrAfterPersist                  error
+	holdKeepStatus                       bool
+	cancelCalls                          int
+	cancelErr                            error
+	cancelErrAfterPersist                error
+	cancelKeepStatus                     bool
+	issueErr                             error
+	issueErrAfterPersist                 error
+	issueKeepStatus                      bool
+	getOrderErrAfterHold                 error
+	getOrderErrAfterCancel               error
+	getOrderErrAfterIssue                error
 }
 
 func (f *fakePurchasingClient) IssuePurchaseOrder(_ context.Context, id int) error {
 	f.issueCalls++
-	for index := range f.orders {
-		if f.orders[index].PK == id {
-			f.orders[index].Status = inventree.PurchaseOrderStatusPlaced
+	if f.issueErr != nil {
+		return f.issueErr
+	}
+	if !f.issueKeepStatus {
+		for index := range f.orders {
+			if f.orders[index].PK == id {
+				f.orders[index].Status = inventree.PurchaseOrderStatusPlaced
+			}
 		}
 	}
-	return nil
+	return f.issueErrAfterPersist
+}
+
+func (f *fakePurchasingClient) HoldPurchaseOrder(_ context.Context, id int) error {
+	f.holdCalls++
+	if f.holdErr != nil {
+		return f.holdErr
+	}
+	if !f.holdKeepStatus {
+		for index := range f.orders {
+			if f.orders[index].PK == id {
+				f.orders[index].Status = inventree.PurchaseOrderStatusOnHold
+			}
+		}
+	}
+	return f.holdErrAfterPersist
+}
+
+func (f *fakePurchasingClient) CancelPurchaseOrder(_ context.Context, id int) error {
+	f.cancelCalls++
+	if f.cancelErr != nil {
+		return f.cancelErr
+	}
+	if !f.cancelKeepStatus {
+		for index := range f.orders {
+			if f.orders[index].PK == id {
+				f.orders[index].Status = inventree.PurchaseOrderStatusCancelled
+			}
+		}
+	}
+	return f.cancelErrAfterPersist
 }
 
 func (f *fakePurchasingClient) ReceivePurchaseOrder(_ context.Context, id int, input inventree.PurchaseOrderReceive) ([]inventree.StockItem, error) {
@@ -1320,6 +1373,15 @@ func (f *fakePurchasingClient) GetPurchaseOrder(_ context.Context, id int) (inve
 	}
 	if f.completeCalls > 0 && f.getOrderErrAfterComplete != nil {
 		return inventree.PurchaseOrder{}, f.getOrderErrAfterComplete
+	}
+	if f.holdCalls > 0 && f.getOrderErrAfterHold != nil {
+		return inventree.PurchaseOrder{}, f.getOrderErrAfterHold
+	}
+	if f.cancelCalls > 0 && f.getOrderErrAfterCancel != nil {
+		return inventree.PurchaseOrder{}, f.getOrderErrAfterCancel
+	}
+	if f.issueCalls > 0 && f.getOrderErrAfterIssue != nil {
+		return inventree.PurchaseOrder{}, f.getOrderErrAfterIssue
 	}
 	if f.missingOrderIDs[id] {
 		return inventree.PurchaseOrder{}, &inventree.APIError{StatusCode: 404, Kind: inventree.ErrorKindNotFound}
