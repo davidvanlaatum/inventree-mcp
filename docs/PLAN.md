@@ -904,6 +904,7 @@ After the REST client core and schema endpoint manifest are in place, build the 
 - Pin the blocking integration suite to an explicit InvenTree version tag that matches the checked-in schema snapshot.
 - Record the runtime InvenTree version and API version in `docs/api-schema.md` provenance.
 - Add the shared-suite fixture and run-prefix model before broad client/tool integration tests depend on it.
+- Serialize the Docker-backed environment across test processes with a shared OS-level lock, so packages can retain normal Go test concurrency while only one disposable InvenTree stack is active at a time.
 
 Do not let broad workflow happy-path tests depend on the Testcontainers environment until startup, migrations, token creation, fixture seeding, and cleanup are deterministic.
 
@@ -1042,7 +1043,7 @@ Implementation notes:
 - Log each generated InvenTree test username with the Go test run prefix so InvenTree logs that include usernames can be traced back to the owning subtest.
 - Keep production credentials and user-provided `INVENTREE_TEST_URL` out of Testcontainers logs.
 - If InvenTree requires multiple services for a realistic setup, wrap them behind one `StartInvenTree` helper rather than leaking container wiring into tests.
-- Integration tests that require the shared InvenTree stack should live in one package or suite for milestone 1 so `GOFLAGS=-trimpath go test -race ./...` starts at most one shared stack. If additional packages need integration coverage, they should call into the same suite entrypoint or remain unit/fake-client tests until cross-package sharing is deliberately designed.
+- `SharedInvenTree` still owns one environment per parent suite test and shares that environment only across its child subtests. Separate package test processes may each create their own environment, but `internal/testenv` holds a shared OS-level lock for the full environment lifetime so those stacks cannot overlap. This provides cross-package serialization without sharing mutable fixtures or credentials across package boundaries.
 - Every exported InvenTree client method must have default-on Testcontainers integration coverage against the real InvenTree API before its implementation task is marked done. Unit and `httptest` coverage should still cover edge cases, error mapping, redaction, payload shape, and policy branches, but it is not a substitute for at least one live successful API-path exercise per client method.
 - Invocation contract: `GOFLAGS=-trimpath go test -race ./...` starts the pinned Testcontainers InvenTree stack by default. Local and CI runs may explicitly exclude Docker-backed integration tests with `INVENTREE_TEST_SKIP_DOCKER=1` or `GOFLAGS=-trimpath go test -race -short`; otherwise missing Docker or failed container startup fails the test.
 
@@ -1161,7 +1162,7 @@ These commands are local defaults. When the same suite runs in CI, release, or a
 | Unit-only | `GOFLAGS=-trimpath INVENTREE_TEST_SKIP_DOCKER=1 go test -race ./...` or `GOFLAGS=-trimpath go test -race -short ./...` | Fast tests with Docker-backed integration explicitly excluded. |
 | Contract/docs | `GOFLAGS=-trimpath INVENTREE_TEST_SKIP_DOCKER=1 go test -race ./...` plus generated manifest checks | Tool annotations, scopes, schema references, and documentation drift without starting Docker. |
 | HTTP auth | `GOFLAGS=-trimpath go test -race ./internal/server/... ./internal/oauth/...` | OAuth metadata, bearer challenge, token envelopes, and scope guards using fakes. |
-| Integration | `GOFLAGS=-trimpath go test -race ./internal/testenv ./internal/integration/...` | Shared Testcontainers suite with pinned version-tag/schema pair. |
+| Integration | `GOFLAGS=-trimpath go test -race ./...` | Default-on pinned Testcontainers integration coverage; independent package environments are serialized by the shared testenv lock. |
 | Stable canary | CI-specific `inventree/inventree:stable` integration run | Non-blocking latest-stable compatibility and schema drift signal. |
 
 Local commands should add `-v` only when verbose logs are useful for diagnosis or evidence. CI, release, and other pipeline commands should always include `-v` so successful logs preserve integration-test and container-output evidence.

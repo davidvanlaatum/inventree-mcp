@@ -70,6 +70,7 @@ type Environment struct {
 	network    *testcontainers.DockerNetwork
 	httpClient *http.Client
 	logCancel  context.CancelFunc
+	lock       *testEnvLock
 }
 
 // CleanupFunc tears down a started test environment with a bounded timeout.
@@ -200,20 +201,29 @@ func Start(ctx context.Context, opts Options) (*Environment, CleanupFunc, error)
 	if opts.HTTPClient == nil {
 		opts.HTTPClient = http.DefaultClient
 	}
-	containerLogf := synchronizedContainerLogf(opts.ContainerLogf)
 	if err := ValidateOptions(opts); err != nil {
 		return nil, nil, err
 	}
+	lock, err := acquireTestEnvLock(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	containerLogf := synchronizedContainerLogf(opts.ContainerLogf)
 
 	startupCtx, cancelStartup := context.WithTimeout(ctx, opts.StartupTimeout)
 	defer cancelStartup()
 	logCtx, cancelLogs := context.WithCancel(context.Background())
 
-	env := &Environment{Image: opts.Image, httpClient: opts.HTTPClient, logCancel: cancelLogs}
+	env := &Environment{Image: opts.Image, httpClient: opts.HTTPClient, logCancel: cancelLogs, lock: lock}
 	var started bool
 	defer func() {
 		if !started {
-			_ = closeWithTimeout(env)
+			if err := closeWithTimeout(env); err != nil && env.lock != nil {
+				// Startup failed and no cleanup handle can be returned. Avoid
+				// permanently blocking later package tests; Testcontainers' reaper
+				// remains responsible for any resources cleanup could not remove.
+				_ = env.lock.release()
+			}
 		}
 	}()
 
@@ -332,6 +342,11 @@ func Start(ctx context.Context, opts Options) (*Environment, CleanupFunc, error)
 }
 
 func (e *Environment) Close(ctx context.Context) error {
+	cleanupErr := cleanupWithRetry(ctx, e.closeResources)
+	return releaseTestEnvLock(e.lock, cleanupErr)
+}
+
+func (e *Environment) closeResources(ctx context.Context) error {
 	var errs []error
 	if e.logCancel != nil {
 		e.logCancel()
@@ -350,6 +365,35 @@ func (e *Environment) Close(ctx context.Context) error {
 		errs = append(errs, e.network.Remove(ctx))
 	}
 	return errors.Join(errs...)
+}
+
+func cleanupWithRetry(ctx context.Context, cleanup func(context.Context) error) error {
+	if err := cleanup(ctx); err == nil {
+		return nil
+	} else {
+		retryCtx, cancel := context.WithTimeout(context.Background(), cleanupTimeout)
+		defer cancel()
+		if retryErr := cleanup(retryCtx); retryErr == nil {
+			return nil
+		} else {
+			return errors.Join(err, retryErr)
+		}
+	}
+}
+
+func releaseTestEnvLock(lock *testEnvLock, cleanupErr error) error {
+	if cleanupErr != nil {
+		// Keep the process-wide lock when teardown did not complete. A
+		// subsequent test process must not start another stack while these
+		// containers or the network may still exist.
+		return cleanupErr
+	}
+	if lock != nil {
+		if err := lock.release(); err != nil {
+			return fmt.Errorf("release InvenTree test environment lock: %w", err)
+		}
+	}
+	return nil
 }
 
 func closeWithTimeout(env *Environment) error {
