@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"sort"
 	"strings"
 	"testing"
@@ -17,15 +18,18 @@ import (
 )
 
 type fakeObjectParameterClient struct {
-	templates       map[int]inventree.ParameterTemplate
-	parameters      map[int]inventree.Parameter
-	nextParameterID int
-	createCalls     int
-	updateCalls     int
-	deleteCalls     int
-	lastPatch       inventree.PatchFields
-	forceCount      int  // when nonzero, overrides the reported Count on every SearchObjectParametersPage/SearchTemplateParametersPage response.
-	forceHasMore    bool // when true, SearchObjectParametersPage always reports HasMore:true with a full synthetic page, simulating a scan that never terminates within the bound.
+	templates         map[int]inventree.ParameterTemplate
+	parameters        map[int]inventree.Parameter
+	nextParameterID   int
+	createCalls       int
+	updateCalls       int
+	deleteCalls       int
+	lastPatch         inventree.PatchFields
+	forceCount        int   // when nonzero, overrides the reported Count on every SearchObjectParametersPage/SearchTemplateParametersPage response.
+	forceHasMore      bool  // when true, SearchObjectParametersPage always reports HasMore:true with a full synthetic page, simulating a scan that never terminates within the bound.
+	deleteNoOp        bool  // when true, DeletePartParameter succeeds without actually removing the row, simulating an upstream no-op delete.
+	getErrAfterDelete error // when set, GetPartParameter returns this error (instead of not-found) once DeletePartParameter has been called.
+	deleted           bool
 }
 
 func newFakeObjectParameterClient() *fakeObjectParameterClient {
@@ -116,6 +120,9 @@ func (f *fakeObjectParameterClient) GetParameterTemplate(_ context.Context, id i
 }
 
 func (f *fakeObjectParameterClient) GetPartParameter(_ context.Context, id int) (inventree.Parameter, error) {
+	if f.deleted && f.getErrAfterDelete != nil {
+		return inventree.Parameter{}, f.getErrAfterDelete
+	}
 	record, ok := f.parameters[id]
 	if !ok {
 		return inventree.Parameter{}, notFoundError()
@@ -148,6 +155,10 @@ func (f *fakeObjectParameterClient) UpdatePartParameter(_ context.Context, id in
 
 func (f *fakeObjectParameterClient) DeletePartParameter(_ context.Context, id int) error {
 	f.deleteCalls++
+	f.deleted = true
+	if f.deleteNoOp {
+		return nil
+	}
 	delete(f.parameters, id)
 	return nil
 }
@@ -481,4 +492,85 @@ func TestCreateObjectParameterConflictClarificationNeverDisclosesTheConflictingV
 	payload, err := json.Marshal(out.Clarification.Candidates)
 	r.NoError(err)
 	a.NotContains(string(payload), "super-secret-value")
+}
+
+func TestDeleteObjectParameterRequiresPositiveParameterID(t *testing.T) {
+	t.Parallel()
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	fake := newFakeObjectParameterClient()
+
+	_, out, err := deleteObjectParameter(objectParameterDeps(fake))(ctx, &mcp.CallToolRequest{}, DeleteObjectParameterInput{ParameterID: 0})
+	require.NoError(t, err)
+	assert.Equal(t, StatusClarificationRequired, out.Status)
+}
+
+func TestDeleteObjectParameterRefusesUnsupportedModelType(t *testing.T) {
+	t.Parallel()
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	fake := newFakeObjectParameterClient()
+	fake.parameters[80] = inventree.Parameter{PK: 80, Template: 70, ModelType: "build.build", ModelID: 5, Data: "x"}
+
+	_, out, err := deleteObjectParameter(objectParameterDeps(fake))(ctx, &mcp.CallToolRequest{}, DeleteObjectParameterInput{ParameterID: 80})
+	require.NoError(t, err)
+	assert.Equal(t, StatusClarificationRequired, out.Status)
+}
+
+func TestDeleteObjectParameterDetectsNoOpDeleteAsPartialFailure(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	fake := newFakeObjectParameterClient()
+	fake.templates[70] = inventree.ParameterTemplate{PK: 70, Name: "Voltage", Enabled: true}
+	fake.parameters[80] = inventree.Parameter{PK: 80, Template: 70, ModelType: "stock.stocklocation", ModelID: 5, Data: "5V"}
+	fake.deleteNoOp = true
+	deps := objectParameterDeps(fake)
+
+	_, preview, err := deleteObjectParameter(deps)(ctx, &mcp.CallToolRequest{}, DeleteObjectParameterInput{ParameterID: 80})
+	r.NoError(err)
+	r.NotEmpty(preview.PlanHash)
+
+	_, _, err = deleteObjectParameter(deps)(ctx, &mcp.CallToolRequest{}, DeleteObjectParameterInput{ParameterID: 80, Confirm: true, PlanHash: preview.PlanHash})
+	r.Error(err)
+}
+
+func TestDeleteObjectParameterAmbiguousReadBackReturnsError(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	fake := newFakeObjectParameterClient()
+	fake.templates[70] = inventree.ParameterTemplate{PK: 70, Name: "Voltage", Enabled: true}
+	fake.parameters[80] = inventree.Parameter{PK: 80, Template: 70, ModelType: "stock.stocklocation", ModelID: 5, Data: "5V"}
+	fake.getErrAfterDelete = errors.New("upstream unavailable")
+	deps := objectParameterDeps(fake)
+
+	_, preview, err := deleteObjectParameter(deps)(ctx, &mcp.CallToolRequest{}, DeleteObjectParameterInput{ParameterID: 80})
+	r.NoError(err)
+	r.NotEmpty(preview.PlanHash)
+
+	_, _, err = deleteObjectParameter(deps)(ctx, &mcp.CallToolRequest{}, DeleteObjectParameterInput{ParameterID: 80, Confirm: true, PlanHash: preview.PlanHash})
+	r.Error(err)
+}
+
+func TestObjectParameterDeletePlanStoreIssueFailsClosedOnTokenError(t *testing.T) {
+	t.Parallel()
+	store := &objectParameterDeletePlanStore{
+		entries: map[string]objectParameterDeleteConfirmation{}, now: time.Now,
+		token:     func() (string, error) { return "", errors.New("boom") },
+		principal: stockPlanPrincipal, maxEntries: objectParameterDeletePlanMaxEntries, maxEntriesPerPrincipal: objectParameterDeletePlanMaxEntriesPerPrincipal,
+	}
+	_, err := store.issue(context.Background(), ObjectParameterDeletePlan{Parameter: inventree.Parameter{PK: 80}})
+	require.Error(t, err)
+}
+
+func TestObjectParameterDeletePlanStoreIssueFailsClosedAtCapacity(t *testing.T) {
+	t.Parallel()
+	store := &objectParameterDeletePlanStore{
+		entries: map[string]objectParameterDeleteConfirmation{}, now: time.Now,
+		token:     randomStockPlanToken,
+		principal: stockPlanPrincipal, maxEntries: objectParameterDeletePlanMaxEntries, maxEntriesPerPrincipal: 1,
+	}
+	_, err := store.issue(context.Background(), ObjectParameterDeletePlan{Parameter: inventree.Parameter{PK: 80}})
+	require.NoError(t, err)
+	_, err = store.issue(context.Background(), ObjectParameterDeletePlan{Parameter: inventree.Parameter{PK: 81}})
+	require.Error(t, err)
 }

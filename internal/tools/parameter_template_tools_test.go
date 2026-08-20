@@ -872,3 +872,27 @@ func TestUpdateParameterTemplateUniquenessConfirmRefusesRemainingConflicts(t *te
 	a.Equal(StatusClarificationRequired, out.Status)
 	r.Len(out.Conflicts, 1)
 }
+
+func TestParameterTemplateUniquenessPlanStoreIssueFailsClosedOnTokenError(t *testing.T) {
+	t.Parallel()
+	store := &parameterTemplateUniquenessPlanStore{
+		entries: map[string]parameterTemplateUniquenessConfirmation{}, now: time.Now,
+		token:     func() (string, error) { return "", errors.New("boom") },
+		principal: stockPlanPrincipal, maxEntries: parameterTemplateUniquenessPlanMaxEntries, maxEntriesPerPrincipal: parameterTemplateUniquenessPlanMaxEntriesPerPrincipal,
+	}
+	_, err := store.issue(context.Background(), ParameterTemplateUniquenessPlan{Template: inventree.ParameterTemplate{PK: 70}})
+	require.Error(t, err)
+}
+
+func TestParameterTemplateUniquenessPlanStoreIssueFailsClosedAtCapacity(t *testing.T) {
+	t.Parallel()
+	store := &parameterTemplateUniquenessPlanStore{
+		entries: map[string]parameterTemplateUniquenessConfirmation{}, now: time.Now,
+		token:     randomStockPlanToken,
+		principal: stockPlanPrincipal, maxEntries: parameterTemplateUniquenessPlanMaxEntries, maxEntriesPerPrincipal: 1,
+	}
+	_, err := store.issue(context.Background(), ParameterTemplateUniquenessPlan{Template: inventree.ParameterTemplate{PK: 70}})
+	require.NoError(t, err)
+	_, err = store.issue(context.Background(), ParameterTemplateUniquenessPlan{Template: inventree.ParameterTemplate{PK: 71}})
+	require.Error(t, err)
+}
