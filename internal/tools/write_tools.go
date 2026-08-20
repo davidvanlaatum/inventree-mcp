@@ -355,6 +355,7 @@ func registerWriteTools(server *mcp.Server, deps Dependencies) {
 	registerObjectParameterWriteTools(server, deps)
 	registerParameterTemplateTools(server, deps)
 	registerCategoryAdminTools(server, deps)
+	registerCategoryDeleteTool(server, deps)
 	registerCategoryParameterWriteTools(server, deps)
 	registerParameterBulkWriteTools(server, deps)
 	addWriteTool(server, deps, CreateCompanyToolName, "Create company", "Creates a supplier and/or manufacturer company.", createCompany(deps))

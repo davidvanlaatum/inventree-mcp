@@ -150,7 +150,7 @@ Before assigning a new story ID, inspect `git worktree list --porcelain`, search
 | [F-S66](#f-s66-guarded-stock-item-merge-discovery) | Investigate a deferred, fail-closed merge workflow for explicitly selected compatible stock items. | Future |
 | [F-S67](#f-s67-stock-location-detail-and-type-administration) | Complete stock-location icon detail and add guarded stock-location-type administration. | Done |
 | [F-S68](#f-s68-guarded-stock-location-deletion) | Delete one empty, unreferenced stock location only through a complete fail-closed dependency plan. | Ready |
-| [F-S69](#f-s69-guarded-part-category-deletion) | Delete one empty, unreferenced leaf part category only through a complete fail-closed dependency plan. | Ready |
+| [F-S69](#f-s69-guarded-part-category-deletion) | Delete one empty, unreferenced leaf part category only through a complete fail-closed dependency plan. | Done |
 | [F-S70](#f-s70-inventree-version-compatibility-table) | Add a README table mapping inventree-mcp versions to tested InvenTree versions, kept in sync via a fenced anchor, drift test, and release gate. | Done |
 | [F-S71](#f-s71-inventree-instance-info-tool) | Add a read-only InvenTree instance-info tool, gated on an operator-approved curated settings allowlist. | Done |
 | [F-S72](#f-s72-porcelain-style-version-cli-format-and-self-update-rewrite) | Replace the CLI `version` output with a versioned porcelain-style format and move self-update onto it, accepting one documented one-time breaking migration. | Done |
@@ -2679,7 +2679,7 @@ Tasks:
 
 ### F-S69: Guarded Part-Category Deletion
 
-- Status: `Ready`
+- Status: `Done`
 - Issue: [#151](https://github.com/davidvanlaatum/inventree-mcp/issues/151)
 - Depends on: F-S13, F-S19, F-S40, F-S61, F-S64
 - Decisions: approved by the operator on 2026-08-15. Part-category deletion is allowed only for an empty leaf category with no parameter-default links or other verified references.
@@ -2694,6 +2694,9 @@ Tasks:
   - No cascade, part move, child reparent, parameter-link deletion, or default-location mutation is permitted.
   - Require `inventree.read`, `inventree.write`, and `inventree.destructive`; publish `destructiveHint:true`, closed-world, and non-idempotent annotations.
   - Pinned tests cover each blocker, later-page dependencies, stale plans, response loss, definite errors, read-back, and aligned docs/manifests.
+- Progress: Implemented on `codex/f-s69-part-category-deletion`, transplanting and completing the uncommitted implementation from `claude/f-s69-part-category-deletion`. The guarded tool inventories all four pinned reference surfaces, issues principal-bound single-use plans only for empty categories, rechecks blockers before deletion, sends both upstream cascade flags as `false`, and verifies exact-ID absence after the mutation.
+- Validation: `go generate ./internal/tools`, `GOFLAGS=-trimpath go test -tags no_integration_tests ./...`, `go build ./...`, `go vet ./...`, `golangci-lint run ./...`, and `git diff --check` pass. Focused F-S69 package tests pass after the review follow-up, including later-page and inconsistent-final-page cases for all four reference surfaces. The default-on Testcontainers integration subtest remains unrun because Docker is unavailable in this environment.
+- Review: The full Senior Go, QA / Test Architect, Product Manager, and Infosec panel ran. Go, Product, and Infosec found no actionable issues on the follow-up. QA found and drove resolution of two safety gaps (unreliable server-side category filtering and inconsistent pagination), then found and drove resolution of one inventory-documentation mismatch; the final QA rerun found no actionable findings. The resulting implementation uses the existing OAuth scope and annotation patterns, has fail-closed bounded scans and stale-plan binding, and does not cascade or rewrite references.
 - Residual risk: reference checks and DELETE are non-atomic; concurrent writers can add dependencies after preflight, so operators must coordinate a single writer and inspect exact state after ambiguous outcomes.
 
 ### F-S70: InvenTree Version Compatibility Table

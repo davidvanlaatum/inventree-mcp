@@ -315,6 +315,25 @@ func (c *Client) UpdatePartCategory(ctx context.Context, id int, fields PatchFie
 	return out, err
 }
 
+// DeletePartCategory always sends an explicit false delete_parts and
+// delete_child_categories -- pinned live InvenTree 1.5.0 behavior rejects
+// this DELETE with 400 "This field is required" for both unless they are
+// present in the request body, and setting either true would cascade-delete
+// parts or child categories. delete_part_category's guarded preflight
+// already refuses while any part or child category exists, so this call
+// only ever runs against an already-empty category; the explicit false
+// values are defense-in-depth against ever cascading regardless.
+func (c *Client) DeletePartCategory(ctx context.Context, id int) error {
+	req, err := c.NewRequest(ctx, http.MethodDelete, fmt.Sprintf("/api/part/category/%d/", id), nil, map[string]any{
+		"delete_parts":            false,
+		"delete_child_categories": false,
+	})
+	if err != nil {
+		return err
+	}
+	return c.DoJSON(req, nil)
+}
+
 func (c *Client) CreateCompany(ctx context.Context, input CompanyCreate) (Company, error) {
 	var out Company
 	err := c.Post(ctx, "/api/company/", input, &out)

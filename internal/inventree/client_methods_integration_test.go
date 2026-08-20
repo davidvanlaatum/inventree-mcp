@@ -706,6 +706,113 @@ func TestClientMethodsAgainstInvenTree(t *testing.T) {
 		a.Nil(afterDelete.LocationType)
 	})
 
+	t.Run("part_category_delete", func(t *testing.T) {
+		r := require.New(t)
+		ctx, _, _ := testhandler.SetupTestHandler(t)
+		fixture := newClientMethodFixture(t, shared)
+		parent := fixture.ensure(t, testenv.FixtureCategory)
+
+		newTestCategory := func(suffix string) inventree.Category {
+			name, nameErr := fixture.run.Name(suffix)
+			r.NoError(nameErr)
+			parentID := parent.ID
+			created, createErr := fixture.client.CreatePartCategory(ctx, inventree.CategoryCreate{Name: name, Parent: &parentID})
+			r.NoError(createErr)
+			r.NotZero(created.PK)
+			return created
+		}
+
+		// Each subsection below isolates exactly one reference surface on its
+		// own leaf category, proves the corresponding bounded scan finds it,
+		// then calls the raw, unguarded DeletePartCategory directly to pin
+		// InvenTree 1.5.0's real behavior. delete_part_category's own guard
+		// never calls DELETE while any surface is non-empty, so none of this
+		// permissive behavior is ever reachable through the guarded tool; it
+		// is exactly why the guard exists rather than relying on upstream.
+		//
+		// Live discovery: unlike the schema's undocumented zero-parameter
+		// DELETE, pinned InvenTree 1.5.0 requires an explicit JSON body with
+		// boolean delete_parts and delete_child_categories -- omitting either
+		// is rejected with 400 "This field is required.". DeletePartCategory
+		// always sends both false. Even so, InvenTree does not protect a
+		// referenced category: a direct part or direct child category is
+		// silently reparented one level up, to the deleted category's own
+		// parent, rather than refused, destroyed, or orphaned to null; a
+		// category-parameter-template link and a generic part.partcategory
+		// parameter value are both cascade-deleted along with the category
+		// instead. None of these four outcomes is a InvenTree-side refusal,
+		// so delete_part_category's own preflight is the only thing standing
+		// between an operator and an unreviewed reparent or permanent data
+		// loss.
+
+		t.Log("empty leaf category")
+		emptyCategory := newTestCategory("category-delete-empty")
+		r.NoError(fixture.client.DeletePartCategory(ctx, emptyCategory.PK))
+		_, err := fixture.client.GetPartCategory(ctx, emptyCategory.PK)
+		var notFoundErr *inventree.APIError
+		r.ErrorAs(err, &notFoundErr)
+		r.Equal(inventree.ErrorKindNotFound, notFoundErr.Kind)
+
+		t.Log("direct_parts")
+		partsCategory := newTestCategory("category-delete-parts")
+		partName, err := fixture.run.Name("category-delete-part")
+		r.NoError(err)
+		part, err := fixture.client.CreatePart(ctx, inventree.PartCreate{Name: partName, Category: &partsCategory.PK})
+		r.NoError(err)
+		r.NotZero(part.PK)
+		cascade := false
+		partsPage, err := fixture.client.SearchPartsPage(ctx, inventree.PartQuery{CategoryID: partsCategory.PK, Cascade: &cascade})
+		r.NoError(err)
+		r.Len(partsPage.Results, 1)
+		r.NoError(fixture.client.DeletePartCategory(ctx, partsCategory.PK), "InvenTree 1.5.0 does not refuse deleting a category with a direct part")
+		afterPart, err := fixture.client.GetPart(ctx, part.PK)
+		r.NoError(err, "InvenTree 1.5.0 does not destroy a direct part when its category is deleted")
+		r.NotNil(afterPart.Category)
+		r.Equal(parent.ID, *afterPart.Category, "InvenTree 1.5.0 reparents an orphaned part to the deleted category's own parent")
+
+		t.Log("direct_child_categories")
+		parentCategory := newTestCategory("category-delete-parent")
+		childCategory := newTestCategory("category-delete-child")
+		_, err = fixture.client.UpdatePartCategory(ctx, childCategory.PK, inventree.PatchFields{"parent": inventree.Set(parentCategory.PK)})
+		r.NoError(err)
+		childrenPage, err := fixture.client.SearchPartCategoriesPage(ctx, inventree.CategoryQuery{Parent: &parentCategory.PK})
+		r.NoError(err)
+		r.Len(childrenPage.Results, 1)
+		r.NoError(fixture.client.DeletePartCategory(ctx, parentCategory.PK), "InvenTree 1.5.0 does not refuse deleting a category with a direct child category")
+		afterChild, err := fixture.client.GetPartCategory(ctx, childCategory.PK)
+		r.NoError(err, "InvenTree 1.5.0 does not destroy a direct child category when its parent is deleted")
+		r.NotNil(afterChild.Parent)
+		r.Equal(parent.ID, *afterChild.Parent, "InvenTree 1.5.0 reparents an orphaned child category to the deleted category's own parent")
+
+		t.Log("category_parameter_template_links")
+		templateLinkCategory := newTestCategory("category-delete-template-link")
+		template := createParameterTemplate(t, fixture.client, fixture.run, "category-delete-template", "", "")
+		link := createCategoryParameterTemplate(t, fixture.client, templateLinkCategory.PK, template.PK)
+		r.NotZero(link.PK)
+		fetchParent := false
+		linksPage, err := fixture.client.SearchCategoryParameterTemplatesPage(ctx, inventree.CategoryParameterTemplateQuery{CategoryID: templateLinkCategory.PK, FetchParent: &fetchParent})
+		r.NoError(err)
+		r.Len(linksPage.Results, 1)
+		r.NoError(fixture.client.DeletePartCategory(ctx, templateLinkCategory.PK), "InvenTree 1.5.0 does not refuse deleting a category with a category-parameter-template link")
+		_, err = fixture.client.GetCategoryParameterTemplate(ctx, link.PK)
+		r.ErrorAs(err, &notFoundErr, "InvenTree 1.5.0 cascade-deletes the category-parameter-template link along with its category")
+		r.Equal(inventree.ErrorKindNotFound, notFoundErr.Kind)
+
+		t.Log("generic_parameter_values")
+		parameterValueCategory := newTestCategory("category-delete-parameter-value")
+		genericTemplate := createParameterTemplate(t, fixture.client, fixture.run, "category-delete-generic-template", "", "")
+		parameterValue, err := fixture.client.CreatePartParameter(ctx, inventree.ParameterCreate{Template: genericTemplate.PK, ModelType: "part.partcategory", ModelID: parameterValueCategory.PK, Data: "1"})
+		r.NoError(err)
+		r.NotZero(parameterValue.PK)
+		valuesPage, err := fixture.client.SearchObjectParametersPage(ctx, inventree.ObjectParameterQuery{ModelType: "part.partcategory", ModelID: parameterValueCategory.PK})
+		r.NoError(err)
+		r.Len(valuesPage.Results, 1)
+		r.NoError(fixture.client.DeletePartCategory(ctx, parameterValueCategory.PK), "InvenTree 1.5.0 does not refuse deleting a category with a generic parameter value")
+		_, err = fixture.client.GetPartParameter(ctx, parameterValue.PK)
+		r.ErrorAs(err, &notFoundErr, "InvenTree 1.5.0 cascade-deletes the generic parameter value along with its category")
+		r.Equal(inventree.ErrorKindNotFound, notFoundErr.Kind)
+	})
+
 	t.Run("stock_item_detail", func(t *testing.T) {
 		r := require.New(t)
 		a := assert.New(t)

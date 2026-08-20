@@ -165,6 +165,12 @@ endpoints:
     request_schema: '#/components/schemas/PatchedCategory'
     request_content_type: application/json
     response_schema: '#/components/schemas/Category'
+  - id: delete_part_category
+    area: categories
+    path: /api/part/category/{id}/
+    method: DELETE
+    operation_id: part_category_destroy
+    response_status: "204"
   - id: search_companies
     area: companies
     path: /api/company/
