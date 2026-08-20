@@ -37,6 +37,7 @@ type Dependencies struct {
 	stockLocationTypeDeletePlanStore     *stockLocationTypeDeletePlanStore
 	objectParameterDeletePlanStore       *objectParameterDeletePlanStore
 	parameterTemplateUniquenessPlanStore *parameterTemplateUniquenessPlanStore
+	purchaseOrderLifecyclePlanStore      *purchaseOrderLifecyclePlanStore
 }
 
 func (d Dependencies) Client(ctx context.Context) (any, error) {

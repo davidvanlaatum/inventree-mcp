@@ -129,6 +129,9 @@ const (
 	IssuePurchaseOrderToolName                = "issue_purchase_order"
 	ReceivePurchaseOrderToolName              = "receive_purchase_order_items"
 	CompletePurchaseOrderToolName             = "complete_purchase_order"
+	HoldPurchaseOrderToolName                 = "hold_purchase_order"
+	ResumePurchaseOrderToolName               = "resume_purchase_order"
+	CancelPurchaseOrderToolName               = "cancel_purchase_order"
 	UploadAttachmentToolName                  = "upload_attachment"
 	UploadAttachmentFromURLToolName           = "upload_attachment_from_url"
 	CreateLinkAttachmentToolName              = "create_link_attachment"
@@ -290,6 +293,9 @@ var writeToolNames = []string{
 	IssuePurchaseOrderToolName,
 	ReceivePurchaseOrderToolName,
 	CompletePurchaseOrderToolName,
+	HoldPurchaseOrderToolName,
+	ResumePurchaseOrderToolName,
+	CancelPurchaseOrderToolName,
 	UploadAttachmentToolName,
 	UploadAttachmentFromURLToolName,
 	CreateLinkAttachmentToolName,
@@ -344,10 +350,10 @@ func init() {
 		case CreateStockItemToolName, InitialStockWorkflowToolName:
 			scopes = []string{ScopeInventreeWrite, ScopeInventreeOperational}
 			mutationClass = "operational"
-		case AdjustStockQuantityToolName, SetStockStatusToolName, StocktakeAdjustmentToolName, TransferStockItemToolName, RestructureStockLocationToolName, UpdateStockItemMetadataToolName, AssignStockSerialToolName, InstallStockItemToolName, UpdateParameterTemplateUniquenessToolName:
+		case AdjustStockQuantityToolName, SetStockStatusToolName, StocktakeAdjustmentToolName, TransferStockItemToolName, RestructureStockLocationToolName, UpdateStockItemMetadataToolName, AssignStockSerialToolName, InstallStockItemToolName, UpdateParameterTemplateUniquenessToolName, HoldPurchaseOrderToolName, ResumePurchaseOrderToolName:
 			scopes = []string{ScopeInventreeRead, ScopeInventreeWrite, ScopeInventreeOperational}
 			mutationClass = "operational"
-		case SetStockDeleteOnDepleteToolName, DepleteStockItemToolName, UpdatePartFamilyRelationshipsToolName, UpdateStockItemProvenanceToolName, SetStockSerialToolName, UninstallStockItemToolName:
+		case SetStockDeleteOnDepleteToolName, DepleteStockItemToolName, UpdatePartFamilyRelationshipsToolName, UpdateStockItemProvenanceToolName, SetStockSerialToolName, UninstallStockItemToolName, CancelPurchaseOrderToolName:
 			scopes = []string{ScopeInventreeRead, ScopeInventreeWrite, ScopeInventreeOperational, ScopeInventreeDestructive}
 			mutationClass = "destructive"
 		case RemoveCompanyCustomerRoleToolName, AssignOwnerToolName, AssignContactToolName, AssignAddressToolName, AssignProjectCodeToolName:
@@ -374,7 +380,7 @@ func init() {
 		if name == UploadAttachmentFromURLToolName || name == SetCompanyImageFromURLToolName {
 			annotations.OpenWorld = true
 		}
-		if name == DeleteAttachmentToolName || name == ClearCompanyImageToolName || name == DeletePartParameterToolName || name == DeleteObjectParameterToolName || name == DeleteParameterTemplateToolName || name == MergeParameterTemplatesToolName || name == DeleteCategoryParameterDefaultToolName || name == DeletePurchaseOrderExtraLineToolName || name == DeletePurchaseOrderLineToolName || name == BulkPropagatePartParametersToolName || name == SetStockDeleteOnDepleteToolName || name == DepleteStockItemToolName || name == UpdatePartFamilyRelationshipsToolName || name == UpdateStockItemProvenanceToolName || name == DeletePartToolName || name == DeletePartRelationToolName || name == RemoveCompanyCustomerRoleToolName || name == AssignOwnerToolName || name == AssignContactToolName || name == AssignAddressToolName || name == AssignProjectCodeToolName || name == DeleteStockLocationTypeToolName || name == SetStockSerialToolName || name == UninstallStockItemToolName {
+		if name == DeleteAttachmentToolName || name == ClearCompanyImageToolName || name == DeletePartParameterToolName || name == DeleteObjectParameterToolName || name == DeleteParameterTemplateToolName || name == MergeParameterTemplatesToolName || name == DeleteCategoryParameterDefaultToolName || name == DeletePurchaseOrderExtraLineToolName || name == DeletePurchaseOrderLineToolName || name == BulkPropagatePartParametersToolName || name == SetStockDeleteOnDepleteToolName || name == DepleteStockItemToolName || name == UpdatePartFamilyRelationshipsToolName || name == UpdateStockItemProvenanceToolName || name == DeletePartToolName || name == DeletePartRelationToolName || name == RemoveCompanyCustomerRoleToolName || name == AssignOwnerToolName || name == AssignContactToolName || name == AssignAddressToolName || name == AssignProjectCodeToolName || name == DeleteStockLocationTypeToolName || name == SetStockSerialToolName || name == UninstallStockItemToolName || name == CancelPurchaseOrderToolName {
 			annotations.Destructive = true
 		}
 		ToolAuthorizations[name] = ToolAuthorization{

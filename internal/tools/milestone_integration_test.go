@@ -1822,6 +1822,132 @@ func TestMilestoneHappyPathToolsAgainstInvenTree(t *testing.T) {
 		a.Equal(completedInline.Order.Status, completedInlineRead.Status)
 	})
 
+	t.Run("purchase_order_hold_resume_and_cancel", func(t *testing.T) {
+		r := require.New(t)
+		a := assert.New(t)
+		ctx, _, _ := testhandler.SetupTestHandler(t)
+		fixture := newMilestoneToolFixture(t, shared)
+		supplier := fixture.ensure(t, testenv.FixtureSupplier)
+		supplierPart := fixture.ensure(t, testenv.FixtureSupplierPart)
+		destination := fixture.ensure(t, testenv.FixtureLocation)
+
+		newOrder := func(suffix string) inventree.PurchaseOrder {
+			t.Helper()
+			reference, err := fixture.run.Name(suffix)
+			r.NoError(err)
+			order, err := fixture.client.CreatePurchaseOrder(ctx, inventree.PurchaseOrderCreate{Supplier: supplier.ID, SupplierReference: &reference})
+			r.NoError(err)
+			return order
+		}
+
+		// Pinned live InvenTree 1.5.1/API 530 behavior: hold/issue succeed
+		// unconditionally from PENDING or PLACED with no native source-state
+		// validation, and resume reuses the issue endpoint (no dedicated
+		// resume endpoint exists), always landing on PLACED regardless of
+		// whether the order was held from PENDING or PLACED. This subtest
+		// pins the MCP-layer guards added on top of that permissiveness.
+
+		t.Run("hold_and_resume_round_trip_from_placed", func(t *testing.T) {
+			order := newOrder("po-hold-resume-placed")
+			lineReference, err := fixture.run.Name("po-hold-resume-placed-line")
+			r.NoError(err)
+			_, err = fixture.client.CreatePurchaseOrderLine(ctx, inventree.PurchaseOrderLineCreate{Order: order.PK, SupplierPart: supplierPart.ID, Reference: &lineReference, Quantity: 1, Destination: &destination.ID})
+			r.NoError(err)
+			r.NoError(fixture.client.IssuePurchaseOrder(ctx, order.PK))
+
+			_, holdPlan, err := holdPurchaseOrder(fixture.deps())(ctx, &mcp.CallToolRequest{}, HoldPurchaseOrderInput{DryRun: true, OrderID: order.PK})
+			r.NoError(err)
+			r.NotEmpty(holdPlan.PlanHash)
+			a.Empty(holdPlan.Warning, "an order held from PLACED must not warn about silently placing an unissued order")
+			_, held, err := holdPurchaseOrder(fixture.deps())(ctx, &mcp.CallToolRequest{}, HoldPurchaseOrderInput{OrderID: order.PK, Confirm: true, PlanHash: holdPlan.PlanHash})
+			r.NoError(err)
+			r.NotNil(held.Order)
+			a.Equal(inventree.PurchaseOrderStatusOnHold, held.Order.Status)
+			heldRead, err := fixture.client.GetPurchaseOrder(ctx, order.PK)
+			r.NoError(err)
+			a.Equal(held.Order.Status, heldRead.Status)
+
+			_, resumePlan, err := resumePurchaseOrder(fixture.deps())(ctx, &mcp.CallToolRequest{}, ResumePurchaseOrderInput{DryRun: true, OrderID: order.PK})
+			r.NoError(err)
+			r.NotEmpty(resumePlan.PlanHash)
+			_, resumed, err := resumePurchaseOrder(fixture.deps())(ctx, &mcp.CallToolRequest{}, ResumePurchaseOrderInput{OrderID: order.PK, Confirm: true, PlanHash: resumePlan.PlanHash})
+			r.NoError(err)
+			r.NotNil(resumed.Order)
+			a.Equal(inventree.PurchaseOrderStatusPlaced, resumed.Order.Status)
+			resumedRead, err := fixture.client.GetPurchaseOrder(ctx, order.PK)
+			r.NoError(err)
+			a.Equal(resumed.Order.Status, resumedRead.Status)
+		})
+
+		t.Run("hold_from_pending_warns_and_resume_places_the_order", func(t *testing.T) {
+			order := newOrder("po-hold-resume-pending")
+			_, holdPlan, err := holdPurchaseOrder(fixture.deps())(ctx, &mcp.CallToolRequest{}, HoldPurchaseOrderInput{DryRun: true, OrderID: order.PK})
+			r.NoError(err)
+			a.NotEmpty(holdPlan.Warning, "holding a never-placed order must warn that resuming will place it with its supplier")
+			_, held, err := holdPurchaseOrder(fixture.deps())(ctx, &mcp.CallToolRequest{}, HoldPurchaseOrderInput{OrderID: order.PK, Confirm: true, PlanHash: holdPlan.PlanHash})
+			r.NoError(err)
+			r.NotNil(held.Order)
+			a.Equal(inventree.PurchaseOrderStatusOnHold, held.Order.Status)
+
+			_, resumePlan, err := resumePurchaseOrder(fixture.deps())(ctx, &mcp.CallToolRequest{}, ResumePurchaseOrderInput{DryRun: true, OrderID: order.PK})
+			r.NoError(err)
+			_, resumed, err := resumePurchaseOrder(fixture.deps())(ctx, &mcp.CallToolRequest{}, ResumePurchaseOrderInput{OrderID: order.PK, Confirm: true, PlanHash: resumePlan.PlanHash})
+			r.NoError(err)
+			r.NotNil(resumed.Order)
+			a.Equal(inventree.PurchaseOrderStatusPlaced, resumed.Order.Status, "InvenTree's issue endpoint always lands on PLACED, even for an order that was never placed before its hold")
+		})
+
+		t.Run("cancel_an_unreceived_order", func(t *testing.T) {
+			order := newOrder("po-cancel-unreceived")
+			_, cancelPlan, err := cancelPurchaseOrder(fixture.deps())(ctx, &mcp.CallToolRequest{}, CancelPurchaseOrderInput{DryRun: true, OrderID: order.PK})
+			r.NoError(err)
+			r.NotEmpty(cancelPlan.PlanHash)
+			_, cancelled, err := cancelPurchaseOrder(fixture.deps())(ctx, &mcp.CallToolRequest{}, CancelPurchaseOrderInput{OrderID: order.PK, Confirm: true, PlanHash: cancelPlan.PlanHash})
+			r.NoError(err)
+			r.NotNil(cancelled.Order)
+			a.Equal(inventree.PurchaseOrderStatusCancelled, cancelled.Order.Status)
+			cancelledRead, err := fixture.client.GetPurchaseOrder(ctx, order.PK)
+			r.NoError(err)
+			a.Equal(cancelled.Order.Status, cancelledRead.Status)
+		})
+
+		t.Run("cancel_refuses_a_partially_received_order", func(t *testing.T) {
+			order := newOrder("po-cancel-received")
+			lineReference, err := fixture.run.Name("po-cancel-received-line")
+			r.NoError(err)
+			line, err := fixture.client.CreatePurchaseOrderLine(ctx, inventree.PurchaseOrderLineCreate{Order: order.PK, SupplierPart: supplierPart.ID, Reference: &lineReference, Quantity: 2, Destination: &destination.ID})
+			r.NoError(err)
+			r.NoError(fixture.client.IssuePurchaseOrder(ctx, order.PK))
+			_, err = fixture.client.ReceivePurchaseOrder(ctx, order.PK, inventree.PurchaseOrderReceive{Items: []inventree.PurchaseOrderReceiveItem{{LineItem: line.PK, Location: &destination.ID, Quantity: "1"}}})
+			r.NoError(err)
+
+			_, refused, err := cancelPurchaseOrder(fixture.deps())(ctx, &mcp.CallToolRequest{}, CancelPurchaseOrderInput{DryRun: true, OrderID: order.PK})
+			r.NoError(err)
+			a.Equal(StatusClarificationRequired, refused.Status)
+			r.NotNil(refused.Clarification)
+			a.Equal("line_item_id", refused.Clarification.Retry)
+			unchanged, err := fixture.client.GetPurchaseOrder(ctx, order.PK)
+			r.NoError(err)
+			a.Equal(inventree.PurchaseOrderStatusPlaced, unchanged.Status, "the MCP-layer received-quantity guard must refuse before InvenTree's own permissive cancel endpoint is called")
+		})
+
+		t.Run("cancel_refuses_a_completed_order", func(t *testing.T) {
+			order := newOrder("po-cancel-complete")
+			lineReference, err := fixture.run.Name("po-cancel-complete-line")
+			r.NoError(err)
+			line, err := fixture.client.CreatePurchaseOrderLine(ctx, inventree.PurchaseOrderLineCreate{Order: order.PK, SupplierPart: supplierPart.ID, Reference: &lineReference, Quantity: 1, Destination: &destination.ID})
+			r.NoError(err)
+			r.NoError(fixture.client.IssuePurchaseOrder(ctx, order.PK))
+			_, err = fixture.client.ReceivePurchaseOrder(ctx, order.PK, inventree.PurchaseOrderReceive{Items: []inventree.PurchaseOrderReceiveItem{{LineItem: line.PK, Location: &destination.ID, Quantity: "1"}}})
+			r.NoError(err)
+			r.NoError(fixture.client.CompletePurchaseOrder(ctx, order.PK))
+
+			_, refused, err := cancelPurchaseOrder(fixture.deps())(ctx, &mcp.CallToolRequest{}, CancelPurchaseOrderInput{DryRun: true, OrderID: order.PK})
+			r.NoError(err)
+			a.Equal(StatusClarificationRequired, refused.Status)
+		})
+	})
+
 	t.Run("purchase_order_line_delete_happy_path", func(t *testing.T) {
 		r := require.New(t)
 		a := assert.New(t)
@@ -2997,6 +3123,7 @@ type milestoneToolFixture struct {
 	projectCodePlanStore                 *projectCodePlanStore
 	objectParameterDeletePlanStore       *objectParameterDeletePlanStore
 	parameterTemplateUniquenessPlanStore *parameterTemplateUniquenessPlanStore
+	purchaseOrderLifecyclePlanStore      *purchaseOrderLifecyclePlanStore
 }
 
 type attachmentTarget struct {
@@ -3053,6 +3180,7 @@ func newMilestoneToolFixture(t *testing.T, shared *testenv.SharedInvenTree) mile
 		projectCodePlanStore:                 newProjectCodePlanStore(time.Now, randomStockPlanToken),
 		objectParameterDeletePlanStore:       newObjectParameterDeletePlanStore(time.Now, randomStockPlanToken),
 		parameterTemplateUniquenessPlanStore: newParameterTemplateUniquenessPlanStore(time.Now, randomStockPlanToken),
+		purchaseOrderLifecyclePlanStore:      newPurchaseOrderLifecyclePlanStore(time.Now, randomStockPlanToken),
 	}
 }
 
@@ -3075,6 +3203,7 @@ func (f milestoneToolFixture) deps() Dependencies {
 		projectCodePlanStore:                 f.projectCodePlanStore,
 		objectParameterDeletePlanStore:       f.objectParameterDeletePlanStore,
 		parameterTemplateUniquenessPlanStore: f.parameterTemplateUniquenessPlanStore,
+		purchaseOrderLifecyclePlanStore:      f.purchaseOrderLifecyclePlanStore,
 	}
 }
 

@@ -1376,6 +1376,46 @@ func TestClientMethodsAgainstInvenTree(t *testing.T) {
 		explicitlyCompleted, err := fixture.client.GetPurchaseOrder(ctx, completionOrder.PK)
 		r.NoError(err)
 		r.Equal(inventree.PurchaseOrderStatusComplete, explicitlyCompleted.Status)
+
+		// F-S62: pin the exact hold/issue(resume)/cancel status codes and
+		// InvenTree 1.5.1/API 530's permissive transition behavior at the
+		// client layer. InvenTree validates almost none of these
+		// transitions itself: hold/issue succeed unconditionally from
+		// PENDING or PLACED, are silent no-ops on a CANCELLED order despite
+		// returning success, and cancel is refused only from COMPLETE (even
+		// a partially received PLACED order can be cancelled, leaving the
+		// received stock orphaned but still order-linked). The tools
+		// package layers its own source-state and received-quantity guards
+		// on top of this permissive upstream contract; see
+		// purchase_order_lifecycle_tools.go.
+		lifecycleOrder, err := fixture.client.CreatePurchaseOrder(ctx, inventree.PurchaseOrderCreate{Supplier: supplier.ID})
+		r.NoError(err)
+		r.Equal(inventree.PurchaseOrderStatusPending, lifecycleOrder.Status)
+		r.NoError(fixture.client.HoldPurchaseOrder(ctx, lifecycleOrder.PK))
+		heldFromPending, err := fixture.client.GetPurchaseOrder(ctx, lifecycleOrder.PK)
+		r.NoError(err)
+		r.Equal(inventree.PurchaseOrderStatusOnHold, heldFromPending.Status, "hold succeeds unconditionally from PENDING")
+		r.NoError(fixture.client.IssuePurchaseOrder(ctx, lifecycleOrder.PK))
+		resumedToPlaced, err := fixture.client.GetPurchaseOrder(ctx, lifecycleOrder.PK)
+		r.NoError(err)
+		r.Equal(inventree.PurchaseOrderStatusPlaced, resumedToPlaced.Status, "resume reuses the issue endpoint and always lands on PLACED, even for an order held directly from PENDING")
+
+		r.NoError(fixture.client.CancelPurchaseOrder(ctx, lifecycleOrder.PK))
+		cancelledOrder, err := fixture.client.GetPurchaseOrder(ctx, lifecycleOrder.PK)
+		r.NoError(err)
+		r.Equal(inventree.PurchaseOrderStatusCancelled, cancelledOrder.Status)
+
+		r.NoError(fixture.client.IssuePurchaseOrder(ctx, lifecycleOrder.PK), "InvenTree accepts issue on a CANCELLED order without an error")
+		r.NoError(fixture.client.HoldPurchaseOrder(ctx, lifecycleOrder.PK), "InvenTree accepts hold on a CANCELLED order without an error")
+		stillCancelled, err := fixture.client.GetPurchaseOrder(ctx, lifecycleOrder.PK)
+		r.NoError(err)
+		r.Equal(inventree.PurchaseOrderStatusCancelled, stillCancelled.Status, "issue/hold on a CANCELLED order are silent no-ops despite returning success")
+
+		cancelAfterCompleteErr := fixture.client.CancelPurchaseOrder(ctx, completionOrder.PK)
+		r.Error(cancelAfterCompleteErr, "InvenTree refuses to cancel a COMPLETE order")
+		var cancelAPIErr *inventree.APIError
+		r.ErrorAs(cancelAfterCompleteErr, &cancelAPIErr)
+		r.Equal(http.StatusBadRequest, cancelAPIErr.StatusCode)
 	})
 
 	t.Run("part_relation_crud", func(t *testing.T) {

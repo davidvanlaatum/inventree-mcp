@@ -613,7 +613,7 @@ func TestWriteToolAuthorizationsUseWriteScope(t *testing.T) {
 		case CreateStockItemToolName, InitialStockWorkflowToolName:
 			a.Equal("operational", auth.MutationClass)
 			a.Equal([]string{ScopeInventreeWrite, ScopeInventreeOperational}, auth.Scopes)
-		case AdjustStockQuantityToolName, SetStockStatusToolName, StocktakeAdjustmentToolName, TransferStockItemToolName, ReceivePurchaseOrderToolName, RestructureStockLocationToolName, UpdateStockItemMetadataToolName, AssignStockSerialToolName, UpdateParameterTemplateUniquenessToolName:
+		case AdjustStockQuantityToolName, SetStockStatusToolName, StocktakeAdjustmentToolName, TransferStockItemToolName, ReceivePurchaseOrderToolName, RestructureStockLocationToolName, UpdateStockItemMetadataToolName, AssignStockSerialToolName, UpdateParameterTemplateUniquenessToolName, HoldPurchaseOrderToolName, ResumePurchaseOrderToolName:
 			a.Equal("operational", auth.MutationClass)
 			a.Equal([]string{ScopeInventreeRead, ScopeInventreeWrite, ScopeInventreeOperational}, auth.Scopes)
 			if name == RestructureStockLocationToolName || name == UpdateStockItemMetadataToolName {
@@ -644,7 +644,7 @@ func TestWriteToolAuthorizationsUseWriteScope(t *testing.T) {
 			a.Equal("destructive", auth.MutationClass)
 			a.Equal([]string{ScopeInventreeRead, ScopeInventreeWrite, ScopeInventreeUpload, ScopeInventreeDestructive}, auth.Scopes)
 			a.True(auth.Annotations.Destructive)
-		case UpdateStockItemProvenanceToolName, UninstallStockItemToolName:
+		case UpdateStockItemProvenanceToolName, UninstallStockItemToolName, CancelPurchaseOrderToolName:
 			a.Equal("destructive", auth.MutationClass)
 			a.Equal([]string{ScopeInventreeRead, ScopeInventreeWrite, ScopeInventreeOperational, ScopeInventreeDestructive}, auth.Scopes)
 			a.True(auth.Annotations.Destructive)
