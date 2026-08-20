@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/davidvanlaatum/dvgoutils"
 	"github.com/davidvanlaatum/dvgoutils/logging/testhandler"
@@ -492,6 +493,9 @@ func (f *fakeParameterTemplateAdminClient) CreateParameterTemplate(_ context.Con
 	id := f.nextTemplateID
 	f.nextTemplateID++
 	record := inventree.ParameterTemplate{PK: id, Name: input.Name, Units: dvgoutils.Ptr(input.Units), Description: input.Description, ModelType: dvgoutils.Ptr(input.ModelType), Checkbox: input.Checkbox, Choices: input.Choices, SelectionList: input.SelectionList, Enabled: input.Enabled}
+	if input.Unique != nil {
+		record.Unique = *input.Unique
+	}
 	f.templates[id] = record
 	return record, nil
 }
@@ -533,6 +537,9 @@ func (f *fakeParameterTemplateAdminClient) UpdateParameterTemplate(_ context.Con
 	}
 	if value, ok := values["enabled"].(bool); ok {
 		record.Enabled = value
+	}
+	if value, ok := values["unique"].(float64); ok {
+		record.Unique = inventree.ParameterUniqueness(value)
 	}
 	f.templates[id] = record
 	return record, nil
@@ -622,4 +629,270 @@ func (f *fakeParameterTemplateAdminClient) UpdatePartParameter(_ context.Context
 
 func notFoundError() error {
 	return &inventree.APIError{StatusCode: http.StatusNotFound, Kind: inventree.ErrorKindNotFound}
+}
+
+func parameterTemplateUniquenessDeps(fake *fakeParameterTemplateAdminClient) Dependencies {
+	deps := parameterTemplateDeps(fake)
+	deps.parameterTemplateUniquenessPlanStore = newParameterTemplateUniquenessPlanStore(time.Now, randomStockPlanToken)
+	return deps
+}
+
+func TestUpdateParameterTemplateUniquenessRequiresValidInput(t *testing.T) {
+	t.Parallel()
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	fake := newFakeParameterTemplateAdminClient()
+	fake.templates[70] = inventree.ParameterTemplate{PK: 70, Name: "Resistance", Enabled: true}
+	deps := parameterTemplateUniquenessDeps(fake)
+
+	_, out, err := updateParameterTemplateUniqueness(deps)(ctx, &mcp.CallToolRequest{}, UpdateParameterTemplateUniquenessInput{TemplateID: 0, Unique: 1})
+	require.NoError(t, err)
+	assert.Equal(t, StatusClarificationRequired, out.Status)
+
+	_, out, err = updateParameterTemplateUniqueness(deps)(ctx, &mcp.CallToolRequest{}, UpdateParameterTemplateUniquenessInput{TemplateID: 70, Unique: 9})
+	require.NoError(t, err)
+	assert.Equal(t, StatusClarificationRequired, out.Status)
+}
+
+func TestUpdateParameterTemplateUniquenessNotFound(t *testing.T) {
+	t.Parallel()
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	fake := newFakeParameterTemplateAdminClient()
+	deps := parameterTemplateUniquenessDeps(fake)
+
+	_, out, err := updateParameterTemplateUniqueness(deps)(ctx, &mcp.CallToolRequest{}, UpdateParameterTemplateUniquenessInput{TemplateID: 9999, Unique: 1, DryRun: true})
+	require.NoError(t, err)
+	assert.Equal(t, StatusNotFound, out.Status)
+}
+
+func TestUpdateParameterTemplateUniquenessDryRunIssuesPlanWhenNoConflicts(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	fake := newFakeParameterTemplateAdminClient()
+	fake.templates[70] = inventree.ParameterTemplate{PK: 70, Name: "Resistance", Enabled: true}
+	fake.parameters[80] = inventree.Parameter{PK: 80, Template: 70, ModelType: "stock.stocklocation", ModelID: 10, Data: "10 K"}
+	fake.parameters[81] = inventree.Parameter{PK: 81, Template: 70, ModelType: "stock.stocklocation", ModelID: 11, Data: "22k"}
+	deps := parameterTemplateUniquenessDeps(fake)
+
+	_, out, err := updateParameterTemplateUniqueness(deps)(ctx, &mcp.CallToolRequest{}, UpdateParameterTemplateUniquenessInput{TemplateID: 70, Unique: 2, DryRun: true})
+	r.NoError(err)
+	a.Equal(StatusOK, out.Status)
+	a.True(out.DryRun)
+	a.NotEmpty(out.PlanHash)
+	a.Equal(2, out.RowCount)
+	a.Empty(out.Conflicts)
+}
+
+func TestUpdateParameterTemplateUniquenessDryRunReportsConflicts(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	fake := newFakeParameterTemplateAdminClient()
+	fake.templates[70] = inventree.ParameterTemplate{PK: 70, Name: "Resistance", Enabled: true}
+	fake.parameters[80] = inventree.Parameter{PK: 80, Template: 70, ModelType: "part.part", ModelID: 10, Data: "same"}
+	fake.parameters[81] = inventree.Parameter{PK: 81, Template: 70, ModelType: "part.part", ModelID: 11, Data: "same"}
+	deps := parameterTemplateUniquenessDeps(fake)
+
+	_, out, err := updateParameterTemplateUniqueness(deps)(ctx, &mcp.CallToolRequest{}, UpdateParameterTemplateUniquenessInput{TemplateID: 70, Unique: 2, DryRun: true})
+	r.NoError(err)
+	a.Equal(StatusClarificationRequired, out.Status)
+	a.Empty(out.PlanHash)
+	r.Len(out.Conflicts, 1)
+	r.Len(out.Conflicts[0].Rows, 2)
+	a.ElementsMatch([]int{80, 81}, conflictParameterIDs(out.Conflicts[0]))
+	for _, row := range out.Conflicts[0].Rows {
+		a.Equal("part.part", row.ModelType)
+	}
+}
+
+func TestUpdateParameterTemplateUniquenessConflictNeverDisclosesTheSharedValue(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	fake := newFakeParameterTemplateAdminClient()
+	fake.templates[70] = inventree.ParameterTemplate{PK: 70, Name: "Resistance", Enabled: true}
+	fake.parameters[80] = inventree.Parameter{PK: 80, Template: 70, ModelType: "part.part", ModelID: 10, Data: "super-secret-value"}
+	fake.parameters[81] = inventree.Parameter{PK: 81, Template: 70, ModelType: "part.part", ModelID: 11, Data: "super-secret-value"}
+	deps := parameterTemplateUniquenessDeps(fake)
+
+	_, out, err := updateParameterTemplateUniqueness(deps)(ctx, &mcp.CallToolRequest{}, UpdateParameterTemplateUniquenessInput{TemplateID: 70, Unique: 2, DryRun: true})
+	r.NoError(err)
+	r.Len(out.Conflicts, 1)
+	payload, err := json.Marshal(out.Conflicts)
+	r.NoError(err)
+	a.NotContains(string(payload), "super-secret-value")
+}
+
+func TestUpdateParameterTemplateUniquenessGlobalScopeConflictSpansModelTypes(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	fake := newFakeParameterTemplateAdminClient()
+	fake.templates[70] = inventree.ParameterTemplate{PK: 70, Name: "Resistance", Enabled: true}
+	fake.parameters[80] = inventree.Parameter{PK: 80, Template: 70, ModelType: "stock.stocklocation", ModelID: 10, Data: "same"}
+	fake.parameters[81] = inventree.Parameter{PK: 81, Template: 70, ModelType: "company.company", ModelID: 11, Data: "same"}
+	deps := parameterTemplateUniquenessDeps(fake)
+
+	// A global-scope target must catch this cross-model-type conflict; a model-type-scoped target must not.
+	_, global, err := updateParameterTemplateUniqueness(deps)(ctx, &mcp.CallToolRequest{}, UpdateParameterTemplateUniquenessInput{TemplateID: 70, Unique: 2, DryRun: true})
+	r.NoError(err)
+	r.Len(global.Conflicts, 1)
+	a.ElementsMatch([]string{"stock.stocklocation", "company.company"}, conflictModelTypes(global.Conflicts[0]))
+
+	_, scoped, err := updateParameterTemplateUniqueness(deps)(ctx, &mcp.CallToolRequest{}, UpdateParameterTemplateUniquenessInput{TemplateID: 70, Unique: 1, DryRun: true})
+	r.NoError(err)
+	a.Empty(scoped.Conflicts)
+}
+
+func conflictParameterIDs(conflict ParameterTemplateUniquenessConflict) []int {
+	ids := make([]int, 0, len(conflict.Rows))
+	for _, row := range conflict.Rows {
+		ids = append(ids, row.ParameterID)
+	}
+	return ids
+}
+
+func conflictModelTypes(conflict ParameterTemplateUniquenessConflict) []string {
+	types := make([]string, 0, len(conflict.Rows))
+	for _, row := range conflict.Rows {
+		types = append(types, row.ModelType)
+	}
+	return types
+}
+
+func TestUpdateParameterTemplateUniquenessModelTypeScopeDoesNotConflictAcrossModelTypes(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	fake := newFakeParameterTemplateAdminClient()
+	fake.templates[70] = inventree.ParameterTemplate{PK: 70, Name: "Resistance", Enabled: true}
+	fake.parameters[80] = inventree.Parameter{PK: 80, Template: 70, ModelType: "stock.stocklocation", ModelID: 10, Data: "same"}
+	fake.parameters[81] = inventree.Parameter{PK: 81, Template: 70, ModelType: "company.company", ModelID: 11, Data: "same"}
+	deps := parameterTemplateUniquenessDeps(fake)
+
+	_, out, err := updateParameterTemplateUniqueness(deps)(ctx, &mcp.CallToolRequest{}, UpdateParameterTemplateUniquenessInput{TemplateID: 70, Unique: 1, DryRun: true})
+	r.NoError(err)
+	a.Equal(StatusOK, out.Status)
+	a.Empty(out.Conflicts)
+	a.NotEmpty(out.PlanHash)
+}
+
+func TestUpdateParameterTemplateUniquenessConfirmRequiresPriorDryRun(t *testing.T) {
+	t.Parallel()
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	fake := newFakeParameterTemplateAdminClient()
+	fake.templates[70] = inventree.ParameterTemplate{PK: 70, Name: "Resistance", Enabled: true}
+	deps := parameterTemplateUniquenessDeps(fake)
+
+	_, out, err := updateParameterTemplateUniqueness(deps)(ctx, &mcp.CallToolRequest{}, UpdateParameterTemplateUniquenessInput{TemplateID: 70, Unique: 2})
+	require.NoError(t, err)
+	assert.Equal(t, StatusClarificationRequired, out.Status)
+}
+
+func TestUpdateParameterTemplateUniquenessConfirmAppliesAndVerifies(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	fake := newFakeParameterTemplateAdminClient()
+	fake.templates[70] = inventree.ParameterTemplate{PK: 70, Name: "Resistance", Enabled: true}
+	deps := parameterTemplateUniquenessDeps(fake)
+
+	_, plan, err := updateParameterTemplateUniqueness(deps)(ctx, &mcp.CallToolRequest{}, UpdateParameterTemplateUniquenessInput{TemplateID: 70, Unique: 2, DryRun: true})
+	r.NoError(err)
+	r.Equal(StatusOK, plan.Status)
+	r.NotEmpty(plan.PlanHash)
+
+	_, out, err := updateParameterTemplateUniqueness(deps)(ctx, &mcp.CallToolRequest{}, UpdateParameterTemplateUniquenessInput{TemplateID: 70, Unique: 2, Confirm: true, PlanHash: plan.PlanHash})
+	r.NoError(err)
+	a.Equal(StatusOK, out.Status)
+	a.True(out.Verified)
+	r.NotNil(out.Record)
+	a.Equal(inventree.ParameterUniquenessGlobal, out.Record.Unique)
+	a.Equal(inventree.ParameterUniquenessGlobal, fake.templates[70].Unique)
+}
+
+func TestUpdateParameterTemplateUniquenessConfirmRejectsStaleToken(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	fake := newFakeParameterTemplateAdminClient()
+	fake.templates[70] = inventree.ParameterTemplate{PK: 70, Name: "Resistance", Enabled: true}
+	deps := parameterTemplateUniquenessDeps(fake)
+
+	_, plan, err := updateParameterTemplateUniqueness(deps)(ctx, &mcp.CallToolRequest{}, UpdateParameterTemplateUniquenessInput{TemplateID: 70, Unique: 2, DryRun: true})
+	r.NoError(err)
+	r.NotEmpty(plan.PlanHash)
+
+	// Rows referencing the template changed since the dry run, so the plan is now stale.
+	fake.parameters[82] = inventree.Parameter{PK: 82, Template: 70, ModelType: "company.company", ModelID: 20, Data: "new"}
+
+	_, out, err := updateParameterTemplateUniqueness(deps)(ctx, &mcp.CallToolRequest{}, UpdateParameterTemplateUniquenessInput{TemplateID: 70, Unique: 2, Confirm: true, PlanHash: plan.PlanHash})
+	r.NoError(err)
+	a.Equal(StatusClarificationRequired, out.Status)
+}
+
+func TestUpdateParameterTemplateUniquenessRejectsMalformedOrUnknownToken(t *testing.T) {
+	t.Parallel()
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	fake := newFakeParameterTemplateAdminClient()
+	fake.templates[70] = inventree.ParameterTemplate{PK: 70, Name: "Resistance", Enabled: true}
+	deps := parameterTemplateUniquenessDeps(fake)
+
+	_, out, err := updateParameterTemplateUniqueness(deps)(ctx, &mcp.CallToolRequest{}, UpdateParameterTemplateUniquenessInput{TemplateID: 70, Unique: 2, Confirm: true, PlanHash: "not-a-real-token"})
+	require.NoError(t, err)
+	assert.Equal(t, StatusClarificationRequired, out.Status)
+	assert.Equal(t, inventree.ParameterUniquenessNone, fake.templates[70].Unique)
+}
+
+func TestUpdateParameterTemplateUniquenessConfirmRefusesRemainingConflicts(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	fake := newFakeParameterTemplateAdminClient()
+	fake.templates[70] = inventree.ParameterTemplate{PK: 70, Name: "Resistance", Enabled: true}
+	deps := parameterTemplateUniquenessDeps(fake)
+
+	_, plan, err := updateParameterTemplateUniqueness(deps)(ctx, &mcp.CallToolRequest{}, UpdateParameterTemplateUniquenessInput{TemplateID: 70, Unique: 2, DryRun: true})
+	r.NoError(err)
+	r.NotEmpty(plan.PlanHash)
+
+	fake.parameters[80] = inventree.Parameter{PK: 80, Template: 70, ModelType: "part.part", ModelID: 10, Data: "same"}
+	fake.parameters[81] = inventree.Parameter{PK: 81, Template: 70, ModelType: "part.part", ModelID: 11, Data: "same"}
+
+	_, out, err := updateParameterTemplateUniqueness(deps)(ctx, &mcp.CallToolRequest{}, UpdateParameterTemplateUniquenessInput{TemplateID: 70, Unique: 2, Confirm: true, PlanHash: plan.PlanHash})
+	r.NoError(err)
+	a.Equal(StatusClarificationRequired, out.Status)
+	r.Len(out.Conflicts, 1)
+}
+
+func TestParameterTemplateUniquenessPlanStoreIssueFailsClosedOnTokenError(t *testing.T) {
+	t.Parallel()
+	store := &parameterTemplateUniquenessPlanStore{
+		entries: map[string]parameterTemplateUniquenessConfirmation{}, now: time.Now,
+		token:     func() (string, error) { return "", errors.New("boom") },
+		principal: stockPlanPrincipal, maxEntries: parameterTemplateUniquenessPlanMaxEntries, maxEntriesPerPrincipal: parameterTemplateUniquenessPlanMaxEntriesPerPrincipal,
+	}
+	_, err := store.issue(context.Background(), ParameterTemplateUniquenessPlan{Template: inventree.ParameterTemplate{PK: 70}})
+	require.Error(t, err)
+}
+
+func TestParameterTemplateUniquenessPlanStoreIssueFailsClosedAtCapacity(t *testing.T) {
+	t.Parallel()
+	store := &parameterTemplateUniquenessPlanStore{
+		entries: map[string]parameterTemplateUniquenessConfirmation{}, now: time.Now,
+		token:     randomStockPlanToken,
+		principal: stockPlanPrincipal, maxEntries: parameterTemplateUniquenessPlanMaxEntries, maxEntriesPerPrincipal: 1,
+	}
+	_, err := store.issue(context.Background(), ParameterTemplateUniquenessPlan{Template: inventree.ParameterTemplate{PK: 70}})
+	require.NoError(t, err)
+	_, err = store.issue(context.Background(), ParameterTemplateUniquenessPlan{Template: inventree.ParameterTemplate{PK: 71}})
+	require.Error(t, err)
 }

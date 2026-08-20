@@ -252,6 +252,11 @@ func (c *Client) SearchTemplateParametersPage(ctx context.Context, query Templat
 	return PartParameterPage{Count: page.Count, Results: page.Results, HasMore: page.Next != nil && *page.Next != ""}, err
 }
 
+func (c *Client) SearchObjectParametersPage(ctx context.Context, query ObjectParameterQuery) (PartParameterPage, error) {
+	page, err := listPage[Parameter](ctx, c, "/api/parameter/", query.values())
+	return PartParameterPage{Count: page.Count, Results: page.Results, HasMore: page.Next != nil && *page.Next != ""}, err
+}
+
 func (c *Client) GetPartParameter(ctx context.Context, id int) (Parameter, error) {
 	var out Parameter
 	err := c.get(ctx, fmt.Sprintf("/api/parameter/%d/", id), &out)

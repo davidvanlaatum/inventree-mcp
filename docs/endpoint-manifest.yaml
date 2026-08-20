@@ -490,6 +490,39 @@ endpoints:
     method: DELETE
     operation_id: parameter_destroy
     response_status: 204
+  - id: search_object_parameters
+    area: parameters
+    path: /api/parameter/
+    method: GET
+    operation_id: parameter_list
+    required_query:
+      - model_type
+      - model_id
+      - template
+      - search
+    response_schema: '#/components/schemas/PaginatedParameterList'
+  - id: create_object_parameter
+    area: parameters
+    path: /api/parameter/
+    method: POST
+    operation_id: parameter_create
+    request_schema: '#/components/schemas/Parameter'
+    request_content_type: multipart/form-data
+    response_schema: '#/components/schemas/Parameter'
+  - id: update_object_parameter
+    area: parameters
+    path: /api/parameter/{id}/
+    method: PATCH
+    operation_id: parameter_partial_update
+    request_schema: '#/components/schemas/PatchedParameter'
+    request_content_type: multipart/form-data
+    response_schema: '#/components/schemas/Parameter'
+  - id: delete_object_parameter
+    area: parameters
+    path: /api/parameter/{id}/
+    method: DELETE
+    operation_id: parameter_destroy
+    response_status: 204
   - id: search_parameter_templates
     area: parameters
     path: /api/parameter/template/
@@ -524,6 +557,14 @@ endpoints:
     method: DELETE
     operation_id: parameter_template_destroy
     response_status: 204
+  - id: update_parameter_template_uniqueness
+    area: parameters
+    path: /api/parameter/template/{id}/
+    method: PATCH
+    operation_id: parameter_template_partial_update
+    request_schema: '#/components/schemas/PatchedParameterTemplate'
+    request_content_type: application/json
+    response_schema: '#/components/schemas/ParameterTemplate'
   - id: search_category_parameter_templates
     area: parameters
     path: /api/part/category/parameters/

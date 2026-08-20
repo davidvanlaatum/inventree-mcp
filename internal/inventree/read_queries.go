@@ -42,6 +42,20 @@ type TemplateParameterQuery struct {
 	Offset     int
 }
 
+// ObjectParameterQuery lists /api/parameter/ rows scoped by an explicit,
+// caller-supplied model_type (one of InvenTree's qualified app.model
+// values), unlike PartParameterQuery which always forces model_type to
+// "part.part". ModelID is optional: omit it to scan every object of
+// ModelType sharing TemplateID, used for model-type-scoped uniqueness scans.
+type ObjectParameterQuery struct {
+	ModelType  string
+	ModelID    int
+	TemplateID int
+	Search     string
+	Limit      int
+	Offset     int
+}
+
 type CategoryParameterTemplateQuery struct {
 	CategoryID  int
 	FetchParent *bool
@@ -259,6 +273,22 @@ func (q TemplateParameterQuery) values() url.Values {
 	if q.TemplateID != 0 {
 		values.Set("template", strconv.Itoa(q.TemplateID))
 	}
+	setPagination(values, q.Limit, q.Offset)
+	return values
+}
+
+func (q ObjectParameterQuery) values() url.Values {
+	values := url.Values{}
+	if q.Search != "" {
+		values.Set("search", q.Search)
+	}
+	if q.ModelID != 0 {
+		values.Set("model_id", strconv.Itoa(q.ModelID))
+	}
+	if q.TemplateID != 0 {
+		values.Set("template", strconv.Itoa(q.TemplateID))
+	}
+	values.Set("model_type", q.ModelType)
 	setPagination(values, q.Limit, q.Offset)
 	return values
 }
