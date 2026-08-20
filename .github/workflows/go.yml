@@ -56,7 +56,7 @@ jobs:
           coverage-threshold: 80
           cover-mode: atomic
           cover-pkg: ./...
-          test-args: '["-v", "-race"]'
+          test-args: '["-v", "-race", "-p=1"]'
           notes-ref: gocoverage-stable
 
       - name: Update coverage badge

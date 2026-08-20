@@ -19,13 +19,20 @@ func TestTestEnvLockCrossProcess(t *testing.T) {
 
 	cmd := exec.Command(os.Args[0], "-test.run=^TestTestEnvLockHelper$")
 	cmd.Env = append(os.Environ(), "TESTENV_LOCK_HELPER=blocked")
-	err = cmd.Run()
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Logf("blocked lock helper output:\n%s", output)
+	}
 	require.NoError(t, err)
 	require.NoError(t, lock.release())
 
 	cmd = exec.Command(os.Args[0], "-test.run=^TestTestEnvLockHelper$")
 	cmd.Env = append(os.Environ(), "TESTENV_LOCK_HELPER=available")
-	require.NoError(t, cmd.Run())
+	output, err = cmd.CombinedOutput()
+	if err != nil {
+		t.Logf("available lock helper output:\n%s", output)
+	}
+	require.NoError(t, err)
 }
 
 func TestTestEnvLockHelper(t *testing.T) {
