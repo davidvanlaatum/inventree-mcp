@@ -553,6 +553,13 @@ func (c *Client) SearchPurchaseOrders(ctx context.Context, query PurchaseOrderQu
 	return listAll[PurchaseOrder](ctx, c, "/api/order/po/", query.values())
 }
 
+// SearchPurchaseOrdersPage fetches one bounded page and reports the exact
+// upstream count for completeness-sensitive dependency scans.
+func (c *Client) SearchPurchaseOrdersPage(ctx context.Context, query PurchaseOrderQuery) (PurchaseOrderPage, error) {
+	page, err := listPage[PurchaseOrder](ctx, c, "/api/order/po/", query.values())
+	return PurchaseOrderPage{Count: page.Count, Results: page.Results, HasMore: page.Next != nil && *page.Next != ""}, err
+}
+
 func (c *Client) GetPurchaseOrder(ctx context.Context, id int) (PurchaseOrder, error) {
 	var out PurchaseOrder
 	err := c.get(ctx, fmt.Sprintf("/api/order/po/%d/", id), &out)
@@ -567,6 +574,13 @@ func (c *Client) GetPurchaseOrderDetail(ctx context.Context, id int) (PurchaseOr
 
 func (c *Client) SearchPurchaseOrderLines(ctx context.Context, query PurchaseOrderLineQuery) ([]PurchaseOrderLineItem, error) {
 	return listAll[PurchaseOrderLineItem](ctx, c, "/api/order/po-line/", query.values())
+}
+
+// SearchPurchaseOrderLinesPage fetches one bounded page and reports the exact
+// upstream count for completeness-sensitive dependency scans.
+func (c *Client) SearchPurchaseOrderLinesPage(ctx context.Context, query PurchaseOrderLineQuery) (PurchaseOrderLinePage, error) {
+	page, err := listPage[PurchaseOrderLineItem](ctx, c, "/api/order/po-line/", query.values())
+	return PurchaseOrderLinePage{Count: page.Count, Results: page.Results, HasMore: page.Next != nil && *page.Next != ""}, err
 }
 
 func (c *Client) GetPurchaseOrderLine(ctx context.Context, id int) (PurchaseOrderLineItem, error) {
@@ -605,6 +619,16 @@ func (c *Client) SearchSalesOrderLines(ctx context.Context, query SalesOrderLine
 
 func (c *Client) SearchBuilds(ctx context.Context, query BuildQuery) ([]Build, error) {
 	return listAll[Build](ctx, c, "/api/build/", query.values())
+}
+
+func (c *Client) SearchBuildsPage(ctx context.Context, query BuildQuery) (BuildPage, error) {
+	page, err := listPage[Build](ctx, c, "/api/build/", query.values())
+	return BuildPage{Count: page.Count, Results: page.Results, HasMore: page.Next != nil && *page.Next != ""}, err
+}
+
+func (c *Client) SearchTransferOrdersPage(ctx context.Context, query TransferOrderQuery) (TransferOrderPage, error) {
+	page, err := listPage[TransferOrder](ctx, c, "/api/order/transfer-order/", query.values())
+	return TransferOrderPage{Count: page.Count, Results: page.Results, HasMore: page.Next != nil && *page.Next != ""}, err
 }
 
 func (c *Client) SearchPartRelations(ctx context.Context, query PartRelationQuery) ([]PartRelation, error) {

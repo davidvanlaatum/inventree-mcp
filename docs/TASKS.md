@@ -149,7 +149,7 @@ Before assigning a new story ID, inspect `git worktree list --porcelain`, search
 | [F-S65](#f-s65-guarded-stock-custom-status-management) | Extend the guarded stock-status workflow to assign or clear compatible custom status keys. | Ready |
 | [F-S66](#f-s66-guarded-stock-item-merge-discovery) | Investigate a deferred, fail-closed merge workflow for explicitly selected compatible stock items. | Future |
 | [F-S67](#f-s67-stock-location-detail-and-type-administration) | Complete stock-location icon detail and add guarded stock-location-type administration. | Done |
-| [F-S68](#f-s68-guarded-stock-location-deletion) | Delete one empty, unreferenced stock location only through a complete fail-closed dependency plan. | Ready |
+| [F-S68](#f-s68-guarded-stock-location-deletion) | Delete one empty, unreferenced stock location only through a complete fail-closed dependency plan. | Active |
 | [F-S69](#f-s69-guarded-part-category-deletion) | Delete one empty, unreferenced leaf part category only through a complete fail-closed dependency plan. | Done |
 | [F-S70](#f-s70-inventree-version-compatibility-table) | Add a README table mapping inventree-mcp versions to tested InvenTree versions, kept in sync via a fenced anchor, drift test, and release gate. | Done |
 | [F-S71](#f-s71-inventree-instance-info-tool) | Add a read-only InvenTree instance-info tool, gated on an operator-approved curated settings allowlist. | Done |
@@ -2661,7 +2661,7 @@ Tasks:
 
 ### F-S68: Guarded Stock-Location Deletion
 
-- Status: `Ready`
+- Status: `Active`
 - Issue: [#150](https://github.com/davidvanlaatum/inventree-mcp/issues/150)
 - Depends on: F-S21, F-S47, F-S64, F-S67
 - Decisions: approved by the operator on 2026-08-15. Stock-location deletion is allowed only through a guarded destructive workflow after proving the exact location has no stock, child locations, or other supported references.
@@ -2675,6 +2675,9 @@ Tasks:
   - No cascade, implicit stock transfer, default clearing, parameter deletion, or child reparenting is permitted.
   - Require `inventree.read`, `inventree.write`, `inventree.operational`, and `inventree.destructive`; publish `destructiveHint:true`, closed-world, and non-idempotent annotations.
   - Pinned tests cover every blocker, later-page references, stale plans, response loss, definite refusal, read-back, and aligned docs.
+- Progress: Implemented on `codex/f-s68-guarded-stock-location-deletion`. The guarded tool inventories all schema-backed location references, issues principal-bound single-use plans only for empty locations, rechecks blockers before deletion, deletes only the stable ID, and verifies exact-ID absence with recovery guidance for ambiguous outcomes.
+- Validation: `go generate ./internal/tools`, focused `go test -tags no_integration_tests ./internal/inventree ./internal/tools` coverage for all F-S68 scans, schema-aware dependency inventory, plan-store, tool metadata, and read-back branches, `go build ./...`, `go vet ./...`, `golangci-lint run ./...` (0 issues), and `git diff --check` pass. The default-on Testcontainers integration subtest remains unrun because Docker is unavailable in this environment.
+- Review: Delegated full-scope Go/QA/Product/Infosec review found and drove resolution of missing Build source coverage, missing surviving-location read-back coverage, and incomplete schema-drift coverage. Final rerun found no actionable findings. The implementation uses the existing OAuth scope and annotation patterns, bounded fail-closed scans, checked-in dependency inventory, and aligned tool/schema/operator documentation.
 - Residual risk: dependency checks and DELETE are non-atomic; a concurrent writer can add a reference after preflight, so operators must coordinate a single writer and inspect exact state after ambiguous outcomes.
 
 ### F-S69: Guarded Part-Category Deletion
