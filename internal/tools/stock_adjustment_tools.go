@@ -440,6 +440,7 @@ func setStockStatus(deps Dependencies) mcp.ToolHandlerFor[SetStockStatusInput, S
 			if result != nil || err != nil {
 				return result, out, err
 			}
+			normalizeStockCompatibilityKey(&before)
 			definitions, err := getStockStatusDefinitions(ctx, client)
 			if err != nil {
 				return nil, out, err
@@ -676,7 +677,17 @@ func stockUnknownResult(out StockAdjustmentOutput, message string) (*mcp.CallToo
 }
 
 func snapshotStockItem(item inventree.StockItem) StockStateSnapshot {
-	return StockStateSnapshot{StockItemID: item.PK, PartID: item.Part, Quantity: item.Quantity, LocationID: item.Location, Status: item.Status, StatusCustomKey: item.StatusCustomKey, Batch: item.Batch, Serial: item.Serial, Packaging: item.Packaging, DeleteOnDeplete: item.DeleteOnDeplete}
+	customKey := item.StatusCustomKey
+	if customKey != nil && *customKey == item.Status {
+		customKey = nil
+	}
+	return StockStateSnapshot{StockItemID: item.PK, PartID: item.Part, Quantity: item.Quantity, LocationID: item.Location, Status: item.Status, StatusCustomKey: customKey, Batch: item.Batch, Serial: item.Serial, Packaging: item.Packaging, DeleteOnDeplete: item.DeleteOnDeplete}
+}
+
+func normalizeStockCompatibilityKey(item *inventree.StockItem) {
+	if item.StatusCustomKey != nil && *item.StatusCustomKey == item.Status {
+		item.StatusCustomKey = nil
+	}
 }
 
 func stockStateMatches(item inventree.StockItem, expected StockStateSnapshot) bool {
