@@ -155,6 +155,7 @@ Before assigning a new story ID, inspect `git worktree list --porcelain`, search
 | [F-S71](#f-s71-inventree-instance-info-tool) | Add a read-only InvenTree instance-info tool, gated on an operator-approved curated settings allowlist. | Done |
 | [F-S72](#f-s72-porcelain-style-version-cli-format-and-self-update-rewrite) | Replace the CLI `version` output with a versioned porcelain-style format and move self-update onto it, accepting one documented one-time breaking migration. | Done |
 | [F-S73](#f-s73-remove-gremlins-mutation-testing-ci-job) | Remove the Gremlins mutation-testing job from CI; keep `.gremlins.yaml` for optional manual runs. | Done |
+| [F-S74](#f-s74-guarded-stocktake-generation-and-reporting) | Implement guarded stocktake generation and reporting after F-S60 discovery resolves asynchronous task and report behavior. | Future |
 
 ## Milestone 0: Repository And Planning
 
@@ -2820,3 +2821,12 @@ Tasks:
 - [x] Keep `.gremlins.yaml` unchanged for optional manual runs.
 - [x] Verify `gremlins` is not a required branch-protection status check before removing it.
 - [x] Validate the edited workflow with `actionlint` and `git diff --check`.
+
+### F-S74: Guarded Stocktake Generation And Reporting
+
+- Status: `Future`
+- Issue: [#193](https://github.com/davidvanlaatum/inventree-mcp/issues/193)
+- Depends on: F-S60
+- Scope: implement guarded stocktake generation using exactly one selector (part, category, or location); support independent `generate_entry` and `generate_report` choices; poll and correlate `DataOutput` tasks; define failure, timeout, duplicate, permission, and retry recovery; retrieve generated snapshots and reports safely, including attachment handling where applicable; keep quantity adjustment and historical stocktake reads separate.
+- Acceptance: dry-run and confirmation bind the complete selector/flag plan; entry and report generation have verified terminal-state behavior; duplicate and same-day behavior is characterized and handled explicitly; report/plugin prerequisites and permissions are explicit; unit, integration, security, documentation, and reviewer coverage pass.
+- Residual risk: generation is a non-atomic inventory snapshot and may change while processing. F-S60 found HTTP 200 enqueue responses on pinned InvenTree 1.5.1/API 530, while report and combined-flag outputs did not reach terminal state within the bounded live probe; this story must resolve that behavior before exposing a guarded workflow.
