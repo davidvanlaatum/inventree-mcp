@@ -337,12 +337,16 @@ func Start(ctx context.Context, opts Options) (*Environment, CleanupFunc, error)
 
 	if opts.StartWorker {
 		workerOpts := []testcontainers.ContainerCustomizer{
-			tcnetwork.WithNetwork([]string{"inventree-worker"}, nw),
+			testcontainers.WithConfigModifier(func(config *container.Config) {
+				// The worker shares the server network namespace and does not need
+				// the image's web port exposed or published on the host.
+				config.ExposedPorts = nil
+			}),
+			testcontainers.WithHostConfigModifier(func(hostConfig *container.HostConfig) {
+				hostConfig.NetworkMode = container.NetworkMode("container:" + server.GetContainerID())
+			}),
 			testcontainers.WithEnv(inventreeContainerEnv(dbHost, cacheHost, secretKey)),
 			testcontainers.WithCmd("sh", "-c", "exec invoke worker"),
-			// The image declares the web port, but the worker must not publish it
-			// on the host: the web container already owns the loopback binding.
-			testcontainers.WithExposedPorts("65535/tcp"),
 		}
 		worker, err := testcontainers.Run(startupCtx, opts.Image, workerOpts...)
 		if err != nil {
