@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"math"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -45,6 +46,7 @@ const (
 	stockPlanLifetime               = 5 * time.Minute
 	stockPlanMaxEntries             = 4096
 	stockPlanMaxEntriesPerPrincipal = 64
+	stockStatusMaxDefinitions       = 256
 )
 
 var errStockPlanCapacity = errors.New("too many outstanding stock confirmation plans")
@@ -154,14 +156,43 @@ func stockPlanPrincipal(ctx context.Context) string {
 
 type StockAdjustmentClient interface {
 	GetStockItem(context.Context, int) (inventree.StockItem, error)
+	GetStockStatuses(context.Context) (inventree.StockStatusClass, error)
 	AddStock(context.Context, inventree.StockAdjustment) error
 	RemoveStock(context.Context, inventree.StockAdjustment) error
 	CountStock(context.Context, inventree.StockAdjustment) error
 	ChangeStockStatus(context.Context, inventree.StockStatusChange) error
+	ClearStockCustomStatus(context.Context, int, int) (inventree.StockItem, error)
 	UpdateStockItem(context.Context, int, inventree.PatchFields) (inventree.StockItem, error)
 	SearchStockItems(context.Context, inventree.StockItemQuery) ([]inventree.StockItem, error)
 	GetPart(context.Context, int) (inventree.Part, error)
 	GetGlobalSetting(context.Context, string) (inventree.SettingValue, error)
+}
+
+type StockStatusDefinition struct {
+	Key        int    `json:"key"`
+	LogicalKey int    `json:"logical_key"`
+	Name       string `json:"name"`
+	Label      string `json:"label"`
+	Color      string `json:"color,omitempty"`
+	Custom     bool   `json:"custom"`
+}
+
+type SearchStockStatusesInput struct{}
+
+type StockStatusLookupOutput struct {
+	Status  string                  `json:"status"`
+	Results []StockStatusDefinition `json:"results"`
+}
+
+func searchStockStatuses(deps Dependencies) mcp.ToolHandlerFor[SearchStockStatusesInput, StockStatusLookupOutput] {
+	return LookupHandler[StockAdjustmentClient, SearchStockStatusesInput, StockStatusLookupOutput](deps, SearchStockStatusesToolName,
+		func(ctx context.Context, _ *mcp.CallToolRequest, client StockAdjustmentClient, _ SearchStockStatusesInput) (*mcp.CallToolResult, StockStatusLookupOutput, error) {
+			definitions, err := getStockStatusDefinitions(ctx, client)
+			if err != nil {
+				return nil, StockStatusLookupOutput{}, err
+			}
+			return TextResult(StatusOK), StockStatusLookupOutput{Status: StatusOK, Results: definitions}, nil
+		})
 }
 
 type AdjustStockQuantityInput struct {
@@ -174,12 +205,14 @@ type AdjustStockQuantityInput struct {
 }
 
 type SetStockStatusInput struct {
-	DryRun      bool   `json:"dry_run,omitempty" jsonschema:"Return the current-state-bound status change plan without writing."`
-	Confirm     bool   `json:"confirm,omitempty" jsonschema:"Required true for execution after reviewing a dry run."`
-	PlanHash    string `json:"plan_hash,omitempty" jsonschema:"Opaque single-use confirmation token returned by the latest dry run."`
-	StockItemID int    `json:"stock_item_id" jsonschema:"Existing stock-item primary key."`
-	Status      int    `json:"status" jsonschema:"Target InvenTree stock status code."`
-	Reason      string `json:"reason" jsonschema:"Nonblank operator audit reason recorded with the stock transaction."`
+	DryRun               bool   `json:"dry_run,omitempty" jsonschema:"Return the current-state-bound status change plan without writing."`
+	Confirm              bool   `json:"confirm,omitempty" jsonschema:"Required true for execution after reviewing a dry run."`
+	PlanHash             string `json:"plan_hash,omitempty" jsonschema:"Opaque single-use confirmation token returned by the latest dry run."`
+	StockItemID          int    `json:"stock_item_id" jsonschema:"Existing stock-item primary key."`
+	Status               int    `json:"status" jsonschema:"Target InvenTree stock status code."`
+	StatusCustomKey      *int   `json:"status_custom_key,omitempty" jsonschema:"Optional compatible custom status key; omit to preserve the current custom status, or set clear_status_custom_key:true to clear it."`
+	ClearStatusCustomKey bool   `json:"clear_status_custom_key,omitempty" jsonschema:"Explicitly clear the current custom status while retaining the selected logical status."`
+	Reason               string `json:"reason" jsonschema:"Nonblank operator audit reason recorded with the stock transaction."`
 }
 
 type StocktakeAdjustmentInput struct {
@@ -215,6 +248,7 @@ type StockStateSnapshot struct {
 	Quantity        float64 `json:"quantity"`
 	LocationID      *int    `json:"location_id"`
 	Status          int     `json:"status"`
+	StatusCustomKey *int    `json:"status_custom_key,omitempty"`
 	Batch           *string `json:"batch,omitempty"`
 	Serial          *string `json:"serial,omitempty"`
 	Packaging       *string `json:"packaging,omitempty"`
@@ -307,16 +341,17 @@ type StockInstallContext struct {
 }
 
 type StockAdjustmentPlan struct {
-	Action     string                 `json:"action"`
-	Before     StockStateSnapshot     `json:"before"`
-	After      StockStateSnapshot     `json:"after"`
-	Reason     string                 `json:"reason"`
-	HighRisk   bool                   `json:"high_risk"`
-	RiskReason string                 `json:"risk_reason,omitempty"`
-	WillDelete bool                   `json:"will_delete,omitempty"`
-	Depletion  *StockDepletionContext `json:"depletion,omitempty"`
-	Transfer   *StockTransferContext  `json:"transfer,omitempty"`
-	Install    *StockInstallContext   `json:"install,omitempty"`
+	Action           string                 `json:"action"`
+	Before           StockStateSnapshot     `json:"before"`
+	After            StockStateSnapshot     `json:"after"`
+	Reason           string                 `json:"reason"`
+	HighRisk         bool                   `json:"high_risk"`
+	RiskReason       string                 `json:"risk_reason,omitempty"`
+	WillDelete       bool                   `json:"will_delete,omitempty"`
+	Depletion        *StockDepletionContext `json:"depletion,omitempty"`
+	Transfer         *StockTransferContext  `json:"transfer,omitempty"`
+	Install          *StockInstallContext   `json:"install,omitempty"`
+	StatusDefinition *StockStatusDefinition `json:"status_definition,omitempty"`
 }
 
 type StockAdjustmentFailure struct {
@@ -405,23 +440,127 @@ func setStockStatus(deps Dependencies) mcp.ToolHandlerFor[SetStockStatusInput, S
 			if result != nil || err != nil {
 				return result, out, err
 			}
-			statusName, ok := stockStatusNames[input.Status]
-			if !ok {
-				return stockClarification(out, "Which schema-supported stock status should be used?", "status", "status must be one of the InvenTree stock status codes documented for this API version", "status", map[string]any{"stock_item_id": input.StockItemID, "supported_statuses": stockStatusNames})
+			normalizeStockCompatibilityKey(&before)
+			definitions, err := getStockStatusDefinitions(ctx, client)
+			if err != nil {
+				return nil, out, err
+			}
+			definition, selectedStatus, selectedCustom, clarification := selectStockStatusTarget(input, before, definitions)
+			if clarification != nil {
+				out.Clarification = clarification
+				out.Status = StatusClarificationRequired
+				return TextResult(StatusClarificationRequired), out, nil
+			}
+			if selectedCustom == nil && before.StatusCustomKey != nil {
+				return stockClarification(out, "How should the current custom stock status be removed?", "clear_status_custom_key", "pinned InvenTree 1.5/API 530 does not provide a nullable custom-status read-back, so this request is refused before mutation", "clear_status_custom_key", map[string]any{"stock_item_id": input.StockItemID, "current_status_custom_key": *before.StatusCustomKey})
 			}
 			after := snapshotStockItem(before)
-			after.Status = input.Status
-			if after.Status == before.Status {
+			after.Status = selectedStatus
+			after.StatusCustomKey = selectedCustom
+			if selectedStatus == before.Status && equalIntPtr(selectedCustom, before.StatusCustomKey) {
 				return stockClarification(out, "Which different stock status should be applied?", "status", "the selected stock item already has this status; no mutation is needed", "status", map[string]any{"stock_item_id": input.StockItemID, "status": input.Status})
 			}
-			plan := StockAdjustmentPlan{Action: SetStockStatusToolName, Before: snapshotStockItem(before), After: after, Reason: strings.TrimSpace(input.Reason), HighRisk: highRiskStockStatus(input.Status)}
+			plan := StockAdjustmentPlan{Action: SetStockStatusToolName, Before: snapshotStockItem(before), After: after, Reason: strings.TrimSpace(input.Reason), HighRisk: highRiskStockStatus(selectedStatus), StatusDefinition: &definition}
 			if plan.HighRisk {
-				plan.RiskReason = "status transition to " + statusName + " is a write-off state"
+				plan.RiskReason = "status transition to " + definition.Label + " is a write-off state"
 			}
 			return executeStockPlan(ctx, deps.stockPlanStore, client, input.DryRun, input.Confirm, input.PlanHash, plan, func() error {
-				return client.ChangeStockStatus(ctx, inventree.StockStatusChange{Items: []int{input.StockItemID}, Status: input.Status, Note: plan.Reason})
+				if selectedCustom == nil && before.StatusCustomKey != nil {
+					_, err := client.ClearStockCustomStatus(ctx, input.StockItemID, selectedStatus)
+					return err
+				}
+				return client.ChangeStockStatus(ctx, inventree.StockStatusChange{Items: []int{input.StockItemID}, Status: definition.Key, Note: plan.Reason})
 			})
 		})
+}
+
+func getStockStatusDefinitions(ctx context.Context, client StockAdjustmentClient) ([]StockStatusDefinition, error) {
+	state, err := client.GetStockStatuses(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if state.StatusClass != "StockStatus" {
+		return nil, errors.New("InvenTree returned an unexpected stock status class")
+	}
+	if len(state.Values) == 0 || len(state.Values) > stockStatusMaxDefinitions {
+		return nil, errors.New("InvenTree returned an invalid or oversized stock status definition set")
+	}
+	definitions := make([]StockStatusDefinition, 0, len(state.Values))
+	seenKeys := make(map[int]struct{}, len(state.Values))
+	for _, value := range state.Values {
+		name := strings.TrimSpace(value.Name)
+		label := strings.TrimSpace(value.Label)
+		if value.Key <= 0 || name == "" || label == "" {
+			return nil, errors.New("InvenTree returned an incomplete stock status definition")
+		}
+		if _, exists := seenKeys[value.Key]; exists {
+			return nil, errors.New("InvenTree returned duplicate stock status keys")
+		}
+		seenKeys[value.Key] = struct{}{}
+		logicalKey := value.Key
+		if value.Custom {
+			if value.LogicalKey == nil || *value.LogicalKey <= 0 {
+				return nil, errors.New("InvenTree returned a custom stock status without logical compatibility")
+			}
+			logicalKey = *value.LogicalKey
+		} else if value.LogicalKey != nil && *value.LogicalKey != value.Key {
+			return nil, errors.New("InvenTree returned an incompatible built-in stock status definition")
+		}
+		definitions = append(definitions, StockStatusDefinition{Key: value.Key, LogicalKey: logicalKey, Name: name, Label: label, Color: strings.TrimSpace(value.Color), Custom: value.Custom})
+	}
+	sort.Slice(definitions, func(i, j int) bool { return definitions[i].Key < definitions[j].Key })
+	return definitions, nil
+}
+
+func selectStockStatusTarget(input SetStockStatusInput, before inventree.StockItem, definitions []StockStatusDefinition) (StockStatusDefinition, int, *int, *ClarificationResponse) {
+	var logical *StockStatusDefinition
+	for index := range definitions {
+		candidate := &definitions[index]
+		if !candidate.Custom && candidate.Key == input.Status {
+			logical = candidate
+			break
+		}
+	}
+	if logical == nil {
+		clarification := NewClarification("Which schema-supported logical stock status should be used?", "status", "status must be one of the discovered built-in InvenTree stock status keys", "status", true, nil, map[string]any{"stock_item_id": input.StockItemID})
+		return StockStatusDefinition{}, 0, nil, &clarification
+	}
+	if input.StatusCustomKey != nil && input.ClearStatusCustomKey {
+		clarification := NewClarification("Should the custom status be assigned or cleared?", "status_custom_key", "status_custom_key and clear_status_custom_key cannot be supplied together", "status_custom_key", true, nil, map[string]any{"stock_item_id": input.StockItemID})
+		return StockStatusDefinition{}, 0, nil, &clarification
+	}
+	if input.StatusCustomKey == nil && !input.ClearStatusCustomKey && before.StatusCustomKey != nil && before.Status != input.Status {
+		clarification := NewClarification("Which compatible custom status should replace the current one?", "status_custom_key", "an omitted custom key preserves the current custom status only when its logical status remains selected", "status_custom_key", true, nil, map[string]any{"stock_item_id": input.StockItemID, "current_status_custom_key": *before.StatusCustomKey})
+		return StockStatusDefinition{}, 0, nil, &clarification
+	}
+	if input.StatusCustomKey == nil {
+		if input.ClearStatusCustomKey || before.StatusCustomKey == nil {
+			return *logical, logical.Key, nil, nil
+		}
+		for index := range definitions {
+			candidate := definitions[index]
+			if candidate.Key == *before.StatusCustomKey {
+				if !candidate.Custom || candidate.LogicalKey != input.Status {
+					break
+				}
+				return candidate, candidate.LogicalKey, &candidate.Key, nil
+			}
+		}
+		clarification := NewClarification("Which compatible custom status should be preserved?", "status_custom_key", "the current custom status was not returned as a compatible definition by InvenTree", "status_custom_key", true, nil, map[string]any{"stock_item_id": input.StockItemID, "current_status_custom_key": *before.StatusCustomKey})
+		return StockStatusDefinition{}, 0, nil, &clarification
+	}
+	for index := range definitions {
+		candidate := definitions[index]
+		if candidate.Key == *input.StatusCustomKey {
+			if !candidate.Custom || candidate.LogicalKey != input.Status {
+				clarification := NewClarification("Which custom status is compatible with the selected logical status?", "status_custom_key", "the selected custom status is missing, not custom, or belongs to another logical stock status", "status_custom_key", true, nil, map[string]any{"stock_item_id": input.StockItemID, "status": input.Status, "status_custom_key": *input.StatusCustomKey})
+				return StockStatusDefinition{}, 0, nil, &clarification
+			}
+			return candidate, candidate.LogicalKey, &candidate.Key, nil
+		}
+	}
+	clarification := NewClarification("Which discovered custom status should be assigned?", "status_custom_key", "the selected custom status key was not returned by the current InvenTree status-definition snapshot", "status_custom_key", true, nil, map[string]any{"stock_item_id": input.StockItemID, "status_custom_key": *input.StatusCustomKey})
+	return StockStatusDefinition{}, 0, nil, &clarification
 }
 
 func stocktakeAdjustment(deps Dependencies) mcp.ToolHandlerFor[StocktakeAdjustmentInput, StockAdjustmentOutput] {
@@ -538,12 +677,22 @@ func stockUnknownResult(out StockAdjustmentOutput, message string) (*mcp.CallToo
 }
 
 func snapshotStockItem(item inventree.StockItem) StockStateSnapshot {
-	return StockStateSnapshot{StockItemID: item.PK, PartID: item.Part, Quantity: item.Quantity, LocationID: item.Location, Status: item.Status, Batch: item.Batch, Serial: item.Serial, Packaging: item.Packaging, DeleteOnDeplete: item.DeleteOnDeplete}
+	customKey := item.StatusCustomKey
+	if customKey != nil && *customKey == item.Status {
+		customKey = nil
+	}
+	return StockStateSnapshot{StockItemID: item.PK, PartID: item.Part, Quantity: item.Quantity, LocationID: item.Location, Status: item.Status, StatusCustomKey: customKey, Batch: item.Batch, Serial: item.Serial, Packaging: item.Packaging, DeleteOnDeplete: item.DeleteOnDeplete}
+}
+
+func normalizeStockCompatibilityKey(item *inventree.StockItem) {
+	if item.StatusCustomKey != nil && *item.StatusCustomKey == item.Status {
+		item.StatusCustomKey = nil
+	}
 }
 
 func stockStateMatches(item inventree.StockItem, expected StockStateSnapshot) bool {
 	actual := snapshotStockItem(item)
-	return actual.StockItemID == expected.StockItemID && actual.PartID == expected.PartID && math.Abs(actual.Quantity-expected.Quantity) < 1e-9 && equalIntPtr(actual.LocationID, expected.LocationID) && actual.Status == expected.Status && equalStringPtr(actual.Batch, expected.Batch) && equalStringPtr(actual.Serial, expected.Serial) && equalStringPtr(actual.Packaging, expected.Packaging) && actual.DeleteOnDeplete == expected.DeleteOnDeplete
+	return actual.StockItemID == expected.StockItemID && actual.PartID == expected.PartID && math.Abs(actual.Quantity-expected.Quantity) < 1e-9 && equalIntPtr(actual.LocationID, expected.LocationID) && actual.Status == expected.Status && equalIntPtr(actual.StatusCustomKey, expected.StatusCustomKey) && equalStringPtr(actual.Batch, expected.Batch) && equalStringPtr(actual.Serial, expected.Serial) && equalStringPtr(actual.Packaging, expected.Packaging) && actual.DeleteOnDeplete == expected.DeleteOnDeplete
 }
 
 func equalIntPtr(left, right *int) bool {

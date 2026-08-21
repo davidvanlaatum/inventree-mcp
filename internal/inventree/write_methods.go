@@ -509,6 +509,14 @@ func (c *Client) ChangeStockStatus(ctx context.Context, input StockStatusChange)
 	return c.Post(ctx, "/api/stock/change_status/", input, nil)
 }
 
+// ClearStockCustomStatus attempts to clear one stock item's custom status while
+// retaining its reviewed logical status. The guarded tool verifies the refreshed
+// state and fails closed when the pinned upstream serializer does not honor the
+// nullable field.
+func (c *Client) ClearStockCustomStatus(ctx context.Context, id int, logicalStatus int) (StockItem, error) {
+	return c.UpdateStockItem(ctx, id, PatchFields{"status": Set(logicalStatus), "status_custom_key": Null()})
+}
+
 // InstallStockItem's 201 response echoes the InstallStockItem request body
 // (per docs/api-schema.yaml), not the resulting stock-item state, so callers
 // must re-fetch the affected stock items to observe the applied change.

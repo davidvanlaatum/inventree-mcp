@@ -302,6 +302,35 @@ type StockItem struct {
 	PurchaseOrderReference *string        `json:"purchase_order_reference"`
 }
 
+// StockStatusClass is the bounded status-definition response returned by
+// GET /api/stock/status/. Values are keyed by the upstream status key encoded
+// as a JSON object property; the value repeats that key for a stable typed
+// projection.
+type StockStatusClass struct {
+	StatusClass string                      `json:"status_class"`
+	Values      map[string]StockStatusValue `json:"values"`
+}
+
+type StockStatusValue struct {
+	Key        int    `json:"key"`
+	LogicalKey *int   `json:"logical_key,omitempty"`
+	Name       string `json:"name"`
+	Label      string `json:"label"`
+	Color      string `json:"color"`
+	Custom     bool   `json:"custom"`
+}
+
+// StockCustomStatus is the staff-readable custom-state record used to fill
+// the logical compatibility omitted by some /api/stock/status/ responses.
+type StockCustomStatus struct {
+	Key             int    `json:"key"`
+	LogicalKey      int    `json:"logical_key"`
+	Name            string `json:"name"`
+	Label           string `json:"label"`
+	Color           string `json:"color"`
+	ReferenceStatus string `json:"reference_status"`
+}
+
 // StockItemDetail is the approved complete scalar projection returned by the
 // exact stock-item endpoint. Nested location, part, and supplier-part detail
 // remain separate lookups, and tags/tests remain deferred; see

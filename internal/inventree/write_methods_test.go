@@ -351,6 +351,21 @@ func TestWriteMethodsUseExpectedEndpoints(t *testing.T) {
 			},
 		},
 		{
+			name: "clear stock custom status uses typed nullable patch",
+			call: func(ctx context.Context, client *Client) error {
+				_, err := client.ClearStockCustomStatus(ctx, 50, 10)
+				return err
+			},
+			method:   http.MethodPatch,
+			path:     "/api/stock/50/",
+			response: `{"pk":50,"status":10,"status_custom_key":10}`,
+			assert: func(a *assert.Assertions, body map[string]any) {
+				a.Equal(float64(10), body["status"])
+				a.Contains(body, "status_custom_key")
+				a.Nil(body["status_custom_key"])
+			},
+		},
+		{
 			name: "add stock uses native adjustment endpoint",
 			call: func(ctx context.Context, client *Client) error {
 				return client.AddStock(ctx, StockAdjustment{Items: []StockAdjustmentItem{{PK: 50, Quantity: "2.5"}}, Notes: "cycle count correction"})

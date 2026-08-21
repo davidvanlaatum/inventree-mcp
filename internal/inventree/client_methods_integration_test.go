@@ -18,6 +18,7 @@ import (
 	"net/url"
 	"os"
 	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/davidvanlaatum/dvgoutils"
@@ -1864,6 +1865,65 @@ func TestClientMethodsAgainstInvenTree(t *testing.T) {
 		r.NoError(err)
 		stock, err := fixture.client.CreateStockItem(ctx, inventree.StockItemCreate{Part: part.ID, Location: location.ID, Quantity: 5, Batch: &batch})
 		r.NoError(err)
+
+		var contentType struct {
+			PK int `json:"pk"`
+		}
+		statusReq, err := fixture.client.NewRequest(ctx, http.MethodGet, "/api/contenttype/model/stockitem/", nil, nil)
+		r.NoError(err)
+		r.NoError(fixture.client.DoJSON(statusReq, &contentType))
+		r.NotZero(contentType.PK)
+		customName, err := fixture.run.Name("stock-custom-status")
+		r.NoError(err)
+		customName = strings.ToUpper(strings.ReplaceAll(customName, "-", "_"))
+		var customStatus struct {
+			Key        int    `json:"key"`
+			LogicalKey int    `json:"logical_key"`
+			Name       string `json:"name"`
+		}
+		r.NoError(fixture.client.Post(ctx, "/api/generic/status/custom/", map[string]any{
+			"key":              110,
+			"name":             customName,
+			"label":            "Inspect",
+			"color":            "info",
+			"logical_key":      10,
+			"model":            contentType.PK,
+			"reference_status": "StockStatus",
+		}, &customStatus))
+		r.Equal(110, customStatus.Key)
+		r.Equal(10, customStatus.LogicalKey)
+
+		statuses, err := fixture.client.GetStockStatuses(ctx)
+		r.NoError(err)
+		r.Equal("StockStatus", statuses.StatusClass)
+		r.NotEmpty(statuses.Values)
+		okStatus, ok := statuses.Values["OK"]
+		r.True(ok)
+		r.Equal(10, okStatus.Key)
+		r.Equal("OK", okStatus.Label)
+		r.False(okStatus.Custom)
+		custom, ok := statuses.Values[customName]
+		r.True(ok)
+		r.True(custom.Custom)
+		r.Equal(110, custom.Key)
+		r.NotNil(custom.LogicalKey)
+		r.Equal(10, *custom.LogicalKey)
+
+		r.NoError(fixture.client.ChangeStockStatus(ctx, inventree.StockStatusChange{Items: []int{stock.PK}, Status: 110, Note: "integration custom status"}))
+		stock, err = fixture.client.GetStockItem(ctx, stock.PK)
+		r.NoError(err)
+		r.Equal(10, stock.Status)
+		r.NotNil(stock.StatusCustomKey)
+		r.Equal(110, *stock.StatusCustomKey)
+		_, err = fixture.client.ClearStockCustomStatus(ctx, stock.PK, 10)
+		r.NoError(err)
+		stock, err = fixture.client.GetStockItem(ctx, stock.PK)
+		r.NoError(err)
+		r.Equal(10, stock.Status)
+		// InvenTree 1.5.1/API 530 rewrites a logical-status update into its
+		// compatibility field instead of honoring the nullable clear.
+		r.NotNil(stock.StatusCustomKey)
+		r.Equal(10, *stock.StatusCustomKey)
 
 		r.NoError(fixture.client.AddStock(ctx, inventree.StockAdjustment{Items: []inventree.StockAdjustmentItem{{PK: stock.PK, Quantity: "2"}}, Notes: "integration add"}))
 		stock, err = fixture.client.GetStockItem(ctx, stock.PK)

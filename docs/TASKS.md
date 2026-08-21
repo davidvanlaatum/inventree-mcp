@@ -146,7 +146,7 @@ Before assigning a new story ID, inspect `git worktree list --porcelain`, search
 | [F-S62](#f-s62-guarded-purchase-order-hold-resume-and-cancellation) | Add explicit current-state-planned hold, resume, and cancellation workflows without generic status editing or whole-order deletion. | Done |
 | [F-S63](#f-s63-guarded-purchase-order-duplication-discovery) | Investigate a deferred, low-frequency workflow for safely duplicating selected purchase-order state. | Future |
 | [F-S64](#f-s64-cross-object-generic-parameter-values-and-uniqueness) | Add bounded generic parameter values across supported non-part-row object types and administer template uniqueness. | Done |
-| [F-S65](#f-s65-guarded-stock-custom-status-management) | Extend the guarded stock-status workflow to assign or clear compatible custom status keys. | Ready |
+| [F-S65](#f-s65-guarded-stock-custom-status-management) | Extend the guarded stock-status workflow to assign or clear compatible custom status keys. | Blocked |
 | [F-S66](#f-s66-guarded-stock-item-merge-discovery) | Investigate a deferred, fail-closed merge workflow for explicitly selected compatible stock items. | Future |
 | [F-S67](#f-s67-stock-location-detail-and-type-administration) | Complete stock-location icon detail and add guarded stock-location-type administration. | Done |
 | [F-S68](#f-s68-guarded-stock-location-deletion) | Delete one empty, unreferenced stock location only through a complete fail-closed dependency plan. | Ready |
@@ -2611,10 +2611,14 @@ Tasks:
 
 ### F-S65: Guarded Stock Custom-Status Management
 
-- Status: `Ready`
+- Status: `Blocked`
 - Issue: [#147](https://github.com/davidvanlaatum/inventree-mcp/issues/147)
 - Depends on: F-S05, F-S45, F-S61
 - Decisions: approved by the operator on 2026-08-15. Stock `status_custom_key` is maintained only through the existing guarded status workflow; `is_building` remains read-only while build workflows are deferred.
+- Progress: implementing on `codex/f-s65-guarded-stock-custom-status` from the locally available `origin/main` tip `a34903e`. The linked GitHub issue could not be updated in this run because GitHub API access is unavailable; local task status is authoritative for this handoff.
+- Blocker: pinned InvenTree 1.5.1/API 530 accepts custom assignment and replacement, but its stock serializer rewrites a logical-status update into `status_custom_key` and does not provide a nullable clear read-back. The implementation fails closed on explicit clear rather than claiming success; operator decision or an upstream API contract that supports nullable clearing is required before this story can be marked Done.
+- Validation: focused `go test -tags no_integration_tests ./internal/inventree ./internal/tools -run 'TestSetStockStatus|TestReadMethodsUseExpectedEndpoints|TestTool' -count=1`, repository `go test -tags no_integration_tests ./...`, `go test -tags no_integration_tests ./internal/tools ./docs -count=1`, `go vet ./...`, `go build ./...`, and `git diff --check` pass when local listener permissions are available. Current and local `origin/main` package coverage are both `internal/inventree 82.3%` and `internal/tools 84.4%`. Pinned `go test ./internal/inventree -run '^TestClientMethodsAgainstInvenTree$/stock_adjustments$' -v -count=1` passes discovery, custom assignment, typed clear characterization, and the remaining stock-adjustment flow; the typed clear read-back is intentionally recorded as non-nil because InvenTree returns a compatibility key instead of honoring nullable clear.
+- Review: read-only Senior Go Developer/QA/Product review completed. Review confirmed package boundaries and fail-closed behavior, and required this default-on integration characterization, pre-accumulation discovery bound, supporting endpoint-manifest entry, and focused client tests; those follow-ups are applied. Story remains blocked only on the upstream nullable-clear contract.
 - Scope: extend `set_stock_status` planning and execution to assign or explicitly clear a compatible custom status key without exposing generic stock PATCH.
 - Acceptance:
   - Pin custom-status discovery, logical-status compatibility, permissions, nullable clear behavior, and serializer read-back against InvenTree 1.5/API 530.

@@ -61,6 +61,7 @@ const (
 	SearchStockLocationTypesToolName          = "search_stock_location_types"
 	GetStockLocationTypeToolName              = "get_stock_location_type"
 	SearchStockItemsToolName                  = "search_stock_items"
+	SearchStockStatusesToolName               = "search_stock_statuses"
 	GetStockItemToolName                      = "get_stock_item"
 	ListStockTrackingEntriesToolName          = "list_stock_tracking_entries"
 	GetStockTrackingEntryToolName             = "get_stock_tracking_entry"
@@ -202,6 +203,7 @@ var lookupToolNames = []string{
 	SearchStockLocationTypesToolName,
 	GetStockLocationTypeToolName,
 	SearchStockItemsToolName,
+	SearchStockStatusesToolName,
 	GetStockItemToolName,
 	ListStockTrackingEntriesToolName,
 	GetStockTrackingEntryToolName,
@@ -633,6 +635,7 @@ func registerLookupTools(server *mcp.Server, deps Dependencies) {
 	addReadOnlyTool(server, deps, SearchStockLocationTypesToolName, "Search stock location types", "Searches existing stock location types for reference selection.", searchStockLocationTypes(deps))
 	addReadOnlyTool(server, deps, GetStockLocationTypeToolName, "Get stock location type", "Retrieves one stock location type by stable ID.", getStockLocationType(deps))
 	addReadOnlyTool(server, deps, SearchStockItemsToolName, "Search stock items", "Searches InvenTree stock items.", searchStockItems(deps))
+	addReadOnlyTool(server, deps, SearchStockStatusesToolName, "Search stock statuses", "Lists bounded logical and custom InvenTree stock status definitions for safe status selection.", searchStockStatuses(deps))
 	addReadOnlyTool(server, deps, GetStockItemToolName, "Get stock item", "Retrieves one stock item with traceability and source context by stable ID.", getStockItem(deps))
 	addReadOnlyTool(server, deps, SearchStockSerialsToolName, "Search stock serials", "Searches existing stock items for one part by serial number, serial range, or serialized state.", searchStockSerials(deps))
 	addReadOnlyTool(server, deps, GetPartNextSerialToolName, "Get part next serial", "Retrieves the latest assigned and next available serial number for one trackable part.", getPartNextSerial(deps))
