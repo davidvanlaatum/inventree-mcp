@@ -1955,6 +1955,80 @@ func TestClientMethodsAgainstInvenTree(t *testing.T) {
 		}
 		r.True(foundTransfer, "native full transfer should record an exact-item tracking entry with the audit reason")
 
+		t.Run("partial_transfer_split_characterization", func(t *testing.T) {
+			r := require.New(t)
+			partialBatch, err := fixture.run.Name("stock-partial-transfer")
+			r.NoError(err)
+			supplier := fixture.ensure(t, testenv.FixtureSupplier)
+			supplierPart := fixture.ensure(t, testenv.FixtureSupplierPart)
+			partialReference, err := fixture.run.Name("stock-partial-transfer-po")
+			r.NoError(err)
+			partialOrder, err := fixture.client.CreatePurchaseOrder(ctx, inventree.PurchaseOrderCreate{Supplier: supplier.ID, SupplierReference: &partialReference, OrderCurrency: dvgoutils.Ptr("AUD")})
+			r.NoError(err)
+			partialLine, err := fixture.client.CreatePurchaseOrderLine(ctx, inventree.PurchaseOrderLineCreate{Order: partialOrder.PK, SupplierPart: supplierPart.ID, Quantity: 6, PurchasePrice: dvgoutils.Ptr("2.50"), PurchasePriceCurrency: dvgoutils.Ptr("AUD"), Destination: &location.ID})
+			r.NoError(err)
+			r.NoError(fixture.client.IssuePurchaseOrder(ctx, partialOrder.PK))
+			received, err := fixture.client.ReceivePurchaseOrder(ctx, partialOrder.PK, inventree.PurchaseOrderReceive{Items: []inventree.PurchaseOrderReceiveItem{{LineItem: partialLine.PK, Location: &location.ID, Quantity: "6", BatchCode: &partialBatch}}})
+			r.NoError(err)
+			r.Len(received, 1)
+			partial, err := fixture.client.GetStockItem(ctx, received[0].PK)
+			r.NoError(err)
+			r.NoError(fixture.client.TransferStock(ctx, inventree.StockTransfer{Items: []inventree.StockAdjustmentItem{{PK: partial.PK, Quantity: "2"}}, Notes: "integration partial transfer", Location: transferDestination.PK}))
+
+			items, err := fixture.client.SearchStockItems(ctx, inventree.StockItemQuery{PartID: part.ID, Limit: 100})
+			r.NoError(err)
+			var source *inventree.StockItem
+			var destinations []*inventree.StockItem
+			for i := range items {
+				item := &items[i]
+				if item.Batch == nil || *item.Batch != partialBatch {
+					continue
+				}
+				if item.PK == partial.PK {
+					source = item
+				} else if item.Location != nil && *item.Location == transferDestination.PK && item.Quantity == 2 {
+					destinations = append(destinations, item)
+				}
+			}
+			r.NotNil(source, "partial transfer must preserve or expose the source identity")
+			r.Len(destinations, 1, "partial transfer must expose exactly one distinct destination identity")
+			destination := destinations[0]
+			r.Equal(4.0, source.Quantity)
+			r.Equal(2.0, destination.Quantity)
+			r.NotNil(destination.Location)
+			r.Equal(transferDestination.PK, *destination.Location)
+			r.Equal(partial.Part, destination.Part)
+			r.Equal(partial.Status, destination.Status)
+			r.Equal(partial.Packaging, destination.Packaging)
+			r.Equal(partial.Batch, destination.Batch)
+			r.Equal(partial.SupplierPart, destination.SupplierPart)
+			r.Equal(partial.PurchaseOrder, destination.PurchaseOrder)
+			r.Equal(partial.PurchasePrice, destination.PurchasePrice)
+			r.Equal(partial.PurchasePriceCurrency, destination.PurchasePriceCurrency)
+
+			var tracking struct {
+				Results []struct {
+					PK           int     `json:"pk"`
+					Item         *int    `json:"item"`
+					Notes        *string `json:"notes"`
+					TrackingType int     `json:"tracking_type"`
+				} `json:"results"`
+			}
+			req, err := fixture.client.NewRequest(ctx, http.MethodGet, "/api/stock/track/", url.Values{"part": []string{strconv.Itoa(part.ID)}, "limit": []string{"100"}, "ordering": []string{"-date"}}, nil)
+			r.NoError(err)
+			r.NoError(fixture.client.DoJSON(req, &tracking))
+			foundPartial := false
+			for _, entry := range tracking.Results {
+				if entry.Notes != nil && *entry.Notes == "integration partial transfer" {
+					foundPartial = true
+					r.NotZero(entry.PK)
+					r.NotZero(entry.TrackingType)
+					r.NotNil(entry.Item)
+				}
+			}
+			r.True(foundPartial, "native partial transfer must record an audit event")
+		})
+
 		supplier := fixture.ensure(t, testenv.FixtureSupplier)
 		supplierPart := fixture.ensure(t, testenv.FixtureSupplierPart)
 		supplierReference, err := fixture.run.Name("stock-transfer-po")

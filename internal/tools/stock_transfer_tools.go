@@ -14,6 +14,7 @@ import (
 type StockTransferClient interface {
 	GetStockItem(context.Context, int) (inventree.StockItem, error)
 	GetStockLocation(context.Context, int) (inventree.StockLocation, error)
+	SearchStockItemsPage(context.Context, inventree.StockItemQuery) (inventree.StockItemPage, error)
 	TransferStock(context.Context, inventree.StockTransfer) error
 }
 
@@ -43,7 +44,7 @@ func transferStockItem(deps Dependencies) mcp.ToolHandlerFor[TransferStockItemIn
 			if before.PK != input.StockItemID {
 				return nil, out, errors.New("InvenTree returned a mismatched stock-item identity")
 			}
-			quantity, normalizedQuantity, ok := normalizedStockDecimal(before.Quantity, false)
+			normalizedQuantityString, normalizedQuantity, ok := normalizedStockDecimal(before.Quantity, false)
 			if !ok {
 				return stockTransferClarification(out, "Which positive stock item should be transferred?", "quantity", "the complete current stock quantity must be positive and fit the InvenTree decimal bounds", "stock_item_id", map[string]any{"stock_item_id": input.StockItemID, "current_quantity": before.Quantity})
 			}
@@ -76,22 +77,66 @@ func transferStockItem(deps Dependencies) mcp.ToolHandlerFor[TransferStockItemIn
 
 			destinationID := destination.PK
 			after := snapshotStockItem(before)
-			after.LocationID = &destinationID
+			transferQuantity := normalizedQuantity
+			transferQuantityString := normalizedQuantityString
+			willSplit := input.Quantity != nil
+			var sourceRemainder, destinationQuantity *float64
+			var preexistingDestinationStockItemIDs []int
+			if willSplit {
+				requested, normalizedRequested, validRequested := normalizedStockDecimal(*input.Quantity, false)
+				if !validRequested || normalizedRequested >= normalizedQuantity {
+					return stockTransferClarification(out, "What positive partial quantity should be transferred?", "quantity", "quantity must be positive, fit the InvenTree decimal bounds, and be smaller than the current stock quantity; omit quantity for a complete transfer", "quantity", map[string]any{"stock_item_id": input.StockItemID, "current_quantity": normalizedQuantity})
+				}
+				remaining := normalizedQuantity - normalizedRequested
+				_, normalizedRemaining, validRemaining := normalizedStockDecimal(remaining, false)
+				if !validRemaining {
+					return stockTransferClarification(out, "What partial quantity leaves a valid source remainder?", "quantity", "the requested quantity does not leave a schema-valid positive source remainder", "quantity", map[string]any{"stock_item_id": input.StockItemID, "current_quantity": normalizedQuantity})
+				}
+				transferQuantity = normalizedRequested
+				transferQuantityString = requested
+				sourceRemainder = &normalizedRemaining
+				destinationQuantity = &normalizedRequested
+				after.Quantity = normalizedRemaining
+				page, searchErr := client.SearchStockItemsPage(ctx, inventree.StockItemQuery{PartID: before.Part, Limit: 1000})
+				if searchErr != nil || page.HasMore {
+					return stockTransferClarification(out, "Which partial-transfer destination can be reconciled safely?", "quantity", "the current stock search is unavailable or incomplete, so an existing destination baseline cannot be captured safely; retry the dry run after the stock search is complete", "dry_run", map[string]any{"stock_item_id": input.StockItemID, "destination_location_id": destination.PK, "quantity": normalizedRequested})
+				}
+				for _, item := range page.Results {
+					if item.PK != before.PK && item.Location != nil && *item.Location == destination.PK && math.Abs(item.Quantity-normalizedRequested) <= 1e-9 && stockTransferCopiedProjectionEqual(item, &StockTransferContext{Provenance: stockTransferProvenance(before), Safety: stockTransferSafety(before)}) {
+						// Bind all matching pre-existing IDs into the plan so recovery
+						// can require a newly created destination record.
+						preexistingDestinationStockItemIDs = append(preexistingDestinationStockItemIDs, item.PK)
+					}
+				}
+			} else {
+				after.LocationID = &destinationID
+			}
 			plan := StockAdjustmentPlan{
 				Action: TransferStockItemToolName,
 				Before: snapshotStockItem(before),
 				After:  after,
 				Reason: reason,
 				Transfer: &StockTransferContext{
-					Source:      stockTransferLocation(source),
-					Destination: stockTransferLocation(destination),
-					Provenance:  stockTransferProvenance(before),
-					Safety:      stockTransferSafety(before),
-					WillSplit:   false,
+					Source:                             stockTransferLocation(source),
+					Destination:                        stockTransferLocation(destination),
+					Provenance:                         stockTransferProvenance(before),
+					Safety:                             stockTransferSafety(before),
+					WillSplit:                          willSplit,
+					Quantity:                           optionalFloat(willSplit, transferQuantity),
+					SourceRemainder:                    sourceRemainder,
+					DestinationQuantity:                destinationQuantity,
+					PreexistingDestinationStockItemIDs: preexistingDestinationStockItemIDs,
 				},
 			}
-			return executeStockTransfer(ctx, deps.stockPlanStore, client, input, plan, quantity)
+			return executeStockTransfer(ctx, deps.stockPlanStore, client, input, plan, transferQuantityString)
 		})
+}
+
+func optionalFloat(enabled bool, value float64) *float64 {
+	if !enabled {
+		return nil
+	}
+	return &value
 }
 
 func unsafeStockTransfer(out StockTransferOutput, item inventree.StockItem) (*mcp.CallToolResult, StockTransferOutput, bool) {
@@ -165,7 +210,7 @@ func executeStockTransfer(ctx context.Context, store *stockPlanStore, client Sto
 		return TextResult(StatusOK), out, nil
 	}
 	if !input.Confirm {
-		return stockTransferClarification(out, "Should this reviewed stock item now be transferred?", "confirmation", "confirm must be true after reviewing the latest full-transfer dry-run plan", "confirm", map[string]any{"stock_item_id": input.StockItemID, "destination_location_id": input.DestinationLocationID, "dry_run": true, "will_split": false})
+		return stockTransferClarification(out, "Should this reviewed stock item now be transferred?", "confirmation", "confirm must be true after reviewing the latest stock-transfer dry-run plan", "confirm", map[string]any{"stock_item_id": input.StockItemID, "destination_location_id": input.DestinationLocationID, "dry_run": true, "will_split": plan.Transfer != nil && plan.Transfer.WillSplit})
 	}
 	if input.PlanHash == "" || !store.consume(ctx, input.PlanHash, plan) {
 		return stockTransferClarification(out, "Which current dry-run plan should authorize this stock transfer?", "confirmation", "plan_hash must be the unexpired, single-use token from a matching dry run by the same principal", "plan_hash", map[string]any{"stock_item_id": input.StockItemID, "destination_location_id": input.DestinationLocationID, "dry_run": true})
@@ -193,6 +238,9 @@ func executeStockTransfer(ctx context.Context, store *stockPlanStore, client Sto
 }
 
 func verifyStockTransfer(ctx context.Context, client StockTransferClient, out StockTransferOutput, recovered bool) (*mcp.CallToolResult, StockTransferOutput, error) {
+	if out.Plan.Transfer != nil && out.Plan.Transfer.WillSplit {
+		return verifyPartialStockTransfer(ctx, client, out, recovered)
+	}
 	current, err := client.GetStockItem(ctx, out.Plan.Before.StockItemID)
 	if errors.Is(err, context.Canceled) {
 		return nil, out, context.Canceled
@@ -212,6 +260,56 @@ func verifyStockTransfer(ctx context.Context, client StockTransferClient, out St
 		return TextResult(StatusOK), out, nil
 	}
 	return stockTransferPartial(out, out.Record, "the exact stock item does not match the reviewed destination, quantity, safety, or provenance state; inspect it with get_stock_item and do not retry blindly")
+}
+
+func verifyPartialStockTransfer(ctx context.Context, client StockTransferClient, out StockTransferOutput, recovered bool) (*mcp.CallToolResult, StockTransferOutput, error) {
+	current, err := client.GetStockItem(ctx, out.Plan.Before.StockItemID)
+	if errors.Is(err, context.Canceled) {
+		return nil, out, context.Canceled
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		return nil, out, context.DeadlineExceeded
+	}
+	if err != nil {
+		return stockTransferPartial(out, nil, "the partial transfer may have completed, but the preserved source item could not be read; use get_stock_item and search_stock_items before retrying")
+	}
+	safe := sanitizedStockItem(current)
+	out.Record = &safe
+	expectedRemainder := out.Plan.Transfer.SourceRemainder
+	if current.PK != out.Plan.Before.StockItemID || expectedRemainder == nil || math.Abs(current.Quantity-*expectedRemainder) > 1e-9 || !equalIntPtr(current.Location, out.Plan.Before.LocationID) || !stockTransferProjectionEqual(current, out.Plan.Transfer) {
+		return stockTransferPartial(out, out.Record, "the preserved source item does not match the reviewed remainder or provenance; inspect it with get_stock_item and do not retry blindly")
+	}
+	if out.Plan.Transfer.DestinationQuantity == nil {
+		return stockTransferPartial(out, out.Record, "the reviewed partial-transfer plan has no destination quantity; inspect the source and destination before retrying")
+	}
+	page, err := client.SearchStockItemsPage(ctx, inventree.StockItemQuery{PartID: out.Plan.Before.PartID, Limit: 1000})
+	if err != nil {
+		return stockTransferPartial(out, out.Record, "the source remainder was verified but destination split identity could not be searched; use search_stock_items and get_stock_item before retrying")
+	}
+	if page.HasMore {
+		return stockTransferPartial(out, out.Record, "the source remainder was verified but the bounded destination split search was incomplete; use search_stock_items and get_stock_item before retrying")
+	}
+	matches := make([]inventree.StockItem, 0, 1)
+	for _, item := range page.Results {
+		if item.PK == out.Plan.Before.StockItemID || item.Location == nil || *item.Location != out.Plan.Transfer.Destination.ID || math.Abs(item.Quantity-*out.Plan.Transfer.DestinationQuantity) > 1e-9 {
+			continue
+		}
+		if containsStockItemID(out.Plan.Transfer.PreexistingDestinationStockItemIDs, item.PK) {
+			continue
+		}
+		if stockTransferCopiedProjectionEqual(item, out.Plan.Transfer) {
+			matches = append(matches, item)
+		}
+	}
+	if len(matches) != 1 {
+		return stockTransferPartial(out, out.Record, "the source remainder was verified but the destination split identity was not unique; use search_stock_items and get_stock_item to reconcile before retrying")
+	}
+	destination := sanitizedStockItem(matches[0])
+	out.SplitRecord = &destination
+	out.Plan.Transfer.DestinationStockItemID = &destination.PK
+	out.Verified = true
+	out.Recovered = recovered
+	return TextResult(StatusOK), out, nil
 }
 
 func stockTransferPartial(out StockTransferOutput, record *inventree.StockItem, recovery string) (*mcp.CallToolResult, StockTransferOutput, error) {
@@ -257,18 +355,41 @@ func stockTransferSafety(item inventree.StockItem) StockTransferSafety {
 }
 
 func stockTransferProjectionEqual(item inventree.StockItem, expected *StockTransferContext) bool {
+	return stockTransferProjectionEqualWithCreationDate(item, expected, true)
+}
+
+func stockTransferCopiedProjectionEqual(item inventree.StockItem, expected *StockTransferContext) bool {
+	return stockTransferProjectionEqualWithCreationDate(item, expected, false)
+}
+
+func stockTransferProjectionEqualWithCreationDate(item inventree.StockItem, expected *StockTransferContext, includeCreationDate bool) bool {
 	if expected == nil {
 		return false
+	}
+	provenance := stockTransferProvenance(item)
+	wantProvenance := expected.Provenance
+	if !includeCreationDate {
+		provenance.CreationDate = nil
+		wantProvenance.CreationDate = nil
 	}
 	actual := struct {
 		Provenance StockTransferProvenance `json:"provenance"`
 		Safety     StockTransferSafety     `json:"safety"`
-	}{Provenance: stockTransferProvenance(item), Safety: stockTransferSafety(item)}
+	}{Provenance: provenance, Safety: stockTransferSafety(item)}
 	want := struct {
 		Provenance StockTransferProvenance `json:"provenance"`
 		Safety     StockTransferSafety     `json:"safety"`
-	}{Provenance: expected.Provenance, Safety: expected.Safety}
+	}{Provenance: wantProvenance, Safety: expected.Safety}
 	actualJSON, _ := json.Marshal(actual)
 	wantJSON, _ := json.Marshal(want)
 	return string(actualJSON) == string(wantJSON)
+}
+
+func containsStockItemID(ids []int, want int) bool {
+	for _, id := range ids {
+		if id == want {
+			return true
+		}
+	}
+	return false
 }
