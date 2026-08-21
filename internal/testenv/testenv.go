@@ -2,6 +2,8 @@ package testenv
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -54,6 +56,10 @@ type Options struct {
 	ExpectedAPIVersion string
 	StartupTimeout     time.Duration
 	HTTPClient         *http.Client
+	// StartWorker adds the pinned InvenTree background-worker process to the
+	// otherwise web-only stack. It is opt-in because most client integration
+	// tests exercise synchronous API behavior and do not need the extra process.
+	StartWorker bool
 	// ContainerLogf receives stdout and stderr lines from started containers.
 	// Start serializes calls so callbacks do not need to be concurrency-safe.
 	ContainerLogf func(container string, stream string, line string)
@@ -210,6 +216,10 @@ func Start(ctx context.Context, opts Options) (*Environment, CleanupFunc, error)
 	logCtx, cancelLogs := context.WithCancel(context.Background())
 
 	env := &Environment{Image: opts.Image, httpClient: opts.HTTPClient, logCancel: cancelLogs}
+	secretKey, err := newTestSecretKey()
+	if err != nil {
+		return nil, nil, fmt.Errorf("create InvenTree test secret key: %w", err)
+	}
 	var started bool
 	defer func() {
 		if !started {
@@ -264,7 +274,7 @@ func Start(ctx context.Context, opts Options) (*Environment, CleanupFunc, error)
 
 	serverOpts := []testcontainers.ContainerCustomizer{
 		tcnetwork.WithNetwork([]string{"inventree-server"}, nw),
-		testcontainers.WithEnv(inventreeContainerEnv(dbHost, cacheHost)),
+		testcontainers.WithEnv(inventreeContainerEnv(dbHost, cacheHost, secretKey)),
 		testcontainers.WithCmd(
 			"sh",
 			"-c",
@@ -323,6 +333,25 @@ func Start(ctx context.Context, opts Options) (*Environment, CleanupFunc, error)
 
 	if err := proveToken(startupCtx, env.BaseURL, token, opts.HTTPClient); err != nil {
 		return nil, nil, err
+	}
+
+	if opts.StartWorker {
+		workerOpts := []testcontainers.ContainerCustomizer{
+			tcnetwork.WithNetwork([]string{"inventree-worker"}, nw),
+			testcontainers.WithEnv(inventreeContainerEnv(dbHost, cacheHost, secretKey)),
+			testcontainers.WithCmd("sh", "-c", "exec invoke worker"),
+		}
+		worker, err := testcontainers.Run(startupCtx, opts.Image, workerOpts...)
+		if err != nil {
+			return nil, nil, fmt.Errorf("start InvenTree worker: %w", err)
+		}
+		env.containers = append(env.containers, worker)
+		if err := startContainerLogProducer(logCtx, worker, "inventree-worker", containerLogf); err != nil {
+			return nil, nil, fmt.Errorf("start InvenTree worker log forwarding: %w", err)
+		}
+		if err := waitForWorker(startupCtx, worker); err != nil {
+			return nil, nil, fmt.Errorf("wait for InvenTree worker: %w", err)
+		}
 	}
 
 	started = true
@@ -386,6 +415,31 @@ func startContainerLogProducer(
 	return c.StartLogProducer(ctx)
 }
 
+func waitForWorker(ctx context.Context, worker testcontainers.Container) error {
+	if worker == nil {
+		return errors.New("InvenTree worker container is required")
+	}
+	var lastErr error
+	ticker := time.NewTicker(250 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		code, _, err := worker.Exec(ctx, []string{"invoke", "worker-health"})
+		if err == nil && code == 0 {
+			return nil
+		}
+		if err != nil {
+			lastErr = err
+		} else {
+			lastErr = fmt.Errorf("worker-health exited with status %d", code)
+		}
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("worker did not become healthy: %w (last error: %v)", ctx.Err(), lastErr)
+		case <-ticker.C:
+		}
+	}
+}
+
 func synchronizedContainerLogf(logf func(container string, stream string, line string)) func(
 	container string,
 	stream string,
@@ -420,7 +474,15 @@ func (c containerLogConsumer) Accept(log testcontainers.Log) {
 	}
 }
 
-func inventreeContainerEnv(dbHost string, cacheHost string) map[string]string {
+func newTestSecretKey() (string, error) {
+	key := make([]byte, 32)
+	if _, err := rand.Read(key); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(key), nil
+}
+
+func inventreeContainerEnv(dbHost string, cacheHost string, secretKey string) map[string]string {
 	return map[string]string{
 		"INVENTREE_SITE_URL":        "http://localhost:8000",
 		"INVENTREE_DEBUG":           "True",
@@ -439,6 +501,7 @@ func inventreeContainerEnv(dbHost string, cacheHost string) map[string]string {
 		"INVENTREE_ADMIN_USER":      defaultAdminUser,
 		"INVENTREE_ADMIN_EMAIL":     defaultAdminEmail,
 		"INVENTREE_ADMIN_PASSWORD":  defaultAdminPassword,
+		"INVENTREE_SECRET_KEY":      secretKey,
 	}
 }
 
