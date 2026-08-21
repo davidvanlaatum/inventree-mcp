@@ -73,6 +73,149 @@ func TestTransferStockItemPlansAndExecutesCompleteQuantityToAnyValidDestination(
 	a.Equal(&purchaseOrderID, executed.Record.PurchaseOrder)
 }
 
+func TestTransferStockItemPlansAndVerifiesPartialSplit(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	fake := newFakeStockTransferClient()
+	destination := fake.locations[20]
+	input := TransferStockItemInput{DryRun: true, StockItemID: 50, DestinationLocationID: 20, Quantity: floatPointer(1.5), Reason: "split reel"}
+
+	_, planned, err := transferStockItem(stockTransferDeps(fake))(ctx, &mcp.CallToolRequest{}, input)
+	r.NoError(err)
+	a.Equal(StatusOK, planned.Status)
+	r.NotNil(planned.Plan)
+	a.Equal(3.5, planned.Plan.Before.Quantity)
+	a.Equal(2.0, planned.Plan.After.Quantity)
+	a.Equal(1.5, *planned.Plan.Transfer.Quantity)
+	a.Equal(2.0, *planned.Plan.Transfer.SourceRemainder)
+	a.Equal(1.5, *planned.Plan.Transfer.DestinationQuantity)
+	a.True(planned.Plan.Transfer.WillSplit)
+	a.Equal(10, *planned.Plan.After.LocationID)
+
+	fake.afterTransfer = func(f *fakeStockTransferClient) {
+		f.item.Quantity = 2
+		f.item.Location = intPointer(10)
+		f.splitItems = []inventree.StockItem{{
+			PK: 60, Part: f.item.Part, Location: intPointer(20), Quantity: 1.5, Status: f.item.Status,
+			InStock: true, Allocated: f.item.Allocated, Batch: f.item.Batch, Packaging: f.item.Packaging,
+			InstalledItems: f.item.InstalledItems, ChildItems: f.item.ChildItems,
+		}}
+	}
+	input.DryRun = false
+	input.Confirm = true
+	input.PlanHash = planned.PlanHash
+	_, executed, err := transferStockItem(stockTransferDeps(fake))(ctx, &mcp.CallToolRequest{}, input)
+	r.NoError(err)
+	a.Equal(StatusOK, executed.Status)
+	a.True(executed.Verified)
+	a.False(executed.Recovered)
+	r.NotNil(executed.Record)
+	r.NotNil(executed.SplitRecord)
+	a.Equal(50, executed.Record.PK)
+	a.Equal(2.0, executed.Record.Quantity)
+	a.Equal(60, executed.SplitRecord.PK)
+	a.Equal(1.5, executed.SplitRecord.Quantity)
+	a.Equal(20, *executed.SplitRecord.Location)
+	a.Equal(20, destination.PK)
+	a.Equal("1.5", fake.lastTransfer.Items[0].Quantity)
+	a.Equal(1, fake.transferCalls)
+}
+
+func TestTransferStockItemRejectsInvalidPartialQuantities(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	for _, quantity := range []float64{0, -1, 3.5, 4} {
+		fake := newFakeStockTransferClient()
+		_, output, err := transferStockItem(stockTransferDeps(fake))(ctx, &mcp.CallToolRequest{}, TransferStockItemInput{DryRun: true, StockItemID: 50, DestinationLocationID: 20, Quantity: &quantity, Reason: "split"})
+		r.NoError(err)
+		a.Equal(StatusClarificationRequired, output.Status)
+		a.Equal("quantity", output.Clarification.Field)
+		a.Zero(fake.transferCalls)
+	}
+}
+
+func TestTransferStockItemRecoversPartialSplitResponseLossAndRejectsAmbiguity(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name       string
+		duplicate  bool
+		wantStatus string
+	}{
+		{name: "recovered", wantStatus: StatusOK},
+		{name: "ambiguous destination", duplicate: true, wantStatus: StatusPartialFailure},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r := require.New(t)
+			a := assert.New(t)
+			ctx, _, _ := testhandler.SetupTestHandler(t)
+			fake := newFakeStockTransferClient()
+			fake.responseLoss = true
+			fake.afterTransfer = func(f *fakeStockTransferClient) {
+				f.item.Quantity = 2
+				f.item.Location = intPointer(10)
+				split := inventree.StockItem{PK: 60, Part: f.item.Part, Location: intPointer(20), Quantity: 1.5, Status: f.item.Status, InStock: true, Allocated: f.item.Allocated, Batch: f.item.Batch, Packaging: f.item.Packaging, InstalledItems: f.item.InstalledItems, ChildItems: f.item.ChildItems}
+				f.splitItems = []inventree.StockItem{split}
+				if tc.duplicate {
+					split.PK = 61
+					f.splitItems = append(f.splitItems, split)
+				}
+			}
+			input := TransferStockItemInput{DryRun: true, StockItemID: 50, DestinationLocationID: 20, Quantity: floatPointer(1.5), Reason: "split reel"}
+			_, planned, err := transferStockItem(stockTransferDeps(fake))(ctx, &mcp.CallToolRequest{}, input)
+			r.NoError(err)
+			input.DryRun = false
+			input.Confirm = true
+			input.PlanHash = planned.PlanHash
+			_, output, err := transferStockItem(stockTransferDeps(fake))(ctx, &mcp.CallToolRequest{}, input)
+			r.NoError(err)
+			a.Equal(tc.wantStatus, output.Status)
+			a.True(output.Recovered || output.Status == StatusPartialFailure)
+			if tc.duplicate {
+				r.NotNil(output.Failure)
+				a.Contains(output.Failure.RecoveryPlan, "not unique")
+			} else {
+				r.NotNil(output.SplitRecord)
+				a.Equal(60, output.SplitRecord.PK)
+			}
+		})
+	}
+}
+
+func TestTransferStockItemFailsClosedOnIncompleteSplitSearch(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	fake := newFakeStockTransferClient()
+	fake.responseLoss = true
+	fake.afterTransfer = func(f *fakeStockTransferClient) {
+		f.item.Quantity = 2
+		f.item.Location = intPointer(10)
+		f.splitItems = []inventree.StockItem{{
+			PK: 60, Part: f.item.Part, Location: intPointer(20), Quantity: 1.5, Status: f.item.Status,
+			InStock: true, Allocated: f.item.Allocated, Batch: f.item.Batch, Packaging: f.item.Packaging,
+			InstalledItems: f.item.InstalledItems, ChildItems: f.item.ChildItems,
+		}}
+	}
+	input := TransferStockItemInput{DryRun: true, StockItemID: 50, DestinationLocationID: 20, Quantity: floatPointer(1.5), Reason: "split reel"}
+	_, planned, err := transferStockItem(stockTransferDeps(fake))(ctx, &mcp.CallToolRequest{}, input)
+	r.NoError(err)
+	fake.searchHasMoreAfterTransfer = true
+	input.DryRun = false
+	input.Confirm = true
+	input.PlanHash = planned.PlanHash
+	_, output, err := transferStockItem(stockTransferDeps(fake))(ctx, &mcp.CallToolRequest{}, input)
+	r.NoError(err)
+	a.Equal(StatusPartialFailure, output.Status)
+	r.NotNil(output.Failure)
+	a.Contains(output.Failure.RecoveryPlan, "incomplete")
+	a.False(output.Verified)
+}
+
 func TestTransferStockItemRejectsInvalidAndUnsafeState(t *testing.T) {
 	t.Parallel()
 	serial := "S-1"
@@ -359,7 +502,7 @@ func TestTransferStockItemAuthorizationAndMCPWireContract(t *testing.T) {
 		}
 		found = true
 		inputProperties := tool.InputSchema.(map[string]any)["properties"].(map[string]any)
-		a.NotContains(inputProperties, "quantity")
+		a.Contains(inputProperties, "quantity")
 		a.Contains(inputProperties, "stock_item_id")
 		a.Contains(inputProperties, "destination_location_id")
 		outputProperties := tool.OutputSchema.(map[string]any)["properties"].(map[string]any)
@@ -390,16 +533,20 @@ func TestTransferStockItemAuthorizationAndMCPWireContract(t *testing.T) {
 }
 
 type fakeStockTransferClient struct {
-	item           inventree.StockItem
-	itemErr        error
-	locations      map[int]inventree.StockLocation
-	locationErrors map[int]error
-	lastTransfer   inventree.StockTransfer
-	transferCalls  int
-	mutateErr      error
-	responseLoss   bool
-	afterTransfer  func(*fakeStockTransferClient)
-	planStore      *stockPlanStore
+	item                       inventree.StockItem
+	splitItems                 []inventree.StockItem
+	itemErr                    error
+	locations                  map[int]inventree.StockLocation
+	locationErrors             map[int]error
+	searchErr                  error
+	searchHasMore              bool
+	searchHasMoreAfterTransfer bool
+	lastTransfer               inventree.StockTransfer
+	transferCalls              int
+	mutateErr                  error
+	responseLoss               bool
+	afterTransfer              func(*fakeStockTransferClient)
+	planStore                  *stockPlanStore
 }
 
 func newFakeStockTransferClient() *fakeStockTransferClient {
@@ -434,6 +581,15 @@ func (f *fakeStockTransferClient) GetStockLocation(_ context.Context, id int) (i
 	return location, nil
 }
 
+func (f *fakeStockTransferClient) SearchStockItemsPage(context.Context, inventree.StockItemQuery) (inventree.StockItemPage, error) {
+	if f.searchErr != nil {
+		return inventree.StockItemPage{}, f.searchErr
+	}
+	items := append([]inventree.StockItem(nil), f.splitItems...)
+	items = append([]inventree.StockItem{f.item}, items...)
+	return inventree.StockItemPage{Count: len(items), Results: items, HasMore: f.searchHasMore || (f.searchHasMoreAfterTransfer && f.transferCalls > 0)}, nil
+}
+
 func (f *fakeStockTransferClient) TransferStock(_ context.Context, input inventree.StockTransfer) error {
 	f.transferCalls++
 	f.lastTransfer = input
@@ -458,3 +614,5 @@ func stockTransferDeps(fake *fakeStockTransferClient) Dependencies {
 }
 
 func intPointer(value int) *int { return &value }
+
+func floatPointer(value float64) *float64 { return &value }

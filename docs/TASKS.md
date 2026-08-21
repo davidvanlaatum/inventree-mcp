@@ -109,7 +109,7 @@ Before assigning a new story ID, inspect `git worktree list --porcelain`, search
 | [F-S25](#f-s25-inventree-tool-and-server-icons) | Brand MCP tool calls and server identity with the official InvenTree icon. | Done |
 | [F-S26](#f-s26-mcp-functionality-gap-guidance) | Guide consuming agents to surface untracked MCP functionality gaps for operator-approved issue creation. | Done |
 | [F-S27](#f-s27-guarded-full-stock-item-transfer) | Move one complete safe stock item to an explicit valid destination. | Done |
-| [F-S28](#f-s28-partial-stock-item-transfer-and-split-recovery) | Add partial transfers after split identity and recovery semantics are approved. | Planned |
+| [F-S28](#f-s28-partial-stock-item-transfer-and-split-recovery) | Add partial transfers after split identity and recovery semantics are approved. | Done |
 | [F-S29](#f-s29-reviewed-multi-item-stock-transfer-batches) | Add reviewed transfer batches after atomicity and failure semantics are verified. | Planned |
 | [F-S30](#f-s30-clarify-endpoint-specific-model-type-contracts) | Distinguish attachment and parameter endpoint `model_type` vocabularies without changing behavior. | Done |
 | [F-S31](#f-s31-guarded-company-primary-images) | Add guarded upload, replacement, verification, and supported removal of company primary images. | Done |
@@ -1758,9 +1758,11 @@ Tasks:
 
 ### F-S28: Partial Stock-Item Transfer And Split Recovery
 
-- Status: `Planned`
+- Status: `Done`
 - Issue: [#97](https://github.com/davidvanlaatum/inventree-mcp/issues/97)
 - Depends on: F-S27, pinned InvenTree split-behavior verification, product review, QA review, and infosec review
+- Decisions: approved by the operator on 2026-08-21: allow one partial transfer only when `0 < quantity < current quantity`; retain F-S27's in-stock, unallocated, non-serialized, relationship-free source guards; require exact source remainder and distinct destination identity read-back; fail closed with actionable read-before-retry recovery when response loss leaves split identity unresolved; and verify copied batch/status/packaging/supplier/purchase-order/price/currency provenance before reporting success. A disposable pinned InvenTree 1.5.1/API 530 probe established that transferring quantity `2` from a quantity-`6` stock item leaves the original stable stock-item ID at quantity `4` and creates a distinct destination stock-item ID at quantity `2`; the batch value is copied and a native tracking event records the audit note.
+- Progress: implemented and validated on `codex/f-s28-partial-stock-transfer` from `origin/main` at `101778e3c0edd59b618560b998f5d5aed1b4e35a`.
 - Scope: add a guarded single-source partial-quantity transfer only after pinned InvenTree behavior establishes the source remainder, destination record identity, copied provenance, tracking events, and a response-loss recovery contract that cannot duplicate a split. Preserve F-S27's complete-transfer input and behavior unchanged. Do not add multi-item batching or implicit default-location resolution.
 - Acceptance:
   - Product review explicitly approves partial quantity validation, split-result identity, safe source states, and recovery behavior before implementation becomes Active.
@@ -1771,14 +1773,14 @@ Tasks:
 
 Tasks:
 
-- [ ] Verify and document pinned InvenTree partial-transfer and split identity behavior.
-- [ ] Resolve the product, QA, and infosec contract decisions.
-- [ ] Implement only the approved partial-transfer and recovery surface.
-- [ ] Validate, review, and align public contracts without widening into F-S29.
+- [x] Verify and document pinned InvenTree partial-transfer and split identity behavior.
+- [x] Resolve the remaining QA and infosec contract checks.
+- [x] Implement only the approved partial-transfer and recovery surface.
+- [x] Validate, review, and align public contracts without widening into F-S29.
 
-- Validation: pending implementation selection.
-- Review: pending implementation selection.
-- Residual risk: split-result recovery identity is intentionally unresolved until pinned-live evidence exists.
+- Validation: focused transfer unit tests, docs tests, `go generate ./internal/tools`, `go vet ./...`, `go build ./...`, and `git diff --check` passed. The default-on pinned Testcontainers characterization passed against `inventree/inventree:1.5.1` / API `530`: `go test ./internal/inventree -run '^TestClientMethodsAgainstInvenTree$/stock_adjustments/partial_transfer_split_characterization$' -v -count=1`. The broader package coverage run remains blocked by the pre-existing macOS `httptest` IPv6 listener restriction in unrelated URL-upload tests.
+- Review: full Senior Go Developer, Senior QA / Test Architect, Senior Product Manager, and Senior Infosec Reviewer panel completed. Findings addressed: corrected complete/partial schema and deferred-scope wording; added live unique destination, status, and packaging assertions; excluded generated destination `creation_date` from copied-field comparison; and bound recovery to pre-mutation matching destination IDs. Follow-up panel found no actionable Go, QA, product, or infosec findings.
+- Residual risk: recovery is bound to the pre-mutation matching-ID baseline and fails closed on incomplete or ambiguous results, but a concurrent indistinguishable split created by another writer remains an unsupported race and requires manual reconciliation.
 
 ### F-S29: Reviewed Multi-Item Stock-Transfer Batches
 

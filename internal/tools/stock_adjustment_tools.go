@@ -200,12 +200,13 @@ type DepleteStockItemInput struct {
 }
 
 type TransferStockItemInput struct {
-	DryRun                bool   `json:"dry_run,omitempty" jsonschema:"Return the current-state-bound full-transfer plan without writing."`
-	Confirm               bool   `json:"confirm,omitempty" jsonschema:"Required true for execution after reviewing a dry run."`
-	PlanHash              string `json:"plan_hash,omitempty" jsonschema:"Opaque single-use confirmation token returned by the latest dry run."`
-	StockItemID           int    `json:"stock_item_id" jsonschema:"Existing stock-item primary key whose complete quantity will be transferred."`
-	DestinationLocationID int    `json:"destination_location_id" jsonschema:"Explicit existing destination stock-location primary key."`
-	Reason                string `json:"reason" jsonschema:"Nonblank operator audit reason recorded with the stock transfer."`
+	DryRun                bool     `json:"dry_run,omitempty" jsonschema:"Return the current-state-bound complete or partial transfer plan without writing."`
+	Confirm               bool     `json:"confirm,omitempty" jsonschema:"Required true for execution after reviewing a dry run."`
+	PlanHash              string   `json:"plan_hash,omitempty" jsonschema:"Opaque single-use confirmation token returned by the latest dry run."`
+	StockItemID           int      `json:"stock_item_id" jsonschema:"Existing stock-item primary key whose complete or partial quantity will be transferred."`
+	DestinationLocationID int      `json:"destination_location_id" jsonschema:"Explicit existing destination stock-location primary key."`
+	Quantity              *float64 `json:"quantity,omitempty" jsonschema:"Optional positive quantity smaller than the current quantity; omit to transfer the complete quantity."`
+	Reason                string   `json:"reason" jsonschema:"Nonblank operator audit reason recorded with the stock transfer."`
 }
 
 type StockStateSnapshot struct {
@@ -283,11 +284,16 @@ type StockTransferSafety struct {
 }
 
 type StockTransferContext struct {
-	Source      StockTransferLocation   `json:"source"`
-	Destination StockTransferLocation   `json:"destination"`
-	Provenance  StockTransferProvenance `json:"provenance"`
-	Safety      StockTransferSafety     `json:"safety"`
-	WillSplit   bool                    `json:"will_split"`
+	Source                             StockTransferLocation   `json:"source"`
+	Destination                        StockTransferLocation   `json:"destination"`
+	Provenance                         StockTransferProvenance `json:"provenance"`
+	Safety                             StockTransferSafety     `json:"safety"`
+	WillSplit                          bool                    `json:"will_split"`
+	Quantity                           *float64                `json:"quantity,omitempty"`
+	SourceRemainder                    *float64                `json:"source_remainder,omitempty"`
+	DestinationQuantity                *float64                `json:"destination_quantity,omitempty"`
+	DestinationStockItemID             *int                    `json:"destination_stock_item_id,omitempty"`
+	PreexistingDestinationStockItemIDs []int                   `json:"preexisting_destination_stock_item_ids,omitempty"`
 }
 
 // StockInstallContext captures the cross-record relationship context for
@@ -331,6 +337,7 @@ type StockAdjustmentOutput struct {
 	Plan          *StockAdjustmentPlan    `json:"plan,omitempty"`
 	PlanHash      string                  `json:"plan_hash,omitempty"`
 	Record        *inventree.StockItem    `json:"record,omitempty"`
+	SplitRecord   *inventree.StockItem    `json:"split_record,omitempty"`
 	Failure       *StockAdjustmentFailure `json:"failure,omitempty"`
 	Clarification *ClarificationResponse  `json:"clarification,omitempty"`
 	Verified      bool                    `json:"verified,omitempty"`
@@ -348,7 +355,7 @@ func registerStockAdjustmentTools(server *mcp.Server, deps Dependencies) {
 	addWriteTool(server, deps, StocktakeAdjustmentToolName, "Record stocktake adjustment", "Plans or confirms one absolute quantity-only stocktake count with an audit reason.", stocktakeAdjustment(deps))
 	addWriteTool(server, deps, SetStockDeleteOnDepleteToolName, "Set stock delete-on-deplete policy", "Plans or confirms one delete-on-deplete policy change for a stock item with an audit reason.", setStockDeleteOnDeplete(deps))
 	addWriteTool(server, deps, DepleteStockItemToolName, "Deplete delete-on-deplete stock item", "Plans or confirms complete removal of one safe delete-on-deplete stock item with an audit reason.", depleteStockItem(deps))
-	addWriteTool(server, deps, TransferStockItemToolName, "Transfer complete stock item", "Plans or confirms relocation of one safe stock item's complete quantity to an explicit destination.", transferStockItem(deps))
+	addWriteTool(server, deps, TransferStockItemToolName, "Transfer stock item", "Plans or confirms relocation of one safe stock item's complete quantity or one guarded partial quantity to an explicit destination.", transferStockItem(deps))
 	addWriteTool(server, deps, AssignStockSerialToolName, "Assign stock serial number", "Plans or confirms assigning a serial number to one currently-unserialized stock item.", assignStockSerial(deps))
 	addWriteTool(server, deps, SetStockSerialToolName, "Replace or clear stock serial number", "Plans or confirms replacing or clearing the serial number on one already-serialized stock item.", setStockSerial(deps))
 	addWriteTool(server, deps, InstallStockItemToolName, "Install stock item", "Plans or confirms installing one available BOM-eligible child stock item into a parent stock item.", installStockItem(deps))
