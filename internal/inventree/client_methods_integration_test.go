@@ -38,6 +38,7 @@ func TestClientMethodsAgainstInvenTree(t *testing.T) {
 	t.Parallel()
 
 	opts := testenv.DefaultTestOptions(t)
+	opts.StartWorker = true
 	t.Logf("starting client method integration stack with image %s, expected version %s, expected API %s", opts.Image, opts.ExpectedVersion, opts.ExpectedAPIVersion)
 	shared, err := testenv.StartSharedInvenTree(ctx, opts)
 	r.NoError(err)
@@ -2534,8 +2535,10 @@ func TestClientMethodsAgainstInvenTree(t *testing.T) {
 		// PartStocktake model constructor, which pinned InvenTree 1.5.0's
 		// PartStocktake schema does not declare a field for -- and
 		// POST /api/part/stocktake/generate/ only offloads generation to a
-		// background worker process this suite intentionally does not run
-		// (see internal/testenv; only gunicorn runs, no `invoke worker`).
+		// background worker process. This suite starts that worker with the
+		// same signing key as the web process, but this characterization still
+		// treats generation as enqueue-only and does not claim a completed
+		// snapshot or report artifact.
 		// The MCP tool surface never calls either write endpoint, so this
 		// is pinned as a documented upstream limitation rather than routed
 		// around: prove the empty-history and not-found read paths live,
@@ -2558,6 +2561,35 @@ func TestClientMethodsAgainstInvenTree(t *testing.T) {
 		var rawCreateAPIErr *inventree.APIError
 		r.ErrorAs(rawCreateErr, &rawCreateAPIErr)
 		a.Equal(http.StatusInternalServerError, rawCreateAPIErr.StatusCode, "pin the specific 500 failure mode rather than accepting any error, so an unrelated 400/403 regression is also caught")
+
+		// The generation endpoint is a separate asynchronous surface from raw
+		// PartStocktake creation. Pin the selector and output contract against
+		// the released API. This client-method stack starts the pinned worker,
+		// while the default testenv stack remains web-only for unrelated tests.
+		category := fixture.ensure(t, testenv.FixtureCategory)
+		for _, tc := range []struct {
+			name    string
+			payload map[string]any
+		}{
+			{name: "part", payload: map[string]any{"part": part.ID}},
+			{name: "category", payload: map[string]any{"category": category.ID}},
+			{name: "location", payload: map[string]any{"location": secondLocation.PK}},
+			{name: "composed_selectors", payload: map[string]any{"part": part.ID, "category": category.ID, "location": secondLocation.PK}},
+			{name: "generate_entries", payload: map[string]any{"part": part.ID, "generate_entry": true}},
+			{name: "generate_report", payload: map[string]any{"part": part.ID, "generate_report": true}},
+			{name: "generate_entries_and_report", payload: map[string]any{"part": part.ID, "generate_entry": true, "generate_report": true}},
+		} {
+			t.Run("generation_"+tc.name, func(t *testing.T) {
+				r := require.New(t)
+				a := assert.New(t)
+				generationCtx, _, _ := testhandler.SetupTestHandler(t)
+				req, err := fixture.client.NewRequest(generationCtx, http.MethodPost, "/api/part/stocktake/generate/", nil, tc.payload)
+				r.NoError(err)
+				var out map[string]any
+				r.NoError(fixture.client.DoJSON(req, &out))
+				a.Contains(out, "output", "generation response must expose the asynchronous DataOutput contract")
+			})
+		}
 	})
 }
 

@@ -644,7 +644,7 @@ func TestTestEnvironmentSmallHelpers(t *testing.T) {
 	r.Equal(1, cleanupCalls)
 	CleanupForTest(t, nil)()
 
-	env := inventreeContainerEnv("db-host", "cache-host")
+	env := inventreeContainerEnv("db-host", "cache-host", "test-secret")
 	r.Equal("db-host", env["INVENTREE_DB_HOST"])
 	r.Equal("cache-host", env["INVENTREE_CACHE_HOST"])
 	r.Equal(defaultAdminUser, env["INVENTREE_ADMIN_USER"])
