@@ -489,6 +489,17 @@ func (c *Client) DeleteStockLocationType(ctx context.Context, id int) error {
 	return c.DoJSON(req, nil)
 }
 
+// DeleteStockLocation performs only the stable-ID DELETE. The guarded MCP
+// workflow proves that the location has no supported dependencies before this
+// method is called, and never sends cascade or rewrite options.
+func (c *Client) DeleteStockLocation(ctx context.Context, id int) error {
+	req, err := c.NewRequest(ctx, http.MethodDelete, fmt.Sprintf("/api/stock/location/%d/", id), nil, nil)
+	if err != nil {
+		return err
+	}
+	return c.DoJSON(req, nil)
+}
+
 func (c *Client) AddStock(ctx context.Context, input StockAdjustment) error {
 	return c.Post(ctx, "/api/stock/add/", input, nil)
 }

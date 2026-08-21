@@ -35,6 +35,7 @@ type Dependencies struct {
 	addressPlanStore                     *addressPlanStore
 	projectCodePlanStore                 *projectCodePlanStore
 	stockLocationTypeDeletePlanStore     *stockLocationTypeDeletePlanStore
+	stockLocationDeletePlanStore         *stockLocationDeletePlanStore
 	objectParameterDeletePlanStore       *objectParameterDeletePlanStore
 	parameterTemplateUniquenessPlanStore *parameterTemplateUniquenessPlanStore
 	purchaseOrderLifecyclePlanStore      *purchaseOrderLifecyclePlanStore

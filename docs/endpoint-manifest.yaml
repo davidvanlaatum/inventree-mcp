@@ -423,6 +423,24 @@ endpoints:
     request_schema: '#/components/schemas/PatchedLocation'
     request_content_type: application/json
     response_schema: '#/components/schemas/Location'
+  - id: delete_stock_location
+    area: stock
+    path: /api/stock/location/{id}/
+    method: DELETE
+    operation_id: stock_location_destroy
+    response_status: "204"
+  - id: search_builds_for_stock_location_delete
+    area: manufacturing
+    path: /api/build/
+    method: GET
+    operation_id: build_list
+    response_schema: '#/components/schemas/PaginatedBuildList'
+  - id: search_transfer_orders_for_stock_location_delete
+    area: purchasing_preview
+    path: /api/order/transfer-order/
+    method: GET
+    operation_id: order_transfer_order_list
+    response_schema: '#/components/schemas/PaginatedTransferOrderList'
   - id: search_stock_location_types
     area: stock
     path: /api/stock/location-type/

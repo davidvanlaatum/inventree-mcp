@@ -567,6 +567,15 @@ type PurchaseOrder struct {
 	TotalPrice        *DecimalString `json:"total_price"`
 }
 
+// PurchaseOrderPage is a bounded single-request page over /api/order/po/.
+// It is used by dependency audits that must prove complete coverage without
+// loading an unbounded collection.
+type PurchaseOrderPage struct {
+	Count   int
+	Results []PurchaseOrder
+	HasMore bool
+}
+
 // PurchaseOrderCreatedBy projects the nested API 530 order.created_by User
 // object to its stable creator user ID at the MCP boundary. The wire format
 // decodes a full User object, but only the ID is exposed; unmarshalling into
@@ -636,6 +645,13 @@ type PurchaseOrderLineItem struct {
 	ProjectCodeLabel      string         `json:"project_code_label"`
 }
 
+// PurchaseOrderLinePage is a bounded single-request page over /api/order/po-line/.
+type PurchaseOrderLinePage struct {
+	Count   int
+	Results []PurchaseOrderLineItem
+	HasMore bool
+}
+
 // PurchaseOrderLineItemDetail is the approved complete scalar projection
 // returned by the exact purchase-order-line endpoint. Nested order, part, and
 // supplier-part detail remain separate exact lookups; see
@@ -693,10 +709,31 @@ type SalesOrderLineItem struct {
 // Build is read-only in this client: it exists solely to let delete_part
 // detect whether a part is the top-level assembly of a build order.
 type Build struct {
-	PK        int    `json:"pk"`
-	Part      int    `json:"part"`
-	Reference string `json:"reference"`
-	Status    int    `json:"status"`
+	PK          int    `json:"pk"`
+	Part        int    `json:"part"`
+	Reference   string `json:"reference"`
+	Status      int    `json:"status"`
+	TakeFrom    *int   `json:"take_from"`
+	Destination *int   `json:"destination"`
+}
+
+type BuildPage struct {
+	Count   int
+	Results []Build
+	HasMore bool
+}
+
+type TransferOrder struct {
+	PK          int    `json:"pk"`
+	Reference   string `json:"reference"`
+	TakeFrom    *int   `json:"take_from"`
+	Destination *int   `json:"destination"`
+}
+
+type TransferOrderPage struct {
+	Count   int
+	Results []TransferOrder
+	HasMore bool
 }
 
 // PartRelation is an undirected link between two stable part IDs. InvenTree
