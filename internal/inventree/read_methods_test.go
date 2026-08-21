@@ -1112,3 +1112,35 @@ func TestReadModelsDecodeRepresentativeJSON(t *testing.T) {
 	r.NoError(json.Unmarshal([]byte(`{"pk":80,"category":20,"template":70}`), &categoryTemplate))
 	r.Equal(70, categoryTemplate.Template)
 }
+
+func TestGetStockStatusesMergesBoundedCustomDefinitions(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	client, err := NewClient(Config{
+		BaseURL:    "https://inventory.example.test",
+		Credential: Credential{Scheme: AuthSchemeToken, Token: "secret"},
+		HTTPClient: &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			switch req.URL.Path {
+			case "/api/stock/status/":
+				return jsonResponse(req, http.StatusOK, `{"status_class":"StockStatus","values":{"OK":{"key":10,"name":"OK","label":"OK","color":"success","custom":false}}}`), nil
+			case "/api/generic/status/custom/":
+				r.Equal("257", req.URL.Query().Get("limit"))
+				r.Equal("StockStatus", req.URL.Query().Get("reference_status"))
+				return jsonResponse(req, http.StatusOK, `{"count":1,"next":null,"previous":null,"results":[{"key":110,"logical_key":10,"name":"INSPECT","label":"Inspect","color":"info","reference_status":"StockStatus"}]}`), nil
+			default:
+				return jsonResponse(req, http.StatusNotFound, `{"detail":"unexpected path"}`), nil
+			}
+		})},
+	})
+	r.NoError(err)
+
+	statuses, err := client.GetStockStatuses(ctx)
+	r.NoError(err)
+	custom, ok := statuses.Values["INSPECT"]
+	r.True(ok)
+	r.True(custom.Custom)
+	r.Equal(110, custom.Key)
+	r.NotNil(custom.LogicalKey)
+	r.Equal(10, *custom.LogicalKey)
+}

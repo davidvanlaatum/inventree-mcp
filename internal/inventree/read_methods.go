@@ -216,6 +216,31 @@ func (c *Client) GetStockItem(ctx context.Context, id int) (StockItem, error) {
 	return out, err
 }
 
+// GetStockStatuses retrieves the complete bounded stock logical/custom status
+// definition map used by the stock status workflow.
+func (c *Client) GetStockStatuses(ctx context.Context) (StockStatusClass, error) {
+	var out StockStatusClass
+	if err := c.get(ctx, "/api/stock/status/", &out); err != nil {
+		return out, err
+	}
+	page, err := listPage[StockCustomStatus](ctx, c, "/api/generic/status/custom/", url.Values{"limit": []string{"257"}, "reference_status": []string{"StockStatus"}})
+	if err != nil {
+		return out, err
+	}
+	if page.Count > 256 || len(page.Results) > 256 || page.Next != nil && *page.Next != "" {
+		return out, errors.New("InvenTree returned an oversized stock custom status definition set")
+	}
+	for _, custom := range page.Results {
+		if custom.ReferenceStatus != "StockStatus" || custom.Key <= 0 || custom.LogicalKey <= 0 || strings.TrimSpace(custom.Name) == "" || strings.TrimSpace(custom.Label) == "" {
+			return out, errors.New("InvenTree returned an incomplete stock custom status definition")
+		}
+		logicalKey := custom.LogicalKey
+		value := StockStatusValue{Key: custom.Key, LogicalKey: &logicalKey, Name: custom.Name, Label: custom.Label, Color: custom.Color, Custom: true}
+		out.Values[custom.Name] = value
+	}
+	return out, nil
+}
+
 // GetStockItemDetail retrieves one stock item with explicit embedded-detail
 // query flags rather than the endpoint's own defaults: path_detail is enabled
 // so location_path is populated, while part_detail (on by default upstream),

@@ -395,6 +395,18 @@ endpoints:
     request_schema: '#/components/schemas/StockChangeStatus'
     request_content_type: application/json
     response_schema: '#/components/schemas/StockChangeStatus'
+  - id: get_stock_statuses
+    area: stock
+    path: /api/stock/status/
+    method: GET
+    operation_id: stock_status_retrieve
+    response_schema: '#/components/schemas/GenericStateClass'
+  - id: list_stock_custom_statuses
+    area: stock
+    path: /api/generic/status/custom/
+    method: GET
+    operation_id: generic_status_custom_list
+    response_schema: '#/components/schemas/PaginatedCustomStateList'
   - id: search_stock_locations
     area: stock
     path: /api/stock/location/

@@ -215,6 +215,95 @@ func TestSetStockStatusFlagsWriteOffAndRequiresSupportedStatus(t *testing.T) {
 	a.Equal("destroyed after inspection", fake.lastStatusChange.Note)
 }
 
+func TestSetStockStatusSupportsCustomAssignmentReplacementClearAndOmission(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	logicalOK := 10
+	logicalAttention := 50
+	statuses := inventree.StockStatusClass{StatusClass: "StockStatus", Values: map[string]inventree.StockStatusValue{
+		"OK":        {Key: 10, Name: "OK", Label: "OK"},
+		"ATTENTION": {Key: 50, Name: "ATTENTION", Label: "Attention needed"},
+		"INSPECT":   {Key: 110, LogicalKey: &logicalOK, Name: "INSPECT", Label: "Inspect", Custom: true},
+		"REWORK":    {Key: 111, LogicalKey: &logicalOK, Name: "REWORK", Label: "Rework", Custom: true},
+		"HOLD":      {Key: 112, LogicalKey: &logicalAttention, Name: "HOLD", Label: "Hold", Custom: true},
+	}}
+
+	newFake := func() *fakeStockAdjustmentClient {
+		return &fakeStockAdjustmentClient{item: inventree.StockItem{PK: 50, Part: 10, Quantity: 1, Status: stockStatusOK}, statuses: statuses}
+	}
+	run := func(fake *fakeStockAdjustmentClient, input SetStockStatusInput) StockAdjustmentOutput {
+		_, planned, err := setStockStatus(stockAdjustmentDeps(fake))(ctx, &mcp.CallToolRequest{}, input)
+		r.NoError(err)
+		r.Equal(StatusOK, planned.Status)
+		input.DryRun = false
+		input.Confirm = true
+		input.PlanHash = planned.PlanHash
+		_, executed, err := setStockStatus(stockAdjustmentDeps(fake))(ctx, &mcp.CallToolRequest{}, input)
+		r.NoError(err)
+		r.Equal(StatusOK, executed.Status)
+		return executed
+	}
+
+	assigned := run(newFake(), SetStockStatusInput{DryRun: true, StockItemID: 50, Status: stockStatusOK, StatusCustomKey: &[]int{110}[0], Reason: "inspection"})
+	r.NotNil(assigned.Record.StatusCustomKey)
+	r.Equal(110, *assigned.Record.StatusCustomKey)
+
+	replacedFake := newFake()
+	assigned = run(replacedFake, SetStockStatusInput{DryRun: true, StockItemID: 50, Status: stockStatusOK, StatusCustomKey: &[]int{110}[0], Reason: "inspection"})
+	replaced := run(replacedFake, SetStockStatusInput{DryRun: true, StockItemID: 50, Status: stockStatusOK, StatusCustomKey: &[]int{111}[0], Reason: "reclassification"})
+	r.Equal(111, *replaced.Record.StatusCustomKey)
+	r.Equal(111, *replaced.Plan.After.StatusCustomKey)
+	_ = assigned
+
+	clearedFake := newFake()
+	run(clearedFake, SetStockStatusInput{DryRun: true, StockItemID: 50, Status: stockStatusOK, StatusCustomKey: &[]int{110}[0], Reason: "inspection"})
+	_, cleared, err := setStockStatus(stockAdjustmentDeps(clearedFake))(ctx, &mcp.CallToolRequest{}, SetStockStatusInput{DryRun: true, StockItemID: 50, Status: stockStatusOK, ClearStatusCustomKey: true, Reason: "clear inspection"})
+	r.NoError(err)
+	r.Equal(StatusClarificationRequired, cleared.Status)
+	r.Equal(1, clearedFake.statusCalls)
+
+	omittedFake := newFake()
+	omitted := run(omittedFake, SetStockStatusInput{DryRun: true, StockItemID: 50, Status: stockStatusAttention, Reason: "logical reclassification"})
+	r.Equal(stockStatusAttention, omitted.Record.Status)
+	r.Nil(omitted.Record.StatusCustomKey)
+
+	preserveFake := newFake()
+	preserveFake.item.StatusCustomKey = &[]int{110}[0]
+	_, preserve, err := setStockStatus(stockAdjustmentDeps(preserveFake))(ctx, &mcp.CallToolRequest{}, SetStockStatusInput{DryRun: true, StockItemID: 50, Status: stockStatusOK, Reason: "retain inspection"})
+	r.NoError(err)
+	r.Equal(StatusClarificationRequired, preserve.Status)
+	r.Zero(preserveFake.statusCalls)
+}
+
+func TestSetStockStatusRejectsIncompatibleAndRemappedCustomKeys(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	logicalOK := 10
+	logicalAttention := 50
+	statuses := inventree.StockStatusClass{StatusClass: "StockStatus", Values: map[string]inventree.StockStatusValue{
+		"OK":        {Key: 10, Name: "OK", Label: "OK"},
+		"ATTENTION": {Key: 50, Name: "ATTENTION", Label: "Attention needed"},
+		"INSPECT":   {Key: 110, LogicalKey: &logicalOK, Name: "INSPECT", Label: "Inspect", Custom: true},
+		"HOLD":      {Key: 112, LogicalKey: &logicalAttention, Name: "HOLD", Label: "Hold", Custom: true},
+	}}
+	fake := &fakeStockAdjustmentClient{item: inventree.StockItem{PK: 50, Part: 10, Quantity: 1, Status: stockStatusOK}, statuses: statuses}
+	_, incompatible, err := setStockStatus(stockAdjustmentDeps(fake))(ctx, &mcp.CallToolRequest{}, SetStockStatusInput{DryRun: true, StockItemID: 50, Status: stockStatusOK, StatusCustomKey: &[]int{112}[0], Reason: "wrong logical state"})
+	r.NoError(err)
+	r.Equal(StatusClarificationRequired, incompatible.Status)
+	r.Zero(fake.statusCalls)
+
+	_, planned, err := setStockStatus(stockAdjustmentDeps(fake))(ctx, &mcp.CallToolRequest{}, SetStockStatusInput{DryRun: true, StockItemID: 50, Status: stockStatusOK, StatusCustomKey: &[]int{110}[0], Reason: "inspection"})
+	r.NoError(err)
+	logicalAttention = 50
+	fake.statuses.Values["INSPECT"] = inventree.StockStatusValue{Key: 110, LogicalKey: &logicalAttention, Name: "INSPECT", Label: "Inspect", Custom: true}
+	_, remapped, err := setStockStatus(stockAdjustmentDeps(fake))(ctx, &mcp.CallToolRequest{}, SetStockStatusInput{StockItemID: 50, Status: stockStatusOK, StatusCustomKey: &[]int{110}[0], Confirm: true, PlanHash: planned.PlanHash, Reason: "inspection"})
+	r.NoError(err)
+	r.Equal(StatusClarificationRequired, remapped.Status)
+	r.Zero(fake.statusCalls)
+}
+
 func TestStockAdjustmentReturnsRecoveryForAmbiguousMutation(t *testing.T) {
 	t.Parallel()
 	r := require.New(t)
@@ -447,6 +536,7 @@ type fakeStockAdjustmentClient struct {
 	getPartErr            error
 	setting               inventree.SettingValue
 	getSettingErr         error
+	statuses              inventree.StockStatusClass
 }
 
 func (f *fakeStockAdjustmentClient) GetStockItem(context.Context, int) (inventree.StockItem, error) {
@@ -458,6 +548,17 @@ func (f *fakeStockAdjustmentClient) GetStockItem(context.Context, int) (inventre
 		return inventree.StockItem{}, &inventree.APIError{StatusCode: http.StatusNotFound, Kind: inventree.ErrorKindNotFound}
 	}
 	return f.item, nil
+}
+
+func (f *fakeStockAdjustmentClient) GetStockStatuses(context.Context) (inventree.StockStatusClass, error) {
+	if f.statuses.StatusClass != "" {
+		return f.statuses, nil
+	}
+	values := make(map[string]inventree.StockStatusValue, len(stockStatusNames))
+	for key, label := range stockStatusNames {
+		values[label] = inventree.StockStatusValue{Key: key, Name: label, Label: label}
+	}
+	return inventree.StockStatusClass{StatusClass: "StockStatus", Values: values}, nil
 }
 
 func (f *fakeStockAdjustmentClient) AddStock(_ context.Context, input inventree.StockAdjustment) error {
@@ -507,7 +608,29 @@ func (f *fakeStockAdjustmentClient) ChangeStockStatus(_ context.Context, input i
 	}
 	f.runBeforeMutation()
 	f.item.Status = input.Status
+	f.item.StatusCustomKey = nil
+	if f.statuses.StatusClass != "" {
+		for _, value := range f.statuses.Values {
+			if value.Key == input.Status && value.Custom && value.LogicalKey != nil {
+				f.item.Status = *value.LogicalKey
+				key := value.Key
+				f.item.StatusCustomKey = &key
+				break
+			}
+		}
+	}
 	return nil
+}
+
+func (f *fakeStockAdjustmentClient) ClearStockCustomStatus(_ context.Context, _ int, logicalStatus int) (inventree.StockItem, error) {
+	f.statusCalls++
+	if f.mutateErr != nil {
+		return inventree.StockItem{}, f.mutateErr
+	}
+	f.runBeforeMutation()
+	f.item.Status = logicalStatus
+	f.item.StatusCustomKey = nil
+	return f.item, nil
 }
 
 func (f *fakeStockAdjustmentClient) UpdateStockItem(_ context.Context, id int, fields inventree.PatchFields) (inventree.StockItem, error) {
