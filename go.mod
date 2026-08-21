@@ -1,6 +1,6 @@
 module github.com/davidvanlaatum/inventree-mcp
 
-go 1.25.0
+go 1.27.0
 
 require (
 	github.com/coreos/go-systemd/v22 v22.7.0
