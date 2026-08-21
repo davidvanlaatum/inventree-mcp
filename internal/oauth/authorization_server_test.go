@@ -79,7 +79,7 @@ func TestPrivateKeyJWTVerifierAcceptsSupportedPS256AndES256(t *testing.T) {
 		case "/ps256":
 			_ = json.NewEncoder(w).Encode(testRSAJWKS(&rsaKey.PublicKey, "ps-key", "PS256"))
 		case "/es256":
-			_ = json.NewEncoder(w).Encode(testECJWKS(&ecKey.PublicKey, "es-key"))
+			_ = json.NewEncoder(w).Encode(testECJWKS(t, &ecKey.PublicKey, "es-key"))
 		default:
 			http.NotFound(w, req)
 		}
@@ -710,10 +710,14 @@ func testRSAJWKS(key *rsa.PublicKey, kid string, algorithm string) map[string]an
 	}}}
 }
 
-func testECJWKS(key *ecdsa.PublicKey, kid string) map[string]any {
+func testECJWKS(t *testing.T, key *ecdsa.PublicKey, kid string) map[string]any {
+	t.Helper()
+	encoded, err := key.Bytes()
+	require.NoError(t, err)
+	coordinateSize := (len(encoded) - 1) / 2
 	return map[string]any{"keys": []map[string]any{{
 		"kty": "EC", "use": "sig", "alg": "ES256", "kid": kid, "crv": "P-256",
-		"x": base64.RawURLEncoding.EncodeToString(key.X.Bytes()), "y": base64.RawURLEncoding.EncodeToString(key.Y.Bytes()),
+		"x": base64.RawURLEncoding.EncodeToString(encoded[1 : 1+coordinateSize]), "y": base64.RawURLEncoding.EncodeToString(encoded[1+coordinateSize:]),
 	}}}
 }
 
