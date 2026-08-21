@@ -190,9 +190,13 @@ func TestToolReferenceDocumentsRegisteredWriteTools(t *testing.T) {
 		case ClearCompanyImageToolName:
 			a.Equal("destructive", auth.MutationClass)
 			a.Equal([]string{ScopeInventreeRead, ScopeInventreeWrite, ScopeInventreeUpload, ScopeInventreeDestructive}, auth.Scopes)
-		case DeletePartParameterToolName, DeleteObjectParameterToolName, DeleteParameterTemplateToolName, MergeParameterTemplatesToolName, DeleteCategoryParameterDefaultToolName, DeletePurchaseOrderExtraLineToolName, DeletePurchaseOrderLineToolName, DeletePartToolName, DeletePartRelationToolName, DeleteStockLocationTypeToolName, DeletePartCategoryToolName, RemoveCompanyCustomerRoleToolName, AssignOwnerToolName, AssignContactToolName, AssignAddressToolName, AssignProjectCodeToolName:
+		case DeletePartParameterToolName, DeleteObjectParameterToolName, DeleteParameterTemplateToolName, MergeParameterTemplatesToolName, DeleteCategoryParameterDefaultToolName, DeletePurchaseOrderExtraLineToolName, DeletePurchaseOrderLineToolName, DeletePartToolName, DeletePartRelationToolName, DeleteStockLocationTypeToolName, DeleteStockLocationToolName, DeletePartCategoryToolName, RemoveCompanyCustomerRoleToolName, AssignOwnerToolName, AssignContactToolName, AssignAddressToolName, AssignProjectCodeToolName:
 			a.Equal("destructive", auth.MutationClass)
-			a.Equal([]string{ScopeInventreeRead, ScopeInventreeWrite, ScopeInventreeDestructive}, auth.Scopes)
+			if name == DeleteStockLocationToolName {
+				a.Equal([]string{ScopeInventreeRead, ScopeInventreeWrite, ScopeInventreeOperational, ScopeInventreeDestructive}, auth.Scopes)
+			} else {
+				a.Equal([]string{ScopeInventreeRead, ScopeInventreeWrite, ScopeInventreeDestructive}, auth.Scopes)
+			}
 		default:
 			a.Equal("write", auth.MutationClass)
 			a.Equal([]string{ScopeInventreeWrite}, auth.Scopes)

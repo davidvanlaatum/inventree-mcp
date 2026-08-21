@@ -12,20 +12,22 @@ type SearchQuery struct {
 }
 
 type CategoryQuery struct {
-	Parent     *int
-	TopLevel   *bool
-	PathDetail *bool
-	Limit      int
-	Offset     int
+	Parent            *int
+	DefaultLocationID int
+	TopLevel          *bool
+	PathDetail        *bool
+	Limit             int
+	Offset            int
 }
 
 type PartQuery struct {
-	CategoryID int
-	Cascade    *bool
-	RevisionOf int
-	VariantOf  int
-	Limit      int
-	Offset     int
+	CategoryID        int
+	DefaultLocationID int
+	Cascade           *bool
+	RevisionOf        int
+	VariantOf         int
+	Limit             int
+	Offset            int
 }
 
 type PartParameterQuery struct {
@@ -174,6 +176,11 @@ type BuildQuery struct {
 	Offset int
 }
 
+type TransferOrderQuery struct {
+	Limit  int
+	Offset int
+}
+
 type PartRelationQuery struct {
 	Part   int
 	Part1  int
@@ -230,6 +237,9 @@ func (q CategoryQuery) values() url.Values {
 	if q.PathDetail != nil {
 		values.Set("path_detail", strconv.FormatBool(*q.PathDetail))
 	}
+	if q.DefaultLocationID != 0 {
+		values.Set("default_location", strconv.Itoa(q.DefaultLocationID))
+	}
 	setPagination(values, q.Limit, q.Offset)
 	return values
 }
@@ -241,6 +251,9 @@ func (q PartQuery) values() url.Values {
 	}
 	if q.Cascade != nil {
 		values.Set("cascade", strconv.FormatBool(*q.Cascade))
+	}
+	if q.DefaultLocationID != 0 {
+		values.Set("default_location", strconv.Itoa(q.DefaultLocationID))
 	}
 	if q.VariantOf != 0 {
 		values.Set("variant_of", strconv.Itoa(q.VariantOf))
@@ -503,6 +516,12 @@ func (q BuildQuery) values() url.Values {
 	if q.Part != 0 {
 		values.Set("part", strconv.Itoa(q.Part))
 	}
+	setPagination(values, q.Limit, q.Offset)
+	return values
+}
+
+func (q TransferOrderQuery) values() url.Values {
+	values := url.Values{}
 	setPagination(values, q.Limit, q.Offset)
 	return values
 }

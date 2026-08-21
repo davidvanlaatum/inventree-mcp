@@ -644,7 +644,7 @@ func TestWriteToolAuthorizationsUseWriteScope(t *testing.T) {
 			a.Equal("destructive", auth.MutationClass)
 			a.Equal([]string{ScopeInventreeRead, ScopeInventreeWrite, ScopeInventreeUpload, ScopeInventreeDestructive}, auth.Scopes)
 			a.True(auth.Annotations.Destructive)
-		case UpdateStockItemProvenanceToolName, UninstallStockItemToolName, CancelPurchaseOrderToolName:
+		case UpdateStockItemProvenanceToolName, UninstallStockItemToolName, CancelPurchaseOrderToolName, DeleteStockLocationToolName:
 			a.Equal("destructive", auth.MutationClass)
 			a.Equal([]string{ScopeInventreeRead, ScopeInventreeWrite, ScopeInventreeOperational, ScopeInventreeDestructive}, auth.Scopes)
 			a.True(auth.Annotations.Destructive)
