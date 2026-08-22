@@ -15,11 +15,12 @@ import (
 )
 
 type fakeStocktakeGenerationClient struct {
-	queued      []inventree.PartStocktakeGenerate
-	outputs     []inventree.DataOutput
-	outputCall  int
-	generateErr error
-	blockOutput bool
+	queued          []inventree.PartStocktakeGenerate
+	outputs         []inventree.DataOutput
+	outputCall      int
+	generateErr     error
+	generatedOutput *inventree.DataOutput
+	blockOutput     bool
 }
 
 func (f *fakeStocktakeGenerationClient) DownloadDataOutput(_ context.Context, outputURL string, _ int64) (inventree.DownloadedDataOutput, error) {
@@ -30,6 +31,9 @@ func (f *fakeStocktakeGenerationClient) GeneratePartStocktake(_ context.Context,
 	f.queued = append(f.queued, request)
 	if f.generateErr != nil {
 		return inventree.PartStocktakeGenerate{}, f.generateErr
+	}
+	if f.generatedOutput != nil {
+		return inventree.PartStocktakeGenerate{Output: f.generatedOutput}, nil
 	}
 	return inventree.PartStocktakeGenerate{Output: &inventree.DataOutput{PK: 90, Complete: false}}, nil
 }
@@ -290,4 +294,36 @@ func TestGenerateStocktakeReturnsAmbiguousRecoveryAfterEnqueueError(t *testing.T
 	r.NoError(err)
 	r.Equal(StatusPartialFailure, output.Status)
 	r.Contains(output.RecoveryPlan, "ambiguous")
+}
+
+func TestGenerateStocktakeReleasesCapacityAfterDefiniteEnqueueFailures(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name   string
+		client *fakeStocktakeGenerationClient
+	}{
+		{name: "enqueue error", client: &fakeStocktakeGenerationClient{generateErr: errors.New("request rejected")}},
+		{name: "missing task id", client: &fakeStocktakeGenerationClient{generatedOutput: &inventree.DataOutput{}}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r := require.New(t)
+			ctx, _, _ := testhandler.SetupTestHandler(t)
+			deps := stocktakeGenerationDeps(tc.client)
+			deps.stocktakeTaskStore.maxEntries = 1
+			deps.stocktakeTaskStore.maxEntriesPerPrincipal = 1
+			handler := generateStocktake(deps)
+			_, preview, err := handler(ctx, &mcp.CallToolRequest{}, GenerateStocktakeInput{DryRun: true, PartID: 4, GenerateEntry: true})
+			r.NoError(err)
+			_, failed, err := handler(ctx, &mcp.CallToolRequest{}, GenerateStocktakeInput{Confirm: true, PlanHash: preview.PlanHash, PartID: 4, GenerateEntry: true})
+			r.NoError(err)
+			r.Equal(StatusPartialFailure, failed.Status)
+			tc.client.generateErr = nil
+			tc.client.generatedOutput = &inventree.DataOutput{PK: 91, Complete: false}
+			_, nextPreview, err := handler(ctx, &mcp.CallToolRequest{}, GenerateStocktakeInput{DryRun: true, PartID: 4, GenerateEntry: true})
+			r.NoError(err)
+			_, next, err := handler(ctx, &mcp.CallToolRequest{}, GenerateStocktakeInput{Confirm: true, PlanHash: nextPreview.PlanHash, PartID: 4, GenerateEntry: true})
+			r.NoError(err)
+			r.Equal(StatusPending, next.Status)
+		})
+	}
 }

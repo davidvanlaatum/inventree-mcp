@@ -25,6 +25,8 @@ const (
 )
 
 type StocktakeGenerationClient interface {
+	// GetDataOutput must honor context cancellation so a bounded poll cannot
+	// leave an upstream request running after its deadline.
 	GeneratePartStocktake(context.Context, inventree.PartStocktakeGenerate) (inventree.PartStocktakeGenerate, error)
 	GetDataOutput(context.Context, int) (inventree.DataOutput, error)
 	DownloadDataOutput(context.Context, string, int64) (inventree.DownloadedDataOutput, error)
@@ -340,7 +342,9 @@ func pollStocktakeGeneration(deps Dependencies) mcp.ToolHandlerFor[PollStocktake
 			if wait > stocktakeGenerationTimeout {
 				wait = stocktakeGenerationTimeout
 			}
-			task, err := waitForStocktakeOutput(ctx, client, input.TaskID, wait)
+			pollCtx, cancelPoll := context.WithTimeout(ctx, wait)
+			defer cancelPoll()
+			task, err := waitForStocktakeOutput(pollCtx, client, input.TaskID, wait)
 			projected := stocktakeTaskOutput(task)
 			if errors.Is(err, errStocktakeGenerationTimeout) {
 				return TextResult(StatusPending), StocktakeGenerationOutput{Status: StatusPending, Task: &projected, RetryAfterSeconds: stocktakeGenerationRetryAfter}, nil
@@ -352,13 +356,13 @@ func pollStocktakeGeneration(deps Dependencies) mcp.ToolHandlerFor[PollStocktake
 				return TextResult(StatusPartialFailure), StocktakeGenerationOutput{Status: StatusPartialFailure, Task: &projected, RecoveryPlan: "InvenTree reported generation errors; inspect this task and stocktake history before starting any new generation."}, nil
 			}
 			if taskBinding.reportRequired && (task.Output == nil || strings.TrimSpace(*task.Output) == "") {
-				return TextResult(StatusPartialFailure), StocktakeGenerationOutput{Status: StatusPartialFailure, Task: &projected, RecoveryPlan: "Generation completed without the requested report artifact; continue polling the same task_id or inspect InvenTree's worker/report configuration before starting any new generation."}, nil
+				return TextResult(StatusPartialFailure), StocktakeGenerationOutput{Status: StatusPartialFailure, Task: &projected, RecoveryPlan: "Generation completed without the requested report artifact; inspect InvenTree's worker/report configuration and reconcile this terminal task before starting any new generation."}, nil
 			}
 			output := StocktakeGenerationOutput{Status: StatusOK, Task: &projected}
 			if task.Output != nil && *task.Output != "" {
 				report, err := client.DownloadDataOutput(ctx, *task.Output, defaultDownloadMaxBytes)
 				if err != nil {
-					return TextResult(StatusPartialFailure), StocktakeGenerationOutput{Status: StatusPartialFailure, Task: &projected, RecoveryPlan: "Generation completed but the same-instance report artifact could not be safely downloaded; retry polling the same task_id before starting any new generation."}, nil
+					return TextResult(StatusPartialFailure), StocktakeGenerationOutput{Status: StatusPartialFailure, Task: &projected, RecoveryPlan: "Generation completed but the same-instance report artifact could not be safely downloaded; retry the same task_id if the retrieval failure may be transient, and reconcile before starting any new generation."}, nil
 				}
 				contentResult, reportOutput, err := downloadOutput(task.PK, "stocktake-report", "original", report.ContentType, report.SourceURL, report.Content)
 				if err != nil {
@@ -435,33 +439,18 @@ func waitForStocktakeOutput(ctx context.Context, client StocktakeGenerationClien
 	latest := inventree.DataOutput{PK: id}
 	for {
 		requestCtx, cancel := context.WithDeadline(ctx, deadlineAt)
-		result := make(chan struct {
-			task inventree.DataOutput
-			err  error
-		}, 1)
-		go func() {
-			task, err := client.GetDataOutput(requestCtx, id)
-			result <- struct {
-				task inventree.DataOutput
-				err  error
-			}{task: task, err: err}
-		}()
-		var response struct {
-			task inventree.DataOutput
-			err  error
-		}
-		select {
-		case response = <-result:
-			cancel()
-		case <-ctx.Done():
-			cancel()
-			return latest, ctx.Err()
-		case <-deadline.C:
-			cancel()
-			return latest, errStocktakeGenerationTimeout
-		}
-		task, err := response.task, response.err
+		task, err := client.GetDataOutput(requestCtx, id)
+		cancel()
 		if err != nil {
+			if ctx.Err() != nil {
+				if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+					return latest, errStocktakeGenerationTimeout
+				}
+				return latest, ctx.Err()
+			}
+			if requestCtx.Err() != nil {
+				return latest, errStocktakeGenerationTimeout
+			}
 			return latest, err
 		}
 		latest = task
