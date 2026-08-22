@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/davidvanlaatum/dvgoutils"
 	"github.com/davidvanlaatum/dvgoutils/logging/testhandler"
@@ -702,6 +703,26 @@ func TestStocktakeGenerationAndDataOutputMethods(t *testing.T) {
 	r.NoError(err)
 	a.Equal("pdf", string(download.Content))
 	a.Equal("https://inventory.example.test/media/report.pdf", download.SourceURL)
+}
+
+func TestGetDataOutputHonorsContextDeadline(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	client, err := NewClient(Config{
+		BaseURL:    "https://inventory.example.test",
+		Credential: Credential{Scheme: AuthSchemeToken, Token: "secret"},
+		HTTPClient: &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			<-req.Context().Done()
+			return nil, req.Context().Err()
+		})},
+	})
+	r.NoError(err)
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	defer cancel()
+	started := time.Now()
+	_, err = client.GetDataOutput(ctx, 90)
+	r.ErrorIs(err, context.DeadlineExceeded)
+	r.Less(time.Since(started), time.Second)
 }
 
 func TestDownloadDataOutputRejectsUnsafeAndUnboundedResponses(t *testing.T) {

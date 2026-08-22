@@ -168,14 +168,18 @@ func (s *stocktakeTaskStore) bind(ctx context.Context, taskID int, reportRequire
 	defer s.mu.Unlock()
 	now := s.now()
 	s.removeExpired(now)
+	principal := s.principal(ctx)
+	if len(s.entries) >= s.maxEntries || s.principalCount(principal) >= s.maxEntriesPerPrincipal {
+		return errors.New("stocktake task capacity reached; wait for existing handles to expire before starting another generation")
+	}
 	if existing, ok := s.entries[taskID]; ok {
-		if existing.principal != s.principal(ctx) {
+		if existing.principal != principal {
 			return errors.New("stocktake task handle is already bound to another principal")
 		}
 		return errors.New("InvenTree reused an existing stocktake task ID")
 	}
-	s.entries[taskID] = stocktakeTaskEntry{principal: s.principal(ctx), reportRequired: reportRequired, expiresAt: now.Add(stocktakeTaskLifetime)}
-	s.releaseReservationLocked(s.principal(ctx))
+	s.entries[taskID] = stocktakeTaskEntry{principal: principal, reportRequired: reportRequired, expiresAt: now.Add(stocktakeTaskLifetime)}
+	s.releaseReservationLocked(principal)
 	return nil
 }
 
@@ -360,7 +364,7 @@ func pollStocktakeGeneration(deps Dependencies) mcp.ToolHandlerFor[PollStocktake
 			}
 			output := StocktakeGenerationOutput{Status: StatusOK, Task: &projected}
 			if task.Output != nil && *task.Output != "" {
-				report, err := client.DownloadDataOutput(ctx, *task.Output, defaultDownloadMaxBytes)
+				report, err := client.DownloadDataOutput(pollCtx, *task.Output, defaultDownloadMaxBytes)
 				if err != nil {
 					return TextResult(StatusPartialFailure), StocktakeGenerationOutput{Status: StatusPartialFailure, Task: &projected, RecoveryPlan: "Generation completed but the same-instance report artifact could not be safely downloaded; retry the same task_id if the retrieval failure may be transient, and reconcile before starting any new generation."}, nil
 				}
@@ -462,6 +466,9 @@ func waitForStocktakeOutput(ctx context.Context, client StocktakeGenerationClien
 		}
 		select {
 		case <-ctx.Done():
+			if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+				return task, errStocktakeGenerationTimeout
+			}
 			return task, ctx.Err()
 		case <-deadline.C:
 			return task, errStocktakeGenerationTimeout
