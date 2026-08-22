@@ -659,6 +659,51 @@ func TestReadMethodsUseExpectedEndpoints(t *testing.T) {
 	}
 }
 
+func TestStocktakeGenerationAndDataOutputMethods(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+
+	client, err := NewClient(Config{
+		BaseURL:    "https://inventory.example.test",
+		Credential: Credential{Scheme: AuthSchemeToken, Token: "secret"},
+		HTTPClient: &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			if req.URL.Path == "/api/part/stocktake/generate/" {
+				a.Equal(http.MethodPost, req.Method, "generation must enqueue through POST")
+				var body PartStocktakeGenerate
+				r.NoError(json.NewDecoder(req.Body).Decode(&body))
+				a.Equal(12, *body.Part)
+				a.True(body.GenerateEntry)
+				a.False(body.GenerateReport)
+				return jsonResponse(req, http.StatusOK, `{"output":{"pk":90,"created":"2026-08-22","complete":false,"progress":0,"total":3}}`), nil
+			}
+			if req.URL.Path == "/media/report.pdf" {
+				a.Equal(http.MethodGet, req.Method)
+				return &http.Response{StatusCode: http.StatusOK, Header: http.Header{"Content-Type": []string{"application/pdf"}}, Body: io.NopCloser(strings.NewReader("pdf")), Request: req}, nil
+			}
+			a.Equal(http.MethodGet, req.Method)
+			a.Equal("/api/data-output/90/", req.URL.Path)
+			return jsonResponse(req, http.StatusOK, `{"pk":90,"created":"2026-08-22","complete":true,"progress":3,"total":3,"output":"https://inventory.example.test/media/report.pdf"}`), nil
+		})},
+	})
+	r.NoError(err)
+
+	queued, err := client.GeneratePartStocktake(ctx, PartStocktakeGenerate{Part: dvgoutils.Ptr(12), GenerateEntry: true})
+	r.NoError(err)
+	r.NotNil(queued.Output)
+	a.Equal(90, queued.Output.PK)
+	a.False(queued.Output.Complete)
+	completed, err := client.GetDataOutput(ctx, queued.Output.PK)
+	r.NoError(err)
+	a.True(completed.Complete)
+	a.Equal("https://inventory.example.test/media/report.pdf", *completed.Output)
+	download, err := client.DownloadDataOutput(ctx, *completed.Output, 32)
+	r.NoError(err)
+	a.Equal("pdf", string(download.Content))
+	a.Equal("https://inventory.example.test/media/report.pdf", download.SourceURL)
+}
+
 func TestCreateCurrentUserTokenRejectsInvalidResponses(t *testing.T) {
 	t.Parallel()
 	ctx, _, _ := testhandler.SetupTestHandler(t)

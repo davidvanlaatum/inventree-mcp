@@ -672,6 +672,55 @@ func (c *Client) GetPartStocktake(ctx context.Context, id int) (PartStocktake, e
 	return out, err
 }
 
+func (c *Client) GeneratePartStocktake(ctx context.Context, request PartStocktakeGenerate) (PartStocktakeGenerate, error) {
+	var out PartStocktakeGenerate
+	err := c.Post(ctx, "/api/part/stocktake/generate/", request, &out)
+	return out, err
+}
+
+func (c *Client) GetDataOutput(ctx context.Context, id int) (DataOutput, error) {
+	var out DataOutput
+	err := c.get(ctx, fmt.Sprintf("/api/data-output/%d/", id), &out)
+	return out, err
+}
+
+type DownloadedDataOutput struct {
+	Content     []byte
+	ContentType string
+	SourceURL   string
+}
+
+func (c *Client) DownloadDataOutput(ctx context.Context, outputURL string, maxBytes int64) (DownloadedDataOutput, error) {
+	if maxBytes <= 0 {
+		return DownloadedDataOutput{}, errors.New("data-output download maxBytes must be positive")
+	}
+	sourceURL, err := c.resolveInvenTreeContentURL(outputURL)
+	if err != nil {
+		return DownloadedDataOutput{}, err
+	}
+	downloadCtx, cancel := boundedDownloadContext(ctx, c.httpClient)
+	defer cancel()
+	req, err := http.NewRequestWithContext(downloadCtx, http.MethodGet, sourceURL.String(), nil)
+	if err != nil {
+		return DownloadedDataOutput{}, err
+	}
+	req.Header.Set("Accept", "*/*")
+	c.applyRequestIdentity(req)
+	resp, err := noRedirectClient(c.httpClient).Do(req)
+	if err != nil {
+		return DownloadedDataOutput{}, errors.New("download InvenTree data-output content failed")
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+		return DownloadedDataOutput{}, fmt.Errorf("download InvenTree data-output content failed with status %d", resp.StatusCode)
+	}
+	content, err := readBounded(resp.Body, maxBytes)
+	if err != nil {
+		return DownloadedDataOutput{}, err
+	}
+	return DownloadedDataOutput{Content: content, ContentType: resp.Header.Get("Content-Type"), SourceURL: redactedURLString(sourceURL)}, nil
+}
+
 func (c *Client) SearchOwnersPage(ctx context.Context, query OwnerQuery) (Page[Owner], error) {
 	return listPage[Owner](ctx, c, "/api/user/owner/", query.values())
 }

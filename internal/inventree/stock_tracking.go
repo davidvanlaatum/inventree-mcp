@@ -225,3 +225,33 @@ func (q PartStocktakeQuery) values() url.Values {
 	setPagination(values, q.Limit, q.Offset)
 	return values
 }
+
+// DataOutput is the bounded asynchronous task descriptor returned by
+// InvenTree's background-worker-backed operations. Output is an upstream URL
+// when the task produces a report; callers must apply their own same-instance
+// URL and content policy before fetching it.
+type DataOutput struct {
+	PK           int     `json:"pk"`
+	Created      string  `json:"created"`
+	User         *int    `json:"user"`
+	Total        int     `json:"total"`
+	Progress     int     `json:"progress"`
+	Complete     bool    `json:"complete"`
+	OutputType   *string `json:"output_type"`
+	TemplateName *string `json:"template_name"`
+	Plugin       *string `json:"plugin"`
+	Output       *string `json:"output"`
+	Errors       any     `json:"errors"`
+}
+
+// PartStocktakeGenerate is the request/response contract for the asynchronous
+// stocktake generation endpoint. The selectors and flags are validated by the
+// guarded tool; the client preserves the upstream nullable/write-only shape.
+type PartStocktakeGenerate struct {
+	Part           *int        `json:"part,omitempty"`
+	Category       *int        `json:"category,omitempty"`
+	Location       *int        `json:"location,omitempty"`
+	GenerateEntry  bool        `json:"generate_entry,omitempty"`
+	GenerateReport bool        `json:"generate_report,omitempty"`
+	Output         *DataOutput `json:"output,omitempty"`
+}

@@ -2590,6 +2590,22 @@ func TestClientMethodsAgainstInvenTree(t *testing.T) {
 				a.Contains(out, "output", "generation response must expose the asynchronous DataOutput contract")
 			})
 		}
+
+		// Exercise the exported typed client methods on the successful enqueue
+		// path and exact DataOutput read-back. Completion remains an explicit
+		// tool-layer concern because F-S60 observed report jobs that did not
+		// reach a terminal state within the bounded probe.
+		generation, err := fixture.client.GeneratePartStocktake(ctx, inventree.PartStocktakeGenerate{
+			Part:           &part.ID,
+			GenerateEntry:  true,
+			GenerateReport: true,
+		})
+		r.NoError(err)
+		r.NotNil(generation.Output)
+		r.Positive(generation.Output.PK)
+		output, err := fixture.client.GetDataOutput(ctx, generation.Output.PK)
+		r.NoError(err)
+		a.Equal(generation.Output.PK, output.PK)
 	})
 }
 

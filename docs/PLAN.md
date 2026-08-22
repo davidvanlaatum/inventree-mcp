@@ -437,6 +437,8 @@ Mutating operationally sensitive tools:
 - `adjust_stock_quantity`
 - `set_stock_status`
 - `stocktake_adjustment`
+- `generate_stocktake`
+- `poll_stocktake_generation`
 - `deplete_stock_item`
 - `transfer_stock_item`
 - `update_part_family_relationships`
@@ -545,6 +547,7 @@ Important behaviors:
 - Stock item metadata/status updates should use PATCH when the API supports it.
 - `adjust_stock_quantity` applies one non-zero relative delta through the native add/remove endpoints, while `stocktake_adjustment` records one absolute observed quantity through the native count endpoint and `set_stock_status` changes only status through the native status endpoint.
 - Initial stocktake scope is one stable stock-item ID per operation. Stocktake counts are quantity-only and do not implicitly change location, status, batch, or packaging.
+- Aggregate stocktake generation is a separate operational workflow: it requires exactly one part/category/location selector, explicit independent entry/report flags, a complete current-state-bound dry run, and a principal-bound single-use confirmation. The upstream response is enqueue-only; the workflow polls the returned `DataOutput`, verifies its stable identity and terminal state, fails closed on timeout/errors, and downloads completed report content only through the client’s same-instance URL, no-redirect, bounded-read policy.
 - Every stock adjustment execution requires a dry-run plan bound to current stock state, explicit confirmation, and a nonblank operator audit reason. The returned `plan_hash` field is an opaque, principal-bound, single-use confirmation token that expires after five minutes; a newer dry run for the same principal, action, and stock item supersedes its earlier token, and a restart invalidates all outstanding tokens. Outstanding confirmation storage is bounded globally and per principal. Plans call out quantity decreases and `Destroyed`, `Rejected`, or `Lost` status transitions as high-risk.
 - No-op changes are refused. Relative and absolute quantity changes are refused for serialized stock because InvenTree does not apply those operations to serialized items; status-only changes remain supported. A quantity change that would reduce an item with `delete_on_deplete:true` to zero is also refused because implicit deletion is outside this non-destructive workflow.
 - Changing whether a stock item deletes itself at depletion uses the separate destructive `set_stock_delete_on_deplete` tool rather than `update_stock_item_metadata`, because it controls future record deletion. It plans and confirms only the `delete_on_deplete` boolean through the native stock-item PATCH endpoint, requires read, write, operational, and destructive scopes plus the standard principal-bound confirmation token and audit reason, and refuses a no-op request where the item already has the requested policy. It never deletes stock itself and is valid at any quantity including zero; enabling the flag is flagged high-risk because it authorizes deletion at a later depletion, while disabling it is not.

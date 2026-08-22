@@ -40,6 +40,7 @@ type Dependencies struct {
 	parameterTemplateUniquenessPlanStore *parameterTemplateUniquenessPlanStore
 	purchaseOrderLifecyclePlanStore      *purchaseOrderLifecyclePlanStore
 	categoryDeletePlanStore              *categoryDeletePlanStore
+	stocktakePlanStore                   *stocktakePlanStore
 }
 
 func (d Dependencies) Client(ctx context.Context) (any, error) {

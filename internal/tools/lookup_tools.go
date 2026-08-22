@@ -66,6 +66,8 @@ const (
 	GetStockTrackingEntryToolName             = "get_stock_tracking_entry"
 	ListPartStocktakesToolName                = "list_part_stocktakes"
 	GetPartStocktakeToolName                  = "get_part_stocktake"
+	GenerateStocktakeToolName                 = "generate_stocktake"
+	PollStocktakeGenerationToolName           = "poll_stocktake_generation"
 	ListAttachmentsToolName                   = "list_attachments"
 	GetAttachmentMetadataToolName             = "get_attachment_metadata"
 	DownloadAttachmentToolName                = "download_attachment"
@@ -313,6 +315,8 @@ var writeToolNames = []string{
 	AssignContactToolName,
 	AssignAddressToolName,
 	AssignProjectCodeToolName,
+	GenerateStocktakeToolName,
+	PollStocktakeGenerationToolName,
 }
 
 var ToolAuthorizations = map[string]ToolAuthorization{
@@ -354,7 +358,7 @@ func init() {
 		case CreateStockItemToolName, InitialStockWorkflowToolName:
 			scopes = []string{ScopeInventreeWrite, ScopeInventreeOperational}
 			mutationClass = "operational"
-		case AdjustStockQuantityToolName, SetStockStatusToolName, StocktakeAdjustmentToolName, TransferStockItemToolName, RestructureStockLocationToolName, UpdateStockItemMetadataToolName, AssignStockSerialToolName, InstallStockItemToolName, UpdateParameterTemplateUniquenessToolName, HoldPurchaseOrderToolName, ResumePurchaseOrderToolName:
+		case AdjustStockQuantityToolName, SetStockStatusToolName, StocktakeAdjustmentToolName, GenerateStocktakeToolName, PollStocktakeGenerationToolName, TransferStockItemToolName, RestructureStockLocationToolName, UpdateStockItemMetadataToolName, AssignStockSerialToolName, InstallStockItemToolName, UpdateParameterTemplateUniquenessToolName, HoldPurchaseOrderToolName, ResumePurchaseOrderToolName:
 			scopes = []string{ScopeInventreeRead, ScopeInventreeWrite, ScopeInventreeOperational}
 			mutationClass = "operational"
 		case SetStockDeleteOnDepleteToolName, DepleteStockItemToolName, UpdatePartFamilyRelationshipsToolName, UpdateStockItemProvenanceToolName, SetStockSerialToolName, UninstallStockItemToolName, CancelPurchaseOrderToolName, DeleteStockLocationToolName:

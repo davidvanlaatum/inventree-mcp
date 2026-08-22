@@ -155,7 +155,7 @@ Before assigning a new story ID, inspect `git worktree list --porcelain`, search
 | [F-S71](#f-s71-inventree-instance-info-tool) | Add a read-only InvenTree instance-info tool, gated on an operator-approved curated settings allowlist. | Done |
 | [F-S72](#f-s72-porcelain-style-version-cli-format-and-self-update-rewrite) | Replace the CLI `version` output with a versioned porcelain-style format and move self-update onto it, accepting one documented one-time breaking migration. | Done |
 | [F-S73](#f-s73-remove-gremlins-mutation-testing-ci-job) | Remove the Gremlins mutation-testing job from CI; keep `.gremlins.yaml` for optional manual runs. | Done |
-| [F-S74](#f-s74-guarded-stocktake-generation-and-reporting) | Implement guarded stocktake generation and reporting after F-S60 discovery resolves asynchronous task and report behavior. | Future |
+| [F-S74](#f-s74-guarded-stocktake-generation-and-reporting) | Implement guarded stocktake generation and reporting after F-S60 discovery resolves asynchronous task and report behavior. | Active |
 
 ## Milestone 0: Repository And Planning
 
@@ -2824,9 +2824,21 @@ Tasks:
 
 ### F-S74: Guarded Stocktake Generation And Reporting
 
-- Status: `Future`
+- Status: `Active`
 - Issue: [#193](https://github.com/davidvanlaatum/inventree-mcp/issues/193)
 - Depends on: F-S60
-- Scope: implement guarded stocktake generation using exactly one selector (part, category, or location); support independent `generate_entry` and `generate_report` choices; poll and correlate `DataOutput` tasks; define failure, timeout, duplicate, permission, and retry recovery; retrieve generated snapshots and reports safely, including attachment handling where applicable; keep quantity adjustment and historical stocktake reads separate.
-- Acceptance: dry-run and confirmation bind the complete selector/flag plan; entry and report generation have verified terminal-state behavior; duplicate and same-day behavior is characterized and handled explicitly; report/plugin prerequisites and permissions are explicit; unit, integration, security, documentation, and reviewer coverage pass.
-- Residual risk: generation is a non-atomic inventory snapshot and may change while processing. F-S60 found HTTP 200 enqueue responses on pinned InvenTree 1.5.1/API 530, while report and combined-flag outputs did not reach terminal state within the bounded live probe; this story must resolve that behavior before exposing a guarded workflow.
+- Progress: implementation started on `codex/f-s74-guarded-stocktake-generation-reporting` from local `origin/main` at `c4f4b33` (the F-S60 merge commit). GitHub read-back and remote fetch were unavailable when this task started, so issue assignment/status synchronization remains pending live API access.
+- Progress: the client boundary now has typed `PartStocktakeGenerate`/`DataOutput` models, `GeneratePartStocktake`, and `GetDataOutput` methods with focused HTTP contract coverage; the endpoint manifest records both new paths. The MCP guarded workflow is not yet exposed.
+- Progress: `generate_stocktake` now validates the selector/flags, binds principal-scoped single-use confirmation, enqueues work, and returns a sanitized `DataOutput` task handle immediately. `poll_stocktake_generation` polls only that existing task for a bounded per-call interval, returning `pending`, `ok`, or `partial_failure` with safe report retrieval.
+- Scope: implement guarded stocktake generation using exactly one selector (part, category, or location); support independent `generate_entry` and `generate_report` choices; enqueue and poll correlated `DataOutput` tasks; define failure, timeout, duplicate, permission, and retry recovery; retrieve generated snapshots and reports safely, including attachment handling where applicable; keep quantity adjustment and historical stocktake reads separate.
+- Acceptance: dry-run and confirmation bind the complete selector/flag plan; enqueue returns a usable task handle; bounded polling reaches verified terminal state without starting duplicate work; duplicate and same-day behavior is characterized and handled explicitly; report/plugin prerequisites and permissions are explicit; unit, integration, security, documentation, and reviewer coverage pass.
+- Residual risk: generation is a non-atomic inventory snapshot and may change while processing. The guarded tools fail closed on missing IDs, task errors, identity mismatch, unsafe report URLs, redirects, and oversized content; `pending` requires the agent to retain and reuse the task ID. F-S60's report and combined-flag outputs still require live terminal-state and duplicate/idempotency characterization.
+
+Tasks:
+
+- [x] Add typed generation/DataOutput client methods, endpoint-manifest entries, and client contract coverage.
+- [x] Add guarded selector/flag planning, single-use confirmation, immediate task-handle enqueue, bounded follow-up polling, and sanitized task output.
+- [x] Align tool authorization, generated manifest, tool reference, plan, API notes, and operator recipe.
+- [ ] Complete worker-backed live terminal-state, duplicate/same-day, permission, and report-artifact characterization.
+- [x] Add safe same-instance report retrieval/attachment handling.
+- [ ] Complete the full review/coverage pass.
