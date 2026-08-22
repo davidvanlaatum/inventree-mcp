@@ -2679,18 +2679,11 @@ func TestClientMethodsAgainstInvenTree(t *testing.T) {
 		nonStaffClient, err := inventree.NewClient(inventree.Config{BaseURL: shared.Environment().BaseURL, Credential: inventree.Credential{Scheme: inventree.AuthSchemeToken, Token: nonStaffToken.Token}})
 		r.NoError(err)
 		nonStaffGeneration, err := nonStaffClient.GeneratePartStocktake(ctx, inventree.PartStocktakeGenerate{Part: &part.ID, GenerateEntry: true, GenerateReport: true})
-		if err != nil {
-			var apiErr *inventree.APIError
-			if errors.As(err, &apiErr) {
-				a.Equal(http.StatusForbidden, apiErr.StatusCode)
-				t.Logf("non-staff stocktake generation characterization: rejected with HTTP %d", apiErr.StatusCode)
-			} else {
-				t.Logf("non-staff stocktake generation characterization: rejected with %v", err)
-			}
-		} else {
-			r.NotNil(nonStaffGeneration.Output)
-			t.Logf("non-staff stocktake generation characterization: accepted task ID %d", nonStaffGeneration.Output.PK)
-		}
+		var apiErr *inventree.APIError
+		r.ErrorAs(err, &apiErr)
+		a.Equal(http.StatusForbidden, apiErr.StatusCode)
+		r.Nil(nonStaffGeneration.Output)
+		t.Logf("non-staff stocktake generation characterization: rejected with HTTP %d", apiErr.StatusCode)
 	})
 }
 

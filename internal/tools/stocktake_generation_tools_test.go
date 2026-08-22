@@ -19,6 +19,7 @@ type fakeStocktakeGenerationClient struct {
 	outputs     []inventree.DataOutput
 	outputCall  int
 	generateErr error
+	blockOutput bool
 }
 
 func (f *fakeStocktakeGenerationClient) DownloadDataOutput(_ context.Context, outputURL string, _ int64) (inventree.DownloadedDataOutput, error) {
@@ -33,7 +34,11 @@ func (f *fakeStocktakeGenerationClient) GeneratePartStocktake(_ context.Context,
 	return inventree.PartStocktakeGenerate{Output: &inventree.DataOutput{PK: 90, Complete: false}}, nil
 }
 
-func (f *fakeStocktakeGenerationClient) GetDataOutput(_ context.Context, id int) (inventree.DataOutput, error) {
+func (f *fakeStocktakeGenerationClient) GetDataOutput(ctx context.Context, id int) (inventree.DataOutput, error) {
+	if f.blockOutput {
+		<-ctx.Done()
+		return inventree.DataOutput{}, ctx.Err()
+	}
 	if len(f.outputs) == 0 {
 		return inventree.DataOutput{PK: id, Complete: true, Progress: 1, Total: 1}, nil
 	}
@@ -213,6 +218,42 @@ func TestStocktakeTaskStoreBoundsReservations(t *testing.T) {
 	require.Error(t, store.reserve(ctx))
 	store.release(ctx)
 	require.NoError(t, store.reserve(ctx))
+}
+
+func TestStocktakeTaskStoreBoundsBoundEntriesPerPrincipalAndExpiry(t *testing.T) {
+	t.Parallel()
+	now := time.Date(2026, time.August, 22, 0, 0, 0, 0, time.UTC)
+	clock := now
+	principal := "operator-a"
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	store := newStocktakeTaskStore(func() time.Time { return clock })
+	store.principal = func(context.Context) string { return principal }
+	store.maxEntries = 2
+	store.maxEntriesPerPrincipal = 1
+	require.NoError(t, store.reserve(ctx))
+	require.NoError(t, store.bind(ctx, 90, true))
+	require.Error(t, store.reserve(ctx), "a principal cannot bind more than one live task")
+
+	principal = "operator-b"
+	otherCtx, _, _ := testhandler.SetupTestHandler(t)
+	require.NoError(t, store.reserve(otherCtx))
+	require.NoError(t, store.bind(otherCtx, 91, false))
+	require.Error(t, store.reserve(otherCtx), "global capacity must include bound entries")
+
+	clock = now.Add(stocktakeTaskLifetime)
+	require.NoError(t, store.reserve(ctx), "expired entries must free capacity")
+	store.release(ctx)
+}
+
+func TestWaitForStocktakeOutputBoundsAnInFlightRequest(t *testing.T) {
+	t.Parallel()
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	client := &fakeStocktakeGenerationClient{blockOutput: true}
+	started := time.Now()
+	task, err := waitForStocktakeOutput(ctx, client, 90, 20*time.Millisecond)
+	require.ErrorIs(t, err, errStocktakeGenerationTimeout)
+	assert.Equal(t, 90, task.PK)
+	assert.Less(t, time.Since(started), time.Second)
 }
 
 func TestStocktakePollingIsAvailableWithoutWriteTools(t *testing.T) {

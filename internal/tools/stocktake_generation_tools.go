@@ -427,15 +427,44 @@ func stocktakeGenerationPlan(input GenerateStocktakeInput) (StocktakeGenerationP
 var errStocktakeGenerationTimeout = errors.New("stocktake generation task timed out")
 
 func waitForStocktakeOutput(ctx context.Context, client StocktakeGenerationClient, id int, timeout time.Duration) (inventree.DataOutput, error) {
+	deadlineAt := time.Now().Add(timeout)
 	deadline := time.NewTimer(timeout)
 	defer deadline.Stop()
 	ticker := time.NewTicker(stocktakeGenerationInterval)
 	defer ticker.Stop()
+	latest := inventree.DataOutput{PK: id}
 	for {
-		task, err := client.GetDataOutput(ctx, id)
-		if err != nil {
-			return inventree.DataOutput{}, err
+		requestCtx, cancel := context.WithDeadline(ctx, deadlineAt)
+		result := make(chan struct {
+			task inventree.DataOutput
+			err  error
+		}, 1)
+		go func() {
+			task, err := client.GetDataOutput(requestCtx, id)
+			result <- struct {
+				task inventree.DataOutput
+				err  error
+			}{task: task, err: err}
+		}()
+		var response struct {
+			task inventree.DataOutput
+			err  error
 		}
+		select {
+		case response = <-result:
+			cancel()
+		case <-ctx.Done():
+			cancel()
+			return latest, ctx.Err()
+		case <-deadline.C:
+			cancel()
+			return latest, errStocktakeGenerationTimeout
+		}
+		task, err := response.task, response.err
+		if err != nil {
+			return latest, err
+		}
+		latest = task
 		if task.PK != id {
 			return task, errors.New("InvenTree returned a mismatched DataOutput identity")
 		}
