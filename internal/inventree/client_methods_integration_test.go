@@ -2610,6 +2610,9 @@ func TestClientMethodsAgainstInvenTree(t *testing.T) {
 		a.Equal(generation.Output.PK, output.PK)
 		terminal, reachedTerminal := pollDataOutputForStocktakeCharacterization(ctx, fixture.client, generation.Output.PK, 30*time.Second)
 		t.Logf("combined entry/report terminal characterization: task_id=%d complete=%t progress=%d total=%d output_available=%t reached_terminal=%t", terminal.PK, terminal.Complete, terminal.Progress, terminal.Total, terminal.Output != nil && *terminal.Output != "", reachedTerminal)
+		a.False(reachedTerminal, "pinned InvenTree 1.5.1/API 530 report generation is expected to remain non-terminal within the bounded characterization")
+		a.False(terminal.Complete)
+		a.Nil(terminal.Output)
 		if reachedTerminal && terminal.Output != nil && *terminal.Output != "" {
 			report, err := fixture.client.DownloadDataOutput(ctx, *terminal.Output, 10<<20)
 			r.NoError(err)
@@ -2679,6 +2682,7 @@ func TestClientMethodsAgainstInvenTree(t *testing.T) {
 		if err != nil {
 			var apiErr *inventree.APIError
 			if errors.As(err, &apiErr) {
+				a.Equal(http.StatusForbidden, apiErr.StatusCode)
 				t.Logf("non-staff stocktake generation characterization: rejected with HTTP %d", apiErr.StatusCode)
 			} else {
 				t.Logf("non-staff stocktake generation characterization: rejected with %v", err)

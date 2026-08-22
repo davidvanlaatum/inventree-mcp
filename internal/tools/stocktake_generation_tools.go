@@ -19,6 +19,7 @@ const (
 	stocktakeGenerationDefaultWait = 10 * time.Second
 	stocktakeGenerationInterval    = 500 * time.Millisecond
 	stocktakeGenerationRetryAfter  = 1
+	stocktakeTaskLifetime          = 24 * time.Hour
 )
 
 type StocktakeGenerationClient interface {
@@ -89,6 +90,55 @@ type stocktakePlanEntry struct {
 	expiresAt time.Time
 }
 
+type stocktakeTaskStore struct {
+	mu        sync.Mutex
+	entries   map[int]stocktakeTaskEntry
+	now       func() time.Time
+	principal func(context.Context) string
+}
+
+type stocktakeTaskEntry struct {
+	principal      string
+	reportRequired bool
+	expiresAt      time.Time
+}
+
+func newStocktakeTaskStore(now func() time.Time) *stocktakeTaskStore {
+	return &stocktakeTaskStore{entries: map[int]stocktakeTaskEntry{}, now: now, principal: stockPlanPrincipal}
+}
+
+func (s *stocktakeTaskStore) bind(ctx context.Context, taskID int, reportRequired bool) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	now := s.now()
+	for id, entry := range s.entries {
+		if !now.Before(entry.expiresAt) {
+			delete(s.entries, id)
+		}
+	}
+	if existing, ok := s.entries[taskID]; ok {
+		if existing.principal != s.principal(ctx) {
+			return errors.New("stocktake task handle is already bound to another principal")
+		}
+		return errors.New("InvenTree reused an existing stocktake task ID")
+	}
+	s.entries[taskID] = stocktakeTaskEntry{principal: s.principal(ctx), reportRequired: reportRequired, expiresAt: now.Add(stocktakeTaskLifetime)}
+	return nil
+}
+
+func (s *stocktakeTaskStore) lookup(ctx context.Context, taskID int) (stocktakeTaskEntry, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	entry, ok := s.entries[taskID]
+	if !ok || !s.now().Before(entry.expiresAt) || entry.principal != s.principal(ctx) {
+		if ok && !s.now().Before(entry.expiresAt) {
+			delete(s.entries, taskID)
+		}
+		return stocktakeTaskEntry{}, false
+	}
+	return entry, true
+}
+
 func newStocktakePlanStore(now func() time.Time, token func() (string, error)) *stocktakePlanStore {
 	return &stocktakePlanStore{entries: map[string]stocktakePlanEntry{}, now: now, token: token, maxEntries: stockPlanMaxEntries, maxEntriesPerPrincipal: stockPlanMaxEntriesPerPrincipal}
 }
@@ -151,8 +201,11 @@ func registerStocktakeGenerationTool(server *mcp.Server, deps Dependencies) {
 	if deps.stocktakePlanStore == nil {
 		deps.stocktakePlanStore = newStocktakePlanStore(time.Now, randomStockPlanToken)
 	}
+	if deps.stocktakeTaskStore == nil {
+		deps.stocktakeTaskStore = newStocktakeTaskStore(time.Now)
+	}
 	addWriteTool(server, deps, GenerateStocktakeToolName, "Generate stocktake", "Previews or confirms one bounded asynchronous stocktake generation and returns its DataOutput task handle without waiting for completion.", generateStocktake(deps))
-	addWriteTool(server, deps, PollStocktakeGenerationToolName, "Poll stocktake generation", "Polls an existing stocktake DataOutput task for a bounded interval and returns pending, complete, or failed status without starting new work.", pollStocktakeGeneration(deps))
+	addReadOnlyTool(server, deps, PollStocktakeGenerationToolName, "Poll stocktake generation", "Polls a task handle issued by this workflow for a bounded interval and returns pending, complete, or failed status without starting new work.", pollStocktakeGeneration(deps))
 }
 
 func generateStocktake(deps Dependencies) mcp.ToolHandlerFor[GenerateStocktakeInput, StocktakeGenerationOutput] {
@@ -185,10 +238,13 @@ func generateStocktake(deps Dependencies) mcp.ToolHandlerFor[GenerateStocktakeIn
 			}
 			queued, err := client.GeneratePartStocktake(ctx, request)
 			if err != nil {
-				return nil, StocktakeGenerationOutput{}, err
+				return TextResult(StatusPartialFailure), StocktakeGenerationOutput{Status: StatusPartialFailure, RecoveryPlan: "The enqueue result is ambiguous. Do not retry or start a new generation yet; inspect InvenTree's task queue or stocktake history, and only prepare a fresh dry-run after proving that no task was accepted."}, nil
 			}
 			if queued.Output == nil || queued.Output.PK <= 0 {
 				return TextResult(StatusPartialFailure), StocktakeGenerationOutput{Status: StatusPartialFailure, RecoveryPlan: "Generation was accepted without a usable DataOutput ID; inspect InvenTree's stocktake history and task queue before retrying."}, nil
+			}
+			if err := deps.stocktakeTaskStore.bind(ctx, queued.Output.PK, plan.GenerateReport); err != nil {
+				return TextResult(StatusPartialFailure), StocktakeGenerationOutput{Status: StatusPartialFailure, RecoveryPlan: "InvenTree returned a task ID that cannot be safely bound to this principal; inspect the task queue before retrying."}, nil
 			}
 			projected := stocktakeTaskOutput(*queued.Output)
 			return TextResult(StatusPending), StocktakeGenerationOutput{Status: StatusPending, Plan: &plan, Task: &projected, RetryAfterSeconds: stocktakeGenerationRetryAfter}, nil
@@ -201,6 +257,10 @@ func pollStocktakeGeneration(deps Dependencies) mcp.ToolHandlerFor[PollStocktake
 			if input.TaskID <= 0 {
 				clarification := NewClarification("Which stocktake generation task should be polled?", "task_id", "task_id must be positive", "task_id", true, nil, map[string]any{})
 				return TextResult(StatusClarificationRequired), StocktakeGenerationOutput{Status: StatusClarificationRequired, Clarification: &clarification}, nil
+			}
+			taskBinding, ok := deps.stocktakeTaskStore.lookup(ctx, input.TaskID)
+			if !ok {
+				return TextResult(StatusPartialFailure), StocktakeGenerationOutput{Status: StatusPartialFailure, RecoveryPlan: "This task handle is unknown, expired, or belongs to another principal; use a task_id returned by generate_stocktake and do not guess or reuse another task ID."}, nil
 			}
 			wait := stocktakeGenerationDefaultWait
 			if input.WaitSeconds > 0 {
@@ -219,6 +279,9 @@ func pollStocktakeGeneration(deps Dependencies) mcp.ToolHandlerFor[PollStocktake
 			}
 			if hasDataOutputErrors(task.Errors) {
 				return TextResult(StatusPartialFailure), StocktakeGenerationOutput{Status: StatusPartialFailure, Task: &projected, RecoveryPlan: "InvenTree reported generation errors; inspect this task and stocktake history before starting any new generation."}, nil
+			}
+			if taskBinding.reportRequired && (task.Output == nil || strings.TrimSpace(*task.Output) == "") {
+				return TextResult(StatusPartialFailure), StocktakeGenerationOutput{Status: StatusPartialFailure, Task: &projected, RecoveryPlan: "Generation completed without the requested report artifact; continue polling the same task_id or inspect InvenTree's worker/report configuration before starting any new generation."}, nil
 			}
 			output := StocktakeGenerationOutput{Status: StatusOK, Task: &projected}
 			if task.Output != nil && *task.Output != "" {
@@ -253,7 +316,7 @@ func hasDataOutputErrors(value any) bool {
 }
 
 func stocktakeTaskOutput(task inventree.DataOutput) StocktakeTaskOutput {
-	projected := StocktakeTaskOutput{PK: task.PK, Created: task.Created, Total: task.Total, Progress: task.Progress, Complete: task.Complete, OutputAvailable: task.Output != nil, HasErrors: task.Errors != nil}
+	projected := StocktakeTaskOutput{PK: task.PK, Created: task.Created, Total: task.Total, Progress: task.Progress, Complete: task.Complete, OutputAvailable: task.Output != nil && strings.TrimSpace(*task.Output) != "", HasErrors: hasDataOutputErrors(task.Errors)}
 	if task.OutputType != nil {
 		projected.OutputType = *task.OutputType
 	}

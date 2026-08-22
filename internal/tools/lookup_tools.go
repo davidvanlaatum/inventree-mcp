@@ -212,6 +212,7 @@ var lookupToolNames = []string{
 	GetPartNextSerialToolName,
 	ListPartStocktakesToolName,
 	GetPartStocktakeToolName,
+	PollStocktakeGenerationToolName,
 	ListAttachmentsToolName,
 	GetAttachmentMetadataToolName,
 	DownloadAttachmentToolName,
@@ -316,7 +317,6 @@ var writeToolNames = []string{
 	AssignAddressToolName,
 	AssignProjectCodeToolName,
 	GenerateStocktakeToolName,
-	PollStocktakeGenerationToolName,
 }
 
 var ToolAuthorizations = map[string]ToolAuthorization{
@@ -358,7 +358,7 @@ func init() {
 		case CreateStockItemToolName, InitialStockWorkflowToolName:
 			scopes = []string{ScopeInventreeWrite, ScopeInventreeOperational}
 			mutationClass = "operational"
-		case AdjustStockQuantityToolName, SetStockStatusToolName, StocktakeAdjustmentToolName, GenerateStocktakeToolName, PollStocktakeGenerationToolName, TransferStockItemToolName, RestructureStockLocationToolName, UpdateStockItemMetadataToolName, AssignStockSerialToolName, InstallStockItemToolName, UpdateParameterTemplateUniquenessToolName, HoldPurchaseOrderToolName, ResumePurchaseOrderToolName:
+		case AdjustStockQuantityToolName, SetStockStatusToolName, StocktakeAdjustmentToolName, GenerateStocktakeToolName, TransferStockItemToolName, RestructureStockLocationToolName, UpdateStockItemMetadataToolName, AssignStockSerialToolName, InstallStockItemToolName, UpdateParameterTemplateUniquenessToolName, HoldPurchaseOrderToolName, ResumePurchaseOrderToolName:
 			scopes = []string{ScopeInventreeRead, ScopeInventreeWrite, ScopeInventreeOperational}
 			mutationClass = "operational"
 		case SetStockDeleteOnDepleteToolName, DepleteStockItemToolName, UpdatePartFamilyRelationshipsToolName, UpdateStockItemProvenanceToolName, SetStockSerialToolName, UninstallStockItemToolName, CancelPurchaseOrderToolName, DeleteStockLocationToolName:
@@ -399,6 +399,11 @@ func init() {
 			Annotations:     annotations,
 		}
 	}
+	pollAuth := ToolAuthorizations[PollStocktakeGenerationToolName]
+	pollAuth.MutationClass = "read_only"
+	pollAuth.Scopes = []string{ScopeInventreeRead, ScopeInventreeOperational}
+	pollAuth.Annotations = ReadOnlyAnnotations
+	ToolAuthorizations[PollStocktakeGenerationToolName] = pollAuth
 	categoryUpdate := ToolAuthorizations[UpdatePartCategoryToolName]
 	categoryUpdate.Annotations.Idempotent = true
 	ToolAuthorizations[UpdatePartCategoryToolName] = categoryUpdate

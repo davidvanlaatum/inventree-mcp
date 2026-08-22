@@ -133,7 +133,11 @@ func TestToolReferenceDocumentsRegisteredLookupTools(t *testing.T) {
 		auth, ok := ToolAuthorizations[name]
 		r.True(ok, "missing authorization for %s", name)
 		a.Equal("read_only", auth.MutationClass)
-		a.Equal([]string{ScopeInventreeRead}, auth.Scopes)
+		if name == PollStocktakeGenerationToolName {
+			a.Equal([]string{ScopeInventreeRead, ScopeInventreeOperational}, auth.Scopes)
+		} else {
+			a.Equal([]string{ScopeInventreeRead}, auth.Scopes)
+		}
 	}
 }
 

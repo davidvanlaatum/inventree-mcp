@@ -2,6 +2,7 @@ package tools
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -14,9 +15,10 @@ import (
 )
 
 type fakeStocktakeGenerationClient struct {
-	queued     []inventree.PartStocktakeGenerate
-	outputs    []inventree.DataOutput
-	outputCall int
+	queued      []inventree.PartStocktakeGenerate
+	outputs     []inventree.DataOutput
+	outputCall  int
+	generateErr error
 }
 
 func (f *fakeStocktakeGenerationClient) DownloadDataOutput(_ context.Context, outputURL string, _ int64) (inventree.DownloadedDataOutput, error) {
@@ -25,6 +27,9 @@ func (f *fakeStocktakeGenerationClient) DownloadDataOutput(_ context.Context, ou
 
 func (f *fakeStocktakeGenerationClient) GeneratePartStocktake(_ context.Context, request inventree.PartStocktakeGenerate) (inventree.PartStocktakeGenerate, error) {
 	f.queued = append(f.queued, request)
+	if f.generateErr != nil {
+		return inventree.PartStocktakeGenerate{}, f.generateErr
+	}
 	return inventree.PartStocktakeGenerate{Output: &inventree.DataOutput{PK: 90, Complete: false}}, nil
 }
 
@@ -47,6 +52,7 @@ func stocktakeGenerationDeps(fake *fakeStocktakeGenerationClient) Dependencies {
 		stocktakePlanStore: newStocktakePlanStore(time.Now, func() (string, error) {
 			return "stocktake-token", nil
 		}),
+		stocktakeTaskStore: newStocktakeTaskStore(time.Now),
 	}
 }
 
@@ -75,7 +81,7 @@ func TestGenerateStocktakeBindsPlanAndReturnsTaskHandle(t *testing.T) {
 	ctx, _, _ := testhandler.SetupTestHandler(t)
 	client := &fakeStocktakeGenerationClient{outputs: []inventree.DataOutput{
 		{PK: 90, Complete: false, Progress: 0, Total: 2},
-		{PK: 90, Complete: true, Progress: 2, Total: 2},
+		{PK: 90, Complete: true, Progress: 2, Total: 2, Output: dvgoutils.Ptr("https://inventory.example.test/report.pdf")},
 	}}
 	deps := stocktakeGenerationDeps(client)
 	handler := generateStocktake(deps)
@@ -168,6 +174,7 @@ func TestPollStocktakeGenerationReturnsPendingWithoutEnqueueing(t *testing.T) {
 	ctx, _, _ := testhandler.SetupTestHandler(t)
 	client := &fakeStocktakeGenerationClient{outputs: []inventree.DataOutput{{PK: 90, Progress: 3, Total: 10, Complete: false}}}
 	deps := stocktakeGenerationDeps(client)
+	r.NoError(deps.stocktakeTaskStore.bind(ctx, 90, false))
 
 	_, output, err := pollStocktakeGeneration(deps)(ctx, &mcp.CallToolRequest{}, PollStocktakeGenerationInput{TaskID: 90, WaitSeconds: 1})
 	r.NoError(err)
@@ -177,4 +184,49 @@ func TestPollStocktakeGenerationReturnsPendingWithoutEnqueueing(t *testing.T) {
 	a.Equal(10, output.Task.Total)
 	a.Equal(1, output.RetryAfterSeconds)
 	a.Empty(client.queued)
+}
+
+func TestStocktakeTaskStoreBindsPrincipalAndExpires(t *testing.T) {
+	t.Parallel()
+	now := time.Date(2026, time.August, 22, 0, 0, 0, 0, time.UTC)
+	clock := now
+	principal := "operator-a"
+	store := newStocktakeTaskStore(func() time.Time { return clock })
+	store.principal = func(context.Context) string { return principal }
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	require.NoError(t, store.bind(ctx, 90, true))
+	principal = "operator-b"
+	otherCtx, _, _ := testhandler.SetupTestHandler(t)
+	assert.False(t, func() bool { _, ok := store.lookup(otherCtx, 90); return ok }())
+	principal = "operator-a"
+	clock = now.Add(stocktakeTaskLifetime)
+	assert.False(t, func() bool { _, ok := store.lookup(ctx, 90); return ok }())
+}
+
+func TestPollStocktakeGenerationRequiresRequestedReportArtifact(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	client := &fakeStocktakeGenerationClient{outputs: []inventree.DataOutput{{PK: 90, Complete: true}}}
+	deps := stocktakeGenerationDeps(client)
+	require.NoError(t, deps.stocktakeTaskStore.bind(ctx, 90, true))
+	_, output, err := pollStocktakeGeneration(deps)(ctx, &mcp.CallToolRequest{}, PollStocktakeGenerationInput{TaskID: 90})
+	r.NoError(err)
+	r.Equal(StatusPartialFailure, output.Status)
+	r.Contains(output.RecoveryPlan, "report artifact")
+}
+
+func TestGenerateStocktakeReturnsAmbiguousRecoveryAfterEnqueueError(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	client := &fakeStocktakeGenerationClient{generateErr: errors.New("transport failed")}
+	deps := stocktakeGenerationDeps(client)
+	handler := generateStocktake(deps)
+	_, preview, err := handler(ctx, &mcp.CallToolRequest{}, GenerateStocktakeInput{DryRun: true, PartID: 4, GenerateEntry: true})
+	r.NoError(err)
+	_, output, err := handler(ctx, &mcp.CallToolRequest{}, GenerateStocktakeInput{Confirm: true, PlanHash: preview.PlanHash, PartID: 4, GenerateEntry: true})
+	r.NoError(err)
+	r.Equal(StatusPartialFailure, output.Status)
+	r.Contains(output.RecoveryPlan, "ambiguous")
 }

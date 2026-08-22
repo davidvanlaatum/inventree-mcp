@@ -41,6 +41,7 @@ type Dependencies struct {
 	purchaseOrderLifecyclePlanStore      *purchaseOrderLifecyclePlanStore
 	categoryDeletePlanStore              *categoryDeletePlanStore
 	stocktakePlanStore                   *stocktakePlanStore
+	stocktakeTaskStore                   *stocktakeTaskStore
 }
 
 func (d Dependencies) Client(ctx context.Context) (any, error) {

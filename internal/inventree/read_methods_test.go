@@ -704,6 +704,51 @@ func TestStocktakeGenerationAndDataOutputMethods(t *testing.T) {
 	a.Equal("https://inventory.example.test/media/report.pdf", download.SourceURL)
 }
 
+func TestDownloadDataOutputRejectsUnsafeAndUnboundedResponses(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name        string
+		url         string
+		maxBytes    int64
+		status      int
+		body        string
+		wantRequest bool
+	}{
+		{name: "external host", url: "https://other.example.test/report.pdf"},
+		{name: "userinfo", url: "https://user:secret@inventory.example.test/report.pdf"},
+		{name: "redirect", url: "https://inventory.example.test/report.pdf", status: http.StatusFound, wantRequest: true},
+		{name: "non success", url: "https://inventory.example.test/report.pdf", status: http.StatusInternalServerError, wantRequest: true},
+		{name: "oversized", url: "https://inventory.example.test/report.pdf", status: http.StatusOK, body: "report", maxBytes: 3, wantRequest: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			ctx, _, _ := testhandler.SetupTestHandler(t)
+			called := false
+			client, err := NewClient(Config{
+				BaseURL:    "https://inventory.example.test",
+				Credential: Credential{Scheme: AuthSchemeToken, Token: "secret"},
+				HTTPClient: &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+					called = true
+					status := tt.status
+					if status == 0 {
+						status = http.StatusOK
+					}
+					return &http.Response{StatusCode: status, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(tt.body)), Request: req}, nil
+				})},
+			})
+			require.NoError(t, err)
+			maxBytes := tt.maxBytes
+			if maxBytes == 0 {
+				maxBytes = 32
+			}
+			_, err = client.DownloadDataOutput(ctx, tt.url, maxBytes)
+			require.Error(t, err)
+			assert.Equal(t, tt.wantRequest, called)
+		})
+	}
+}
+
 func TestCreateCurrentUserTokenRejectsInvalidResponses(t *testing.T) {
 	t.Parallel()
 	ctx, _, _ := testhandler.SetupTestHandler(t)
