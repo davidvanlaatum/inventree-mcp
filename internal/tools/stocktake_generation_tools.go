@@ -45,7 +45,7 @@ type GenerateStocktakeInput struct {
 
 type PollStocktakeGenerationInput struct {
 	TaskID      int `json:"task_id" jsonschema:"Existing InvenTree DataOutput primary key returned by generate_stocktake."`
-	WaitSeconds int `json:"wait_seconds,omitempty" jsonschema:"Maximum seconds to poll this existing task during this call; defaults to 10 and is capped at 30."`
+	WaitSeconds int `json:"wait_seconds,omitempty" jsonschema:"Best-effort maximum seconds to poll this existing task during this call; defaults to 10 and is capped at 30 when the client transport honors context cancellation."`
 }
 
 type StocktakeGenerationPlan struct {
@@ -279,7 +279,7 @@ func registerStocktakePollingTool(server *mcp.Server, deps Dependencies) {
 	if deps.stocktakeTaskStore == nil {
 		deps.stocktakeTaskStore = newStocktakeTaskStore(time.Now)
 	}
-	addReadOnlyTool(server, deps, PollStocktakeGenerationToolName, "Poll stocktake generation", "Polls a task handle issued by this workflow for a bounded interval and returns pending, complete, or failed status without starting new work.", pollStocktakeGeneration(deps))
+	addReadOnlyTool(server, deps, PollStocktakeGenerationToolName, "Poll stocktake generation", "Best-effort bounded polling of a task handle issued by this workflow; returns pending, complete, or failed status without starting new work when the client transport honors context cancellation.", pollStocktakeGeneration(deps))
 }
 
 func generateStocktake(deps Dependencies) mcp.ToolHandlerFor[GenerateStocktakeInput, StocktakeGenerationOutput] {
