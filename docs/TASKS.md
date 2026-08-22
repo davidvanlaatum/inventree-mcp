@@ -155,7 +155,7 @@ Before assigning a new story ID, inspect `git worktree list --porcelain`, search
 | [F-S71](#f-s71-inventree-instance-info-tool) | Add a read-only InvenTree instance-info tool, gated on an operator-approved curated settings allowlist. | Done |
 | [F-S72](#f-s72-porcelain-style-version-cli-format-and-self-update-rewrite) | Replace the CLI `version` output with a versioned porcelain-style format and move self-update onto it, accepting one documented one-time breaking migration. | Done |
 | [F-S73](#f-s73-remove-gremlins-mutation-testing-ci-job) | Remove the Gremlins mutation-testing job from CI; keep `.gremlins.yaml` for optional manual runs. | Done |
-| [F-S74](#f-s74-guarded-stocktake-generation-and-reporting) | Implement guarded stocktake generation and reporting after F-S60 discovery resolves asynchronous task and report behavior. | Active |
+| [F-S74](#f-s74-guarded-stocktake-generation-and-reporting) | Implement guarded stocktake generation and reporting after F-S60 discovery resolves asynchronous task and report behavior. | Done |
 
 ## Milestone 0: Repository And Planning
 
@@ -2824,7 +2824,7 @@ Tasks:
 
 ### F-S74: Guarded Stocktake Generation And Reporting
 
-- Status: `Active`
+- Status: `Done`
 - Issue: [#193](https://github.com/davidvanlaatum/inventree-mcp/issues/193)
 - Depends on: F-S60
 - Progress: implementation started on `codex/f-s74-guarded-stocktake-generation-reporting` from local `origin/main` at `c4f4b33` (the F-S60 merge commit). Issue #193 is synchronized and assigned while implementation remains active.
@@ -2846,3 +2846,4 @@ Tasks:
 
 - Validation: focused F-S74 unit/client tests, `go vet ./...`, `git diff --check`, and the worker-backed Docker characterization against pinned InvenTree 1.5.1 passed. The live characterization verified distinct same-day task IDs, explicit non-staff HTTP 403 rejection, and a combined entry/report task remaining nonterminal at `0/1` with no artifact after the bounded poll.
 - Review: Full Senior Go Developer, Senior QA / Test Architect, Senior Product Manager, and Senior Infosec Reviewer panel completed with actionable findings fixed across reruns. The final rerun found no remaining findings; the documented residual is that the client transport must honor context cancellation for the 30-second request bound.
+- Completion: PR #195 was squash-merged into `main` at `63d827b` after all required checks passed. Issue #193 is complete and ready to close after this task-index status synchronization.
