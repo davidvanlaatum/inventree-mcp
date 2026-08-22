@@ -15,11 +15,13 @@ import (
 )
 
 const (
-	stocktakeGenerationTimeout     = 30 * time.Second
-	stocktakeGenerationDefaultWait = 10 * time.Second
-	stocktakeGenerationInterval    = 500 * time.Millisecond
-	stocktakeGenerationRetryAfter  = 1
-	stocktakeTaskLifetime          = 24 * time.Hour
+	stocktakeGenerationTimeout          = 30 * time.Second
+	stocktakeGenerationDefaultWait      = 10 * time.Second
+	stocktakeGenerationInterval         = 500 * time.Millisecond
+	stocktakeGenerationRetryAfter       = 1
+	stocktakeTaskLifetime               = 24 * time.Hour
+	stocktakeTaskMaxEntries             = 4096
+	stocktakeTaskMaxEntriesPerPrincipal = 64
 )
 
 type StocktakeGenerationClient interface {
@@ -91,10 +93,13 @@ type stocktakePlanEntry struct {
 }
 
 type stocktakeTaskStore struct {
-	mu        sync.Mutex
-	entries   map[int]stocktakeTaskEntry
-	now       func() time.Time
-	principal func(context.Context) string
+	mu                     sync.Mutex
+	entries                map[int]stocktakeTaskEntry
+	now                    func() time.Time
+	principal              func(context.Context) string
+	reservations           map[string]int
+	maxEntries             int
+	maxEntriesPerPrincipal int
 }
 
 type stocktakeTaskEntry struct {
@@ -104,18 +109,63 @@ type stocktakeTaskEntry struct {
 }
 
 func newStocktakeTaskStore(now func() time.Time) *stocktakeTaskStore {
-	return &stocktakeTaskStore{entries: map[int]stocktakeTaskEntry{}, now: now, principal: stockPlanPrincipal}
+	return &stocktakeTaskStore{entries: map[int]stocktakeTaskEntry{}, now: now, principal: stockPlanPrincipal, reservations: map[string]int{}, maxEntries: stocktakeTaskMaxEntries, maxEntriesPerPrincipal: stocktakeTaskMaxEntriesPerPrincipal}
+}
+
+func (s *stocktakeTaskStore) removeExpired(now time.Time) {
+	for id, entry := range s.entries {
+		if !now.Before(entry.expiresAt) {
+			delete(s.entries, id)
+		}
+	}
+}
+
+func (s *stocktakeTaskStore) principalCount(principal string) int {
+	count := 0
+	for _, entry := range s.entries {
+		if entry.principal == principal {
+			count++
+		}
+	}
+	return count
+}
+
+func (s *stocktakeTaskStore) reservedTotal() int {
+	total := 0
+	for _, count := range s.reservations {
+		total += count
+	}
+	return total
+}
+
+func (s *stocktakeTaskStore) reserve(ctx context.Context) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.removeExpired(s.now())
+	principal := s.principal(ctx)
+	if len(s.entries)+s.reservedTotal() >= s.maxEntries || s.principalCount(principal)+s.reservations[principal] >= s.maxEntriesPerPrincipal {
+		return errors.New("stocktake task capacity reached; wait for existing handles to expire before starting another generation")
+	}
+	s.reservations[principal]++
+	return nil
+}
+
+func (s *stocktakeTaskStore) release(ctx context.Context) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	principal := s.principal(ctx)
+	if s.reservations[principal] > 1 {
+		s.reservations[principal]--
+	} else {
+		delete(s.reservations, principal)
+	}
 }
 
 func (s *stocktakeTaskStore) bind(ctx context.Context, taskID int, reportRequired bool) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	now := s.now()
-	for id, entry := range s.entries {
-		if !now.Before(entry.expiresAt) {
-			delete(s.entries, id)
-		}
-	}
+	s.removeExpired(now)
 	if existing, ok := s.entries[taskID]; ok {
 		if existing.principal != s.principal(ctx) {
 			return errors.New("stocktake task handle is already bound to another principal")
@@ -123,7 +173,16 @@ func (s *stocktakeTaskStore) bind(ctx context.Context, taskID int, reportRequire
 		return errors.New("InvenTree reused an existing stocktake task ID")
 	}
 	s.entries[taskID] = stocktakeTaskEntry{principal: s.principal(ctx), reportRequired: reportRequired, expiresAt: now.Add(stocktakeTaskLifetime)}
+	s.releaseReservationLocked(s.principal(ctx))
 	return nil
+}
+
+func (s *stocktakeTaskStore) releaseReservationLocked(principal string) {
+	if s.reservations[principal] > 1 {
+		s.reservations[principal]--
+	} else {
+		delete(s.reservations, principal)
+	}
 }
 
 func (s *stocktakeTaskStore) lookup(ctx context.Context, taskID int) (stocktakeTaskEntry, bool) {
@@ -205,6 +264,12 @@ func registerStocktakeGenerationTool(server *mcp.Server, deps Dependencies) {
 		deps.stocktakeTaskStore = newStocktakeTaskStore(time.Now)
 	}
 	addWriteTool(server, deps, GenerateStocktakeToolName, "Generate stocktake", "Previews or confirms one bounded asynchronous stocktake generation and returns its DataOutput task handle without waiting for completion.", generateStocktake(deps))
+}
+
+func registerStocktakePollingTool(server *mcp.Server, deps Dependencies) {
+	if deps.stocktakeTaskStore == nil {
+		deps.stocktakeTaskStore = newStocktakeTaskStore(time.Now)
+	}
 	addReadOnlyTool(server, deps, PollStocktakeGenerationToolName, "Poll stocktake generation", "Polls a task handle issued by this workflow for a bounded interval and returns pending, complete, or failed status without starting new work.", pollStocktakeGeneration(deps))
 }
 
@@ -236,14 +301,20 @@ func generateStocktake(deps Dependencies) mcp.ToolHandlerFor[GenerateStocktakeIn
 			case "location":
 				request.Location = &plan.SelectorID
 			}
+			if err := deps.stocktakeTaskStore.reserve(ctx); err != nil {
+				return TextResult(StatusPartialFailure), StocktakeGenerationOutput{Status: StatusPartialFailure, RecoveryPlan: err.Error()}, nil
+			}
 			queued, err := client.GeneratePartStocktake(ctx, request)
 			if err != nil {
+				deps.stocktakeTaskStore.release(ctx)
 				return TextResult(StatusPartialFailure), StocktakeGenerationOutput{Status: StatusPartialFailure, RecoveryPlan: "The enqueue result is ambiguous. Do not retry or start a new generation yet; inspect InvenTree's task queue or stocktake history, and only prepare a fresh dry-run after proving that no task was accepted."}, nil
 			}
 			if queued.Output == nil || queued.Output.PK <= 0 {
+				deps.stocktakeTaskStore.release(ctx)
 				return TextResult(StatusPartialFailure), StocktakeGenerationOutput{Status: StatusPartialFailure, RecoveryPlan: "Generation was accepted without a usable DataOutput ID; inspect InvenTree's stocktake history and task queue before retrying."}, nil
 			}
 			if err := deps.stocktakeTaskStore.bind(ctx, queued.Output.PK, plan.GenerateReport); err != nil {
+				deps.stocktakeTaskStore.release(ctx)
 				return TextResult(StatusPartialFailure), StocktakeGenerationOutput{Status: StatusPartialFailure, RecoveryPlan: "InvenTree returned a task ID that cannot be safely bound to this principal; inspect the task queue before retrying."}, nil
 			}
 			projected := stocktakeTaskOutput(*queued.Output)

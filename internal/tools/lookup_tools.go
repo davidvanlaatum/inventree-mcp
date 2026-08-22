@@ -648,6 +648,7 @@ func registerLookupTools(server *mcp.Server, deps Dependencies) {
 	addReadOnlyTool(server, deps, SearchStockSerialsToolName, "Search stock serials", "Searches existing stock items for one part by serial number, serial range, or serialized state.", searchStockSerials(deps))
 	addReadOnlyTool(server, deps, GetPartNextSerialToolName, "Get part next serial", "Retrieves the latest assigned and next available serial number for one trackable part.", getPartNextSerial(deps))
 	registerStockTrackingLookupTools(server, deps)
+	registerStocktakePollingTool(server, deps)
 	addReadOnlyTool(server, deps, ListAttachmentsToolName, "List attachments", "Lists attachment metadata for an in-scope InvenTree object.", listAttachments(deps))
 	addReadOnlyTool(server, deps, GetAttachmentMetadataToolName, "Get attachment metadata", "Retrieves one attachment metadata record by ID.", getAttachmentMetadata(deps))
 	addReadOnlyTool(server, deps, DownloadAttachmentToolName, "Download attachment", "Downloads bounded content for one file attachment.", downloadAttachment(deps))

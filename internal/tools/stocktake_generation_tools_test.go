@@ -203,6 +203,26 @@ func TestStocktakeTaskStoreBindsPrincipalAndExpires(t *testing.T) {
 	assert.False(t, func() bool { _, ok := store.lookup(ctx, 90); return ok }())
 }
 
+func TestStocktakeTaskStoreBoundsReservations(t *testing.T) {
+	t.Parallel()
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	store := newStocktakeTaskStore(time.Now)
+	store.maxEntries = 1
+	store.maxEntriesPerPrincipal = 1
+	require.NoError(t, store.reserve(ctx))
+	require.Error(t, store.reserve(ctx))
+	store.release(ctx)
+	require.NoError(t, store.reserve(ctx))
+}
+
+func TestStocktakePollingIsAvailableWithoutWriteTools(t *testing.T) {
+	t.Parallel()
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	listed := listedPolicyTools(t, ctx, Dependencies{})
+	assert.Contains(t, listed, PollStocktakeGenerationToolName)
+	assert.NotContains(t, listed, GenerateStocktakeToolName)
+}
+
 func TestPollStocktakeGenerationRequiresRequestedReportArtifact(t *testing.T) {
 	t.Parallel()
 	r := require.New(t)

@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"log/slog"
+	"time"
 
 	"github.com/davidvanlaatum/dvgoutils/logging"
 	"github.com/davidvanlaatum/inventree-mcp/internal/buildinfo"
@@ -21,6 +22,12 @@ type HealthVersionOutput struct {
 }
 
 func Register(server *mcp.Server, deps Dependencies) {
+	if deps.stocktakePlanStore == nil {
+		deps.stocktakePlanStore = newStocktakePlanStore(time.Now, randomStockPlanToken)
+	}
+	if deps.stocktakeTaskStore == nil {
+		deps.stocktakeTaskStore = newStocktakeTaskStore(time.Now)
+	}
 	registerHealthVersion(server, deps)
 	registerLocalUploadPolicyTool(server, deps)
 	registerPrompts(server)
