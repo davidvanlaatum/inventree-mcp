@@ -169,6 +169,9 @@ func (s *stocktakeTaskStore) bind(ctx context.Context, taskID int, reportRequire
 	now := s.now()
 	s.removeExpired(now)
 	principal := s.principal(ctx)
+	if s.reservations[principal] <= 0 {
+		return errors.New("stocktake task bind requires an active reservation")
+	}
 	if len(s.entries) >= s.maxEntries || s.principalCount(principal) >= s.maxEntriesPerPrincipal {
 		return errors.New("stocktake task capacity reached; wait for existing handles to expire before starting another generation")
 	}
@@ -354,7 +357,7 @@ func pollStocktakeGeneration(deps Dependencies) mcp.ToolHandlerFor[PollStocktake
 				return TextResult(StatusPending), StocktakeGenerationOutput{Status: StatusPending, Task: &projected, RetryAfterSeconds: stocktakeGenerationRetryAfter}, nil
 			}
 			if err != nil {
-				return TextResult(StatusPartialFailure), StocktakeGenerationOutput{Status: StatusPartialFailure, Task: &projected, RecoveryPlan: "The existing generation task could not be read safely; retry polling the same task_id before starting any new generation."}, nil
+				return TextResult(StatusPartialFailure), StocktakeGenerationOutput{Status: StatusPartialFailure, Task: &projected, RecoveryPlan: "The existing generation task could not be read. Retry the same task_id only for a transient transport, server, or deadline failure; reconcile the task and do not retry or generate anew for a 4xx, identity, expired, or foreign-handle failure."}, nil
 			}
 			if hasDataOutputErrors(task.Errors) {
 				return TextResult(StatusPartialFailure), StocktakeGenerationOutput{Status: StatusPartialFailure, Task: &projected, RecoveryPlan: "InvenTree reported generation errors; inspect this task and stocktake history before starting any new generation."}, nil
@@ -366,7 +369,7 @@ func pollStocktakeGeneration(deps Dependencies) mcp.ToolHandlerFor[PollStocktake
 			if task.Output != nil && *task.Output != "" {
 				report, err := client.DownloadDataOutput(pollCtx, *task.Output, defaultDownloadMaxBytes)
 				if err != nil {
-					return TextResult(StatusPartialFailure), StocktakeGenerationOutput{Status: StatusPartialFailure, Task: &projected, RecoveryPlan: "Generation completed but the same-instance report artifact could not be safely downloaded; retry the same task_id if the retrieval failure may be transient, and reconcile before starting any new generation."}, nil
+					return TextResult(StatusPartialFailure), StocktakeGenerationOutput{Status: StatusPartialFailure, Task: &projected, RecoveryPlan: "Generation completed but the same-instance report artifact could not be safely downloaded. Retry the same task_id only for a transient transport, server, or deadline failure; reconcile and do not retry or generate anew for an unsafe, invalid, unauthorized, or missing artifact."}, nil
 				}
 				contentResult, reportOutput, err := downloadOutput(task.PK, "stocktake-report", "original", report.ContentType, report.SourceURL, report.Content)
 				if err != nil {
@@ -444,6 +447,7 @@ func waitForStocktakeOutput(ctx context.Context, client StocktakeGenerationClien
 	for {
 		requestCtx, cancel := context.WithDeadline(ctx, deadlineAt)
 		task, err := client.GetDataOutput(requestCtx, id)
+		requestErr := requestCtx.Err()
 		cancel()
 		if err != nil {
 			if ctx.Err() != nil {
@@ -452,7 +456,7 @@ func waitForStocktakeOutput(ctx context.Context, client StocktakeGenerationClien
 				}
 				return latest, ctx.Err()
 			}
-			if requestCtx.Err() != nil {
+			if errors.Is(requestErr, context.DeadlineExceeded) {
 				return latest, errStocktakeGenerationTimeout
 			}
 			return latest, err

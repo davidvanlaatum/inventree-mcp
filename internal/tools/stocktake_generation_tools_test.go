@@ -19,6 +19,7 @@ type fakeStocktakeGenerationClient struct {
 	outputs         []inventree.DataOutput
 	outputCall      int
 	generateErr     error
+	outputErr       error
 	generatedOutput *inventree.DataOutput
 	blockOutput     bool
 }
@@ -39,6 +40,9 @@ func (f *fakeStocktakeGenerationClient) GeneratePartStocktake(_ context.Context,
 }
 
 func (f *fakeStocktakeGenerationClient) GetDataOutput(ctx context.Context, id int) (inventree.DataOutput, error) {
+	if f.outputErr != nil {
+		return inventree.DataOutput{}, f.outputErr
+	}
 	if f.blockOutput {
 		<-ctx.Done()
 		return inventree.DataOutput{}, ctx.Err()
@@ -183,6 +187,7 @@ func TestPollStocktakeGenerationReturnsPendingWithoutEnqueueing(t *testing.T) {
 	ctx, _, _ := testhandler.SetupTestHandler(t)
 	client := &fakeStocktakeGenerationClient{outputs: []inventree.DataOutput{{PK: 90, Progress: 3, Total: 10, Complete: false}}}
 	deps := stocktakeGenerationDeps(client)
+	r.NoError(deps.stocktakeTaskStore.reserve(ctx))
 	r.NoError(deps.stocktakeTaskStore.bind(ctx, 90, false))
 
 	_, output, err := pollStocktakeGeneration(deps)(ctx, &mcp.CallToolRequest{}, PollStocktakeGenerationInput{TaskID: 90, WaitSeconds: 1})
@@ -203,6 +208,7 @@ func TestStocktakeTaskStoreBindsPrincipalAndExpires(t *testing.T) {
 	store := newStocktakeTaskStore(func() time.Time { return clock })
 	store.principal = func(context.Context) string { return principal }
 	ctx, _, _ := testhandler.SetupTestHandler(t)
+	require.NoError(t, store.reserve(ctx))
 	require.NoError(t, store.bind(ctx, 90, true))
 	principal = "operator-b"
 	otherCtx, _, _ := testhandler.SetupTestHandler(t)
@@ -260,6 +266,14 @@ func TestWaitForStocktakeOutputBoundsAnInFlightRequest(t *testing.T) {
 	assert.Less(t, time.Since(started), time.Second)
 }
 
+func TestWaitForStocktakeOutputPreservesClientErrors(t *testing.T) {
+	t.Parallel()
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	want := errors.New("server unavailable")
+	_, err := waitForStocktakeOutput(ctx, &fakeStocktakeGenerationClient{outputErr: want}, 90, time.Second)
+	require.ErrorIs(t, err, want)
+}
+
 func TestStocktakePollingIsAvailableWithoutWriteTools(t *testing.T) {
 	t.Parallel()
 	ctx, _, _ := testhandler.SetupTestHandler(t)
@@ -274,6 +288,7 @@ func TestPollStocktakeGenerationRequiresRequestedReportArtifact(t *testing.T) {
 	ctx, _, _ := testhandler.SetupTestHandler(t)
 	client := &fakeStocktakeGenerationClient{outputs: []inventree.DataOutput{{PK: 90, Complete: true}}}
 	deps := stocktakeGenerationDeps(client)
+	require.NoError(t, deps.stocktakeTaskStore.reserve(ctx))
 	require.NoError(t, deps.stocktakeTaskStore.bind(ctx, 90, true))
 	_, output, err := pollStocktakeGeneration(deps)(ctx, &mcp.CallToolRequest{}, PollStocktakeGenerationInput{TaskID: 90})
 	r.NoError(err)
