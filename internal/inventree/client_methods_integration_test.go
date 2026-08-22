@@ -20,6 +20,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/davidvanlaatum/dvgoutils"
 	"github.com/davidvanlaatum/dvgoutils/logging/testhandler"
@@ -2607,6 +2608,14 @@ func TestClientMethodsAgainstInvenTree(t *testing.T) {
 		output, err := fixture.client.GetDataOutput(ctx, generation.Output.PK)
 		r.NoError(err)
 		a.Equal(generation.Output.PK, output.PK)
+		terminal, reachedTerminal := pollDataOutputForStocktakeCharacterization(ctx, fixture.client, generation.Output.PK, 30*time.Second)
+		t.Logf("combined entry/report terminal characterization: task_id=%d complete=%t progress=%d total=%d output_available=%t reached_terminal=%t", terminal.PK, terminal.Complete, terminal.Progress, terminal.Total, terminal.Output != nil && *terminal.Output != "", reachedTerminal)
+		if reachedTerminal && terminal.Output != nil && *terminal.Output != "" {
+			report, err := fixture.client.DownloadDataOutput(ctx, *terminal.Output, 10<<20)
+			r.NoError(err)
+			r.NotEmpty(report.Content)
+			t.Logf("combined entry/report artifact characterization: content_type=%s bytes=%d", report.ContentType, len(report.Content))
+		}
 
 		// F-S74 characterization: the pinned endpoint does not advertise a
 		// staff-only security scope. Two identical same-day requests must not be
@@ -2679,6 +2688,23 @@ func TestClientMethodsAgainstInvenTree(t *testing.T) {
 			t.Logf("non-staff stocktake generation characterization: accepted task ID %d", nonStaffGeneration.Output.PK)
 		}
 	})
+}
+
+func pollDataOutputForStocktakeCharacterization(ctx context.Context, client *inventree.Client, id int, timeout time.Duration) (inventree.DataOutput, bool) {
+	deadline := time.Now().Add(timeout)
+	latest := inventree.DataOutput{PK: id}
+	for time.Now().Before(deadline) {
+		current, err := client.GetDataOutput(ctx, id)
+		if err != nil || current.PK != id {
+			return latest, false
+		}
+		latest = current
+		if current.Complete {
+			return current, true
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
+	return latest, false
 }
 
 // instanceInfoAllowlistedGlobalSettingsForTest and instanceInfoAllowlistedUserSettingsForTest
