@@ -66,6 +66,8 @@ const (
 	GetStockTrackingEntryToolName             = "get_stock_tracking_entry"
 	ListPartStocktakesToolName                = "list_part_stocktakes"
 	GetPartStocktakeToolName                  = "get_part_stocktake"
+	GenerateStocktakeToolName                 = "generate_stocktake"
+	PollStocktakeGenerationToolName           = "poll_stocktake_generation"
 	ListAttachmentsToolName                   = "list_attachments"
 	GetAttachmentMetadataToolName             = "get_attachment_metadata"
 	DownloadAttachmentToolName                = "download_attachment"
@@ -210,6 +212,7 @@ var lookupToolNames = []string{
 	GetPartNextSerialToolName,
 	ListPartStocktakesToolName,
 	GetPartStocktakeToolName,
+	PollStocktakeGenerationToolName,
 	ListAttachmentsToolName,
 	GetAttachmentMetadataToolName,
 	DownloadAttachmentToolName,
@@ -313,6 +316,7 @@ var writeToolNames = []string{
 	AssignContactToolName,
 	AssignAddressToolName,
 	AssignProjectCodeToolName,
+	GenerateStocktakeToolName,
 }
 
 var ToolAuthorizations = map[string]ToolAuthorization{
@@ -354,7 +358,7 @@ func init() {
 		case CreateStockItemToolName, InitialStockWorkflowToolName:
 			scopes = []string{ScopeInventreeWrite, ScopeInventreeOperational}
 			mutationClass = "operational"
-		case AdjustStockQuantityToolName, SetStockStatusToolName, StocktakeAdjustmentToolName, TransferStockItemToolName, RestructureStockLocationToolName, UpdateStockItemMetadataToolName, AssignStockSerialToolName, InstallStockItemToolName, UpdateParameterTemplateUniquenessToolName, HoldPurchaseOrderToolName, ResumePurchaseOrderToolName:
+		case AdjustStockQuantityToolName, SetStockStatusToolName, StocktakeAdjustmentToolName, GenerateStocktakeToolName, TransferStockItemToolName, RestructureStockLocationToolName, UpdateStockItemMetadataToolName, AssignStockSerialToolName, InstallStockItemToolName, UpdateParameterTemplateUniquenessToolName, HoldPurchaseOrderToolName, ResumePurchaseOrderToolName:
 			scopes = []string{ScopeInventreeRead, ScopeInventreeWrite, ScopeInventreeOperational}
 			mutationClass = "operational"
 		case SetStockDeleteOnDepleteToolName, DepleteStockItemToolName, UpdatePartFamilyRelationshipsToolName, UpdateStockItemProvenanceToolName, SetStockSerialToolName, UninstallStockItemToolName, CancelPurchaseOrderToolName, DeleteStockLocationToolName:
@@ -395,6 +399,11 @@ func init() {
 			Annotations:     annotations,
 		}
 	}
+	pollAuth := ToolAuthorizations[PollStocktakeGenerationToolName]
+	pollAuth.MutationClass = "read_only"
+	pollAuth.Scopes = []string{ScopeInventreeRead, ScopeInventreeOperational}
+	pollAuth.Annotations = ReadOnlyAnnotations
+	ToolAuthorizations[PollStocktakeGenerationToolName] = pollAuth
 	categoryUpdate := ToolAuthorizations[UpdatePartCategoryToolName]
 	categoryUpdate.Annotations.Idempotent = true
 	ToolAuthorizations[UpdatePartCategoryToolName] = categoryUpdate
@@ -639,6 +648,7 @@ func registerLookupTools(server *mcp.Server, deps Dependencies) {
 	addReadOnlyTool(server, deps, SearchStockSerialsToolName, "Search stock serials", "Searches existing stock items for one part by serial number, serial range, or serialized state.", searchStockSerials(deps))
 	addReadOnlyTool(server, deps, GetPartNextSerialToolName, "Get part next serial", "Retrieves the latest assigned and next available serial number for one trackable part.", getPartNextSerial(deps))
 	registerStockTrackingLookupTools(server, deps)
+	registerStocktakePollingTool(server, deps)
 	addReadOnlyTool(server, deps, ListAttachmentsToolName, "List attachments", "Lists attachment metadata for an in-scope InvenTree object.", listAttachments(deps))
 	addReadOnlyTool(server, deps, GetAttachmentMetadataToolName, "Get attachment metadata", "Retrieves one attachment metadata record by ID.", getAttachmentMetadata(deps))
 	addReadOnlyTool(server, deps, DownloadAttachmentToolName, "Download attachment", "Downloads bounded content for one file attachment.", downloadAttachment(deps))

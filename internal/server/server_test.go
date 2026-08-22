@@ -456,10 +456,11 @@ func TestHTTPHandlerUsesStatelessStreamableServer(t *testing.T) {
 	listRecorder := postMCP(t, handler, `{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}`)
 	r.Equal(http.StatusOK, listRecorder.Code)
 	a.Empty(listRecorder.Header().Get("Mcp-Session-Id"))
-	a.Contains(listRecorder.Body.String(), tools.HealthVersionToolName)
+	listedTools := decodeListedTools(t, listRecorder.Body.Bytes())
+	a.Contains(listedTools, tools.HealthVersionToolName)
 	for name, auth := range tools.ToolAuthorizations {
 		if auth.MutationClass != "read_only" {
-			a.NotContains(listRecorder.Body.String(), name)
+			a.NotContains(listedTools, name)
 		}
 	}
 }

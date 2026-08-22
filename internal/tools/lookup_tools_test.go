@@ -25,7 +25,11 @@ func TestLookupToolAuthorizationsUseReadOnlyScope(t *testing.T) {
 		auth, ok := ToolAuthorizations[name]
 		r.True(ok, "missing authorization for %s", name)
 		a.Equal("read_only", auth.MutationClass)
-		a.Equal([]string{ScopeInventreeRead}, auth.Scopes)
+		wantScopes := []string{ScopeInventreeRead}
+		if name == PollStocktakeGenerationToolName {
+			wantScopes = []string{ScopeInventreeRead, ScopeInventreeOperational}
+		}
+		a.Equal(wantScopes, auth.Scopes)
 		a.Equal(ReadOnlyAnnotations, auth.Annotations)
 	}
 }

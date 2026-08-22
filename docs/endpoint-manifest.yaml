@@ -18,6 +18,7 @@ coverage_areas:
   - sales_orders
   - instance_info
   - project_codes
+  - stocktake_generation
 
 forbidden_paths:
   - /api/notes-image-upload/
@@ -395,6 +396,21 @@ endpoints:
     request_schema: '#/components/schemas/StockChangeStatus'
     request_content_type: application/json
     response_schema: '#/components/schemas/StockChangeStatus'
+  - id: generate_part_stocktake
+    area: stocktake_generation
+    path: /api/part/stocktake/generate/
+    method: POST
+    operation_id: part_stocktake_generate_create
+    request_schema: '#/components/schemas/PartStocktakeGenerate'
+    request_content_type: application/json
+    response_schema: '#/components/schemas/PartStocktakeGenerate'
+    response_status: "201"
+  - id: get_data_output
+    area: stocktake_generation
+    path: /api/data-output/{id}/
+    method: GET
+    operation_id: data_output_retrieve
+    response_schema: '#/components/schemas/DataOutput'
   - id: search_stock_locations
     area: stock
     path: /api/stock/location/

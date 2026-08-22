@@ -14,6 +14,7 @@ const (
 	MaxLookupLimit     = 100
 
 	StatusOK                    = "ok"
+	StatusPending               = "pending"
 	StatusClarificationRequired = "clarification_required"
 	StatusNotFound              = "not_found"
 	StatusNoImage               = "no_image"

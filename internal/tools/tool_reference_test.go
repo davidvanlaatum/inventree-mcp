@@ -133,7 +133,11 @@ func TestToolReferenceDocumentsRegisteredLookupTools(t *testing.T) {
 		auth, ok := ToolAuthorizations[name]
 		r.True(ok, "missing authorization for %s", name)
 		a.Equal("read_only", auth.MutationClass)
-		a.Equal([]string{ScopeInventreeRead}, auth.Scopes)
+		if name == PollStocktakeGenerationToolName {
+			a.Equal([]string{ScopeInventreeRead, ScopeInventreeOperational}, auth.Scopes)
+		} else {
+			a.Equal([]string{ScopeInventreeRead}, auth.Scopes)
+		}
 	}
 }
 
@@ -173,7 +177,7 @@ func TestToolReferenceDocumentsRegisteredWriteTools(t *testing.T) {
 			a.Equal("operational", auth.MutationClass)
 			a.Equal([]string{ScopeInventreeWrite, ScopeInventreeOperational}, auth.Scopes)
 			a.Contains(toolReference, "`"+ScopeInventreeOperational+"`")
-		case AdjustStockQuantityToolName, SetStockStatusToolName, StocktakeAdjustmentToolName, TransferStockItemToolName, ReceivePurchaseOrderToolName, RestructureStockLocationToolName, UpdateStockItemMetadataToolName, AssignStockSerialToolName, InstallStockItemToolName, UpdateParameterTemplateUniquenessToolName, HoldPurchaseOrderToolName, ResumePurchaseOrderToolName:
+		case AdjustStockQuantityToolName, SetStockStatusToolName, StocktakeAdjustmentToolName, GenerateStocktakeToolName, PollStocktakeGenerationToolName, TransferStockItemToolName, ReceivePurchaseOrderToolName, RestructureStockLocationToolName, UpdateStockItemMetadataToolName, AssignStockSerialToolName, InstallStockItemToolName, UpdateParameterTemplateUniquenessToolName, HoldPurchaseOrderToolName, ResumePurchaseOrderToolName:
 			a.Equal("operational", auth.MutationClass)
 			a.Equal([]string{ScopeInventreeRead, ScopeInventreeWrite, ScopeInventreeOperational}, auth.Scopes)
 			a.Contains(toolReference, "`"+ScopeInventreeRead+"`")

@@ -18,7 +18,9 @@ import (
 	"net/url"
 	"os"
 	"strconv"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/davidvanlaatum/dvgoutils"
 	"github.com/davidvanlaatum/dvgoutils/logging/testhandler"
@@ -2590,7 +2592,116 @@ func TestClientMethodsAgainstInvenTree(t *testing.T) {
 				a.Contains(out, "output", "generation response must expose the asynchronous DataOutput contract")
 			})
 		}
+
+		// Exercise the exported typed client methods on the successful enqueue
+		// path and exact DataOutput read-back. Completion remains an explicit
+		// tool-layer concern because F-S60 observed report jobs that did not
+		// reach a terminal state within the bounded probe.
+		generation, err := fixture.client.GeneratePartStocktake(ctx, inventree.PartStocktakeGenerate{
+			Part:           &part.ID,
+			GenerateEntry:  true,
+			GenerateReport: true,
+		})
+		r.NoError(err)
+		r.NotNil(generation.Output)
+		r.Positive(generation.Output.PK)
+		output, err := fixture.client.GetDataOutput(ctx, generation.Output.PK)
+		r.NoError(err)
+		a.Equal(generation.Output.PK, output.PK)
+		terminal, reachedTerminal := pollDataOutputForStocktakeCharacterization(ctx, fixture.client, generation.Output.PK, 30*time.Second)
+		t.Logf("combined entry/report terminal characterization: task_id=%d complete=%t progress=%d total=%d output_available=%t reached_terminal=%t", terminal.PK, terminal.Complete, terminal.Progress, terminal.Total, terminal.Output != nil && *terminal.Output != "", reachedTerminal)
+		a.False(reachedTerminal, "pinned InvenTree 1.5.1/API 530 report generation is expected to remain non-terminal within the bounded characterization")
+		a.False(terminal.Complete)
+		a.Nil(terminal.Output)
+		if reachedTerminal && terminal.Output != nil && *terminal.Output != "" {
+			report, err := fixture.client.DownloadDataOutput(ctx, *terminal.Output, 10<<20)
+			r.NoError(err)
+			r.NotEmpty(report.Content)
+			t.Logf("combined entry/report artifact characterization: content_type=%s bytes=%d", report.ContentType, len(report.Content))
+		}
+
+		// F-S74 characterization: the pinned endpoint does not advertise a
+		// staff-only security scope. Two identical same-day requests must not be
+		// mistaken for an idempotent retry: record whether InvenTree allocates
+		// distinct DataOutput tasks, and leave completion/report behavior to the
+		// task-handle poll surface.
+		duplicateIDs := make([]int, 0, 2)
+		for i := 0; i < 2; i++ {
+			duplicate, err := fixture.client.GeneratePartStocktake(ctx, inventree.PartStocktakeGenerate{
+				Part:           &part.ID,
+				GenerateEntry:  true,
+				GenerateReport: true,
+			})
+			r.NoError(err)
+			r.NotNil(duplicate.Output)
+			duplicateIDs = append(duplicateIDs, duplicate.Output.PK)
+		}
+		a.NotEqual(duplicateIDs[0], duplicateIDs[1], "identical same-day requests must remain visibly distinct task submissions when InvenTree does not deduplicate them")
+		t.Logf("same-day duplicate characterization: task IDs %v were both accepted as distinct DataOutput submissions", duplicateIDs)
+
+		// Characterize the permission boundary with a run-scoped non-staff
+		// account created through the staff fixture client. The result is
+		// intentionally logged rather than assumed from the schema: this is a
+		// live product fact that must remain visible if the upstream permission
+		// policy changes.
+		nonStaffUsername, err := fixture.run.Name("stocktake-nonstaff")
+		r.NoError(err)
+		createUserReq, err := fixture.client.NewRequest(ctx, http.MethodPost, "/api/user/", nil, map[string]any{
+			"username":     nonStaffUsername,
+			"first_name":   "Integration",
+			"last_name":    "Nonstaff",
+			"email":        strings.ToLower(nonStaffUsername) + "@example.test",
+			"is_staff":     false,
+			"is_superuser": false,
+			"is_active":    true,
+		})
+		r.NoError(err)
+		var nonStaffUser map[string]any
+		r.NoError(fixture.client.DoJSON(createUserReq, &nonStaffUser))
+		nonStaffID, ok := nonStaffUser["pk"].(float64)
+		r.True(ok)
+		nonStaffPassword := "F-S74-live-characterization-password"
+		setPasswordReq, err := fixture.client.NewRequest(ctx, http.MethodPut, fmt.Sprintf("/api/user/%d/set-password/", int(nonStaffID)), nil, map[string]any{"password": nonStaffPassword, "override_warning": true})
+		r.NoError(err)
+		r.NoError(fixture.client.DoJSON(setPasswordReq, nil))
+		tokenReq, err := http.NewRequestWithContext(ctx, http.MethodGet, shared.Environment().BaseURL+"/api/user/me/token/?name="+url.QueryEscape(nonStaffUsername), nil)
+		r.NoError(err)
+		tokenReq.SetBasicAuth(nonStaffUsername, nonStaffPassword)
+		tokenResponse, err := http.DefaultClient.Do(tokenReq)
+		r.NoError(err)
+		t.Cleanup(func() { _ = tokenResponse.Body.Close() })
+		r.Equal(http.StatusOK, tokenResponse.StatusCode)
+		var nonStaffToken struct {
+			Token string `json:"token"`
+		}
+		r.NoError(json.NewDecoder(tokenResponse.Body).Decode(&nonStaffToken))
+		r.NotEmpty(nonStaffToken.Token)
+		nonStaffClient, err := inventree.NewClient(inventree.Config{BaseURL: shared.Environment().BaseURL, Credential: inventree.Credential{Scheme: inventree.AuthSchemeToken, Token: nonStaffToken.Token}})
+		r.NoError(err)
+		nonStaffGeneration, err := nonStaffClient.GeneratePartStocktake(ctx, inventree.PartStocktakeGenerate{Part: &part.ID, GenerateEntry: true, GenerateReport: true})
+		var apiErr *inventree.APIError
+		r.ErrorAs(err, &apiErr)
+		a.Equal(http.StatusForbidden, apiErr.StatusCode)
+		r.Nil(nonStaffGeneration.Output)
+		t.Logf("non-staff stocktake generation characterization: rejected with HTTP %d", apiErr.StatusCode)
 	})
+}
+
+func pollDataOutputForStocktakeCharacterization(ctx context.Context, client *inventree.Client, id int, timeout time.Duration) (inventree.DataOutput, bool) {
+	deadline := time.Now().Add(timeout)
+	latest := inventree.DataOutput{PK: id}
+	for time.Now().Before(deadline) {
+		current, err := client.GetDataOutput(ctx, id)
+		if err != nil || current.PK != id {
+			return latest, false
+		}
+		latest = current
+		if current.Complete {
+			return current, true
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
+	return latest, false
 }
 
 // instanceInfoAllowlistedGlobalSettingsForTest and instanceInfoAllowlistedUserSettingsForTest

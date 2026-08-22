@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/davidvanlaatum/dvgoutils"
 	"github.com/davidvanlaatum/dvgoutils/logging/testhandler"
@@ -655,6 +656,116 @@ func TestReadMethodsUseExpectedEndpoints(t *testing.T) {
 			r.NoError(err)
 
 			r.NoError(tt.call(ctx, client))
+		})
+	}
+}
+
+func TestStocktakeGenerationAndDataOutputMethods(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+
+	client, err := NewClient(Config{
+		BaseURL:    "https://inventory.example.test",
+		Credential: Credential{Scheme: AuthSchemeToken, Token: "secret"},
+		HTTPClient: &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			if req.URL.Path == "/api/part/stocktake/generate/" {
+				a.Equal(http.MethodPost, req.Method, "generation must enqueue through POST")
+				var body PartStocktakeGenerate
+				r.NoError(json.NewDecoder(req.Body).Decode(&body))
+				a.Equal(12, *body.Part)
+				a.True(body.GenerateEntry)
+				a.False(body.GenerateReport)
+				return jsonResponse(req, http.StatusOK, `{"output":{"pk":90,"created":"2026-08-22","complete":false,"progress":0,"total":3}}`), nil
+			}
+			if req.URL.Path == "/media/report.pdf" {
+				a.Equal(http.MethodGet, req.Method)
+				return &http.Response{StatusCode: http.StatusOK, Header: http.Header{"Content-Type": []string{"application/pdf"}}, Body: io.NopCloser(strings.NewReader("pdf")), Request: req}, nil
+			}
+			a.Equal(http.MethodGet, req.Method)
+			a.Equal("/api/data-output/90/", req.URL.Path)
+			return jsonResponse(req, http.StatusOK, `{"pk":90,"created":"2026-08-22","complete":true,"progress":3,"total":3,"output":"https://inventory.example.test/media/report.pdf"}`), nil
+		})},
+	})
+	r.NoError(err)
+
+	queued, err := client.GeneratePartStocktake(ctx, PartStocktakeGenerate{Part: dvgoutils.Ptr(12), GenerateEntry: true})
+	r.NoError(err)
+	r.NotNil(queued.Output)
+	a.Equal(90, queued.Output.PK)
+	a.False(queued.Output.Complete)
+	completed, err := client.GetDataOutput(ctx, queued.Output.PK)
+	r.NoError(err)
+	a.True(completed.Complete)
+	a.Equal("https://inventory.example.test/media/report.pdf", *completed.Output)
+	download, err := client.DownloadDataOutput(ctx, *completed.Output, 32)
+	r.NoError(err)
+	a.Equal("pdf", string(download.Content))
+	a.Equal("https://inventory.example.test/media/report.pdf", download.SourceURL)
+}
+
+func TestGetDataOutputHonorsContextDeadline(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	client, err := NewClient(Config{
+		BaseURL:    "https://inventory.example.test",
+		Credential: Credential{Scheme: AuthSchemeToken, Token: "secret"},
+		HTTPClient: &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			<-req.Context().Done()
+			return nil, req.Context().Err()
+		})},
+	})
+	r.NoError(err)
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	defer cancel()
+	started := time.Now()
+	_, err = client.GetDataOutput(ctx, 90)
+	r.ErrorIs(err, context.DeadlineExceeded)
+	r.Less(time.Since(started), time.Second)
+}
+
+func TestDownloadDataOutputRejectsUnsafeAndUnboundedResponses(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name        string
+		url         string
+		maxBytes    int64
+		status      int
+		body        string
+		wantRequest bool
+	}{
+		{name: "external host", url: "https://other.example.test/report.pdf"},
+		{name: "userinfo", url: "https://user:secret@inventory.example.test/report.pdf"},
+		{name: "redirect", url: "https://inventory.example.test/report.pdf", status: http.StatusFound, wantRequest: true},
+		{name: "non success", url: "https://inventory.example.test/report.pdf", status: http.StatusInternalServerError, wantRequest: true},
+		{name: "oversized", url: "https://inventory.example.test/report.pdf", status: http.StatusOK, body: "report", maxBytes: 3, wantRequest: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			ctx, _, _ := testhandler.SetupTestHandler(t)
+			called := false
+			client, err := NewClient(Config{
+				BaseURL:    "https://inventory.example.test",
+				Credential: Credential{Scheme: AuthSchemeToken, Token: "secret"},
+				HTTPClient: &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+					called = true
+					status := tt.status
+					if status == 0 {
+						status = http.StatusOK
+					}
+					return &http.Response{StatusCode: status, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(tt.body)), Request: req}, nil
+				})},
+			})
+			require.NoError(t, err)
+			maxBytes := tt.maxBytes
+			if maxBytes == 0 {
+				maxBytes = 32
+			}
+			_, err = client.DownloadDataOutput(ctx, tt.url, maxBytes)
+			require.Error(t, err)
+			assert.Equal(t, tt.wantRequest, called)
 		})
 	}
 }
