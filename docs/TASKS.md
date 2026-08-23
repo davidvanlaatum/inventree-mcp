@@ -141,7 +141,7 @@ Before assigning a new story ID, inspect `git worktree list --porcelain`, search
 | [F-S57](#f-s57-part-testing-workflow-discovery) | Investigate part test templates, stock-item test results, attachments, and safe workflow boundaries. | Future |
 | [F-S58](#f-s58-pricing-and-price-break-workflow-discovery) | Investigate part pricing, supplier price breaks, internal prices, sale prices, currencies, and safe tool boundaries. | Future |
 | [F-S59](#f-s59-part-requirements-visibility-discovery) | Investigate build and order demand visibility through the part requirements API. | Future |
-| [F-S60](#f-s60-stocktake-generation-and-reporting-discovery) | Investigate guarded generation of part stocktake snapshots and reports after history reads exist. | Active |
+| [F-S60](#f-s60-stocktake-generation-and-reporting-discovery) | Investigate guarded generation of part stocktake snapshots and reports after history reads exist. | Done |
 | [F-S61](#f-s61-adopt-inventree-150-api-530-baseline) | Adopt InvenTree 1.5.0 and API 530 as the blocking compatibility baseline. | Done |
 | [F-S62](#f-s62-guarded-purchase-order-hold-resume-and-cancellation) | Add explicit current-state-planned hold, resume, and cancellation workflows without generic status editing or whole-order deletion. | Done |
 | [F-S63](#f-s63-guarded-purchase-order-duplication-discovery) | Investigate a deferred, low-frequency workflow for safely duplicating selected purchase-order state. | Future |
