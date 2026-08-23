@@ -70,9 +70,9 @@ type CompanyImageOutput struct {
 }
 
 func registerCompanyImageWriteTools(server *mcp.Server, deps Dependencies) {
-	addWriteTool(server, deps, SetCompanyImageToolName, "Set company image", "Validates and assigns an inline or allowlisted STDIO-local company primary image with exact digest read-back.", setCompanyImage(deps))
-	addWriteTool(server, deps, SetCompanyImageFromURLToolName, "Set company image from URL", "Fetches, validates, and assigns an HTTP(S) company primary image with exact digest read-back.", setCompanyImageFromURL(deps))
-	addWriteTool(server, deps, ClearCompanyImageToolName, "Clear company image", "Explicitly clears one company primary image and verifies exact null read-back.", clearCompanyImage(deps))
+	addWriteTool(server, deps, SetCompanyImageToolName, "Set company image", "Validates and assigns an inline or allowlisted STDIO-local company primary image with exact digest read-back. Use this dedicated company-image tool, not update_company or a generic attachment tool; replacement requires confirm:true.", setCompanyImage(deps))
+	addWriteTool(server, deps, SetCompanyImageFromURLToolName, "Set company image from URL", "Fetches, validates, and assigns an HTTP(S) company primary image with exact digest read-back. Use this dedicated company-image tool, not a generic attachment URL upload; replacement requires confirm:true.", setCompanyImageFromURL(deps))
+	addWriteTool(server, deps, ClearCompanyImageToolName, "Clear company image", "Explicitly clears one company's primary image and verifies exact null read-back. Use this dedicated company-image tool, not update_company or generic attachment deletion; requires confirm:true.", clearCompanyImage(deps))
 }
 
 func setCompanyImage(deps Dependencies) mcp.ToolHandlerFor[SetCompanyImageInput, CompanyImageOutput] {

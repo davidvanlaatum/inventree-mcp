@@ -224,7 +224,7 @@ func registerCompanyAdminLookupTools(server *mcp.Server, deps Dependencies) {
 }
 
 func registerCompanyAdminWriteTools(server *mcp.Server, deps Dependencies) {
-	addWriteTool(server, deps, UpdateCompanyToolName, "Update company", "Partially updates approved company fields after role and dependency preflight.", updateCompanyAdmin(deps))
+	addWriteTool(server, deps, UpdateCompanyToolName, "Update company", "Partially updates approved company fields after role and dependency preflight. Company primary images are managed separately with set_company_image, set_company_image_from_url, or clear_company_image, not this tool.", updateCompanyAdmin(deps))
 	addWriteTool(server, deps, UpdateSupplierPartToolName, "Update supplier part", "Partially updates a supplier-part link after identity and duplicate preflight.", updateSupplierPartAdmin(deps))
 	addWriteTool(server, deps, UpdateManufacturerPartToolName, "Update manufacturer part", "Partially updates a manufacturer-part link after identity and duplicate preflight.", updateManufacturerPartAdmin(deps))
 }

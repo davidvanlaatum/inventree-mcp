@@ -532,6 +532,12 @@ type DownloadInput struct {
 	MaxBytes int64  `json:"max_bytes,omitempty" jsonschema:"Maximum content bytes to return. Defaults to 5 MiB and is capped at 25 MiB."`
 }
 
+type PartImageDownloadInput struct {
+	ID       int    `json:"id" jsonschema:"Stable part primary key. This is the part ID, not an attachment ID."`
+	Mode     string `json:"mode,omitempty" jsonschema:"Download mode. Use original by default or thumbnail when supported."`
+	MaxBytes int64  `json:"max_bytes,omitempty" jsonschema:"Maximum content bytes to return. Defaults to 5 MiB and is capped at 25 MiB."`
+}
+
 type LookupOutput[T any] struct {
 	Status        string                 `json:"status"`
 	Count         int                    `json:"count,omitempty"`
@@ -649,10 +655,10 @@ func registerLookupTools(server *mcp.Server, deps Dependencies) {
 	addReadOnlyTool(server, deps, GetPartNextSerialToolName, "Get part next serial", "Retrieves the latest assigned and next available serial number for one trackable part.", getPartNextSerial(deps))
 	registerStockTrackingLookupTools(server, deps)
 	registerStocktakePollingTool(server, deps)
-	addReadOnlyTool(server, deps, ListAttachmentsToolName, "List attachments", "Lists attachment metadata for an in-scope InvenTree object.", listAttachments(deps))
+	addReadOnlyTool(server, deps, ListAttachmentsToolName, "List attachments", "Lists attachment metadata for an in-scope InvenTree object. Use it to find a same-part image attachment before calling set_primary_image; generic attachment results are not automatically primary images.", listAttachments(deps))
 	addReadOnlyTool(server, deps, GetAttachmentMetadataToolName, "Get attachment metadata", "Retrieves one attachment metadata record by ID.", getAttachmentMetadata(deps))
-	addReadOnlyTool(server, deps, DownloadAttachmentToolName, "Download attachment", "Downloads bounded content for one file attachment.", downloadAttachment(deps))
-	addReadOnlyTool(server, deps, DownloadPartImageToolName, "Download part image", "Downloads bounded content for a part primary image.", downloadPartImage(deps))
+	addReadOnlyTool(server, deps, DownloadAttachmentToolName, "Download attachment", "Downloads bounded content for one generic file attachment. For a part's current primary image, use download_part_image instead.", downloadAttachment(deps))
+	addReadOnlyTool(server, deps, DownloadPartImageToolName, "Download part image", "Downloads bounded content for the requested part's current primary image, not a generic attachment. The id input is a part ID. Use set_primary_image to assign or replace it.", downloadPartImage(deps))
 	addReadOnlyTool(server, deps, PreviewPurchaseOrderToolName, "Preview purchase order with lines", "Validates supplier-part lines and returns a no-write purchase-order preview.", previewPurchaseOrder(deps))
 	registerPurchasingLookupTools(server, deps)
 	registerInstanceInfoTool(server, deps)
@@ -920,9 +926,9 @@ func downloadAttachment(deps Dependencies) mcp.ToolHandlerFor[DownloadInput, Dow
 		})
 }
 
-func downloadPartImage(deps Dependencies) mcp.ToolHandlerFor[DownloadInput, DownloadOutput] {
-	return LookupHandler[AttachmentLookupClient, DownloadInput, DownloadOutput](deps, DownloadPartImageToolName,
-		func(ctx context.Context, _ *mcp.CallToolRequest, client AttachmentLookupClient, input DownloadInput) (*mcp.CallToolResult, DownloadOutput, error) {
+func downloadPartImage(deps Dependencies) mcp.ToolHandlerFor[PartImageDownloadInput, DownloadOutput] {
+	return LookupHandler[AttachmentLookupClient, PartImageDownloadInput, DownloadOutput](deps, DownloadPartImageToolName,
+		func(ctx context.Context, _ *mcp.CallToolRequest, client AttachmentLookupClient, input PartImageDownloadInput) (*mcp.CallToolResult, DownloadOutput, error) {
 			mode := attachmentMode(input.Mode)
 			download, err := client.DownloadPartImage(ctx, input.ID, mode, normalizeDownloadMaxBytes(input.MaxBytes))
 			if err != nil {

@@ -163,6 +163,7 @@ Before assigning a new story ID, inspect `git worktree list --porcelain`, search
 | [F-S79](#f-s79-low-risk-bulk-purchase-order-and-line-metadata-updates) | Add low-risk bulk purchase-order and line metadata updates. | Ready |
 | [F-S80](#f-s80-low-risk-bulk-attachment-and-parameter-value-updates) | Add low-risk bulk attachment metadata and parameter-value updates. | Ready |
 | [F-S81](#f-s81-bulk-mutation-throughput-and-operator-observability) | Validate bulk throughput, bounded concurrency, progress, cancellation, and operator recovery evidence. | Planned |
+| [F-S82](#f-s82-mcp-facing-image-and-attachment-tool-routing-guidance) | Make image and generic-attachment tool routing explicit to MCP agents. | Done |
 
 ## Milestone 0: Repository And Planning
 
@@ -3016,3 +3017,31 @@ Tasks:
 - [ ] Add bounded progress/result reporting and cancellation coverage.
 - [ ] Document concurrency, batch-size, retry, resume, and partial-failure behavior.
 - [ ] Reconcile final evidence with all implemented bulk stories.
+
+### F-S82: MCP-Facing Image And Attachment Tool Routing Guidance
+
+- Status: `Done`
+- Issue: [#209](https://github.com/davidvanlaatum/inventree-mcp/issues/209)
+- Depends on: M1F-S02, M1F-S03, F-S31, and M1G-S03.
+- Scope: make the distinction between generic attachments, part primary images, and company primary images explicit in MCP initialization instructions, registered tool descriptions, the attachment/image checklist prompt, and the operator tool reference. Create/update/upsert tools direct agents to the dedicated image tools rather than treating image intent as ordinary record or attachment mutation.
+- Acceptance:
+  - MCP initialization directs agents to `download_part_image` for reading a part primary image and to `list_attachments` plus `set_primary_image` for assigning or replacing one.
+  - MCP initialization directs agents to `set_company_image`, `set_company_image_from_url`, and `clear_company_image` for company primary-image operations.
+  - Generic attachment tools explain their separate-file/link scope and the handoff to dedicated primary-image tools.
+  - Part/company create, update, and part upsert descriptions state that primary-image mutation is separate.
+  - The attachment/image checklist and tool reference preserve the same routing contract.
+  - `download_part_image` exposes that its `id` input is a part ID, not an attachment ID.
+  - MCP-boundary tests assert the initialization guidance and changed tool descriptions.
+  - Generated metadata remains aligned and existing upload, confirmation, URL, and filesystem safety boundaries are unchanged.
+
+Tasks:
+
+- [x] Add MCP initialization and prompt routing guidance.
+- [x] Add cross-references to affected tool descriptions.
+- [x] Add operator tool-reference routing guidance.
+- [x] Add MCP-boundary description and instruction contract tests.
+- [x] Run Go, QA, Product, and Infosec review panels and address actionable findings.
+
+- Validation: `env GOCACHE=/private/tmp/inventree-mcp-image-routing-gocache go generate ./internal/tools` passed; `env GOCACHE=/private/tmp/inventree-mcp-image-routing-gocache go test ./...` passed with localhost/Docker access; focused server and tools tests passed; `git diff --check` passed.
+- Review: Initial Senior Go Developer, Senior Product Manager, and Senior Infosec Reviewer reviews found no actionable findings. Initial Senior QA / Test Architect review requested MCP-boundary assertions for initialization routing and tool descriptions; those assertions were added. Focused Go and QA follow-up reviews requested wording that distinguishes reading a primary image from assigning/replacing it, exact read-only tool-name coverage, and a dedicated part-ID input schema; all were addressed. Final focused Go and QA reruns found no actionable findings.
+- Residual risk: HTTP transport tests were not runnable in this sandbox because localhost listeners are prohibited; the in-memory STDIO MCP boundary covers the same initialization and tool-list metadata contract.

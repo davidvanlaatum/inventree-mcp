@@ -72,6 +72,7 @@ func TestToolReferenceDocumentsLookupFrameworkSchema(t *testing.T) {
 		reflect.TypeOf(ParameterTemplateMergeAction{}),
 		reflect.TypeOf(StockItemsInput{}),
 		reflect.TypeOf(DownloadInput{}),
+		reflect.TypeOf(PartImageDownloadInput{}),
 		reflect.TypeOf(DownloadOutput{}),
 		reflect.TypeOf(PurchasePreviewInput{}),
 		reflect.TypeOf(PurchasePreviewLineInput{}),
