@@ -3,6 +3,7 @@ package testenv
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -11,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/davidvanlaatum/dvgoutils/logging/testhandler"
 	"github.com/davidvanlaatum/inventree-mcp/internal/buildinfo"
@@ -19,6 +21,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/testcontainers/testcontainers-go"
+	tcexec "github.com/testcontainers/testcontainers-go/exec"
 )
 
 func TestDefaultOptionsPinInvenTreeVersion(t *testing.T) {
@@ -722,6 +725,241 @@ func TestSynchronizedContainerLogfSerializesCalls(t *testing.T) {
 		"redis stderr warning",
 	}, got)
 	r.Nil(synchronizedContainerLogf(nil))
+}
+
+// fakeWorkerContainer implements testcontainers.Container by embedding a nil
+// interface and overriding only the methods waitForWorker's health probe and
+// diagnostics path exercise. Calling any other method panics, which is fine
+// since these tests never invoke them.
+type fakeWorkerContainer struct {
+	testcontainers.Container
+	// execFunc is required by every test that reaches Exec; unlike
+	// stateFunc/logsFunc it has no nil-safe default because every current
+	// caller of probeWorkerHealth/waitForWorker needs a controlled exit code.
+	execFunc  func(ctx context.Context) (int, error)
+	stateFunc func(ctx context.Context) (*container.State, error)
+	logsFunc  func(ctx context.Context) (io.ReadCloser, error)
+}
+
+func (f *fakeWorkerContainer) Exec(ctx context.Context, _ []string, _ ...tcexec.ProcessOption) (int, io.Reader, error) {
+	code, err := f.execFunc(ctx)
+	return code, nil, err
+}
+
+func (f *fakeWorkerContainer) State(ctx context.Context) (*container.State, error) {
+	if f.stateFunc == nil {
+		return nil, nil
+	}
+	return f.stateFunc(ctx)
+}
+
+func (f *fakeWorkerContainer) Logs(ctx context.Context) (io.ReadCloser, error) {
+	if f.logsFunc == nil {
+		return io.NopCloser(strings.NewReader("")), nil
+	}
+	return f.logsFunc(ctx)
+}
+
+// withShortWorkerHealthTimings shrinks the package-level worker-health timing
+// vars for the duration of the calling test. Callers must NOT use
+// t.Parallel(): these vars are mutated in place with no synchronization, so a
+// parallel test reading or overwriting them concurrently would race.
+func withShortWorkerHealthTimings(t *testing.T, probeTimeout time.Duration) {
+	t.Helper()
+	prevProbe, prevPoll, prevDiag := workerHealthProbeTimeout, workerHealthPollInterval, workerDiagnosticsTimeout
+	workerHealthProbeTimeout = probeTimeout
+	workerHealthPollInterval = time.Millisecond
+	workerDiagnosticsTimeout = 200 * time.Millisecond
+	t.Cleanup(func() {
+		workerHealthProbeTimeout, workerHealthPollInterval, workerDiagnosticsTimeout = prevProbe, prevPoll, prevDiag
+	})
+}
+
+func TestWaitForWorkerRequiresContainer(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+
+	r.ErrorContains(waitForWorker(context.Background(), nil), "InvenTree worker container is required")
+}
+
+func TestWaitForWorkerSucceedsAfterTransientFailures(t *testing.T) {
+	withShortWorkerHealthTimings(t, time.Second)
+	r := require.New(t)
+
+	attempts := 0
+	worker := &fakeWorkerContainer{execFunc: func(context.Context) (int, error) {
+		attempts++
+		if attempts < 3 {
+			return 1, nil
+		}
+		return 0, nil
+	}}
+
+	r.NoError(waitForWorker(context.Background(), worker))
+	r.Equal(3, attempts)
+}
+
+func TestProbeWorkerHealthBoundsASingleBlockedExec(t *testing.T) {
+	withShortWorkerHealthTimings(t, 20*time.Millisecond)
+	r := require.New(t)
+
+	worker := &fakeWorkerContainer{execFunc: func(ctx context.Context) (int, error) {
+		<-ctx.Done()
+		return 0, ctx.Err()
+	}}
+
+	err := probeWorkerHealth(context.Background(), worker)
+
+	r.ErrorIs(err, context.DeadlineExceeded)
+}
+
+func TestWaitForWorkerRetriesPastABlockedExecWithinTheOverallDeadline(t *testing.T) {
+	withShortWorkerHealthTimings(t, 20*time.Millisecond)
+	r := require.New(t)
+
+	attempts := 0
+	worker := &fakeWorkerContainer{execFunc: func(ctx context.Context) (int, error) {
+		attempts++
+		if attempts == 1 {
+			<-ctx.Done()
+			return 0, ctx.Err()
+		}
+		return 0, nil
+	}}
+
+	overallCtx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+
+	r.NoError(waitForWorker(overallCtx, worker))
+	r.Equal(2, attempts)
+}
+
+func TestProbeWorkerHealthIsBoundedByAShorterOuterDeadlineThanTheProbeTimeout(t *testing.T) {
+	withShortWorkerHealthTimings(t, 10*time.Second)
+	r := require.New(t)
+
+	worker := &fakeWorkerContainer{execFunc: func(ctx context.Context) (int, error) {
+		<-ctx.Done()
+		return 0, ctx.Err()
+	}}
+	outerCtx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	defer cancel()
+
+	start := time.Now()
+	err := probeWorkerHealth(outerCtx, worker)
+	elapsed := time.Since(start)
+
+	r.ErrorIs(err, context.DeadlineExceeded)
+	r.Less(elapsed, time.Second, "a blocked exec must be bounded by the shorter outer deadline, not the longer probe timeout")
+}
+
+func TestWaitForWorkerClassifiesNonZeroExitAndReportsDiagnosticsOnFailure(t *testing.T) {
+	withShortWorkerHealthTimings(t, 20*time.Millisecond)
+	r := require.New(t)
+
+	worker := &fakeWorkerContainer{
+		execFunc: func(context.Context) (int, error) {
+			return 1, nil
+		},
+		stateFunc: func(context.Context) (*container.State, error) {
+			return &container.State{Status: "running", ExitCode: 0, OOMKilled: false}, nil
+		},
+		logsFunc: func(context.Context) (io.ReadCloser, error) {
+			return io.NopCloser(strings.NewReader("line one\nline two\n")), nil
+		},
+	}
+
+	overallCtx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
+	defer cancel()
+
+	err := waitForWorker(overallCtx, worker)
+
+	r.ErrorContains(err, "worker did not become healthy")
+	r.ErrorContains(err, "worker-health exited with status 1")
+	r.ErrorContains(err, "worker state=running exitCode=0 oomKilled=false")
+	r.ErrorContains(err, "recent worker logs:\nline one\nline two")
+}
+
+func TestWorkerDiagnosticsReportsUnavailableStateAndLogs(t *testing.T) {
+	withShortWorkerHealthTimings(t, 20*time.Millisecond)
+	r := require.New(t)
+
+	stateErr := errors.New("inspect failed")
+	logsErr := errors.New("logs unavailable")
+	worker := &fakeWorkerContainer{
+		stateFunc: func(context.Context) (*container.State, error) { return nil, stateErr },
+		logsFunc:  func(context.Context) (io.ReadCloser, error) { return nil, logsErr },
+	}
+
+	diagnostics := workerDiagnostics(worker)
+
+	r.Contains(diagnostics, "worker state unavailable: inspect failed")
+	r.Contains(diagnostics, "worker logs unavailable: logs unavailable")
+}
+
+func TestWorkerDiagnosticsBoundsBlockedStateAndLogsCalls(t *testing.T) {
+	withShortWorkerHealthTimings(t, 20*time.Millisecond)
+	r := require.New(t)
+
+	worker := &fakeWorkerContainer{
+		stateFunc: func(ctx context.Context) (*container.State, error) {
+			<-ctx.Done()
+			return nil, ctx.Err()
+		},
+		logsFunc: func(ctx context.Context) (io.ReadCloser, error) {
+			<-ctx.Done()
+			return nil, ctx.Err()
+		},
+	}
+
+	start := time.Now()
+	diagnostics := workerDiagnostics(worker)
+	elapsed := time.Since(start)
+
+	r.Contains(diagnostics, "worker state unavailable: context deadline exceeded")
+	r.Contains(diagnostics, "worker logs unavailable: context deadline exceeded")
+	r.Less(elapsed, time.Second, "a stalled Inspect/Logs call must be bounded by workerDiagnosticsTimeout, not hang the failure path")
+}
+
+func TestWorkerLogTailKeepsOnlyTheMostRecentLines(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+
+	var lines []string
+	for i := 1; i <= workerDiagnosticsLogTail+5; i++ {
+		lines = append(lines, fmt.Sprintf("line %d", i))
+	}
+	worker := &fakeWorkerContainer{logsFunc: func(context.Context) (io.ReadCloser, error) {
+		return io.NopCloser(strings.NewReader(strings.Join(lines, "\n") + "\n")), nil
+	}}
+
+	tail, err := workerLogTail(context.Background(), worker)
+
+	r.NoError(err)
+	tailLines := strings.Split(tail, "\n")
+	r.Len(tailLines, workerDiagnosticsLogTail)
+	r.Equal("line 6", tailLines[0])
+	r.Equal(fmt.Sprintf("line %d", workerDiagnosticsLogTail+5), tailLines[len(tailLines)-1])
+}
+
+func TestWorkerLogTailReturnsTheActualTailNotTheHeadOfAnOversizedStream(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+
+	// Container.Logs has no tail/since option, so a stream larger than
+	// workerDiagnosticsLogMax must still surface the most recent content
+	// rather than whatever arrived first.
+	filler := strings.Repeat("y", workerDiagnosticsLogMax*2)
+	content := "HEAD_MARKER\n" + filler + "\nTAIL_MARKER\n"
+	worker := &fakeWorkerContainer{logsFunc: func(context.Context) (io.ReadCloser, error) {
+		return io.NopCloser(strings.NewReader(content)), nil
+	}}
+
+	tail, err := workerLogTail(context.Background(), worker)
+
+	r.NoError(err)
+	r.Contains(tail, "TAIL_MARKER")
+	r.NotContains(tail, "HEAD_MARKER", "the head of the oversized stream must have been dropped, not the tail")
 }
 
 func TestHTTPHelpersFetchVersionCreateAndProveToken(t *testing.T) {

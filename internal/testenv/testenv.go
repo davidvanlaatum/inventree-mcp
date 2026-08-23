@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/netip"
 	"strings"
@@ -35,6 +36,24 @@ const (
 const (
 	defaultStartupTimeout = 5 * time.Minute
 	cleanupTimeout        = 30 * time.Second
+)
+
+const (
+	workerDiagnosticsLogTail = 20
+	workerDiagnosticsLogMax  = 64 * 1024
+)
+
+// workerHealthProbeTimeout, workerHealthPollInterval, and
+// workerDiagnosticsTimeout are vars rather than consts so tests can shrink
+// them and exercise probe-timeout and retry behavior deterministically
+// without waiting on real Docker-scale durations.
+var (
+	// workerHealthProbeTimeout bounds a single `invoke worker-health` exec so a
+	// Docker daemon stall under CI load cannot consume the whole startup
+	// deadline; the outer loop still respects the caller's overall context.
+	workerHealthProbeTimeout = 10 * time.Second
+	workerHealthPollInterval = 250 * time.Millisecond
+	workerDiagnosticsTimeout = 5 * time.Second
 )
 
 const (
@@ -427,22 +446,108 @@ func waitForWorker(ctx context.Context, worker testcontainers.Container) error {
 		return errors.New("InvenTree worker container is required")
 	}
 	var lastErr error
-	ticker := time.NewTicker(250 * time.Millisecond)
+	ticker := time.NewTicker(workerHealthPollInterval)
 	defer ticker.Stop()
 	for {
-		code, _, err := worker.Exec(ctx, []string{"invoke", "worker-health"})
-		if err == nil && code == 0 {
+		lastErr = probeWorkerHealth(ctx, worker)
+		if lastErr == nil {
 			return nil
-		}
-		if err != nil {
-			lastErr = err
-		} else {
-			lastErr = fmt.Errorf("worker-health exited with status %d", code)
 		}
 		select {
 		case <-ctx.Done():
-			return fmt.Errorf("worker did not become healthy: %w (last error: %v)", ctx.Err(), lastErr)
+			return fmt.Errorf("worker did not become healthy: %w (last error: %v)%s",
+				ctx.Err(), lastErr, workerDiagnostics(worker))
 		case <-ticker.C:
+		}
+	}
+}
+
+// probeWorkerHealth runs a single bounded health-check exec so a Docker daemon
+// stall blocks at most one attempt instead of the entire waitForWorker loop.
+func probeWorkerHealth(ctx context.Context, worker testcontainers.Container) error {
+	attemptCtx, cancel := context.WithTimeout(ctx, workerHealthProbeTimeout)
+	defer cancel()
+	code, _, err := worker.Exec(attemptCtx, []string{"invoke", "worker-health"})
+	if err != nil {
+		return err
+	}
+	if code != 0 {
+		return fmt.Errorf("worker-health exited with status %d", code)
+	}
+	return nil
+}
+
+// workerDiagnostics best-effort captures container state and a bounded tail
+// of recent logs for the final startup-failure error. Each call gets its own
+// independent workerDiagnosticsTimeout budget (rather than the caller's
+// already-expired context, or a single shared budget) so a stall in one call
+// cannot starve the other.
+func workerDiagnostics(worker testcontainers.Container) string {
+	var b strings.Builder
+
+	stateCtx, cancelState := context.WithTimeout(context.Background(), workerDiagnosticsTimeout)
+	defer cancelState()
+	if state, err := worker.State(stateCtx); err != nil {
+		fmt.Fprintf(&b, "; worker state unavailable: %v", err)
+	} else if state != nil {
+		fmt.Fprintf(&b, "; worker state=%s exitCode=%d oomKilled=%t",
+			state.Status, state.ExitCode, state.OOMKilled)
+	}
+
+	logsCtx, cancelLogs := context.WithTimeout(context.Background(), workerDiagnosticsTimeout)
+	defer cancelLogs()
+	if tail, err := workerLogTail(logsCtx, worker); err != nil {
+		fmt.Fprintf(&b, "; worker logs unavailable: %v", err)
+	} else if tail != "" {
+		fmt.Fprintf(&b, "; recent worker logs:\n%s", tail)
+	}
+	return b.String()
+}
+
+// workerLogTail returns up to the last workerDiagnosticsLogTail lines of the
+// container's combined log stream. Container.Logs has no tail/since option
+// and always returns the stream from container start, so this reads to EOF
+// (bounded by ctx) while retaining only the most recent workerDiagnosticsLogMax
+// bytes in memory, keeping the result an actual tail rather than a head
+// truncated to the byte cap.
+func workerLogTail(ctx context.Context, worker testcontainers.Container) (string, error) {
+	logs, err := worker.Logs(ctx)
+	if err != nil {
+		return "", err
+	}
+	defer func() { _ = logs.Close() }()
+
+	data, err := readTailBounded(logs, workerDiagnosticsLogMax)
+	if err != nil && len(data) == 0 {
+		return "", err
+	}
+	lines := strings.Split(strings.TrimRight(string(data), "\r\n"), "\n")
+	if len(lines) > workerDiagnosticsLogTail {
+		lines = lines[len(lines)-workerDiagnosticsLogTail:]
+	}
+	return strings.Join(lines, "\n"), nil
+}
+
+// readTailBounded reads r to EOF (or until it errors, including context
+// cancellation on a context-aware reader) while retaining only the last
+// maxBytes read, so an unbounded or still-growing stream cannot exhaust
+// memory or the caller's time budget disproportionately to maxBytes.
+func readTailBounded(r io.Reader, maxBytes int) ([]byte, error) {
+	buf := make([]byte, 0, maxBytes)
+	chunk := make([]byte, 32*1024)
+	for {
+		n, err := r.Read(chunk)
+		if n > 0 {
+			buf = append(buf, chunk[:n]...)
+			if len(buf) > maxBytes {
+				buf = buf[len(buf)-maxBytes:]
+			}
+		}
+		if err != nil {
+			if errors.Is(err, io.EOF) {
+				return buf, nil
+			}
+			return buf, err
 		}
 	}
 }
