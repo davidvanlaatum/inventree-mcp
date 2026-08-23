@@ -70,7 +70,9 @@ The debug traffic log option also applies to development HTTP mode. HTTP logging
 
 ## Install From A Release
 
-GitHub releases are produced by GoReleaser when a `vX.X.X` tag is pushed. Each release includes checksums, archived binaries for Linux, macOS, and Windows on `amd64` and `arm64`, plus Linux `deb`, `rpm`, and `apk` packages.
+GitHub releases are produced by GoReleaser when a `vX.X.X` tag is pushed. Each release includes checksums, archived binaries for Linux, macOS, and Windows on `amd64` and `arm64`, plus Linux `deb`, `rpm`, and `apk` packages. The same release publishes the multi-architecture container image [`ghcr.io/davidvanlaatum/inventree-mcp`](https://github.com/davidvanlaatum/inventree-mcp/pkgs/container/inventree-mcp) with `vX.X.X` and `latest` tags for Linux `amd64` and `arm64`.
+
+The container runs as a non-root user and defaults to the HTTP transport on port `28686` at `/mcp`. Configure the production OAuth and InvenTree environment variables before deploying it; the image does not embed credentials or deployment configuration.
 
 Direct release-archive installations on Linux and macOS can update explicitly with:
 
@@ -113,7 +115,7 @@ git tag vX.X.X
 git push origin vX.X.X
 ```
 
-The `Release` GitHub Actions workflow runs tests, invokes GoReleaser, creates the GitHub release for the tag, and uploads the binary archives, packages, and checksums. Verify the completed release before announcing it:
+The `Release` GitHub Actions workflow runs tests, invokes GoReleaser, creates the GitHub release for the tag, uploads the binary archives, packages, and checksums, and publishes the container image to GHCR. Verify the completed release before announcing it:
 
 ```sh
 gh release view vX.X.X --repo davidvanlaatum/inventree-mcp
@@ -126,6 +128,7 @@ GitHub repository setup required for first release:
 - Workflow permissions allow the Go workflow to write coverage baselines to git notes and comment on pull requests.
 - `COVERAGE_GIST_SECRET` is configured with permission to update gist `709e99cf973e064f68cf3937b3d5c633` for the coverage badge.
 - Workflow permissions allow `GITHUB_TOKEN` to create releases with `contents: write`.
+- Workflow permissions allow `GITHUB_TOKEN` to publish packages with `packages: write`; make the GHCR package public in its package settings when the image should be publicly pullable.
 - The `Release Preview` workflow passes on the release PR, including the GoReleaser snapshot package build.
 
 Key documents:
