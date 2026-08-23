@@ -157,11 +157,11 @@ Before assigning a new story ID, inspect `git worktree list --porcelain`, search
 | [F-S73](#f-s73-remove-gremlins-mutation-testing-ci-job) | Remove the Gremlins mutation-testing job from CI; keep `.gremlins.yaml` for optional manual runs. | Done |
 | [F-S74](#f-s74-guarded-stocktake-generation-and-reporting) | Implement guarded stocktake generation and reporting after F-S60 discovery resolves asynchronous task and report behavior. | Done |
 | [F-S75](#f-s75-yaml-configuration-file-support) | Add documented YAML configuration-file loading with default-path discovery and explicit precedence. | Done |
-| [F-S76](#f-s76-shared-bounded-batch-mutation-execution) | Add shared bounded batch planning, confirmation, execution, cancellation, and per-item recovery primitives. | Planned |
-| [F-S77](#f-s77-low-risk-bulk-catalog-and-company-updates) | Add low-risk bulk scalar updates for catalog and company record families. | Planned |
-| [F-S78](#f-s78-low-risk-bulk-stock-metadata-and-status-updates) | Add low-risk bulk stock-item metadata and status updates. | Planned |
-| [F-S79](#f-s79-low-risk-bulk-purchase-order-and-line-metadata-updates) | Add low-risk bulk purchase-order and line metadata updates. | Planned |
-| [F-S80](#f-s80-low-risk-bulk-attachment-and-parameter-value-updates) | Add low-risk bulk attachment metadata and parameter-value updates. | Planned |
+| [F-S76](#f-s76-shared-bounded-batch-mutation-execution) | Add shared bounded batch planning, confirmation, execution, cancellation, and per-item recovery primitives. | Done |
+| [F-S77](#f-s77-low-risk-bulk-catalog-and-company-updates) | Add low-risk bulk scalar updates for catalog and company record families. | Ready |
+| [F-S78](#f-s78-low-risk-bulk-stock-metadata-and-status-updates) | Add low-risk bulk stock-item metadata and status updates. | Ready |
+| [F-S79](#f-s79-low-risk-bulk-purchase-order-and-line-metadata-updates) | Add low-risk bulk purchase-order and line metadata updates. | Ready |
+| [F-S80](#f-s80-low-risk-bulk-attachment-and-parameter-value-updates) | Add low-risk bulk attachment metadata and parameter-value updates. | Ready |
 | [F-S81](#f-s81-bulk-mutation-throughput-and-operator-observability) | Validate bulk throughput, bounded concurrency, progress, cancellation, and operator recovery evidence. | Planned |
 | [F-S82](#f-s82-mcp-facing-image-and-attachment-tool-routing-guidance) | Make image and generic-attachment tool routing explicit to MCP agents. | Done |
 
@@ -2882,10 +2882,10 @@ Tasks:
 
 ### F-S76: Shared Bounded Batch Mutation Execution
 
-- Status: `Planned`
+- Status: `Done`
 - Issue: [#200](https://github.com/davidvanlaatum/inventree-mcp/issues/200)
 - Depends on: none; F-S14 provides an existing bulk-workflow precedent.
-- Scope: add shared internal batch planning and execution primitives for future resource- or operation-specific bulk MCP tools. Support bounded concurrent preflight and mutation, one current-state-bound confirmation token for a batch, cancellation and deadlines, per-item outcomes, partial-failure reporting, and fail-closed handling of ambiguous mutation results. Do not expose a generic arbitrary-record PATCH tool or claim cross-record atomicity.
+- Scope: add shared internal batch planning and execution primitives for future resource- or operation-specific bulk MCP tools. Support bounded concurrent preflight and mutation, one current-state-bound confirmation token for a batch, cancellation and deadlines, per-item outcomes, partial-failure reporting, and fail-closed handling of ambiguous mutation results. Do not expose a generic arbitrary-record PATCH tool or claim cross-record atomicity. This story ships no public MCP tool; it is a library-only foundation that F-S77+ each build a resource-specific `batch.Adapter` on top of.
 - Acceptance:
   - Batch plans bind the complete ordered item set, requested operation, target values, current-state fingerprints, principal, and expiry.
   - Confirmation is single-use and rejects stale, changed, reordered, or mismatched batches.
@@ -2894,19 +2894,22 @@ Tasks:
   - Results distinguish applied, skipped/no-op, failed, ambiguous, and unverified items.
   - Mutation adapters can perform exact read-back and recovery per item.
   - Existing single-item confirmation behavior remains unchanged.
-  - Unit, MCP-boundary, and focused integration coverage exercises successful batches, stale plans, cancellation, partial failure, and ambiguous responses.
+  - Unit and focused integration coverage exercises successful batches, stale plans, cancellation, partial failure, and ambiguous responses. MCP-boundary coverage is deferred to F-S77, the first story that wires a `batch.Adapter` into a real `addWriteTool`, since this story exposes no MCP tool to test at that boundary.
   - Documentation defines bulk execution as concurrent orchestration of independent requests, not upstream atomicity.
+- Validation: `go build ./...`, `go vet ./...`, and `golangci-lint run ./...` passed with 0 issues; full `go test ./... -race` passed across all 18 tested packages; `go test ./internal/batch/... -race -coverprofile=...` reported 100.0% statement coverage on the new package, confirmed independently by reviewers; `go test ./internal/batch/... -race -count=30 -run "TestExecute|TestLifecycle"` passed with no flakes after replacing wall-clock-sleep synchronization with deterministic channel signaling in the cancellation tests; `go test -tags no_integration_tests ./internal/batch/...` confirmed the unit tests stand alone without the integration file; `git diff --check` passed.
+- Review: Senior Go Developer, Senior QA / Test Architect, and Senior Product Manager panel completed (no auth/upload/Testcontainers/tool-surface/milestone-completion change, so the full infosec panel was not required). Go review found no correctness or concurrency bugs; two style suggestions (a `SupersedeKey` collision-safety doc comment, a redundant loop-variable rebind) were applied. QA review confirmed the 5-outcome vocabulary, reordering/staleness/capacity/concurrency-bound/cancellation coverage, and the no-stop-on-first-failure behavior are each genuinely proven by dedicated tests, not just asserted; found the two cancellation tests carried a low-probability wall-clock flakiness risk, which was fixed by replacing sleep-based races with deterministic start/proceed channel synchronization, and added a real-deadline (not just manual-cancel) test. Product review found the linked issue's body had been left stale (still read "Planned" with pre-edit acceptance wording) after only a progress comment was posted; the issue body was corrected to match this section, and F-S77's acceptance criteria/issue were given an explicit cross-reference to the MCP-boundary coverage this story defers to it.
+- Residual risk: none identified. The 18 existing single-item confirmation-token/plan-store implementations across `internal/tools/*.go` remain unmigrated onto `internal/batch` by deliberate scope decision (documented in `docs/PLAN.md`'s `internal/workflows` boundary note); this is a known duplication left for optional future cleanup, not a defect.
 
 Tasks:
 
-- [ ] Define batch plan, token, worker, cancellation, and per-item result contracts.
-- [ ] Implement shared bounded preflight and mutation execution primitives.
-- [ ] Add stale/reordered/partial/ambiguous/cancellation coverage.
-- [ ] Document the shared framework and public-tool boundary.
+- [x] Define batch plan, token, worker, cancellation, and per-item result contracts.
+- [x] Implement shared bounded preflight and mutation execution primitives.
+- [x] Add stale/reordered/partial/ambiguous/cancellation coverage.
+- [x] Document the shared framework and public-tool boundary.
 
 ### F-S77: Low-Risk Bulk Catalog And Company Updates
 
-- Status: `Planned`
+- Status: `Ready`
 - Issue: [#201](https://github.com/davidvanlaatum/inventree-mcp/issues/201)
 - Depends on: F-S76.
 - Scope: add resource-specific bulk tools for independent, non-destructive, idempotent scalar updates on parts, companies, part categories, supplier parts, and manufacturer parts. Preserve each resource's PATCH allowlist, explicit clear semantics, duplicate/reference checks, authorization scopes, annotations, and exact read-back behavior. Exclude creates, deletes, relationship changes, upserts, image operations, and arbitrary generic PATCH fields.
@@ -2918,6 +2921,7 @@ Tasks:
   - Existing single-record tools and contracts remain unchanged.
   - Default-on pinned InvenTree integration coverage proves representative successful updates and mixed-result batches for every supported resource family.
   - Tool reference, operator recipes, prompts, manifest, API capability notes, and authorization metadata remain aligned.
+  - MCP-boundary coverage here also satisfies F-S76's deferred MCP-boundary acceptance criterion for the shared batch framework, since this is the first story that wires a `batch.Adapter` into a real tool.
 
 Tasks:
 
@@ -2928,7 +2932,7 @@ Tasks:
 
 ### F-S78: Low-Risk Bulk Stock Metadata And Status Updates
 
-- Status: `Planned`
+- Status: `Ready`
 - Issue: [#202](https://github.com/davidvanlaatum/inventree-mcp/issues/202)
 - Depends on: F-S76.
 - Scope: add resource-specific bulk tools for independent, non-destructive stock-item metadata and status updates. Initial scope includes status, batch, expiry, packaging, notes, links, and other ordinary metadata already supported by the corresponding single-item tools. Exclude quantity adjustments, stocktake counts, transfers, serial identity, installation, depletion, deletion, and delete-on-deplete policy changes.
@@ -2950,7 +2954,7 @@ Tasks:
 
 ### F-S79: Low-Risk Bulk Purchase-Order And Line Metadata Updates
 
-- Status: `Planned`
+- Status: `Ready`
 - Issue: [#203](https://github.com/davidvanlaatum/inventree-mcp/issues/203)
 - Depends on: F-S76.
 - Scope: add resource-specific bulk tools for independent metadata-only updates on purchase orders, ordinary purchase-order lines, and extra lines. Preserve each existing PATCH allowlist, nullable-field semantics, supplier/order identity checks, authorization scopes, annotations, and exact read-back behavior. Exclude issue, receive, complete, hold, resume, cancellation, deletion, duplication, and create workflows.
@@ -2972,7 +2976,7 @@ Tasks:
 
 ### F-S80: Low-Risk Bulk Attachment And Parameter-Value Updates
 
-- Status: `Planned`
+- Status: `Ready`
 - Issue: [#204](https://github.com/davidvanlaatum/inventree-mcp/issues/204)
 - Depends on: F-S76; coordinate with the existing F-S14 bulk parameter-propagation workflow.
 - Scope: add resource-specific bulk tools for attachment metadata updates and safe parameter-value maintenance where each row can be independently preflighted and patched. Reuse F-S14's explicit template, selector, overwrite, and audit conventions rather than introducing implicit template creation or arbitrary object writes. Exclude uploads, downloads, image assignment, deletes, template merges, and ambiguous parameter-template selection.
