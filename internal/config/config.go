@@ -15,6 +15,7 @@ import (
 
 	"github.com/davidvanlaatum/inventree-mcp/internal/oauth"
 	"github.com/davidvanlaatum/inventree-mcp/internal/weblinks"
+	"github.com/spf13/afero"
 )
 
 const (
@@ -104,45 +105,39 @@ func ParseServe(args []string) (Config, error) {
 }
 
 func ParseServeWithEnv(args []string, getenv Env, output io.Writer) (Config, error) {
+	return parseServeWithDeps(args, getenv, output, afero.NewOsFs(), os.UserConfigDir)
+}
+
+func parseServeWithDeps(args []string, getenv Env, output io.Writer, filesystem afero.Fs, userConfigDir func() (string, error)) (Config, error) {
 	if output == nil {
 		output = io.Discard
 	}
 
-	cfg := Config{
-		Transport:           Transport(envDefault(getenv, EnvTransport, string(TransportStdio))),
-		Environment:         Environment(envDefault(getenv, EnvEnvironment, string(EnvironmentProduction))),
-		Listen:              envDefault(getenv, EnvListen, DefaultListen),
-		Path:                envDefault(getenv, EnvPath, "/mcp"),
-		InvenTreeURL:        getenv(EnvInvenTreeURL),
-		InvenTreeWebURL:     getenv(EnvInvenTreeWebURL),
-		InvenTreeToken:      getenv(EnvInvenTreeToken),
-		InvenTreeAuthScheme: AuthScheme(envDefault(getenv, EnvInvenTreeAuthScheme, string(AuthSchemeToken))),
-		InvenTreeTimeout:    durationDefault(getenv, EnvInvenTreeTimeout, 30*time.Second),
-		UploadAllowRoots:    listEnv(getenv, EnvUploadAllowRoots),
-		UploadMaxBytes:      int64Default(getenv, EnvUploadMaxBytes, 5*1024*1024),
-		MCPMaxRequestBodyBytes: int64Default(
-			getenv,
-			EnvMCPMaxRequestBodyBytes,
-			DefaultMCPMaxRequestBodyBytes,
-		),
-		LogLevel:            envDefault(getenv, EnvLogLevel, "info"),
-		DebugTrafficLog:     strings.TrimSpace(getenv(EnvDebugTrafficLog)),
-		OAuthIssuerURL:      getenv(EnvOAuthIssuerURL),
-		OAuthResourceURL:    getenv(EnvOAuthResourceURL),
-		OAuthKeyring:        oauth.KeyringConfig{Keys: keyListEnv(getenv, EnvOAuthKeys)},
-		OAuthClientIDs:      commaListEnv(getenv, EnvOAuthClientIDs),
-		TrustedProxyCIDRs:   commaListEnv(getenv, EnvTrustedProxyCIDRs),
-		OAuthAccessLifetime: durationDefault(getenv, EnvOAuthAccessLifetime, oauth.DefaultAccessTokenLifetime),
-		OAuthRefreshLifetime: durationDefault(
-			getenv,
-			EnvOAuthRefreshLifetime,
-			oauth.DefaultRefreshTokenLifetime,
-		),
-		OAuthSessionLifetime: durationDefault(getenv, EnvOAuthSessionLifetime, oauth.DefaultSessionLifetime),
+	cfg := defaultConfig()
+	configPath, configPathExplicit, err := configPathFromArgs(args)
+	if err != nil {
+		return Config{}, err
 	}
+	if !configPathExplicit {
+		configPath, err = discoverConfigPath(filesystem, userConfigDir)
+		if err != nil {
+			return Config{}, err
+		}
+	}
+	if configPath != "" {
+		fileCfg, err := loadConfigFile(filesystem, configPath)
+		if err != nil {
+			return Config{}, err
+		}
+		if err := applyFileConfig(&cfg, fileCfg); err != nil {
+			return Config{}, fmt.Errorf("config file %q: %w", configPath, err)
+		}
+	}
+	applyEnvironment(&cfg, getenv)
 
 	fs := flag.NewFlagSet("serve", flag.ContinueOnError)
 	fs.SetOutput(output)
+	fs.StringVar(&configPath, "config", configPath, "YAML configuration file; default discovery uses the first existing file")
 	fs.StringVar((*string)(&cfg.Transport), "transport", string(cfg.Transport), flagHelp("transport to serve: stdio or http", EnvTransport))
 	fs.StringVar((*string)(&cfg.Environment), "environment", string(cfg.Environment), flagHelp("runtime environment: development or production", EnvEnvironment))
 	fs.StringVar(&cfg.Listen, "listen", cfg.Listen, flagHelp("HTTP listen address", EnvListen))
@@ -151,8 +146,13 @@ func ParseServeWithEnv(args []string, getenv Env, output io.Writer) (Config, err
 	fs.StringVar(&cfg.InvenTreeWebURL, "inventree-web-url", cfg.InvenTreeWebURL, flagHelp("optional exact user-facing InvenTree frontend mount URL", EnvInvenTreeWebURL))
 	fs.StringVar((*string)(&cfg.InvenTreeAuthScheme), "inventree-auth-scheme", string(cfg.InvenTreeAuthScheme), flagHelp("InvenTree auth scheme: Token or Bearer", EnvInvenTreeAuthScheme))
 	fs.DurationVar(&cfg.InvenTreeTimeout, "inventree-timeout", cfg.InvenTreeTimeout, flagHelp("InvenTree request timeout", EnvInvenTreeTimeout))
-	fs.BoolVar(&cfg.InvenTreeTLSSkipVerify, "inventree-tls-skip-verify", boolEnv(getenv, EnvInvenTreeTLSSkipVerify), flagHelp("skip upstream InvenTree TLS verification", EnvInvenTreeTLSSkipVerify))
+	fs.BoolVar(&cfg.InvenTreeTLSSkipVerify, "inventree-tls-skip-verify", cfg.InvenTreeTLSSkipVerify, flagHelp("skip upstream InvenTree TLS verification", EnvInvenTreeTLSSkipVerify))
+	var uploadFlagSeen bool
 	fs.Func("upload-allow-root", flagHelp("trusted STDIO local upload root; repeatable", EnvUploadAllowRoots), func(value string) error {
+		if !uploadFlagSeen {
+			cfg.UploadAllowRoots = nil
+			uploadFlagSeen = true
+		}
 		value = strings.TrimSpace(value)
 		if value != "" {
 			cfg.UploadAllowRoots = append(cfg.UploadAllowRoots, value)
@@ -163,17 +163,27 @@ func ParseServeWithEnv(args []string, getenv Env, output io.Writer) (Config, err
 	fs.Int64Var(&cfg.MCPMaxRequestBodyBytes, "mcp-max-request-body-bytes", cfg.MCPMaxRequestBodyBytes, flagHelp("maximum bytes accepted in one MCP HTTP request body", EnvMCPMaxRequestBodyBytes))
 	fs.StringVar(&cfg.LogLevel, "log-level", cfg.LogLevel, flagHelp("log level", EnvLogLevel))
 	fs.StringVar(&cfg.DebugTrafficLog, "debug-traffic-log", cfg.DebugTrafficLog, flagHelp("append full MCP request/response JSON to this debug log file", EnvDebugTrafficLog))
-	fs.BoolVar(&cfg.DevIncompleteOAuth, "dev-incomplete-oauth", boolEnv(getenv, EnvDevIncompleteOAuth), flagHelp("allow development-only HTTP parsing without OAuth setup wiring", EnvDevIncompleteOAuth))
+	fs.BoolVar(&cfg.DevIncompleteOAuth, "dev-incomplete-oauth", cfg.DevIncompleteOAuth, flagHelp("allow development-only HTTP parsing without OAuth setup wiring", EnvDevIncompleteOAuth))
 	fs.StringVar(&cfg.OAuthIssuerURL, "oauth-issuer-url", cfg.OAuthIssuerURL, flagHelp("public HTTPS OAuth issuer URL", EnvOAuthIssuerURL))
 	fs.StringVar(&cfg.OAuthResourceURL, "oauth-resource-url", cfg.OAuthResourceURL, flagHelp("public HTTPS MCP resource URL", EnvOAuthResourceURL))
+	var oauthClientIDFlagSeen bool
 	fs.Func("oauth-client-id", flagHelp("allowed OAuth client_id metadata URL; repeatable", EnvOAuthClientIDs), func(value string) error {
+		if !oauthClientIDFlagSeen {
+			cfg.OAuthClientIDs = nil
+			oauthClientIDFlagSeen = true
+		}
 		value = strings.TrimSpace(value)
 		if value != "" {
 			cfg.OAuthClientIDs = append(cfg.OAuthClientIDs, value)
 		}
 		return nil
 	})
+	var trustedProxyCIDRFlagSeen bool
 	fs.Func("trusted-proxy-cidr", flagHelp("trusted reverse-proxy CIDR; repeatable", EnvTrustedProxyCIDRs), func(value string) error {
+		if !trustedProxyCIDRFlagSeen {
+			cfg.TrustedProxyCIDRs = nil
+			trustedProxyCIDRFlagSeen = true
+		}
 		value = strings.TrimSpace(value)
 		if value != "" {
 			cfg.TrustedProxyCIDRs = append(cfg.TrustedProxyCIDRs, value)
@@ -452,25 +462,6 @@ func MinimumMCPRequestBodyBytes(uploadMaxBytes int64) int64 {
 		return math.MaxInt64
 	}
 	return ((uploadMaxBytes+2)/3)*4 + mcpRequestBodyOverheadBytes
-}
-
-func envDefault(getenv Env, key, fallback string) string {
-	if value := getenv(key); value != "" {
-		return value
-	}
-	return fallback
-}
-
-func durationDefault(getenv Env, key string, fallback time.Duration) time.Duration {
-	value := getenv(key)
-	if value == "" {
-		return fallback
-	}
-	parsed, err := time.ParseDuration(value)
-	if err != nil {
-		return invalidDuration
-	}
-	return parsed
 }
 
 func boolEnv(getenv Env, key string) bool {

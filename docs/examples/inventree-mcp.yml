@@ -1,0 +1,49 @@
+# Copy this file to a supported config path or pass it with
+# `inventree-mcp serve --config /path/to/inventree-mcp.yml`.
+#
+# The first existing default file wins. Configuration precedence is:
+# defaults < YAML file < environment variables < CLI flags.
+# Higher-precedence list values replace lower-precedence lists; repeated CLI
+# list flags are combined with each other.
+#
+# This file may contain secrets. On Linux and macOS it must not be readable by
+# group or other users (use chmod 600). On Windows, protect it with an ACL.
+
+transport: stdio
+environment: production
+listen: 127.0.0.1:28686
+path: /mcp
+
+inventree_url: https://inventory.example.test
+# inventree_web_url: https://inventory.example.test/web
+inventree_token: REPLACE_WITH_INVENTREE_TOKEN
+inventree_auth_scheme: Token
+inventree_timeout: 30s
+inventree_tls_skip_verify: false
+
+# Local STDIO uploads are disabled unless at least one trusted root is set.
+upload_allow_roots:
+  - /trusted/uploads
+upload_max_bytes: 5242880
+mcp_max_request_body_bytes: 8388608
+log_level: info
+# debug_traffic_log: /secure/path/mcp-traffic.jsonl
+
+dev_incomplete_oauth: false
+
+# These settings are required for production HTTP mode. OAuth key material is
+# intentionally shown as a placeholder and must be replaced with generated,
+# protected key material before enabling HTTP mode.
+# oauth_issuer_url: https://mcp.example.test
+# oauth_resource_url: https://mcp.example.test/mcp
+# oauth_keys:
+#   - current:active:REPLACE_WITH_BASE64_32_BYTE_KEY
+# oauth_client_ids:
+#   - https://chatgpt.com/client-metadata/REPLACE_ME
+# trusted_proxy_cidrs:
+#   - 127.0.0.1/32
+#   - ::1/128
+
+oauth_access_lifetime: 15m
+oauth_refresh_lifetime: 720h
+oauth_session_lifetime: 2160h

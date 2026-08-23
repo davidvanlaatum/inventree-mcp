@@ -141,7 +141,7 @@ Before assigning a new story ID, inspect `git worktree list --porcelain`, search
 | [F-S57](#f-s57-part-testing-workflow-discovery) | Investigate part test templates, stock-item test results, attachments, and safe workflow boundaries. | Future |
 | [F-S58](#f-s58-pricing-and-price-break-workflow-discovery) | Investigate part pricing, supplier price breaks, internal prices, sale prices, currencies, and safe tool boundaries. | Future |
 | [F-S59](#f-s59-part-requirements-visibility-discovery) | Investigate build and order demand visibility through the part requirements API. | Future |
-| [F-S60](#f-s60-stocktake-generation-and-reporting-discovery) | Investigate guarded generation of part stocktake snapshots and reports after history reads exist. | Active |
+| [F-S60](#f-s60-stocktake-generation-and-reporting-discovery) | Investigate guarded generation of part stocktake snapshots and reports after history reads exist. | Done |
 | [F-S61](#f-s61-adopt-inventree-150-api-530-baseline) | Adopt InvenTree 1.5.0 and API 530 as the blocking compatibility baseline. | Done |
 | [F-S62](#f-s62-guarded-purchase-order-hold-resume-and-cancellation) | Add explicit current-state-planned hold, resume, and cancellation workflows without generic status editing or whole-order deletion. | Done |
 | [F-S63](#f-s63-guarded-purchase-order-duplication-discovery) | Investigate a deferred, low-frequency workflow for safely duplicating selected purchase-order state. | Future |
@@ -156,6 +156,7 @@ Before assigning a new story ID, inspect `git worktree list --porcelain`, search
 | [F-S72](#f-s72-porcelain-style-version-cli-format-and-self-update-rewrite) | Replace the CLI `version` output with a versioned porcelain-style format and move self-update onto it, accepting one documented one-time breaking migration. | Done |
 | [F-S73](#f-s73-remove-gremlins-mutation-testing-ci-job) | Remove the Gremlins mutation-testing job from CI; keep `.gremlins.yaml` for optional manual runs. | Done |
 | [F-S74](#f-s74-guarded-stocktake-generation-and-reporting) | Implement guarded stocktake generation and reporting after F-S60 discovery resolves asynchronous task and report behavior. | Done |
+| [F-S75](#f-s75-yaml-configuration-file-support) | Add documented YAML configuration-file loading with default-path discovery and explicit precedence. | Done |
 
 ## Milestone 0: Repository And Planning
 
@@ -2498,7 +2499,7 @@ Tasks:
 
 ### F-S60: Stocktake Generation And Reporting Discovery
 
-- Status: `Active`
+- Status: `Done`
 - Issue: [#141](https://github.com/davidvanlaatum/inventree-mcp/issues/141)
 - Depends on: F-S46
 - Progress: implementation started on `codex/f-s60-stocktake-generation-reporting` from `origin/main` at `12ee25b` after the operator promoted this future discovery story on 2026-08-21. The initial scope remains discovery-only; the client-method integration stack now starts one pinned worker alongside its existing web stack, while unrelated testenv users remain web-only.
@@ -2847,3 +2848,27 @@ Tasks:
 - Validation: focused F-S74 unit/client tests, `go vet ./...`, `git diff --check`, and the worker-backed Docker characterization against pinned InvenTree 1.5.1 passed. The live characterization verified distinct same-day task IDs, explicit non-staff HTTP 403 rejection, and a combined entry/report task remaining nonterminal at `0/1` with no artifact after the bounded poll.
 - Review: Full Senior Go Developer, Senior QA / Test Architect, Senior Product Manager, and Senior Infosec Reviewer panel completed with actionable findings fixed across reruns. The final rerun found no remaining findings; the documented residual is that the client transport must honor context cancellation for the 30-second request bound.
 - Completion: PR #195 was squash-merged into `main` at `63d827b` after all required checks passed. Issue #193 is complete and ready to close after this task-index status synchronization.
+
+### F-S75: YAML Configuration File Support
+
+- Status: `Done`
+- Issue: [#198](https://github.com/davidvanlaatum/inventree-mcp/issues/198)
+- Depends on: M1A-S01
+- Progress: implementation completed on `codex/f-s75-yaml-configuration` from `origin/main` at `2d18fde`. The linked issue remains open and Active pending pull request verification and merge.
+- Decisions: approved by the operator on 2026-08-23. Configuration-file secrets are allowed, including the InvenTree token and OAuth key material. Configuration precedence is defaults < YAML file < environment variables < CLI flags. For list-valued fields, a higher-precedence source replaces lower-precedence source values; repeated flags within the same CLI source retain the existing repeatable-flag behavior. An explicitly supplied `--config <path>` is supported in addition to default discovery. Default discovery checks `./inventree-mcp.yml`, `./inventree-mcp.yaml`, the user config directory's `inventree-mcp/config.yml` and `inventree-mcp/config.yaml`, and on Unix `/etc/inventree-mcp/config.yml` and `/etc/inventree-mcp/config.yaml`, in that order, and loads only the first existing file. The user config directory comes from Go's `os.UserConfigDir()`, which honors `$XDG_CONFIG_HOME` on Unix, uses `~/.config` when it is empty, uses `~/Library/Application Support` on macOS, and `%AppData%` on Windows; a relative `$XDG_CONFIG_HOME` causes startup to fail clearly. Missing default files are skipped, while a discovered or explicitly selected malformed/unreadable file fails clearly. On Linux and macOS, every loaded YAML file must not be group- or world-readable; startup opens the selected file and checks permissions on that opened file to avoid time-of-check/time-of-use races, including when the path is a symlink. Windows skips Unix mode-bit enforcement and relies on documented ACL protection. The checked-in example includes documentation comments and warns operators to protect secret-bearing files.
+- Scope: extend the typed `serve` configuration loader to read YAML, preserve the existing validation and flag contracts, add deterministic path discovery and explicit-path selection, and document operator usage, precedence, secret handling, and file permissions.
+- Acceptance: YAML covers the typed configuration model; path discovery and explicit-path behavior are deterministic and tested; scalar, list, boolean, duration, and secret precedence is tested; higher-precedence list values replace lower-precedence values while repeated CLI list flags retain established same-source behavior; malformed YAML, unreadable files, invalid values, unsafe Unix permissions, and invalid relative `XDG_CONFIG_HOME` produce actionable redacted errors; `os.UserConfigDir()` behavior is covered for the supported platforms; symlinked files check permissions on the opened target without a check/use race; Windows behavior is covered by platform-appropriate tests/documentation; an example YAML file with documentation comments is checked in; README and operator configuration documentation describe paths, precedence, secrets, permissions, and usage; relevant unit/package tests, formatting, lint, and diff checks pass.
+- Validation: `go test ./...` passed with the Docker-backed integration suites; `go test -race ./internal/config` passed; `go test -cover ./internal/config` reported 93.8% (above the 93.7% base); `go vet ./...` passed; `golangci-lint run ./...` passed with 0 issues; `go mod tidy -diff` passed; `git diff --check` passed.
+- Review: Senior Go Developer, Senior QA / Test Architect, Senior Product Manager, and Senior Infosec Reviewer panel completed. Findings about first-existing-path evaluation order and non-native `/etc` probing on Windows were fixed; the focused rerun found no remaining actionable findings.
+- Residual risk: YAML files may contain credentials and OAuth key material. Unix mode checks and the example/operator documentation make the owner-controlled trust boundary explicit, while Windows deployments remain dependent on correctly configured ACLs.
+
+Tasks:
+
+- [x] Add YAML decoding to the typed configuration loader without duplicating validation rules.
+- [x] Add the `--config <path>` flag for explicit config-path selection and deterministic first-existing-file default-path discovery.
+- [x] Define and test defaults < YAML < environment < CLI precedence, including replacement semantics for cross-source lists and repeatable same-source CLI flags.
+- [x] Add actionable redacted errors for selected-file read/decode/value/permission failures, including invalid relative `XDG_CONFIG_HOME`.
+- [x] Use `os.UserConfigDir()` for the platform-appropriate user config directory and validate Unix permissions on the opened file without a symlink check/use race; document/test Windows ACL responsibility.
+- [x] Add a commented example YAML configuration file.
+- [x] Update README and operator recipes with paths, precedence, secret handling, permissions, and usage.
+- [x] Run focused tests and repository validation, then record coverage, review, and residual-risk evidence.
