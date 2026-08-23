@@ -403,6 +403,25 @@ func TestBuildCompanyBulkPlanRejectsUnknownID(t *testing.T) {
 	assert.NotEmpty(t, plan.Items[0].FailReason)
 }
 
+func TestBuildCompanyBulkPlanRejectsDuplicateIDWithinBatch(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	client := newBulkFakeCompanyAdmin()
+	client.companies[1] = inventree.CompanyDetail{Company: inventree.Company{PK: 1, Name: "Old"}}
+
+	plan := buildCompanyBulkPlan(ctx, client, []BulkUpdateCompanyItem{
+		{ID: 1, Description: dvgoutils.Ptr("first")},
+		{ID: 1, Description: dvgoutils.Ptr("second")},
+	})
+	r.Len(plan.Items, 2)
+	a.NotEmpty(plan.Items[0].FailReason)
+	a.NotEmpty(plan.Items[1].FailReason)
+	a.Contains(plan.Items[0].FailReason, "once")
+	a.Contains(plan.Items[1].FailReason, "once")
+}
+
 func TestBuildCategoryBulkPlanRejectsSameParentDuplicateName(t *testing.T) {
 	t.Parallel()
 	ctx, _, _ := testhandler.SetupTestHandler(t)
@@ -516,6 +535,104 @@ func TestBulkUpdateCompaniesRejectsStalePlanHash(t *testing.T) {
 	a.Equal(0, client.companyUpdateCalls)
 }
 
+func TestBulkUpdatePartsRejectsStalePlanHash(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	client := newBulkFakePartWrite()
+	client.parts[1] = inventree.PartDetail{PK: 1, Name: "Old Name"}
+	deps := testCatalogBulkDeps(client)
+	handler := bulkUpdateParts(deps)
+
+	items := []BulkUpdatePartItem{{ID: 1, Name: dvgoutils.Ptr("New Name")}}
+	_, dryOut, err := handler(ctx, &mcp.CallToolRequest{}, BulkUpdatePartsInput{Items: items, DryRun: true})
+	r.NoError(err)
+
+	client.parts[1] = inventree.PartDetail{PK: 1, Name: "Someone Else Changed It"}
+
+	_, confirmOut, err := handler(ctx, &mcp.CallToolRequest{}, BulkUpdatePartsInput{Items: items, Confirm: true, PlanHash: dryOut.PlanHash})
+	r.NoError(err)
+	a.Equal(StatusClarificationRequired, confirmOut.Status)
+	r.NotNil(confirmOut.Clarification)
+	a.Equal(0, client.updateCalls)
+}
+
+func TestBulkUpdatePartCategoriesRejectsStalePlanHash(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	client := newBulkFakeCategoryAdmin()
+	client.categories[1] = inventree.Category{PK: 1, Name: "Old Name"}
+	deps := testCatalogBulkDeps(client)
+	handler := bulkUpdatePartCategories(deps)
+
+	items := []BulkUpdatePartCategoryItem{{ID: 1, Name: dvgoutils.Ptr("New Name")}}
+	_, dryOut, err := handler(ctx, &mcp.CallToolRequest{}, BulkUpdatePartCategoriesInput{Items: items, DryRun: true})
+	r.NoError(err)
+
+	client.categories[1] = inventree.Category{PK: 1, Name: "Someone Else Changed It"}
+
+	_, confirmOut, err := handler(ctx, &mcp.CallToolRequest{}, BulkUpdatePartCategoriesInput{Items: items, Confirm: true, PlanHash: dryOut.PlanHash})
+	r.NoError(err)
+	a.Equal(StatusClarificationRequired, confirmOut.Status)
+	r.NotNil(confirmOut.Clarification)
+	a.Equal(0, client.updateCalls)
+}
+
+func TestBulkUpdateSupplierPartsRejectsStalePlanHash(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	client := newBulkFakeCompanyAdmin()
+	client.parts[10] = inventree.Part{PK: 10}
+	client.companies[20] = inventree.CompanyDetail{Company: inventree.Company{PK: 20, IsSupplier: true}}
+	client.suppliers[1] = inventree.SupplierPartDetail{PK: 1, Part: 10, Supplier: 20, SKU: "SKU-OLD"}
+	deps := testCatalogBulkDeps(client)
+	handler := bulkUpdateSupplierParts(deps)
+
+	items := []BulkUpdateSupplierPartItem{{ID: 1, SKU: dvgoutils.Ptr("SKU-NEW")}}
+	_, dryOut, err := handler(ctx, &mcp.CallToolRequest{}, BulkUpdateSupplierPartsInput{Items: items, DryRun: true})
+	r.NoError(err)
+
+	client.suppliers[1] = inventree.SupplierPartDetail{PK: 1, Part: 10, Supplier: 20, SKU: "SKU-CHANGED"}
+
+	_, confirmOut, err := handler(ctx, &mcp.CallToolRequest{}, BulkUpdateSupplierPartsInput{Items: items, Confirm: true, PlanHash: dryOut.PlanHash})
+	r.NoError(err)
+	a.Equal(StatusClarificationRequired, confirmOut.Status)
+	r.NotNil(confirmOut.Clarification)
+	a.Equal(0, client.supplierUpdateCalls)
+}
+
+func TestBulkUpdateManufacturerPartsRejectsStalePlanHash(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	client := newBulkFakeCompanyAdmin()
+	client.parts[10] = inventree.Part{PK: 10}
+	client.companies[30] = inventree.CompanyDetail{Company: inventree.Company{PK: 30, IsManufacturer: true}}
+	oldMPN := "MPN-OLD"
+	client.manufacturers[1] = inventree.ManufacturerPartDetail{PK: 1, Part: 10, Manufacturer: 30, MPN: &oldMPN}
+	deps := testCatalogBulkDeps(client)
+	handler := bulkUpdateManufacturerParts(deps)
+
+	items := []BulkUpdateManufacturerPartItem{{ID: 1, MPN: dvgoutils.Ptr("MPN-NEW")}}
+	_, dryOut, err := handler(ctx, &mcp.CallToolRequest{}, BulkUpdateManufacturerPartsInput{Items: items, DryRun: true})
+	r.NoError(err)
+
+	changedMPN := "MPN-CHANGED"
+	client.manufacturers[1] = inventree.ManufacturerPartDetail{PK: 1, Part: 10, Manufacturer: 30, MPN: &changedMPN}
+
+	_, confirmOut, err := handler(ctx, &mcp.CallToolRequest{}, BulkUpdateManufacturerPartsInput{Items: items, Confirm: true, PlanHash: dryOut.PlanHash})
+	r.NoError(err)
+	a.Equal(StatusClarificationRequired, confirmOut.Status)
+	r.NotNil(confirmOut.Clarification)
+	a.Equal(0, client.manufacturerUpdateCalls)
+}
+
 func TestBulkUpdateCompaniesMixedOutcomesAreIndependent(t *testing.T) {
 	t.Parallel()
 	r := require.New(t)
@@ -579,6 +696,31 @@ func TestBulkUpdatePartsRejectsEmptyAndOversizedBatches(t *testing.T) {
 	_, out, err = handler(ctx, &mcp.CallToolRequest{}, BulkUpdatePartsInput{Items: tooMany, DryRun: true})
 	r.NoError(err)
 	a.Equal(StatusClarificationRequired, out.Status)
+}
+
+func TestBulkUpdatePartsAcceptsExactlyMaxItems(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	client := newBulkFakePartWrite()
+	maxItems := make([]BulkUpdatePartItem, bulkUpdateMaxItems)
+	for i := range maxItems {
+		id := i + 1
+		client.parts[id] = inventree.PartDetail{PK: id, Name: "Widget"}
+		maxItems[i] = BulkUpdatePartItem{ID: id, Description: dvgoutils.Ptr("bulk description")}
+	}
+	deps := testCatalogBulkDeps(client)
+	handler := bulkUpdateParts(deps)
+
+	_, out, err := handler(ctx, &mcp.CallToolRequest{}, BulkUpdatePartsInput{Items: maxItems, DryRun: true})
+	r.NoError(err)
+	a.Equal(StatusOK, out.Status)
+	r.Len(out.Items, bulkUpdateMaxItems)
+	for _, item := range out.Items {
+		a.Equal(bulkOutcomePlanned, item.Outcome)
+	}
+	a.NotEmpty(out.PlanHash)
 }
 
 func TestBulkUpdatePartsAppliesAndSkipsIndependently(t *testing.T) {
@@ -819,6 +961,113 @@ func TestBulkUpdatePartCategoriesAppliesLocationKeywordsAndIcon(t *testing.T) {
 	a.Equal(newKeywords, *record.DefaultKeywords)
 	require.NotNil(t, record.Icon)
 	a.Equal(newIcon, *record.Icon)
+}
+
+// The following TestXBulkAdapterPreflightDetectsDrift tests call each
+// Adapter's Preflight directly with a hand-crafted item whose Before no
+// longer matches current state. Reaching this branch through the full
+// dry_run/confirm handler flow is impractical: confirm rebuilds the plan
+// from fresh state immediately before Store.Consume, so any drift wide
+// enough to observe from outside the handler already fails at the digest
+// check (see TestBulkUpdate*RejectsStalePlanHash) before Preflight ever
+// runs. Preflight's own drift check only guards the brief window between
+// that rebuild and Execute actually reaching this item, which a direct
+// call is the only practical way to exercise per resource.
+
+func TestPartBulkAdapterPreflightDetectsDrift(t *testing.T) {
+	t.Parallel()
+	a := assert.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	client := newBulkFakePartWrite()
+	client.parts[1] = inventree.PartDetail{PK: 1, Name: "Drifted"}
+	adapter := &partBulkAdapter{client: client}
+	item := partBulkPlanItem{
+		bulkPlanItemBase: bulkPlanItemBase{ID: 1},
+		Before:           inventree.PartDetail{PK: 1, Name: "Original"},
+		Fields:           inventree.PatchFields{"name": inventree.Set("Target")},
+	}
+
+	skip, reason, err := adapter.Preflight(ctx, item)
+	a.False(skip)
+	a.Error(err)
+	a.Equal(bulkReasonDrifted, reason)
+}
+
+func TestCompanyBulkAdapterPreflightDetectsDrift(t *testing.T) {
+	t.Parallel()
+	a := assert.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	client := newBulkFakeCompanyAdmin()
+	client.companies[1] = inventree.CompanyDetail{Company: inventree.Company{PK: 1, Name: "Drifted"}}
+	adapter := &companyBulkAdapter{client: client}
+	item := companyBulkPlanItem{
+		bulkPlanItemBase: bulkPlanItemBase{ID: 1},
+		Before:           inventree.CompanyDetail{Company: inventree.Company{PK: 1, Name: "Original"}},
+		Fields:           inventree.PatchFields{"name": inventree.Set("Target")},
+	}
+
+	skip, reason, err := adapter.Preflight(ctx, item)
+	a.False(skip)
+	a.Error(err)
+	a.Equal(bulkReasonDrifted, reason)
+}
+
+func TestCategoryBulkAdapterPreflightDetectsDrift(t *testing.T) {
+	t.Parallel()
+	a := assert.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	client := newBulkFakeCategoryAdmin()
+	client.categories[1] = inventree.Category{PK: 1, Name: "Drifted"}
+	adapter := &categoryBulkAdapter{client: client}
+	item := categoryBulkPlanItem{
+		bulkPlanItemBase: bulkPlanItemBase{ID: 1},
+		Before:           inventree.Category{PK: 1, Name: "Original"},
+		Fields:           inventree.PatchFields{"name": inventree.Set("Target")},
+	}
+
+	skip, reason, err := adapter.Preflight(ctx, item)
+	a.False(skip)
+	a.Error(err)
+	a.Equal(bulkReasonDrifted, reason)
+}
+
+func TestSupplierPartBulkAdapterPreflightDetectsDrift(t *testing.T) {
+	t.Parallel()
+	a := assert.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	client := newBulkFakeCompanyAdmin()
+	client.suppliers[1] = inventree.SupplierPartDetail{PK: 1, Part: 10, Supplier: 20, SKU: "DRIFTED"}
+	adapter := &supplierPartBulkAdapter{client: client}
+	item := supplierPartBulkPlanItem{
+		bulkPlanItemBase: bulkPlanItemBase{ID: 1},
+		Before:           inventree.SupplierPartDetail{PK: 1, Part: 10, Supplier: 20, SKU: "ORIGINAL"},
+		Fields:           inventree.PatchFields{"SKU": inventree.Set("TARGET")},
+	}
+
+	skip, reason, err := adapter.Preflight(ctx, item)
+	a.False(skip)
+	a.Error(err)
+	a.Equal(bulkReasonDrifted, reason)
+}
+
+func TestManufacturerPartBulkAdapterPreflightDetectsDrift(t *testing.T) {
+	t.Parallel()
+	a := assert.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	client := newBulkFakeCompanyAdmin()
+	driftedMPN, originalMPN := "DRIFTED", "ORIGINAL"
+	client.manufacturers[1] = inventree.ManufacturerPartDetail{PK: 1, Part: 10, Manufacturer: 30, MPN: &driftedMPN}
+	adapter := &manufacturerPartBulkAdapter{client: client}
+	item := manufacturerPartBulkPlanItem{
+		bulkPlanItemBase: bulkPlanItemBase{ID: 1},
+		Before:           inventree.ManufacturerPartDetail{PK: 1, Part: 10, Manufacturer: 30, MPN: &originalMPN},
+		Fields:           inventree.PatchFields{"MPN": inventree.Set("TARGET")},
+	}
+
+	skip, reason, err := adapter.Preflight(ctx, item)
+	a.False(skip)
+	a.Error(err)
+	a.Equal(bulkReasonDrifted, reason)
 }
 
 func TestBulkUpdateSupplierPartsAppliesScalarField(t *testing.T) {

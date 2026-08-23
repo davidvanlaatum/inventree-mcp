@@ -35,6 +35,21 @@ const (
 
 	bulkOutcomePlanned = "planned"
 	bulkOutcomeFailed  = "failed"
+
+	// Preflight reason strings surfaced to the caller as Result.Message when
+	// confirm-time re-validation (not the plan-build-time FailReason) rejects
+	// an item. Keep these static and caller-safe: they must never wrap a raw
+	// upstream error, matching internal/batch's Result.Message contract.
+	bulkReasonReadFailed       = "current state could not be re-read before this item's write"
+	bulkReasonIdentityMismatch = "current-state read returned a mismatched identity"
+	bulkReasonDrifted          = "current state drifted since the plan was reviewed"
+
+	// bulkReasonDuplicateID is used when the same id appears more than once
+	// in one batch. batch.Execute runs items concurrently with no locking
+	// between them, so two items racing the same record could otherwise
+	// produce a confusing ambiguous/unverified outcome for a write that
+	// actually succeeded; reject every occurrence up front instead.
+	bulkReasonDuplicateID = "this id appears more than once in the batch; each id may appear only once per call"
 )
 
 // bulkPlanItemBase is embedded by every resource's batch-plan item type. ID
@@ -131,6 +146,23 @@ func bulkResults[Item bulkPlanItem, View any](results []batch.Result[Item], reco
 		out[i] = entry
 	}
 	return out
+}
+
+// duplicateBulkIDs reports which positive ids appear more than once in ids.
+func duplicateBulkIDs(ids []int) map[int]bool {
+	seen := map[int]int{}
+	for _, id := range ids {
+		if id > 0 {
+			seen[id]++
+		}
+	}
+	dup := map[int]bool{}
+	for id, count := range seen {
+		if count > 1 {
+			dup[id] = true
+		}
+	}
+	return dup
 }
 
 func bulkSupersedeKey(ids []int) string {
@@ -305,6 +337,12 @@ func buildPartBulkPlan(ctx context.Context, client PartWriteClient, items []Bulk
 	for i, item := range items {
 		plan.Items[i] = buildPartBulkPlanItem(ctx, client, item)
 	}
+	dup := duplicateBulkIDs(plan.ids())
+	for i := range plan.Items {
+		if dup[plan.Items[i].ID] && plan.Items[i].FailReason == "" {
+			plan.Items[i].FailReason = bulkReasonDuplicateID
+		}
+	}
 	return plan
 }
 
@@ -346,16 +384,16 @@ func (a *partBulkAdapter) Preflight(ctx context.Context, item partBulkPlanItem) 
 	}
 	current, err := a.client.GetPartDetail(ctx, item.ID)
 	if err != nil {
-		return false, "", err
+		return false, bulkReasonReadFailed, err
 	}
 	if current.PK != item.ID {
-		return false, "", errors.New("part identity verification failed")
+		return false, bulkReasonIdentityMismatch, errors.New("part identity verification failed")
 	}
 	if patchMatches(item.Fields, partValues(current)) {
 		return true, "already at target state", nil
 	}
 	if !valuesMatchForKeys(item.Fields, partValues(current), partValues(item.Before)) {
-		return false, "", errors.New("current state drifted since the plan was reviewed")
+		return false, bulkReasonDrifted, errors.New("current state drifted since the plan was reviewed")
 	}
 	return false, "", nil
 }
@@ -470,6 +508,12 @@ func buildCompanyBulkPlan(ctx context.Context, client CompanyAdminClient, items 
 	for i, item := range items {
 		plan.Items[i] = buildCompanyBulkPlanItem(ctx, client, item)
 	}
+	dup := duplicateBulkIDs(plan.ids())
+	for i := range plan.Items {
+		if dup[plan.Items[i].ID] && plan.Items[i].FailReason == "" {
+			plan.Items[i].FailReason = bulkReasonDuplicateID
+		}
+	}
 	return plan
 }
 
@@ -514,16 +558,16 @@ func (a *companyBulkAdapter) Preflight(ctx context.Context, item companyBulkPlan
 	}
 	current, err := a.client.GetCompanyDetail(ctx, item.ID)
 	if err != nil {
-		return false, "", err
+		return false, bulkReasonReadFailed, err
 	}
 	if current.PK != item.ID {
-		return false, "", errors.New("company identity verification failed")
+		return false, bulkReasonIdentityMismatch, errors.New("company identity verification failed")
 	}
 	if companyFieldsMatch(current, item.Fields) {
 		return true, "already at target state", nil
 	}
 	if !valuesMatchForKeys(item.Fields, companyValues(current), companyValues(item.Before)) {
-		return false, "", errors.New("current state drifted since the plan was reviewed")
+		return false, bulkReasonDrifted, errors.New("current state drifted since the plan was reviewed")
 	}
 	return false, "", nil
 }
@@ -670,6 +714,12 @@ func buildCategoryBulkPlan(ctx context.Context, client CategoryAdminClient, item
 	for i, item := range items {
 		plan.Items[i] = buildCategoryBulkPlanItem(ctx, client, item)
 	}
+	dup := duplicateBulkIDs(plan.ids())
+	for i := range plan.Items {
+		if dup[plan.Items[i].ID] && plan.Items[i].FailReason == "" {
+			plan.Items[i].FailReason = bulkReasonDuplicateID
+		}
+	}
 	return plan
 }
 
@@ -726,16 +776,16 @@ func (a *categoryBulkAdapter) Preflight(ctx context.Context, item categoryBulkPl
 	}
 	current, err := a.client.GetPartCategory(ctx, item.ID)
 	if err != nil {
-		return false, "", err
+		return false, bulkReasonReadFailed, err
 	}
 	if current.PK != item.ID {
-		return false, "", errors.New("category identity verification failed")
+		return false, bulkReasonIdentityMismatch, errors.New("category identity verification failed")
 	}
 	if categoryMatchesPatch(current, item.Fields) {
 		return true, "already at target state", nil
 	}
 	if !categoryMatchesPatch(current, categoryBeforeFields(item.Before, item.Fields)) {
-		return false, "", errors.New("current state drifted since the plan was reviewed")
+		return false, bulkReasonDrifted, errors.New("current state drifted since the plan was reviewed")
 	}
 	return false, "", nil
 }
@@ -853,6 +903,12 @@ func buildSupplierPartBulkPlan(ctx context.Context, client CompanyAdminClient, i
 	for i, item := range items {
 		plan.Items[i] = buildSupplierPartBulkPlanItem(ctx, client, item)
 	}
+	dup := duplicateBulkIDs(plan.ids())
+	for i := range plan.Items {
+		if dup[plan.Items[i].ID] && plan.Items[i].FailReason == "" {
+			plan.Items[i].FailReason = bulkReasonDuplicateID
+		}
+	}
 	return plan
 }
 
@@ -902,16 +958,16 @@ func (a *supplierPartBulkAdapter) Preflight(ctx context.Context, item supplierPa
 	}
 	current, err := a.client.GetSupplierPartDetail(ctx, item.ID)
 	if err != nil {
-		return false, "", err
+		return false, bulkReasonReadFailed, err
 	}
 	if current.PK != item.ID {
-		return false, "", errors.New("supplier-part identity verification failed")
+		return false, bulkReasonIdentityMismatch, errors.New("supplier-part identity verification failed")
 	}
 	if supplierPartFieldsMatch(current, item.Fields) {
 		return true, "already at target state", nil
 	}
 	if !valuesMatchForKeys(item.Fields, supplierPartValues(current), supplierPartValues(item.Before)) {
-		return false, "", errors.New("current state drifted since the plan was reviewed")
+		return false, bulkReasonDrifted, errors.New("current state drifted since the plan was reviewed")
 	}
 	return false, "", nil
 }
@@ -1026,6 +1082,12 @@ func buildManufacturerPartBulkPlan(ctx context.Context, client CompanyAdminClien
 	for i, item := range items {
 		plan.Items[i] = buildManufacturerPartBulkPlanItem(ctx, client, item)
 	}
+	dup := duplicateBulkIDs(plan.ids())
+	for i := range plan.Items {
+		if dup[plan.Items[i].ID] && plan.Items[i].FailReason == "" {
+			plan.Items[i].FailReason = bulkReasonDuplicateID
+		}
+	}
 	return plan
 }
 
@@ -1075,16 +1137,16 @@ func (a *manufacturerPartBulkAdapter) Preflight(ctx context.Context, item manufa
 	}
 	current, err := a.client.GetManufacturerPartDetail(ctx, item.ID)
 	if err != nil {
-		return false, "", err
+		return false, bulkReasonReadFailed, err
 	}
 	if current.PK != item.ID {
-		return false, "", errors.New("manufacturer-part identity verification failed")
+		return false, bulkReasonIdentityMismatch, errors.New("manufacturer-part identity verification failed")
 	}
 	if manufacturerPartFieldsMatch(current, item.Fields) {
 		return true, "already at target state", nil
 	}
 	if !valuesMatchForKeys(item.Fields, manufacturerPartValues(current), manufacturerPartValues(item.Before)) {
-		return false, "", errors.New("current state drifted since the plan was reviewed")
+		return false, bulkReasonDrifted, errors.New("current state drifted since the plan was reviewed")
 	}
 	return false, "", nil
 }
