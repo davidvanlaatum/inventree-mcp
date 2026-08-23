@@ -162,7 +162,7 @@ func TestParseServeConfiguresUploadPolicy(t *testing.T) {
 		EnvUploadMaxBytes:   "1024",
 	}), nil)
 	r.NoError(err)
-	r.Equal([]string{"/env/one", "/env/two", "/flag/uploads"}, cfg.UploadAllowRoots)
+	r.Equal([]string{"/flag/uploads"}, cfg.UploadAllowRoots)
 	r.Equal(int64(2048), cfg.UploadMaxBytes)
 }
 
@@ -380,8 +380,8 @@ func TestParseServeAllowsProductionHTTPWithOAuthConfig(t *testing.T) {
 	a.Equal(TransportHTTP, cfg.Transport)
 	a.Equal(EnvironmentProduction, cfg.Environment)
 	a.Equal("https://mcp.example.test/.well-known/oauth-protected-resource/mcp", cfg.OAuthProtectedResourceMetadataURL())
-	a.Equal([]string{"https://chatgpt.com/client-metadata/a", "https://chatgpt.com/client-metadata/b"}, cfg.OAuthClientIDs)
-	a.Equal([]string{"127.0.0.1/32", "10.0.0.0/8", "192.0.2.0/24"}, cfg.TrustedProxyCIDRs)
+	a.Equal([]string{"https://chatgpt.com/client-metadata/b"}, cfg.OAuthClientIDs)
+	a.Equal([]string{"192.0.2.0/24"}, cfg.TrustedProxyCIDRs)
 	a.Len(cfg.OAuthKeyring.Keys, 2)
 	a.Equal(10*time.Minute, cfg.OAuthAccessLifetime)
 	a.Equal(24*time.Hour, cfg.OAuthRefreshLifetime)
@@ -646,6 +646,7 @@ func TestParseServeHelpMentionsEnvVars(t *testing.T) {
 	r.Error(err)
 
 	help := output.String()
+	a.Contains(help, "-config")
 	for _, envVar := range []string{
 		EnvTransport,
 		EnvEnvironment,

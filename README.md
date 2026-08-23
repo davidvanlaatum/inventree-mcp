@@ -32,6 +32,7 @@ go run ./cmd/inventree-mcp serve --transport stdio
 
 Useful STDIO options:
 
+- `--config /path/to/inventree-mcp.yml` loads an operator YAML configuration file. Without `--config`, the server uses the first existing file in this order: `./inventree-mcp.yml`, `./inventree-mcp.yaml`, `os.UserConfigDir()/inventree-mcp/config.yml`, `os.UserConfigDir()/inventree-mcp/config.yaml`, then on Unix `/etc/inventree-mcp/config.yml` and `/etc/inventree-mcp/config.yaml`.
 - `--inventree-web-url https://inventory.example.test/web` or `INVENTREE_WEB_URL=https://inventory.example.test/web`; optional exact browser-frontend mount for returned object links. When omitted, every mode uses `INVENTREE_URL` plus InvenTree's stock `/web` frontend mount.
 - `--inventree-auth-scheme Token` or `--inventree-auth-scheme Bearer`; default is `Token`.
 - `--inventree-timeout 30s`; default is `30s`.
@@ -39,6 +40,8 @@ Useful STDIO options:
 - `--upload-max-bytes 10485760` or `INVENTREE_UPLOAD_MAX_BYTES=10485760`; raises or lowers the upload byte limit.
 - `--debug-traffic-log /secure/path/mcp-traffic.jsonl` or `INVENTREE_MCP_DEBUG_TRAFFIC_LOG=/secure/path/mcp-traffic.jsonl`; appends MCP request/response traffic for local debugging. Treat the file as sensitive because it can contain tool arguments, results, and credentials supplied by the MCP client.
 - `--inventree-tls-skip-verify`; intended only for local/test deployments and requires `--environment development`.
+
+YAML configuration uses the same typed settings as the environment variables and flags. Precedence is defaults < YAML < environment < CLI flags; higher-precedence list values replace lower-precedence lists, while repeated CLI list flags are combined. YAML may contain InvenTree and OAuth secrets. On Linux and macOS, protect loaded config files with owner-only permissions such as `chmod 600`; Windows deployments must protect them with ACLs. See the [commented YAML example](docs/examples/inventree-mcp.yml) and [operator recipes](docs/operator-recipes.md) for the complete path and security rules.
 
 For first-release workflow details, use [Operator recipes](docs/operator-recipes.md). For exact registered tool metadata, use [Tool reference](docs/tool-reference.md) and the checked [tool manifest](docs/tool-manifest.json).
 

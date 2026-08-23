@@ -97,12 +97,15 @@ inventree-mcp serve --transport stdio
 
 Authentication in STDIO mode should come from process configuration:
 
+- optional YAML configuration selected with `--config <path>`, or discovered from the first existing working-directory, `os.UserConfigDir()/inventree-mcp/`, or (on Unix) `/etc/inventree-mcp/` file; precedence is defaults, YAML, environment, then CLI flags
 - `INVENTREE_URL`
 - optional exact-frontend-mount `INVENTREE_WEB_URL`, falling back in every mode to `INVENTREE_URL` plus InvenTree's pinned stock `/web` mount for canonical object links
 - `INVENTREE_TOKEN`
 - optional `INVENTREE_AUTH_SCHEME`, defaulting to `Token` for InvenTree API tokens and allowing `Bearer`
 - optional `INVENTREE_TIMEOUT`
 - optional `INVENTREE_TLS_SKIP_VERIFY`, only for local/test deployments
+
+YAML configuration may contain secrets. Linux and macOS startup rejects loaded config files with group/world-readable mode bits after opening the file (including symlink targets); Windows relies on operator-configured ACLs. A relative `XDG_CONFIG_HOME` is invalid, and `os.UserConfigDir()` supplies the platform-appropriate user config directory or returns an error when it cannot determine one.
 
 Production HTTP mode must fail startup if `INVENTREE_TLS_SKIP_VERIFY` or equivalent upstream TLS verification bypass is enabled.
 
