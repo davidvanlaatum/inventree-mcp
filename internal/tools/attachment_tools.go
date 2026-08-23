@@ -88,12 +88,12 @@ type AttachmentWriteOutput struct {
 }
 
 func registerAttachmentWriteTools(server *mcp.Server, deps Dependencies) {
-	addWriteTool(server, deps, UploadAttachmentToolName, "Upload attachment", "Uploads inline bytes or an allowlisted STDIO local file as an attachment.", uploadAttachment(deps))
-	addWriteTool(server, deps, UploadAttachmentFromURLToolName, "Upload attachment from URL", "Fetches an HTTP(S) URL under upload policy and uploads a copy as an attachment.", uploadAttachmentFromURL(deps))
+	addWriteTool(server, deps, UploadAttachmentToolName, "Upload attachment", "Uploads inline bytes or an allowlisted STDIO local file as a generic attachment. To make an uploaded image a part primary image, follow with set_primary_image; use the dedicated company-image tools for company primary images.", uploadAttachment(deps))
+	addWriteTool(server, deps, UploadAttachmentFromURLToolName, "Upload attachment from URL", "Fetches an HTTP(S) URL under upload policy and uploads a copy as a generic attachment. To make an uploaded image a part primary image, follow with set_primary_image; use set_company_image_from_url for a company primary image.", uploadAttachmentFromURL(deps))
 	addWriteTool(server, deps, CreateLinkAttachmentToolName, "Create link attachment", "Stores an HTTP(S) link attachment without fetching remote bytes.", createLinkAttachment(deps))
 	addWriteTool(server, deps, UpdateAttachmentMetadataToolName, "Update attachment metadata", "Partially updates attachment metadata fields.", updateAttachmentMetadata(deps))
 	addWriteTool(server, deps, DeleteAttachmentToolName, "Delete attachment", "Deletes one attachment after confirm:true.", deleteAttachment(deps))
-	addWriteTool(server, deps, SetPrimaryImageToolName, "Set primary image", "Sets a part primary image from an existing image attachment.", setPrimaryImage(deps))
+	addWriteTool(server, deps, SetPrimaryImageToolName, "Set primary image", "Sets or replaces a part's primary image from an existing same-part image attachment. Use this dedicated part-image tool, not update_part or a generic attachment PATCH; replacement requires confirm:true.", setPrimaryImage(deps))
 	registerCompanyImageWriteTools(server, deps)
 }
 

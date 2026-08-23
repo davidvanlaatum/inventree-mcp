@@ -2571,7 +2571,7 @@ func TestMilestoneHappyPathToolsAgainstInvenTree(t *testing.T) {
 		r.NoError(err)
 		a.Equal(StatusOK, primary.Status)
 		a.False(primary.Replaced)
-		_, partImage, err := downloadPartImage(fixture.deps())(ctx, &mcp.CallToolRequest{}, DownloadInput{
+		_, partImage, err := downloadPartImage(fixture.deps())(ctx, &mcp.CallToolRequest{}, PartImageDownloadInput{
 			ID:       part.ID,
 			Mode:     string(inventree.AttachmentContentOriginal),
 			MaxBytes: int64(len(imageBytes) + 1),
@@ -2581,14 +2581,14 @@ func TestMilestoneHappyPathToolsAgainstInvenTree(t *testing.T) {
 		a.Equal(sha256Hex(imageBytes), partImage.SHA256)
 		a.Equal(base64.StdEncoding.EncodeToString(imageBytes), partImage.Base64)
 
-		_, _, err = downloadPartImage(fixture.deps())(ctx, &mcp.CallToolRequest{}, DownloadInput{
+		_, _, err = downloadPartImage(fixture.deps())(ctx, &mcp.CallToolRequest{}, PartImageDownloadInput{
 			ID:       part.ID,
 			Mode:     string(inventree.AttachmentContentOriginal),
 			MaxBytes: int64(len(imageBytes) - 1),
 		})
 		r.ErrorContains(err, "exceeds maxBytes")
 
-		_, thumbnail, err := downloadPartImage(fixture.deps())(ctx, &mcp.CallToolRequest{}, DownloadInput{
+		_, thumbnail, err := downloadPartImage(fixture.deps())(ctx, &mcp.CallToolRequest{}, PartImageDownloadInput{
 			ID:       part.ID,
 			Mode:     string(inventree.AttachmentContentThumbnail),
 			MaxBytes: 4096,
@@ -2599,7 +2599,7 @@ func TestMilestoneHappyPathToolsAgainstInvenTree(t *testing.T) {
 		a.NotZero(thumbnail.Size)
 
 		noImagePart := fixture.createPart(t, "noimage")
-		_, noImage, err := downloadPartImage(fixture.deps())(ctx, &mcp.CallToolRequest{}, DownloadInput{ID: noImagePart.PK})
+		_, noImage, err := downloadPartImage(fixture.deps())(ctx, &mcp.CallToolRequest{}, PartImageDownloadInput{ID: noImagePart.PK})
 		r.NoError(err)
 		a.Equal(StatusNoImage, noImage.Status)
 	})

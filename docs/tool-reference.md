@@ -59,6 +59,7 @@ Common lookup inputs:
 | `limit` | list/search tools | Optional maximum result count. Defaults to `20` and is capped at `100`. |
 | `offset` | list/search tools | Optional pagination offset for deterministic retries. |
 | `id` | get-by-id tools | Stable InvenTree primary key. |
+| `id` | `download_part_image` | Stable part primary key for the requested part; this is not an attachment ID. |
 | `model_type` | `list_attachments` and attachment creation/upload tools | Attachment endpoint model type. Use only the short, unqualified in-scope values `part`, `stockitem`, `company`, `manufacturerpart`, `supplierpart`, or `purchaseorder`; qualified parameter values such as `part.part` and `order.purchaseorder` are invalid for attachment tools. Attachment metadata update and delete tools identify the target by attachment `id` instead. |
 | `model_type` | parameter-template administration | Optional parameter endpoint restriction. Use an explicit empty string for no restriction or one of the qualified `app.model` values `build.build`, `company.company`, `company.manufacturerpart`, `company.supplierpart`, `order.purchaseorder`, `order.returnorder`, `order.salesorder`, `order.salesordershipment`, `order.transferorder`, `part.part`, `part.partcategory`, or `stock.stocklocation`; short attachment values such as `part` and `purchaseorder` are invalid. |
 | `model_id` | attachment tools and parameter-row outputs | Stable primary key interpreted using the endpoint-specific `model_type`. Part-parameter tools accept `part_id` and supply `part.part` internally rather than asking callers for a model type. |
@@ -114,6 +115,27 @@ Common lookup inputs:
 | `image_url`, `replaced` | `set_primary_image` output | Redacted resulting image URL and whether an existing primary image was replaced. |
 | `company_id` | company-image tools | Stable company primary key. Supplier, manufacturer, customer-only, and mixed-role companies are supported without changing any role. |
 | `has_image`, `width`, `height`, `size`, `sha256`, `verified`, `recovered` | company-image output | Explicit image-presence state, decoded dimensions, encoded byte count, exact read-back digest, verification state, and whether an ambiguous response was successfully recovered. Unproved partial results keep `recovered:false`. Image bytes are never returned. |
+
+## Image and Attachment Tool Routing
+
+Choose the tool family from the operator's intent before selecting a source or
+mutation. These workflows are deliberately separate; do not substitute a
+generic attachment tool for a primary-image tool, or a part-image tool for a
+company-image tool.
+
+| Operator intent | Use these tools | Do not use instead |
+| --- | --- | --- |
+| Attach a photo, datasheet, or other file to a record | `list_attachments`, then `upload_attachment` for inline/STDIO-local bytes or `upload_attachment_from_url` for a URL; use `create_link_attachment` when the operator wants to store a link without fetching it | `set_primary_image`, `set_company_image`, or `update_part`/`update_company` image fields |
+| Read or manage an existing generic attachment | `get_attachment_metadata`, `download_attachment`, `update_attachment_metadata`, or `delete_attachment` as appropriate | `download_part_image` unless the operator means the part's current primary image |
+| Read a part's current primary image | `get_part`, then `download_part_image`; use `mode: thumbnail` only when the generated thumbnail is requested | `download_attachment` unless the operator supplied or explicitly means an attachment ID |
+| Set or replace a part's primary image from an existing same-part image attachment | `list_attachments`, optionally `upload_attachment`/`upload_attachment_from_url`, then `set_primary_image` with the stable `attachment_id`; replacement requires `confirm:true` | `update_part`, `download_part_image`, or a generic attachment PATCH |
+| Set or replace a company's primary image | `set_company_image` for inline/STDIO-local bytes or `set_company_image_from_url` for a URL; replacement requires `confirm:true` | `update_company`, `set_primary_image`, or generic attachment tools |
+| Clear a company's primary image | `clear_company_image` with `confirm:true` | `update_company` or deleting a generic attachment |
+
+`Part.existing_image` is write-only upstream input and is not a caller-facing
+download shortcut. A part primary-image request is about the current primary
+image, while an attachment request is about a separately addressable file or
+stored link; ask for clarification when that distinction is unclear.
 
 ## Upload Source Resolver
 

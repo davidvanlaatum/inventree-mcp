@@ -63,16 +63,39 @@ func TestStdioServerCanInitializeAndListTools(t *testing.T) {
 	r.NotNil(initializeResult.ServerInfo)
 	a.Equal([]mcp.Icon{tools.InvenTreeIcon()}, initializeResult.ServerInfo.Icons)
 	a.Equal(serverInstructions, initializeResult.Instructions)
+	a.Contains(initializeResult.Instructions, "Route image intent to the dedicated tools")
+	a.Contains(initializeResult.Instructions, "download_part_image to read a part's current primary image")
+	a.Contains(initializeResult.Instructions, "list_attachments and set_primary_image to assign or replace it")
+	a.Contains(initializeResult.Instructions, "set_company_image, set_company_image_from_url, or clear_company_image")
+	a.Contains(initializeResult.Instructions, "generic attachment tools only for separately addressable files or stored links")
 	expectedNames := expectedToolNames(false)
 	r.Len(result.Tools, len(expectedNames))
+	seenNames := make(map[string]bool, len(result.Tools))
 	for _, tool := range result.Tools {
 		a.True(expectedNames[tool.Name], tool.Name)
+		seenNames[tool.Name] = true
 		a.True(tool.Annotations.ReadOnlyHint, tool.Name)
 		a.NotNil(tool.Annotations.DestructiveHint, tool.Name)
 		a.False(*tool.Annotations.DestructiveHint, tool.Name)
 		a.NotNil(tool.Annotations.OpenWorldHint, tool.Name)
 		a.False(*tool.Annotations.OpenWorldHint, tool.Name)
 		a.Equal([]mcp.Icon{tools.InvenTreeIcon()}, tool.Icons, tool.Name)
+	}
+	a.Equal(expectedNames, seenNames)
+	descriptions := map[string]string{
+		tools.ListAttachmentsToolName:    "find a same-part image attachment before calling set_primary_image",
+		tools.DownloadAttachmentToolName: "use download_part_image instead",
+		tools.DownloadPartImageToolName:  "not a generic attachment",
+	}
+	seenDescriptions := make(map[string]bool, len(descriptions))
+	for _, tool := range result.Tools {
+		if expected, ok := descriptions[tool.Name]; ok {
+			a.Contains(tool.Description, expected, tool.Name)
+			seenDescriptions[tool.Name] = true
+		}
+	}
+	for name := range descriptions {
+		r.True(seenDescriptions[name], "missing routing description coverage for %s", name)
 	}
 
 	cancel()
@@ -384,6 +407,29 @@ func TestServerListsWriteToolsOnlyWhenEnabled(t *testing.T) {
 	a.True(names[tools.CreatePartToolName])
 	a.True(names[tools.CreateCompanyToolName])
 	a.True(names[tools.CreateStockItemToolName])
+	descriptions := map[string]string{
+		tools.CreatePartToolName:              "Primary part images are managed separately with set_primary_image",
+		tools.UpdatePartToolName:              "Primary part images are managed separately with set_primary_image",
+		tools.UpsertPartWorkflowToolName:      "Primary part images are managed separately with set_primary_image",
+		tools.CreateCompanyToolName:           "Company primary images are managed separately with set_company_image",
+		tools.UpdateCompanyToolName:           "Company primary images are managed separately with set_company_image",
+		tools.UploadAttachmentToolName:        "follow with set_primary_image",
+		tools.UploadAttachmentFromURLToolName: "follow with set_primary_image",
+		tools.SetPrimaryImageToolName:         "dedicated part-image tool",
+		tools.SetCompanyImageToolName:         "dedicated company-image tool",
+		tools.SetCompanyImageFromURLToolName:  "dedicated company-image tool",
+		tools.ClearCompanyImageToolName:       "dedicated company-image tool",
+	}
+	seenDescriptions := make(map[string]bool, len(descriptions))
+	for _, tool := range result.Tools {
+		if expected, ok := descriptions[tool.Name]; ok {
+			a.Contains(tool.Description, expected, tool.Name)
+			seenDescriptions[tool.Name] = true
+		}
+	}
+	for name := range descriptions {
+		r.True(seenDescriptions[name], "missing routing description coverage for %s", name)
+	}
 
 	cancel()
 	<-serverDone

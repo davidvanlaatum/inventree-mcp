@@ -345,8 +345,8 @@ type parameterWritePlan struct {
 }
 
 func registerWriteTools(server *mcp.Server, deps Dependencies) {
-	addWriteTool(server, deps, CreatePartToolName, "Create part", "Creates an InvenTree part in an existing category.", createPart(deps))
-	addWriteTool(server, deps, UpdatePartToolName, "Update part", "Partially updates an InvenTree part.", updatePart(deps))
+	addWriteTool(server, deps, CreatePartToolName, "Create part", "Creates an InvenTree part in an existing category. Primary part images are managed separately with set_primary_image.", createPart(deps))
+	addWriteTool(server, deps, UpdatePartToolName, "Update part", "Partially updates an InvenTree part. Primary part images are managed separately with set_primary_image, not this tool.", updatePart(deps))
 	registerPartFamilyTools(server, deps)
 	registerPartDeleteTool(server, deps)
 	registerPartRelationWriteTools(server, deps)
@@ -358,12 +358,12 @@ func registerWriteTools(server *mcp.Server, deps Dependencies) {
 	registerCategoryDeleteTool(server, deps)
 	registerCategoryParameterWriteTools(server, deps)
 	registerParameterBulkWriteTools(server, deps)
-	addWriteTool(server, deps, CreateCompanyToolName, "Create company", "Creates a supplier and/or manufacturer company.", createCompany(deps))
+	addWriteTool(server, deps, CreateCompanyToolName, "Create company", "Creates a supplier and/or manufacturer company. Company primary images are managed separately with set_company_image or set_company_image_from_url.", createCompany(deps))
 	addWriteTool(server, deps, CreateSupplierPartToolName, "Create supplier part", "Creates a supplier-part link for existing records.", createSupplierPart(deps))
 	addWriteTool(server, deps, CreateManufacturerPartToolName, "Create manufacturer part", "Creates a manufacturer-part link for existing records.", createManufacturerPart(deps))
 	registerCompanyAdminWriteTools(server, deps)
 	registerCompanyRoleWriteTools(server, deps)
-	addWriteTool(server, deps, UpsertPartWorkflowToolName, "Upsert part with supplier and manufacturer", "Plans or performs a safe part upsert with supplier and manufacturer links.", upsertPartWorkflow(deps))
+	addWriteTool(server, deps, UpsertPartWorkflowToolName, "Upsert part with supplier and manufacturer", "Plans or performs a safe part upsert with supplier and manufacturer links. Primary part images are managed separately with set_primary_image.", upsertPartWorkflow(deps))
 	addWriteTool(server, deps, CreateStockItemToolName, "Create stock item", "Creates initial stock after checking for duplicate stock at the same part and location.", createStockItem(deps))
 	addWriteTool(server, deps, InitialStockWorkflowToolName, "Create initial stock entry", "Plans or creates initial stock after resolving the part, location, and duplicate guard.", initialStockWorkflow(deps))
 	registerStockAdjustmentTools(server, deps)
