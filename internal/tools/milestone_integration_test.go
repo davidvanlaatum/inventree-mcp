@@ -29,7 +29,9 @@ import (
 
 	"github.com/davidvanlaatum/dvgoutils"
 	"github.com/davidvanlaatum/dvgoutils/logging/testhandler"
+	"github.com/davidvanlaatum/inventree-mcp/internal/batch"
 	"github.com/davidvanlaatum/inventree-mcp/internal/inventree"
+	"github.com/davidvanlaatum/inventree-mcp/internal/platform"
 	"github.com/davidvanlaatum/inventree-mcp/internal/testenv"
 	"github.com/davidvanlaatum/inventree-mcp/internal/upload"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -3081,6 +3083,196 @@ func TestMilestoneHappyPathToolsAgainstInvenTree(t *testing.T) {
 		r.NoError(fixture.client.DeleteParameterTemplate(ctx, template.PK))
 	})
 
+	t.Run("bulk_catalog_and_company_updates", func(t *testing.T) {
+		unknownID := 999999999
+
+		t.Run("parts", func(t *testing.T) {
+			r := require.New(t)
+			a := assert.New(t)
+			ctx, _, _ := testhandler.SetupTestHandler(t)
+			fixture := newMilestoneToolFixture(t, shared)
+			applies := fixture.createPart(t, "bulk-part-applies")
+			skips := fixture.createPart(t, "bulk-part-skips")
+			description := "bulk_update_parts integration"
+
+			items := []BulkUpdatePartItem{
+				{ID: applies.PK, Description: &description},
+				{ID: skips.PK, Active: dvgoutils.Ptr(true)}, // already active: no-op
+				{ID: unknownID, Description: &description},
+			}
+			_, dryRun, err := bulkUpdateParts(fixture.deps())(ctx, &mcp.CallToolRequest{}, BulkUpdatePartsInput{Items: items, DryRun: true})
+			r.NoError(err)
+			a.Equal(StatusOK, dryRun.Status)
+			r.NotEmpty(dryRun.PlanHash)
+
+			_, confirmed, err := bulkUpdateParts(fixture.deps())(ctx, &mcp.CallToolRequest{}, BulkUpdatePartsInput{Items: items, Confirm: true, PlanHash: dryRun.PlanHash})
+			r.NoError(err)
+			a.Equal(StatusPartialFailure, confirmed.Status)
+			byID := bulkResultsByID(confirmed.Items)
+			r.NotNil(byID[applies.PK].Record)
+			a.Equal(description, byID[applies.PK].Record.Description)
+			a.Equal(string(batch.OutcomeApplied), byID[applies.PK].Outcome)
+			a.Equal(string(batch.OutcomeSkipped), byID[skips.PK].Outcome)
+			a.Equal(string(batch.OutcomeFailed), byID[unknownID].Outcome)
+
+			refreshed, err := fixture.client.GetPartDetail(ctx, applies.PK)
+			r.NoError(err)
+			a.Equal(description, refreshed.Description)
+		})
+
+		t.Run("companies", func(t *testing.T) {
+			r := require.New(t)
+			a := assert.New(t)
+			ctx, _, _ := testhandler.SetupTestHandler(t)
+			fixture := newMilestoneToolFixture(t, shared)
+			appliesName, err := fixture.run.Name("bulk-company-applies")
+			r.NoError(err)
+			applies, err := fixture.client.CreateCompany(ctx, inventree.CompanyCreate{Name: appliesName, Currency: "USD", IsSupplier: true})
+			r.NoError(err)
+			skipsName, err := fixture.run.Name("bulk-company-skips")
+			r.NoError(err)
+			skips, err := fixture.client.CreateCompany(ctx, inventree.CompanyCreate{Name: skipsName, Currency: "USD"})
+			r.NoError(err)
+			description := "bulk_update_companies integration"
+
+			items := []BulkUpdateCompanyItem{
+				{ID: applies.PK, Description: &description},
+				{ID: skips.PK, Name: &skipsName}, // unchanged: no-op
+				{ID: unknownID, Description: &description},
+			}
+			_, dryRun, err := bulkUpdateCompanies(fixture.deps())(ctx, &mcp.CallToolRequest{}, BulkUpdateCompaniesInput{Items: items, DryRun: true})
+			r.NoError(err)
+			r.NotEmpty(dryRun.PlanHash)
+
+			_, confirmed, err := bulkUpdateCompanies(fixture.deps())(ctx, &mcp.CallToolRequest{}, BulkUpdateCompaniesInput{Items: items, Confirm: true, PlanHash: dryRun.PlanHash})
+			r.NoError(err)
+			a.Equal(StatusPartialFailure, confirmed.Status)
+			byID := bulkResultsByID(confirmed.Items)
+			r.NotNil(byID[applies.PK].Record)
+			a.Equal(description, byID[applies.PK].Record.Description)
+			a.Equal(string(batch.OutcomeApplied), byID[applies.PK].Outcome)
+			a.Equal(string(batch.OutcomeSkipped), byID[skips.PK].Outcome)
+			a.Equal(string(batch.OutcomeFailed), byID[unknownID].Outcome)
+
+			// Role removal is explicitly out of scope for the bulk tool.
+			explicitFalse := false
+			plan := buildCompanyBulkPlan(ctx, fixture.client, []BulkUpdateCompanyItem{{ID: applies.PK, IsSupplier: &explicitFalse}})
+			r.Len(plan.Items, 1)
+			a.NotEmpty(plan.Items[0].FailReason)
+		})
+
+		t.Run("part_categories", func(t *testing.T) {
+			r := require.New(t)
+			a := assert.New(t)
+			ctx, _, _ := testhandler.SetupTestHandler(t)
+			fixture := newMilestoneToolFixture(t, shared)
+			appliesName, err := fixture.run.Name("bulk-category-applies")
+			r.NoError(err)
+			applies, err := fixture.client.CreatePartCategory(ctx, inventree.CategoryCreate{Name: appliesName})
+			r.NoError(err)
+			skipsName, err := fixture.run.Name("bulk-category-skips")
+			r.NoError(err)
+			skips, err := fixture.client.CreatePartCategory(ctx, inventree.CategoryCreate{Name: skipsName})
+			r.NoError(err)
+			description := "bulk_update_part_categories integration"
+
+			items := []BulkUpdatePartCategoryItem{
+				{ID: applies.PK, Description: &description},
+				{ID: skips.PK, Name: &skipsName}, // unchanged: no-op
+				{ID: unknownID, Description: &description},
+			}
+			_, dryRun, err := bulkUpdatePartCategories(fixture.deps())(ctx, &mcp.CallToolRequest{}, BulkUpdatePartCategoriesInput{Items: items, DryRun: true})
+			r.NoError(err)
+			r.NotEmpty(dryRun.PlanHash)
+
+			_, confirmed, err := bulkUpdatePartCategories(fixture.deps())(ctx, &mcp.CallToolRequest{}, BulkUpdatePartCategoriesInput{Items: items, Confirm: true, PlanHash: dryRun.PlanHash})
+			r.NoError(err)
+			a.Equal(StatusPartialFailure, confirmed.Status)
+			byID := bulkResultsByID(confirmed.Items)
+			r.NotNil(byID[applies.PK].Record)
+			a.Equal(description, byID[applies.PK].Record.Description)
+			a.Equal(string(batch.OutcomeApplied), byID[applies.PK].Outcome)
+			a.Equal(string(batch.OutcomeSkipped), byID[skips.PK].Outcome)
+			a.Equal(string(batch.OutcomeFailed), byID[unknownID].Outcome)
+		})
+
+		t.Run("supplier_parts", func(t *testing.T) {
+			r := require.New(t)
+			a := assert.New(t)
+			ctx, _, _ := testhandler.SetupTestHandler(t)
+			fixture := newMilestoneToolFixture(t, shared)
+			part := fixture.createPart(t, "bulk-supplierpart-base")
+			supplier := fixture.ensure(t, testenv.FixtureSupplier)
+			appliesSKU, err := fixture.run.Name("bulk-supplierpart-applies")
+			r.NoError(err)
+			applies, err := fixture.client.CreateSupplierPart(ctx, inventree.SupplierPartCreate{Part: part.PK, Supplier: supplier.ID, SKU: appliesSKU})
+			r.NoError(err)
+			skipsSKU, err := fixture.run.Name("bulk-supplierpart-skips")
+			r.NoError(err)
+			skips, err := fixture.client.CreateSupplierPart(ctx, inventree.SupplierPartCreate{Part: part.PK, Supplier: supplier.ID, SKU: skipsSKU})
+			r.NoError(err)
+			packaging := "bulk-reel"
+
+			items := []BulkUpdateSupplierPartItem{
+				{ID: applies.PK, Packaging: &packaging},
+				{ID: skips.PK, SKU: &skipsSKU}, // unchanged: no-op
+				{ID: unknownID, Packaging: &packaging},
+			}
+			_, dryRun, err := bulkUpdateSupplierParts(fixture.deps())(ctx, &mcp.CallToolRequest{}, BulkUpdateSupplierPartsInput{Items: items, DryRun: true})
+			r.NoError(err)
+			r.NotEmpty(dryRun.PlanHash)
+
+			_, confirmed, err := bulkUpdateSupplierParts(fixture.deps())(ctx, &mcp.CallToolRequest{}, BulkUpdateSupplierPartsInput{Items: items, Confirm: true, PlanHash: dryRun.PlanHash})
+			r.NoError(err)
+			a.Equal(StatusPartialFailure, confirmed.Status)
+			byID := bulkResultsByID(confirmed.Items)
+			r.NotNil(byID[applies.PK].Record)
+			r.NotNil(byID[applies.PK].Record.Packaging)
+			a.Equal(packaging, *byID[applies.PK].Record.Packaging)
+			a.Equal(string(batch.OutcomeApplied), byID[applies.PK].Outcome)
+			a.Equal(string(batch.OutcomeSkipped), byID[skips.PK].Outcome)
+			a.Equal(string(batch.OutcomeFailed), byID[unknownID].Outcome)
+		})
+
+		t.Run("manufacturer_parts", func(t *testing.T) {
+			r := require.New(t)
+			a := assert.New(t)
+			ctx, _, _ := testhandler.SetupTestHandler(t)
+			fixture := newMilestoneToolFixture(t, shared)
+			part := fixture.createPart(t, "bulk-manufacturerpart-base")
+			manufacturer := fixture.ensure(t, testenv.FixtureManufacturer)
+			appliesMPN, err := fixture.run.Name("bulk-mfgpart-applies")
+			r.NoError(err)
+			applies, err := fixture.client.CreateManufacturerPart(ctx, inventree.ManufacturerPartCreate{Part: part.PK, Manufacturer: manufacturer.ID, MPN: &appliesMPN})
+			r.NoError(err)
+			skipsMPN, err := fixture.run.Name("bulk-mfgpart-skips")
+			r.NoError(err)
+			skips, err := fixture.client.CreateManufacturerPart(ctx, inventree.ManufacturerPartCreate{Part: part.PK, Manufacturer: manufacturer.ID, MPN: &skipsMPN})
+			r.NoError(err)
+			description := "bulk_update_manufacturer_parts integration"
+
+			items := []BulkUpdateManufacturerPartItem{
+				{ID: applies.PK, Description: &description},
+				{ID: skips.PK, MPN: &skipsMPN}, // unchanged: no-op
+				{ID: unknownID, Description: &description},
+			}
+			_, dryRun, err := bulkUpdateManufacturerParts(fixture.deps())(ctx, &mcp.CallToolRequest{}, BulkUpdateManufacturerPartsInput{Items: items, DryRun: true})
+			r.NoError(err)
+			r.NotEmpty(dryRun.PlanHash)
+
+			_, confirmed, err := bulkUpdateManufacturerParts(fixture.deps())(ctx, &mcp.CallToolRequest{}, BulkUpdateManufacturerPartsInput{Items: items, Confirm: true, PlanHash: dryRun.PlanHash})
+			r.NoError(err)
+			a.Equal(StatusPartialFailure, confirmed.Status)
+			byID := bulkResultsByID(confirmed.Items)
+			r.NotNil(byID[applies.PK].Record)
+			r.NotNil(byID[applies.PK].Record.Description)
+			a.Equal(description, *byID[applies.PK].Record.Description)
+			a.Equal(string(batch.OutcomeApplied), byID[applies.PK].Outcome)
+			a.Equal(string(batch.OutcomeSkipped), byID[skips.PK].Outcome)
+			a.Equal(string(batch.OutcomeFailed), byID[unknownID].Outcome)
+		})
+	})
+
 	t.Run("deferred_file_surface_boundaries_return_clarifications", func(t *testing.T) {
 		r := require.New(t)
 		a := assert.New(t)
@@ -3124,6 +3316,11 @@ type milestoneToolFixture struct {
 	objectParameterDeletePlanStore       *objectParameterDeletePlanStore
 	parameterTemplateUniquenessPlanStore *parameterTemplateUniquenessPlanStore
 	purchaseOrderLifecyclePlanStore      *purchaseOrderLifecyclePlanStore
+	partBulkPlanStore                    *batch.Store[partBulkPlan]
+	companyBulkPlanStore                 *batch.Store[companyBulkPlan]
+	categoryBulkPlanStore                *batch.Store[categoryBulkPlan]
+	supplierPartBulkPlanStore            *batch.Store[supplierPartBulkPlan]
+	manufacturerPartBulkPlanStore        *batch.Store[manufacturerPartBulkPlan]
 }
 
 type attachmentTarget struct {
@@ -3181,6 +3378,26 @@ func newMilestoneToolFixture(t *testing.T, shared *testenv.SharedInvenTree) mile
 		objectParameterDeletePlanStore:       newObjectParameterDeletePlanStore(time.Now, randomStockPlanToken),
 		parameterTemplateUniquenessPlanStore: newParameterTemplateUniquenessPlanStore(time.Now, randomStockPlanToken),
 		purchaseOrderLifecyclePlanStore:      newPurchaseOrderLifecyclePlanStore(time.Now, randomStockPlanToken),
+		partBulkPlanStore: mustBulkStore(batch.Options[partBulkPlan]{
+			IDGenerator: platform.RandomIDGenerator{}, Principal: stockPlanPrincipal,
+			SupersedeKey: func(p partBulkPlan) string { return bulkSupersedeKey(p.ids()) },
+		}),
+		companyBulkPlanStore: mustBulkStore(batch.Options[companyBulkPlan]{
+			IDGenerator: platform.RandomIDGenerator{}, Principal: stockPlanPrincipal,
+			SupersedeKey: func(p companyBulkPlan) string { return bulkSupersedeKey(p.ids()) },
+		}),
+		categoryBulkPlanStore: mustBulkStore(batch.Options[categoryBulkPlan]{
+			IDGenerator: platform.RandomIDGenerator{}, Principal: stockPlanPrincipal,
+			SupersedeKey: func(p categoryBulkPlan) string { return bulkSupersedeKey(p.ids()) },
+		}),
+		supplierPartBulkPlanStore: mustBulkStore(batch.Options[supplierPartBulkPlan]{
+			IDGenerator: platform.RandomIDGenerator{}, Principal: stockPlanPrincipal,
+			SupersedeKey: func(p supplierPartBulkPlan) string { return bulkSupersedeKey(p.ids()) },
+		}),
+		manufacturerPartBulkPlanStore: mustBulkStore(batch.Options[manufacturerPartBulkPlan]{
+			IDGenerator: platform.RandomIDGenerator{}, Principal: stockPlanPrincipal,
+			SupersedeKey: func(p manufacturerPartBulkPlan) string { return bulkSupersedeKey(p.ids()) },
+		}),
 	}
 }
 
@@ -3204,6 +3421,11 @@ func (f milestoneToolFixture) deps() Dependencies {
 		objectParameterDeletePlanStore:       f.objectParameterDeletePlanStore,
 		parameterTemplateUniquenessPlanStore: f.parameterTemplateUniquenessPlanStore,
 		purchaseOrderLifecyclePlanStore:      f.purchaseOrderLifecyclePlanStore,
+		partBulkPlanStore:                    f.partBulkPlanStore,
+		companyBulkPlanStore:                 f.companyBulkPlanStore,
+		categoryBulkPlanStore:                f.categoryBulkPlanStore,
+		supplierPartBulkPlanStore:            f.supplierPartBulkPlanStore,
+		manufacturerPartBulkPlanStore:        f.manufacturerPartBulkPlanStore,
 	}
 }
 

@@ -97,6 +97,11 @@ const (
 	RemoveCompanyCustomerRoleToolName         = "remove_company_customer_role"
 	UpdateSupplierPartToolName                = "update_supplier_part"
 	UpdateManufacturerPartToolName            = "update_manufacturer_part"
+	BulkUpdatePartsToolName                   = "bulk_update_parts"
+	BulkUpdateCompaniesToolName               = "bulk_update_companies"
+	BulkUpdatePartCategoriesToolName          = "bulk_update_part_categories"
+	BulkUpdateSupplierPartsToolName           = "bulk_update_supplier_parts"
+	BulkUpdateManufacturerPartsToolName       = "bulk_update_manufacturer_parts"
 	UpsertPartWorkflowToolName                = "upsert_part_with_supplier_and_manufacturer"
 	CreateStockItemToolName                   = "create_stock_item"
 	CreateStockLocationToolName               = "create_stock_location"
@@ -266,6 +271,11 @@ var writeToolNames = []string{
 	RemoveCompanyCustomerRoleToolName,
 	UpdateSupplierPartToolName,
 	UpdateManufacturerPartToolName,
+	BulkUpdatePartsToolName,
+	BulkUpdateCompaniesToolName,
+	BulkUpdatePartCategoriesToolName,
+	BulkUpdateSupplierPartsToolName,
+	BulkUpdateManufacturerPartsToolName,
 	UpsertPartWorkflowToolName,
 	CreateStockItemToolName,
 	CreateStockLocationToolName,
@@ -358,7 +368,7 @@ func init() {
 		case CreateStockItemToolName, InitialStockWorkflowToolName:
 			scopes = []string{ScopeInventreeWrite, ScopeInventreeOperational}
 			mutationClass = "operational"
-		case AdjustStockQuantityToolName, SetStockStatusToolName, StocktakeAdjustmentToolName, GenerateStocktakeToolName, TransferStockItemToolName, RestructureStockLocationToolName, UpdateStockItemMetadataToolName, AssignStockSerialToolName, InstallStockItemToolName, UpdateParameterTemplateUniquenessToolName, HoldPurchaseOrderToolName, ResumePurchaseOrderToolName:
+		case AdjustStockQuantityToolName, SetStockStatusToolName, StocktakeAdjustmentToolName, GenerateStocktakeToolName, TransferStockItemToolName, RestructureStockLocationToolName, UpdateStockItemMetadataToolName, AssignStockSerialToolName, InstallStockItemToolName, UpdateParameterTemplateUniquenessToolName, HoldPurchaseOrderToolName, ResumePurchaseOrderToolName, BulkUpdatePartsToolName, BulkUpdateCompaniesToolName, BulkUpdatePartCategoriesToolName, BulkUpdateSupplierPartsToolName, BulkUpdateManufacturerPartsToolName:
 			scopes = []string{ScopeInventreeRead, ScopeInventreeWrite, ScopeInventreeOperational}
 			mutationClass = "operational"
 		case SetStockDeleteOnDepleteToolName, DepleteStockItemToolName, UpdatePartFamilyRelationshipsToolName, UpdateStockItemProvenanceToolName, SetStockSerialToolName, UninstallStockItemToolName, CancelPurchaseOrderToolName, DeleteStockLocationToolName:
@@ -407,7 +417,7 @@ func init() {
 	categoryUpdate := ToolAuthorizations[UpdatePartCategoryToolName]
 	categoryUpdate.Annotations.Idempotent = true
 	ToolAuthorizations[UpdatePartCategoryToolName] = categoryUpdate
-	for _, name := range []string{UpdateCompanyToolName, UpdateSupplierPartToolName, UpdateManufacturerPartToolName} {
+	for _, name := range []string{UpdateCompanyToolName, UpdateSupplierPartToolName, UpdateManufacturerPartToolName, BulkUpdateCompaniesToolName, BulkUpdatePartCategoriesToolName, BulkUpdateSupplierPartsToolName, BulkUpdateManufacturerPartsToolName} {
 		auth := ToolAuthorizations[name]
 		auth.Annotations.Idempotent = true
 		ToolAuthorizations[name] = auth

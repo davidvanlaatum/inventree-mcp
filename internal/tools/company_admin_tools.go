@@ -977,13 +977,29 @@ func recoverManufacturerPartUpdate(ctx context.Context, client CompanyAdminClien
 }
 
 func companyFieldsMatch(record inventree.CompanyDetail, fields inventree.PatchFields) bool {
-	return patchMatches(fields, map[string]any{"name": record.Name, "description": record.Description, "website": record.Website, "phone": record.Phone, "email": record.Email, "contact": record.Contact, "tax_id": record.TaxID, "link": record.Link, "currency": record.Currency, "active": record.Active, "is_supplier": record.IsSupplier, "is_manufacturer": record.IsManufacturer, "is_customer": record.IsCustomer, "notes": record.Notes})
+	return patchMatches(fields, companyValues(record))
 }
 func supplierPartFieldsMatch(record inventree.SupplierPartDetail, fields inventree.PatchFields) bool {
-	return patchMatches(fields, map[string]any{"part": record.Part, "supplier": record.Supplier, "SKU": record.SKU, "description": record.Description, "link": record.Link, "active": record.Active, "primary": record.Primary, "manufacturer_part": record.ManufacturerPart, "packaging": record.Packaging, "pack_quantity": record.PackQuantity, "note": record.Note, "notes": record.Notes, "available": record.Available})
+	return patchMatches(fields, supplierPartValues(record))
 }
 func manufacturerPartFieldsMatch(record inventree.ManufacturerPartDetail, fields inventree.PatchFields) bool {
-	return patchMatches(fields, map[string]any{"part": record.Part, "manufacturer": record.Manufacturer, "MPN": record.MPN, "description": record.Description, "link": record.Link, "notes": record.Notes})
+	return patchMatches(fields, manufacturerPartValues(record))
+}
+
+// companyValues, supplierPartValues, and manufacturerPartValues project a
+// detail record's PATCH-allowlisted fields into the same map[string]any
+// shape patchMatches compares against. Bulk catalog tools (catalog_bulk_tools.go)
+// reuse these to detect drift between a batch plan's captured "before" state
+// and freshly re-fetched current state, not just to confirm a post-write
+// read-back.
+func companyValues(record inventree.CompanyDetail) map[string]any {
+	return map[string]any{"name": record.Name, "description": record.Description, "website": record.Website, "phone": record.Phone, "email": record.Email, "contact": record.Contact, "tax_id": record.TaxID, "link": record.Link, "currency": record.Currency, "active": record.Active, "is_supplier": record.IsSupplier, "is_manufacturer": record.IsManufacturer, "is_customer": record.IsCustomer, "notes": record.Notes}
+}
+func supplierPartValues(record inventree.SupplierPartDetail) map[string]any {
+	return map[string]any{"part": record.Part, "supplier": record.Supplier, "SKU": record.SKU, "description": record.Description, "link": record.Link, "active": record.Active, "primary": record.Primary, "manufacturer_part": record.ManufacturerPart, "packaging": record.Packaging, "pack_quantity": record.PackQuantity, "note": record.Note, "notes": record.Notes, "available": record.Available}
+}
+func manufacturerPartValues(record inventree.ManufacturerPartDetail) map[string]any {
+	return map[string]any{"part": record.Part, "manufacturer": record.Manufacturer, "MPN": record.MPN, "description": record.Description, "link": record.Link, "notes": record.Notes}
 }
 
 func patchMatches(fields inventree.PatchFields, values map[string]any) bool {

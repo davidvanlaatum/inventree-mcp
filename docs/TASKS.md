@@ -158,7 +158,7 @@ Before assigning a new story ID, inspect `git worktree list --porcelain`, search
 | [F-S74](#f-s74-guarded-stocktake-generation-and-reporting) | Implement guarded stocktake generation and reporting after F-S60 discovery resolves asynchronous task and report behavior. | Done |
 | [F-S75](#f-s75-yaml-configuration-file-support) | Add documented YAML configuration-file loading with default-path discovery and explicit precedence. | Done |
 | [F-S76](#f-s76-shared-bounded-batch-mutation-execution) | Add shared bounded batch planning, confirmation, execution, cancellation, and per-item recovery primitives. | Done |
-| [F-S77](#f-s77-low-risk-bulk-catalog-and-company-updates) | Add low-risk bulk scalar updates for catalog and company record families. | Ready |
+| [F-S77](#f-s77-low-risk-bulk-catalog-and-company-updates) | Add low-risk bulk scalar updates for catalog and company record families. | Active |
 | [F-S78](#f-s78-low-risk-bulk-stock-metadata-and-status-updates) | Add low-risk bulk stock-item metadata and status updates. | Ready |
 | [F-S79](#f-s79-low-risk-bulk-purchase-order-and-line-metadata-updates) | Add low-risk bulk purchase-order and line metadata updates. | Ready |
 | [F-S80](#f-s80-low-risk-bulk-attachment-and-parameter-value-updates) | Add low-risk bulk attachment metadata and parameter-value updates. | Ready |
@@ -2910,7 +2910,7 @@ Tasks:
 
 ### F-S77: Low-Risk Bulk Catalog And Company Updates
 
-- Status: `Ready`
+- Status: `Active`
 - Issue: [#201](https://github.com/davidvanlaatum/inventree-mcp/issues/201)
 - Depends on: F-S76.
 - Scope: add resource-specific bulk tools for independent, non-destructive, idempotent scalar updates on parts, companies, part categories, supplier parts, and manufacturer parts. Preserve each resource's PATCH allowlist, explicit clear semantics, duplicate/reference checks, authorization scopes, annotations, and exact read-back behavior. Exclude creates, deletes, relationship changes, upserts, image operations, and arbitrary generic PATCH fields.
