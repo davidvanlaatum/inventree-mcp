@@ -81,3 +81,23 @@ nfpms:
       postinstall: packaging/scripts/postinstall.sh
       preremove: packaging/scripts/preremove.sh
       postremove: packaging/scripts/postremove.sh
+
+dockers_v2:
+  - id: inventree-mcp
+    ids:
+      - inventree-mcp
+    images:
+      - ghcr.io/davidvanlaatum/inventree-mcp
+    tags:
+      - "{{ .Tag }}"
+      - latest
+    platforms:
+      - linux/amd64
+      - linux/arm64
+    annotations:
+      org.opencontainers.image.description: "InvenTree MCP server for common inventory data-entry workflows."
+      org.opencontainers.image.created: "{{ .Date }}"
+      org.opencontainers.image.name: "{{ .ProjectName }}"
+      org.opencontainers.image.revision: "{{ .FullCommit }}"
+      org.opencontainers.image.source: "{{ .GitURL }}"
+      org.opencontainers.image.version: "{{ .Version }}"

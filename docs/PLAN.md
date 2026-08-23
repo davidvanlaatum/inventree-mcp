@@ -241,7 +241,7 @@ For SDK `v1.7.0`, `TokenVerifier` has the shape `func(context.Context, string, *
 
 ## Releases And Packages
 
-Releases are tag-driven through GitHub Actions and GoReleaser. Pushing a `vX.X.X` tag runs `.github/workflows/release.yml`, executes `GOFLAGS=-trimpath go test -v -race ./...`, and publishes a GitHub release with checksums, Linux/macOS/Windows binary archives for `amd64` and `arm64`, and Linux `deb`, `rpm`, and `apk` packages.
+Releases are tag-driven through GitHub Actions and GoReleaser. Pushing a `vX.X.X` tag runs `.github/workflows/release.yml`, executes `GOFLAGS=-trimpath go test -v -race ./...`, and publishes a GitHub release with checksums, Linux/macOS/Windows binary archives for `amd64` and `arm64`, Linux `deb`, `rpm`, and `apk` packages, and a multi-architecture `ghcr.io/davidvanlaatum/inventree-mcp` image tagged with the release and `latest`. The image reuses GoReleaser's prebuilt Linux binaries, runs as a non-root user, and defaults to HTTP on port `28686` at `/mcp`; production deployment still requires the documented OAuth and InvenTree configuration.
 
 The Linux packages install the `inventree-mcp` binary to `/usr/bin`, install `packaging/systemd/inventree-mcp.service` as `inventree-mcp.service`, and install `/etc/inventree-mcp/inventree-mcp.env` as a noreplace configuration file. Package maintainer scripts reload systemd and restart the service only when it is already enabled or active. The `apk` package carries the same files for artifact parity; Alpine/OpenRC service management is not implemented in the first release package.
 

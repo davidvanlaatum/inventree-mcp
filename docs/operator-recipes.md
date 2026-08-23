@@ -103,8 +103,8 @@ HTTP mode accepts the same debug traffic log option as STDIO. HTTP debug entries
 
 - Required inputs: clean `main`, selected semantic version tag `vX.X.X`, passing local validation, and GitHub Actions permissions that allow `contents: write`.
 - Preferred flow: run `GOFLAGS=-trimpath go test -race ./...`, run `goreleaser check` and `goreleaser release --snapshot --clean` when the CLI is installed, confirm the `Release Preview` workflow passed on the release PR, create and push the `vX.X.X` tag, watch the GitHub `Release` workflow, then verify the GitHub release assets and `checksums.txt`.
-- Clarify when: the version number is unclear, the tag already exists, GitHub Actions or `GITHUB_TOKEN` release permissions are disabled, snapshot package validation has not passed, or the release should include signing, SBOMs, containers, Homebrew, OpenRC packaging, or package repositories beyond GitHub release assets.
-- Expected output: GitHub release containing Linux/macOS/Windows binary archives, Linux `deb`/`rpm`/`apk` packages, and checksums.
+- Clarify when: the version number is unclear, the tag already exists, GitHub Actions or `GITHUB_TOKEN` release permissions are disabled, snapshot package or container validation has not passed, or the release should include signing, Homebrew, OpenRC packaging, or package repositories beyond GitHub release assets and GHCR.
+- Expected output: GitHub release containing Linux/macOS/Windows binary archives, Linux `deb`/`rpm`/`apk` packages, checksums, and the multi-architecture `ghcr.io/davidvanlaatum/inventree-mcp` image tagged with the release and `latest`.
 
 ## Add Or Update A Purchasable Part
 
