@@ -635,7 +635,7 @@ func TestDownloadPartImageReturnsBase64ForBinaryContent(t *testing.T) {
 	}
 	handler := downloadPartImage(depsForFake(fake))
 
-	result, output, err := handler(ctx, &mcp.CallToolRequest{}, DownloadInput{ID: 10})
+	result, output, err := handler(ctx, &mcp.CallToolRequest{}, PartImageDownloadInput{ID: 10})
 	r.NoError(err)
 	r.NotNil(result)
 	a.Equal(StatusOK, output.Status)
@@ -656,7 +656,7 @@ func TestDownloadPartImageReturnsNoImageStatus(t *testing.T) {
 	}
 	handler := downloadPartImage(depsForFake(fake))
 
-	result, output, err := handler(ctx, &mcp.CallToolRequest{}, DownloadInput{ID: 10})
+	result, output, err := handler(ctx, &mcp.CallToolRequest{}, PartImageDownloadInput{ID: 10})
 	r.NoError(err)
 	r.NotNil(result)
 	a.Equal(StatusNoImage, result.Content[0].(*mcp.TextContent).Text)

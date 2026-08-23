@@ -120,6 +120,7 @@ var PromptManifest = []PromptManifestEntry{
 		Status:      PromptMilestone1,
 		Checklist: `Use this checklist before attachment/image reads, writes, or primary-image replacement work:
 - Resolve the target object type and stable object ID before listing or downloading attachments and part images, or changing a company primary image.
+- Route image intent to the dedicated tools: use download_part_image to read a part's current primary image; use list_attachments and set_primary_image to assign or replace it; use set_company_image, set_company_image_from_url, or clear_company_image for a company's primary image; use generic attachment tools only for separately addressable files or stored links.
 - Current milestone tools can list metadata, download schema-exposed attachment or part-image content, upload inline or allowlisted local files, upload URL copies, create stored links, update metadata, delete confirmed attachments, set a primary part image from a stable same-part image attachment, and assign, replace, or clear an existing company's primary image.
 - Keep upload sources distinct: inline bytes, STDIO allowlisted local paths, URL-upload copy, and stored links are separate intents. Company-image URL fetches use only set_company_image_from_url; generic company attachments never become the company logo.
 - Company images must be matching PNG, JPEG, or WebP raster content no larger than 5 MiB, 4096 pixels per dimension, or 16 megapixels total.
