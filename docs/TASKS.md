@@ -159,12 +159,12 @@ Before assigning a new story ID, inspect `git worktree list --porcelain`, search
 | [F-S75](#f-s75-yaml-configuration-file-support) | Add documented YAML configuration-file loading with default-path discovery and explicit precedence. | Done |
 | [F-S76](#f-s76-shared-bounded-batch-mutation-execution) | Add shared bounded batch planning, confirmation, execution, cancellation, and per-item recovery primitives. | Done |
 | [F-S77](#f-s77-low-risk-bulk-catalog-and-company-updates) | Add low-risk bulk scalar updates for catalog and company record families. | Done |
-| [F-S78](#f-s78-low-risk-bulk-stock-metadata-and-status-updates) | Add low-risk bulk stock-item metadata and status updates. | Ready |
+| [F-S78](#f-s78-low-risk-bulk-stock-metadata-and-status-updates) | Add low-risk bulk stock-item metadata and status updates. | Done |
 | [F-S79](#f-s79-low-risk-bulk-purchase-order-and-line-metadata-updates) | Add low-risk bulk purchase-order and line metadata updates. | Ready |
 | [F-S80](#f-s80-low-risk-bulk-attachment-and-parameter-value-updates) | Add low-risk bulk attachment metadata and parameter-value updates. | Ready |
 | [F-S81](#f-s81-bulk-mutation-throughput-and-operator-observability) | Validate bulk throughput, bounded concurrency, progress, cancellation, and operator recovery evidence. | Ready |
 | [F-S82](#f-s82-mcp-facing-image-and-attachment-tool-routing-guidance) | Make image and generic-attachment tool routing explicit to MCP agents. | Done |
-| [F-S83](#f-s83-harden-testcontainers-worker-startup-under-ci-load) | Harden the Testcontainers InvenTree worker health probe against CI resource contention. | Active |
+| [F-S83](#f-s83-harden-testcontainers-worker-startup-under-ci-load) | Harden the Testcontainers InvenTree worker health probe against CI resource contention. | Done |
 
 ## Milestone 0: Repository And Planning
 
@@ -2938,25 +2938,29 @@ Implementation: `internal/tools/catalog_bulk_tools.go` adds `bulk_update_parts`,
 
 ### F-S78: Low-Risk Bulk Stock Metadata And Status Updates
 
-- Status: `Ready`
+- Status: `Done`
 - Issue: [#202](https://github.com/davidvanlaatum/inventree-mcp/issues/202)
 - Depends on: F-S76.
 - Scope: add resource-specific bulk tools for independent, non-destructive stock-item metadata and status updates. Initial scope includes status, batch, expiry, packaging, notes, links, and other ordinary metadata already supported by the corresponding single-item tools. Exclude quantity adjustments, stocktake counts, transfers, serial identity, installation, depletion, deletion, and delete-on-deplete policy changes.
+- Implementation: two separate tools, mirroring the existing single-item split between `update_stock_item_metadata` and `set_stock_status` rather than one combined tool, because status changes use a dedicated upstream endpoint (`POST /api/stock/change_status/`) and a mandatory audit reason rather than an ordinary PATCH. `bulk_update_stock_item_metadata` accepts `update_stock_item_metadata`'s exact field set (batch, expiry date, packaging, notes, link) with no exclusions, reusing its field builder via a new `stockMetadataFields` extraction (`internal/tools/stock_admin_tools.go`) so the single-item tool's own no-op-rejection wrapper (`stockMetadataPatch`) stays behavior-unchanged while the bulk path defers no-op detection to `batch.Adapter`'s dynamic `Preflight` re-check. `bulk_set_stock_status` takes one shared nonblank `reason` for the whole batch (not per item) and refuses the three high-risk write-off targets (`Destroyed`, `Rejected`, `Lost`) that `set_stock_status` itself flags `HighRisk`; use `set_stock_status` one at a time for those. Both tools are built on the shared `internal/batch` planning/execution primitives (F-S76), following the F-S77 pattern in `internal/tools/catalog_bulk_tools.go`; the new implementation lives in `internal/tools/stock_bulk_tools.go`.
 - Acceptance:
   - Public tools use explicit stock-item batch schemas and preserve omitted fields versus explicit clears.
   - Every item receives the same guarded preflight, field allowlist, safety checks, and exact read-back as its single-item counterpart.
-  - Mixed batches report no-op, unsafe, invalid, failed, ambiguous, and applied items separately.
+  - Mixed batches report independent per-item outcomes (`applied`/`skipped`/`failed`/`ambiguous`/`unverified` after confirm, `planned`/`failed` at dry-run preview), matching F-S76/F-S77's established vocabulary — a no-op maps to `skipped`, an unsafe or invalid item maps to `failed`.
   - Bounded concurrency cannot bypass existing rate, timeout, or cancellation controls.
   - Existing stock mutation safety contracts remain unchanged.
   - Default-on pinned InvenTree coverage proves representative metadata and status batches, stale plans, mixed outcomes, and response-loss recovery.
   - Tool reference, operator recipes, prompts, manifest, schema notes, and scope/annotation metadata are aligned.
+- Validation: `go build ./...`; `go vet ./...`; `golangci-lint run ./...` (0 issues); `gofmt -l .` (clean); `go mod tidy -diff` (clean); `git diff --check` (clean); `go test ./... -race` passed for every package, including Docker-backed `internal/inventree` and `internal/tools` suites; `go test ./internal/tools/... -run TestMilestoneHappyPathToolsAgainstInvenTree/bulk_stock_updates -v` passed against pinned InvenTree 1.5.1 (metadata and status subtests, each covering mixed outcomes, a stale-plan-hash rejection, and response-loss recovery via the existing `loseMutationResponseTransport` helper); `go test ./internal/tools/... -cover` reported 85.7% for `internal/tools`, matching `origin/main`'s baseline with no reduction.
+  - Review: Senior Go Developer, Senior QA / Test Architect, Senior Product Manager, and Senior Infosec Reviewer panel completed (required for a new mutating tool surface with Testcontainers coverage). No Critical/High findings. Fixed: the manual "any field supplied?" boolean chain in `buildStockMetadataBulkPlanItem` was replaced with the established `len(fields) == 0` check after calling the field builder, matching every sibling `catalog_bulk_tools.go` builder and removing a maintenance hazard where a new metadata field could silently stop being covered by the pre-check (Go, Medium); `bulk_set_stock_status`'s unknown/high-risk-status failure messages and the `Status` field's schema description now enumerate the actual InvenTree status codes so a calling agent can self-correct without a wasted round trip (Product, Medium); the `stocktake_review` prompt checklist's recovery bullet now covers `bulk_set_stock_status`'s per-item `ambiguous`/`unverified` outcomes explicitly instead of only the singular single-item phrasing (Product, Medium); added `bulk_set_stock_status` empty/oversized-batch and item-count-before-reason ordering tests, a changed-reason-between-dry-run-and-confirm test, and explanatory comments on both tools' mixed-outcomes tests, matching `catalog_bulk_tools_test.go`'s established coverage (QA, Low x4). No findings were rejected.
+- Residual risk: neither store has a dedicated cross-principal confirmation-token test (Infosec, Low) — the underlying mechanism is generic and already covered by `internal/batch/store_test.go`'s `TestStoreConsumeRejectsWrongPrincipal`, and both new stores use the same `stockPlanPrincipal` function as every other plan store in this codebase; accepted as consistent with `catalog_bulk_tools_test.go`'s existing precedent, which also has no per-resource cross-principal test. `bulk_update_stock_item_metadata`'s clear-flag-conflict test exercises only the `batch`/`clear_batch` pair, not `expiry_date`/`packaging`/`notes`, since the underlying `stockMetadataFields` conflict check is one shared boolean expression across all four fields (QA, Low) — accepted as adequately covered by branch shape, not by exhaustive per-field duplication.
 
 Tasks:
 
-- [ ] Add typed bulk stock metadata and status tools.
-- [ ] Reuse existing stock safety guards and exact read-back behavior.
-- [ ] Add deterministic MCP-boundary and pinned live coverage, including response loss.
-- [ ] Align public documentation and generated tool metadata.
+- [x] Add typed bulk stock metadata and status tools.
+- [x] Reuse existing stock safety guards and exact read-back behavior.
+- [x] Add deterministic MCP-boundary and pinned live coverage, including response loss.
+- [x] Align public documentation and generated tool metadata.
 
 ### F-S79: Low-Risk Bulk Purchase-Order And Line Metadata Updates
 
@@ -3054,7 +3058,7 @@ Tasks:
 
 ### F-S83: Harden Testcontainers Worker Startup Under CI Load
 
-- Status: `Active`
+- Status: `Done`
 - Issue: [#212](https://github.com/davidvanlaatum/inventree-mcp/issues/212)
 - Depends on: none.
 - Progress: implemented on `claude/issue-212-41fc47`, rebased onto `origin/main` at `13ea9aa`.
@@ -3067,7 +3071,7 @@ Tasks:
   - The log tail is unredacted, which is safe here: `internal/testenv` only ever configures the worker container with this suite's synthetic, hardcoded test-only credentials (`defaultDBPassword`, `defaultAdminPassword`, a freshly generated `newTestSecretKey()`), passed solely as container environment variables that the worker process never echoes back to stdout/stderr; it never touches `INVENTREE_TEST_URL` or any production credential. This satisfies both the issue's "without leaking credentials" criterion and `docs/PLAN.md`'s "Keep production credentials and user-provided `INVENTREE_TEST_URL` out of Testcontainers logs" rule. The same log content is already streamed live via `ContainerLogf`/`startContainerLogProducer` today, so the diagnostics only duplicate a bounded slice of already-surfaced output rather than opening a new exposure.
   - Deterministic unit tests cover probe timeout (a blocked exec is cancelled at the per-attempt bound, including when it is shorter than the configured probe timeout), retry-then-succeed, non-zero-exit classification, diagnostics formatting, a stalled Inspect/Logs call being bounded by its own timeout, and the log tail capturing the stream's actual tail (not its head) once it exceeds the byte cap — using a fake `testcontainers.Container` so no Docker is required.
   - The default local Docker-backed suite passes with `-race`; the CI workflow is validated by pushing this branch and confirming the pipeline passes before merge (not yet run as of this writing).
-- Validation: `go test ./... -race` passed (Docker-backed `internal/inventree` and `internal/testenv` suites included); `go test -race ./internal/testenv/...` passed; `go test -cover ./internal/testenv/...` reported 81.3% (up from 77.9% on `main`); `go vet ./...` passed; `golangci-lint run ./...` passed with 0 issues; `go mod tidy -diff` passed; `gofmt -l .` reported no files; `git diff --check` passed. GitHub Actions CI has not yet been run on the pushed branch.
+- Validation: `go test ./... -race` passed (Docker-backed `internal/inventree` and `internal/testenv` suites included); `go test -race ./internal/testenv/...` passed; `go test -cover ./internal/testenv/...` reported 81.3% (up from 77.9% on `main`); `go vet ./...` passed; `golangci-lint run ./...` passed with 0 issues; `go mod tidy -diff` passed; `gofmt -l .` reported no files; `git diff --check` passed. GitHub Actions CI (Go test, golangci-lint, CodeQL, goreleaser-snapshot) passed on PR #213 before merge.
 - Review: Senior Go Developer, Senior QA / Test Architect, Senior Product Manager, and Senior Infosec Reviewer panel completed (required because this changes Testcontainers integration behavior). No Critical/High findings. Fixed: `workerLogTail` originally read only the first `workerDiagnosticsLogMax` bytes of the log stream via `io.LimitReader`, so once worker output exceeded that cap the diagnostics captured the stream's head instead of its tail (Infosec, Medium) — replaced with a bounded rolling-buffer read to EOF so the result is the actual tail; `workerDiagnostics` shared one timeout budget across the `State()` and `Logs()` calls, letting one stall starve the other (Infosec, Low) — split into independent per-call timeouts; missing boundary tests for a probe timeout longer than the outer deadline and for a stalled Inspect/Logs call actually being cut off (QA, Medium x2) — both added; missing doc comments on the test-only mutable timing vars' `t.Parallel()` hazard and the fake container's required `execFunc` (Go, Medium/Low) — both added; docs/TASKS.md Acceptance and Validation did not spell out the credential-safety reasoning or that CI had not yet run (Product, Medium x2) — both corrected in this section. No findings were rejected.
 - Residual risk: the fix bounds and diagnoses a blocked exec but does not change container-level resource limits; if Docker daemon contention is severe enough to also stall other calls in the startup path (network/postgres/redis/server `Run`, HTTP fetch/token calls), those remain governed only by the overall `StartupTimeout` and are out of scope for this story. `workerLogTail` still reads the container's log stream to EOF (bounded by its own timeout and a rolling byte cap) rather than using a true tail/since option, because `testcontainers.Container.Logs` exposes none; this is a reasonable bound, not a correctness gap, for the short-lived startup-diagnostics use case. The follow-up in the issue (serializing Docker-heavy integration packages in CI) was struck through by the operator and is not pursued here.
 

@@ -3273,6 +3273,152 @@ func TestMilestoneHappyPathToolsAgainstInvenTree(t *testing.T) {
 		})
 	})
 
+	t.Run("bulk_stock_updates", func(t *testing.T) {
+		unknownID := 999999999
+
+		t.Run("metadata", func(t *testing.T) {
+			r := require.New(t)
+			a := assert.New(t)
+			ctx, _, _ := testhandler.SetupTestHandler(t)
+			fixture := newMilestoneToolFixture(t, shared)
+			part := fixture.createPart(t, "bulk-stock-metadata-base")
+			location := fixture.ensure(t, testenv.FixtureLocation)
+			applies := fixture.createStockItem(t, part.PK, location.ID)
+			skips := fixture.createStockItem(t, part.PK, location.ID)
+			_, err := fixture.client.UpdateStockItem(ctx, skips.PK, inventree.PatchFields{"packaging": inventree.Set("already-set")})
+			r.NoError(err)
+			batchValue := "bulk-metadata-applied"
+
+			items := []BulkUpdateStockItemMetadataItem{
+				{ID: applies.PK, Batch: &batchValue},
+				{ID: skips.PK, Packaging: dvgoutils.Ptr("already-set")}, // matches current: no-op
+				{ID: unknownID, Batch: &batchValue},
+			}
+			_, dryRun, err := bulkUpdateStockItemMetadata(fixture.deps())(ctx, &mcp.CallToolRequest{}, BulkUpdateStockItemMetadataInput{Items: items, DryRun: true})
+			r.NoError(err)
+			a.Equal(StatusOK, dryRun.Status)
+			r.NotEmpty(dryRun.PlanHash)
+
+			_, confirmed, err := bulkUpdateStockItemMetadata(fixture.deps())(ctx, &mcp.CallToolRequest{}, BulkUpdateStockItemMetadataInput{Items: items, Confirm: true, PlanHash: dryRun.PlanHash})
+			r.NoError(err)
+			a.Equal(StatusPartialFailure, confirmed.Status)
+			byID := bulkResultsByID(confirmed.Items)
+			r.NotNil(byID[applies.PK].Record)
+			r.NotNil(byID[applies.PK].Record.Batch)
+			a.Equal(batchValue, *byID[applies.PK].Record.Batch)
+			a.Equal(string(batch.OutcomeApplied), byID[applies.PK].Outcome)
+			a.Equal(string(batch.OutcomeSkipped), byID[skips.PK].Outcome)
+			a.Equal(string(batch.OutcomeFailed), byID[unknownID].Outcome)
+
+			refreshed, err := fixture.client.GetStockItem(ctx, applies.PK)
+			r.NoError(err)
+			r.NotNil(refreshed.Batch)
+			a.Equal(batchValue, *refreshed.Batch)
+
+			// Stale plan: state drifts after the dry run but before confirm, so
+			// the digest embedded in the freshly rebuilt plan at confirm time no
+			// longer matches and the stored token must be rejected.
+			staleItems := []BulkUpdateStockItemMetadataItem{{ID: applies.PK, Packaging: dvgoutils.Ptr("bulk-stale-packaging")}}
+			_, staleDryRun, err := bulkUpdateStockItemMetadata(fixture.deps())(ctx, &mcp.CallToolRequest{}, BulkUpdateStockItemMetadataInput{Items: staleItems, DryRun: true})
+			r.NoError(err)
+			r.NotEmpty(staleDryRun.PlanHash)
+			_, err = fixture.client.UpdateStockItem(ctx, applies.PK, inventree.PatchFields{"packaging": inventree.Set("someone-else-changed-it")})
+			r.NoError(err)
+			_, staleConfirm, err := bulkUpdateStockItemMetadata(fixture.deps())(ctx, &mcp.CallToolRequest{}, BulkUpdateStockItemMetadataInput{Items: staleItems, Confirm: true, PlanHash: staleDryRun.PlanHash})
+			r.NoError(err)
+			a.Equal(StatusClarificationRequired, staleConfirm.Status)
+
+			// Response-loss recovery: the live PATCH lands upstream but the
+			// response is dropped, so Mutate must recover by reading back
+			// current state rather than reporting a bare ambiguous failure.
+			lostItems := []BulkUpdateStockItemMetadataItem{{ID: applies.PK, Notes: dvgoutils.Ptr("bulk-recovered-notes")}}
+			_, lostDryRun, err := bulkUpdateStockItemMetadata(fixture.deps())(ctx, &mcp.CallToolRequest{}, BulkUpdateStockItemMetadataInput{Items: lostItems, DryRun: true})
+			r.NoError(err)
+			r.NotEmpty(lostDryRun.PlanHash)
+			lostClient, err := shared.ClientWithHTTPClient(fixture.account, &http.Client{Transport: &loseMutationResponseTransport{base: http.DefaultTransport, method: http.MethodPatch, path: fmt.Sprintf("/api/stock/%d/", applies.PK)}})
+			r.NoError(err)
+			lostFixture := fixture
+			lostFixture.client = lostClient
+			_, lostConfirm, err := bulkUpdateStockItemMetadata(lostFixture.deps())(ctx, &mcp.CallToolRequest{}, BulkUpdateStockItemMetadataInput{Items: lostItems, Confirm: true, PlanHash: lostDryRun.PlanHash})
+			r.NoError(err)
+			r.Len(lostConfirm.Items, 1)
+			a.Equal(string(batch.OutcomeApplied), lostConfirm.Items[0].Outcome)
+			r.NotNil(lostConfirm.Items[0].Record)
+			r.NotNil(lostConfirm.Items[0].Record.Notes)
+			a.Equal("bulk-recovered-notes", *lostConfirm.Items[0].Record.Notes)
+		})
+
+		t.Run("status", func(t *testing.T) {
+			r := require.New(t)
+			a := assert.New(t)
+			ctx, _, _ := testhandler.SetupTestHandler(t)
+			fixture := newMilestoneToolFixture(t, shared)
+			part := fixture.createPart(t, "bulk-stock-status-base")
+			location := fixture.ensure(t, testenv.FixtureLocation)
+			applies := fixture.createStockItem(t, part.PK, location.ID)
+			skips, err := fixture.client.CreateStockItem(ctx, inventree.StockItemCreate{Part: part.PK, Location: location.ID, Quantity: 3, Status: dvgoutils.Ptr(stockStatusAttention)})
+			r.NoError(err)
+			highRisk := fixture.createStockItem(t, part.PK, location.ID)
+
+			items := []BulkSetStockStatusItem{
+				{ID: applies.PK, Status: stockStatusAttention},
+				{ID: skips.PK, Status: stockStatusAttention}, // already attention: no-op
+				{ID: unknownID, Status: stockStatusAttention},
+				{ID: highRisk.PK, Status: stockStatusDestroyed}, // high-risk target: refused
+			}
+			_, dryRun, err := bulkSetStockStatus(fixture.deps())(ctx, &mcp.CallToolRequest{}, BulkSetStockStatusInput{Items: items, Reason: "bulk stock status integration", DryRun: true})
+			r.NoError(err)
+			a.Equal(StatusOK, dryRun.Status)
+			r.NotEmpty(dryRun.PlanHash)
+
+			_, confirmed, err := bulkSetStockStatus(fixture.deps())(ctx, &mcp.CallToolRequest{}, BulkSetStockStatusInput{Items: items, Reason: "bulk stock status integration", Confirm: true, PlanHash: dryRun.PlanHash})
+			r.NoError(err)
+			a.Equal(StatusPartialFailure, confirmed.Status)
+			byID := bulkResultsByID(confirmed.Items)
+			r.NotNil(byID[applies.PK].Record)
+			a.Equal(stockStatusAttention, byID[applies.PK].Record.Status)
+			a.Equal(string(batch.OutcomeApplied), byID[applies.PK].Outcome)
+			a.Equal(string(batch.OutcomeSkipped), byID[skips.PK].Outcome)
+			a.Equal(string(batch.OutcomeFailed), byID[unknownID].Outcome)
+			a.Equal(string(batch.OutcomeFailed), byID[highRisk.PK].Outcome)
+
+			refreshed, err := fixture.client.GetStockItem(ctx, applies.PK)
+			r.NoError(err)
+			a.Equal(stockStatusAttention, refreshed.Status)
+			unchanged, err := fixture.client.GetStockItem(ctx, highRisk.PK)
+			r.NoError(err)
+			a.Equal(stockStatusOK, unchanged.Status)
+
+			// Stale plan: state drifts after the dry run but before confirm.
+			staleItems := []BulkSetStockStatusItem{{ID: applies.PK, Status: stockStatusQuarantine}}
+			_, staleDryRun, err := bulkSetStockStatus(fixture.deps())(ctx, &mcp.CallToolRequest{}, BulkSetStockStatusInput{Items: staleItems, Reason: "stale check", DryRun: true})
+			r.NoError(err)
+			r.NotEmpty(staleDryRun.PlanHash)
+			r.NoError(fixture.client.ChangeStockStatus(ctx, inventree.StockStatusChange{Items: []int{applies.PK}, Status: stockStatusDamaged, Note: "drift"}))
+			_, staleConfirm, err := bulkSetStockStatus(fixture.deps())(ctx, &mcp.CallToolRequest{}, BulkSetStockStatusInput{Items: staleItems, Reason: "stale check", Confirm: true, PlanHash: staleDryRun.PlanHash})
+			r.NoError(err)
+			a.Equal(StatusClarificationRequired, staleConfirm.Status)
+
+			// Response-loss recovery: the live status-change call lands upstream
+			// but the response is dropped, so Mutate must recover by reading
+			// back current state rather than reporting a bare ambiguous failure.
+			lostItems := []BulkSetStockStatusItem{{ID: applies.PK, Status: stockStatusReturned}}
+			_, lostDryRun, err := bulkSetStockStatus(fixture.deps())(ctx, &mcp.CallToolRequest{}, BulkSetStockStatusInput{Items: lostItems, Reason: "recovered", DryRun: true})
+			r.NoError(err)
+			r.NotEmpty(lostDryRun.PlanHash)
+			lostClient, err := shared.ClientWithHTTPClient(fixture.account, &http.Client{Transport: &loseMutationResponseTransport{base: http.DefaultTransport, method: http.MethodPost, path: "/api/stock/change_status/"}})
+			r.NoError(err)
+			lostFixture := fixture
+			lostFixture.client = lostClient
+			_, lostConfirm, err := bulkSetStockStatus(lostFixture.deps())(ctx, &mcp.CallToolRequest{}, BulkSetStockStatusInput{Items: lostItems, Reason: "recovered", Confirm: true, PlanHash: lostDryRun.PlanHash})
+			r.NoError(err)
+			r.Len(lostConfirm.Items, 1)
+			a.Equal(string(batch.OutcomeApplied), lostConfirm.Items[0].Outcome)
+			r.NotNil(lostConfirm.Items[0].Record)
+			a.Equal(stockStatusReturned, lostConfirm.Items[0].Record.Status)
+		})
+	})
+
 	t.Run("deferred_file_surface_boundaries_return_clarifications", func(t *testing.T) {
 		r := require.New(t)
 		a := assert.New(t)
@@ -3321,6 +3467,8 @@ type milestoneToolFixture struct {
 	categoryBulkPlanStore                *batch.Store[categoryBulkPlan]
 	supplierPartBulkPlanStore            *batch.Store[supplierPartBulkPlan]
 	manufacturerPartBulkPlanStore        *batch.Store[manufacturerPartBulkPlan]
+	stockMetadataBulkPlanStore           *batch.Store[stockMetadataBulkPlan]
+	stockStatusBulkPlanStore             *batch.Store[stockStatusBulkPlan]
 }
 
 type attachmentTarget struct {
@@ -3398,6 +3546,14 @@ func newMilestoneToolFixture(t *testing.T, shared *testenv.SharedInvenTree) mile
 			IDGenerator: platform.RandomIDGenerator{}, Principal: stockPlanPrincipal,
 			SupersedeKey: func(p manufacturerPartBulkPlan) string { return bulkSupersedeKey(p.ids()) },
 		}),
+		stockMetadataBulkPlanStore: mustBulkStore(batch.Options[stockMetadataBulkPlan]{
+			IDGenerator: platform.RandomIDGenerator{}, Principal: stockPlanPrincipal,
+			SupersedeKey: func(p stockMetadataBulkPlan) string { return bulkSupersedeKey(p.ids()) },
+		}),
+		stockStatusBulkPlanStore: mustBulkStore(batch.Options[stockStatusBulkPlan]{
+			IDGenerator: platform.RandomIDGenerator{}, Principal: stockPlanPrincipal,
+			SupersedeKey: func(p stockStatusBulkPlan) string { return bulkSupersedeKey(p.ids()) },
+		}),
 	}
 }
 
@@ -3426,6 +3582,8 @@ func (f milestoneToolFixture) deps() Dependencies {
 		categoryBulkPlanStore:                f.categoryBulkPlanStore,
 		supplierPartBulkPlanStore:            f.supplierPartBulkPlanStore,
 		manufacturerPartBulkPlanStore:        f.manufacturerPartBulkPlanStore,
+		stockMetadataBulkPlanStore:           f.stockMetadataBulkPlanStore,
+		stockStatusBulkPlanStore:             f.stockStatusBulkPlanStore,
 	}
 }
 

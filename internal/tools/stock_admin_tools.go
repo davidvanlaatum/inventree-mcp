@@ -825,6 +825,25 @@ func locationCreateFields(input CreateStockLocationInput, name string) inventree
 }
 
 func stockMetadataPatch(input UpdateStockItemMetadataInput, before inventree.StockItem) (inventree.PatchFields, inventree.StockItem, error) {
+	fields, after, err := stockMetadataFields(input, before)
+	if err != nil {
+		return nil, before, err
+	}
+	if len(fields) == 0 || stockMetadataStateEqual(stockMetadataState(before), stockMetadataState(after)) {
+		return nil, before, errors.New("at least one non-no-op approved metadata field is required")
+	}
+	return fields, after, nil
+}
+
+// stockMetadataFields builds the approved PATCH fields and projected "after"
+// state for input, without rejecting a result that happens to equal before.
+// stockMetadataPatch adds that no-op rejection for the single-item tool;
+// bulk_update_stock_item_metadata calls this directly so an item whose
+// requested values already match current state gets real target Fields and
+// is left to batch.Adapter's own dynamic Preflight check to report it as
+// skipped, rather than a static plan-build rejection that would misreport a
+// harmless already-satisfied item as failed.
+func stockMetadataFields(input UpdateStockItemMetadataInput, before inventree.StockItem) (inventree.PatchFields, inventree.StockItem, error) {
 	if input.Batch != nil && input.ClearBatch || input.ExpiryDate != nil && input.ClearExpiryDate || input.Packaging != nil && input.ClearPackaging || input.Notes != nil && input.ClearNotes {
 		return nil, before, errors.New("replacement values conflict with their clear flags")
 	}
@@ -858,9 +877,6 @@ func stockMetadataPatch(input UpdateStockItemMetadataInput, before inventree.Sto
 	if input.Link != nil {
 		fields["link"] = inventree.Set(*input.Link)
 		after.Link = *input.Link
-	}
-	if len(fields) == 0 || stockMetadataStateEqual(stockMetadataState(before), stockMetadataState(after)) {
-		return nil, before, errors.New("at least one non-no-op approved metadata field is required")
 	}
 	return fields, after, nil
 }
