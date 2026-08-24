@@ -651,9 +651,13 @@ func TestWriteToolAuthorizationsUseWriteScope(t *testing.T) {
 		case InstallStockItemToolName, GenerateStocktakeToolName, PollStocktakeGenerationToolName:
 			a.Equal("operational", auth.MutationClass)
 			a.Equal([]string{ScopeInventreeRead, ScopeInventreeWrite, ScopeInventreeOperational}, auth.Scopes)
-		case BulkUpdatePartsToolName:
+		case BulkUpdatePartsToolName, BulkUpdateObjectParametersToolName:
 			a.Equal("operational", auth.MutationClass)
 			a.Equal([]string{ScopeInventreeRead, ScopeInventreeWrite, ScopeInventreeOperational}, auth.Scopes)
+			a.Equal(WriteAnnotations, auth.Annotations)
+		case BulkUpdateAttachmentsToolName:
+			a.Equal("operational", auth.MutationClass)
+			a.Equal([]string{ScopeInventreeRead, ScopeInventreeWrite, ScopeInventreeUpload, ScopeInventreeOperational}, auth.Scopes)
 			a.Equal(WriteAnnotations, auth.Annotations)
 		case BulkUpdateCompaniesToolName, BulkUpdatePartCategoriesToolName, BulkUpdateSupplierPartsToolName, BulkUpdateManufacturerPartsToolName, BulkUpdatePurchaseOrdersToolName, BulkUpdatePurchaseOrderExtraLinesToolName:
 			a.Equal("operational", auth.MutationClass)

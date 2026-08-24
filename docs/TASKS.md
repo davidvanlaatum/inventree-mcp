@@ -161,7 +161,7 @@ Before assigning a new story ID, inspect `git worktree list --porcelain`, search
 | [F-S77](#f-s77-low-risk-bulk-catalog-and-company-updates) | Add low-risk bulk scalar updates for catalog and company record families. | Done |
 | [F-S78](#f-s78-low-risk-bulk-stock-metadata-and-status-updates) | Add low-risk bulk stock-item metadata and status updates. | Done |
 | [F-S79](#f-s79-low-risk-bulk-purchase-order-and-line-metadata-updates) | Add low-risk bulk purchase-order and line metadata updates. | Done |
-| [F-S80](#f-s80-low-risk-bulk-attachment-and-parameter-value-updates) | Add low-risk bulk attachment metadata and parameter-value updates. | Ready |
+| [F-S80](#f-s80-low-risk-bulk-attachment-and-parameter-value-updates) | Add low-risk bulk attachment metadata and parameter-value updates. | Done |
 | [F-S81](#f-s81-bulk-mutation-throughput-and-operator-observability) | Validate bulk throughput, bounded concurrency, progress, cancellation, and operator recovery evidence. | Ready |
 | [F-S82](#f-s82-mcp-facing-image-and-attachment-tool-routing-guidance) | Make image and generic-attachment tool routing explicit to MCP agents. | Done |
 | [F-S83](#f-s83-harden-testcontainers-worker-startup-under-ci-load) | Harden the Testcontainers InvenTree worker health probe against CI resource contention. | Done |
@@ -2989,7 +2989,7 @@ Tasks:
 
 ### F-S80: Low-Risk Bulk Attachment And Parameter-Value Updates
 
-- Status: `Ready`
+- Status: `Done`
 - Issue: [#204](https://github.com/davidvanlaatum/inventree-mcp/issues/204)
 - Depends on: F-S76; coordinate with the existing F-S14 bulk parameter-propagation workflow.
 - Scope: add resource-specific bulk tools for attachment metadata updates and safe parameter-value maintenance where each row can be independently preflighted and patched. Reuse F-S14's explicit template, selector, overwrite, and audit conventions rather than introducing implicit template creation or arbitrary object writes. Exclude uploads, downloads, image assignment, deletes, template merges, and ambiguous parameter-template selection.
@@ -3001,13 +3001,17 @@ Tasks:
   - Existing attachment tools and F-S14 behavior remain unchanged.
   - Default-on pinned InvenTree coverage proves representative attachment and parameter batches, mixed outcomes, stale plans, and response-loss handling.
   - Tool reference, operator recipes, prompts, manifest, schema notes, and authorization metadata are aligned.
+- Implementation notes: `bulk_update_attachment_metadata` (`internal/tools/attachment_bulk_tools.go`) reuses `update_attachment_metadata`'s field allowlist verbatim via a new shared `attachmentMetadataFields`/`attachmentValues` helper factored out of that tool, and follows F-S77/78/79's identity-by-single-`id` shape exactly. `bulk_update_object_parameters` (`internal/tools/object_parameter_bulk_tools.go`) reuses F-S14's `overwrite_existing` field name/semantics (`false` reports an existing differing row instead of writing it) applied per explicit item rather than F-S14's category/part-ID selector fan-out — `bulk_propagate_part_parameters` remains the selector-based tool; this one is complementary, not a replacement. Because a target parameter row may not exist yet at plan-build time (create-or-update), its items are identified throughout by a `model_type`/`model_id`/`template_id` composite key rather than a single `id`, unlike every other `bulk_update_*` tool; this required its own parallel-but-separate preview/result/record-store helpers rather than reusing `catalog_bulk_tools.go`'s int-`id`-shaped generics. `part.part` parameters stay out of scope (routed to `set_part_parameters`/`bulk_propagate_part_parameters`), matching F-S64's existing part/non-part boundary.
+- Validation: `go build ./...`, `go vet ./...`, `gofmt -l .`, `golangci-lint run ./internal/tools/... ./internal/batch/...` (0 issues), `go test ./...` (all packages, including the live Testcontainers `TestMilestoneHappyPathToolsAgainstInvenTree` suite against pinned InvenTree 1.5.1 with new `bulk_update_attachment_metadata` and `bulk_update_object_parameters` subtests covering dry-run/confirm apply, no-op skip, unknown-target failure, stale-plan-hash rejection, duplicate-key-in-batch rejection, and response-loss recovery).
+- Review: full Go/QA/Product/Infosec panel per `docs/reviewers.md`'s "adding new mutating workflow tools" trigger. Product and Infosec found no actionable issues (Product offered two low-severity documentation-polish suggestions, both applied: promoting `bulk_update_object_parameters`'s composite-key result identification to its own operator-recipes bullet, and clarifying in this entry that "reuse F-S14's ... selector ... conventions" is satisfied by explicit per-item identity rather than F-S14's category/part-ID fan-out). QA found two moderate coverage gaps — a missing unit-level "already at target state" test for the attachment bulk tool, and untested bulk-boundary wiring for the incompatible-template/uniqueness-conflict paths reused from `create_object_parameter` — both closed (`TestBulkUpdateAttachmentsSkipsAlreadyAtTargetState`, `TestBulkUpdateObjectParametersMixedOutcomesIncompatibleTemplateWithHealthyItem`); QA also flagged a duplicated 500-character value-length check/message between `create_object_parameter` and the new bulk tool (Low), factored into shared `objectParameterMaxValueLength`/`objectParameterValueTooLongMessage` constants. Go found one Medium issue: two items in one `bulk_update_object_parameters` batch with different targets but the same globally- or model-type-scoped-unique template+value could each pass independent plan-build validation, then race each other through `batch.Execute`'s concurrent `Mutate` calls into a uniqueness-policy violation neither the identity-duplicate check nor the single-item `create_object_parameter` logic (never batched, so never racing) would catch; fixed by rejecting same-batch items that share a uniqueness-conflicting `(template_id, value)` (global) or `(template_id, model_type, value)` (model-type-scoped) group at plan-build time, with new `TestBulkUpdateObjectParametersRejectsCrossItemGlobalUniquenessConflict` and `TestBulkUpdateObjectParametersModelTypeUniquenessAllowsSameValueAcrossModelTypes` coverage. Go's one Low suggestion (generalizing `catalog_bulk_tools.go`'s `bulkRecordStore[View]` over its key type to also cover `object_parameter_bulk_tools.go`'s string-keyed record store) was deferred as optional cleanup touching five already-shipped bulk tools' shared code, not required for this story's scope.
+- Residual risk: none blocking. The `bulkRecordStore[View]` key-type generalization noted above remains open as low-risk optional cleanup for a future pass, not tracked as a separate backlog item.
 
 Tasks:
 
-- [ ] Add typed bulk attachment metadata and parameter-value tools.
-- [ ] Reuse F-S14 template, selector, overwrite, and audit semantics.
-- [ ] Add deterministic MCP-boundary and pinned live coverage.
-- [ ] Align public documentation and generated tool metadata.
+- [x] Add typed bulk attachment metadata and parameter-value tools.
+- [x] Reuse F-S14 template, selector, overwrite, and audit semantics.
+- [x] Add deterministic MCP-boundary and pinned live coverage.
+- [x] Align public documentation and generated tool metadata.
 
 ### F-S81: Bulk Mutation Throughput And Operator Observability
 

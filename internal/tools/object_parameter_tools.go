@@ -32,6 +32,14 @@ const (
 // order.purchaseorder remain out of scope for this story.
 const objectParameterModelTypes = "company.company, company.manufacturerpart, company.supplierpart, order.purchaseorder, part.partcategory, or stock.stocklocation"
 
+// objectParameterMaxValueLength and objectParameterValueTooLongMessage are
+// shared by create_object_parameter and bulk_update_object_parameters so both
+// enforce and report InvenTree's parameter-data length limit identically.
+const (
+	objectParameterMaxValueLength      = 500
+	objectParameterValueTooLongMessage = "value exceeds the InvenTree 500-character parameter data limit"
+)
+
 var errObjectParameterScanLimit = errors.New("object-parameter scan safety limit exceeded")
 
 func validObjectParameterModelType(modelType string) bool {
@@ -352,8 +360,8 @@ func createObjectParameter(deps Dependencies) mcp.ToolHandlerFor[CreateObjectPar
 			if input.Value == nil {
 				return hardClarification[ObjectParameterResult]("Which explicit parameter value should be set?", "value", "value must be explicitly supplied, including for an empty value", "value", objectParameterWriteRetry(input))
 			}
-			if len(*input.Value) > 500 {
-				return hardClarification[ObjectParameterResult]("Which schema-valid parameter value should be set?", "value", "value exceeds the InvenTree 500-character parameter data limit", "value", objectParameterWriteRetry(input))
+			if len(*input.Value) > objectParameterMaxValueLength {
+				return hardClarification[ObjectParameterResult]("Which schema-valid parameter value should be set?", "value", objectParameterValueTooLongMessage, "value", objectParameterWriteRetry(input))
 			}
 			template, result, output, ok, err := resolveObjectWriteTemplate(ctx, client, modelType, input)
 			if err != nil || !ok {
