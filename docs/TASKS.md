@@ -160,7 +160,7 @@ Before assigning a new story ID, inspect `git worktree list --porcelain`, search
 | [F-S76](#f-s76-shared-bounded-batch-mutation-execution) | Add shared bounded batch planning, confirmation, execution, cancellation, and per-item recovery primitives. | Done |
 | [F-S77](#f-s77-low-risk-bulk-catalog-and-company-updates) | Add low-risk bulk scalar updates for catalog and company record families. | Done |
 | [F-S78](#f-s78-low-risk-bulk-stock-metadata-and-status-updates) | Add low-risk bulk stock-item metadata and status updates. | Done |
-| [F-S79](#f-s79-low-risk-bulk-purchase-order-and-line-metadata-updates) | Add low-risk bulk purchase-order and line metadata updates. | Ready |
+| [F-S79](#f-s79-low-risk-bulk-purchase-order-and-line-metadata-updates) | Add low-risk bulk purchase-order and line metadata updates. | Active |
 | [F-S80](#f-s80-low-risk-bulk-attachment-and-parameter-value-updates) | Add low-risk bulk attachment metadata and parameter-value updates. | Ready |
 | [F-S81](#f-s81-bulk-mutation-throughput-and-operator-observability) | Validate bulk throughput, bounded concurrency, progress, cancellation, and operator recovery evidence. | Ready |
 | [F-S82](#f-s82-mcp-facing-image-and-attachment-tool-routing-guidance) | Make image and generic-attachment tool routing explicit to MCP agents. | Done |
@@ -2964,7 +2964,7 @@ Tasks:
 
 ### F-S79: Low-Risk Bulk Purchase-Order And Line Metadata Updates
 
-- Status: `Ready`
+- Status: `Active`
 - Issue: [#203](https://github.com/davidvanlaatum/inventree-mcp/issues/203)
 - Depends on: F-S76.
 - Scope: add resource-specific bulk tools for independent metadata-only updates on purchase orders, ordinary purchase-order lines, and extra lines. Preserve each existing PATCH allowlist, nullable-field semantics, supplier/order identity checks, authorization scopes, annotations, and exact read-back behavior. Exclude issue, receive, complete, hold, resume, cancellation, deletion, duplication, and create workflows.

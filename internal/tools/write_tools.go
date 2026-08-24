@@ -375,6 +375,7 @@ func registerWriteTools(server *mcp.Server, deps Dependencies) {
 	registerStockLocationDeleteTool(server, deps)
 	registerAttachmentWriteTools(server, deps)
 	registerPurchasingWriteTools(server, deps)
+	registerPurchasingBulkWriteTools(server, deps)
 	registerOwnerWriteTools(server, deps)
 	registerContactWriteTools(server, deps)
 	registerAddressWriteTools(server, deps)
