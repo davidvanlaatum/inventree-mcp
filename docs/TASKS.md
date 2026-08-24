@@ -158,11 +158,11 @@ Before assigning a new story ID, inspect `git worktree list --porcelain`, search
 | [F-S74](#f-s74-guarded-stocktake-generation-and-reporting) | Implement guarded stocktake generation and reporting after F-S60 discovery resolves asynchronous task and report behavior. | Done |
 | [F-S75](#f-s75-yaml-configuration-file-support) | Add documented YAML configuration-file loading with default-path discovery and explicit precedence. | Done |
 | [F-S76](#f-s76-shared-bounded-batch-mutation-execution) | Add shared bounded batch planning, confirmation, execution, cancellation, and per-item recovery primitives. | Done |
-| [F-S77](#f-s77-low-risk-bulk-catalog-and-company-updates) | Add low-risk bulk scalar updates for catalog and company record families. | Ready |
+| [F-S77](#f-s77-low-risk-bulk-catalog-and-company-updates) | Add low-risk bulk scalar updates for catalog and company record families. | Done |
 | [F-S78](#f-s78-low-risk-bulk-stock-metadata-and-status-updates) | Add low-risk bulk stock-item metadata and status updates. | Ready |
 | [F-S79](#f-s79-low-risk-bulk-purchase-order-and-line-metadata-updates) | Add low-risk bulk purchase-order and line metadata updates. | Ready |
 | [F-S80](#f-s80-low-risk-bulk-attachment-and-parameter-value-updates) | Add low-risk bulk attachment metadata and parameter-value updates. | Ready |
-| [F-S81](#f-s81-bulk-mutation-throughput-and-operator-observability) | Validate bulk throughput, bounded concurrency, progress, cancellation, and operator recovery evidence. | Planned |
+| [F-S81](#f-s81-bulk-mutation-throughput-and-operator-observability) | Validate bulk throughput, bounded concurrency, progress, cancellation, and operator recovery evidence. | Ready |
 | [F-S82](#f-s82-mcp-facing-image-and-attachment-tool-routing-guidance) | Make image and generic-attachment tool routing explicit to MCP agents. | Done |
 | [F-S83](#f-s83-harden-testcontainers-worker-startup-under-ci-load) | Harden the Testcontainers InvenTree worker health probe against CI resource contention. | Active |
 
@@ -2910,7 +2910,7 @@ Tasks:
 
 ### F-S77: Low-Risk Bulk Catalog And Company Updates
 
-- Status: `Ready`
+- Status: `Done`
 - Issue: [#201](https://github.com/davidvanlaatum/inventree-mcp/issues/201)
 - Depends on: F-S76.
 - Scope: add resource-specific bulk tools for independent, non-destructive, idempotent scalar updates on parts, companies, part categories, supplier parts, and manufacturer parts. Preserve each resource's PATCH allowlist, explicit clear semantics, duplicate/reference checks, authorization scopes, annotations, and exact read-back behavior. Exclude creates, deletes, relationship changes, upserts, image operations, and arbitrary generic PATCH fields.
@@ -2926,10 +2926,15 @@ Tasks:
 
 Tasks:
 
-- [ ] Add typed resource-specific bulk catalog/company tools on the shared batch framework.
-- [ ] Preserve per-resource field, clear, duplicate, reference, and read-back contracts.
-- [ ] Add deterministic MCP-boundary and pinned live coverage.
-- [ ] Align public documentation and generated tool metadata.
+- [x] Add typed resource-specific bulk catalog/company tools on the shared batch framework.
+- [x] Preserve per-resource field, clear, duplicate, reference, and read-back contracts.
+- [x] Add deterministic MCP-boundary and pinned live coverage.
+- [x] Align public documentation and generated tool metadata.
+
+Implementation: `internal/tools/catalog_bulk_tools.go` adds `bulk_update_parts`, `bulk_update_companies`, `bulk_update_part_categories`, `bulk_update_supplier_parts`, and `bulk_update_manufacturer_parts` on the `internal/batch` (F-S76) primitives. Each reuses its matching single-item tool's PATCH-field builder, clear-conflict, duplicate/reference, and postflight functions unchanged. Bulk items accept only the fields their single-item counterpart applies without its own extra confirm-gated review: `bulk_update_companies` cannot set `is_supplier`/`is_manufacturer` to `false` and has no `is_customer` (use `update_company`/`remove_company_customer_role`); `bulk_update_part_categories` has no `parent_id`/`clear_parent`/`structural` (use `update_part_category`); `bulk_update_supplier_parts`/`bulk_update_manufacturer_parts` have no relationship-relinking fields (use the matching single-item tool). `bulk_update_parts` exposes `update_part`'s full field set unchanged, since that tool has no such extra-confirm fields. All five tools also reject a batch containing the same `id` more than once before any write. Mutation class `operational` and scopes `[inventree.read, inventree.write, inventree.operational]`; `bulk_update_parts` keeps `update_part`'s existing `idempotentHint:false` contract, the other four use `idempotentHint:true` matching their single-item counterparts. Max 25 items and worker concurrency 4 per call (`bulkUpdateMaxItems`/`bulkUpdateConcurrency`), left as internal constants for F-S81 to tune from live throughput evidence.
+- Validation: `go build ./...`; `go vet ./...`; `golangci-lint run ./...` (0 issues); `go generate ./internal/tools/...` then `git diff --check` on `docs/tool-manifest.json` (no drift); `go test ./... -race` passed, including default-on Docker-backed Testcontainers coverage in `internal/tools/milestone_integration_test.go`'s `bulk_catalog_and_company_updates` subtest (one applied, one skipped, and one failed item in the same confirmed batch, for all five resource families, against a real pinned InvenTree instance); `internal/tools` package coverage 85.7% versus 85.8% on `main` (residual gap: `bulkCapacityClarification`'s "too many outstanding plans" branch remains untested for 4 of 5 tools; low risk, mechanically identical to the tested company case and to the already-covered `internal/batch.Store` capacity path).
+- Review: Senior Go Developer, Senior QA / Test Architect, Senior Product Manager, and Senior Infosec Reviewer panel completed against the initial implementation. Go found every bulk adapter's `Preflight` returned an empty caller-facing reason on confirm-time re-fetch/identity/drift failures even though `internal/batch`'s `Result.Message` contract is built to surface that string; fixed with three shared safe reason constants across all five adapters. Product found `docs/operator-recipes.md` incorrectly described an excluded field (e.g. `parent_id` on `bulk_update_part_categories`) as producing a per-item `failed` entry, when it actually fails whole-call JSON-Schema validation before any item is evaluated (excluded fields have no corresponding struct field); wording corrected. Product also found no guard rejected a batch containing the same `id` twice, which could race unpredictably under `batch.Execute`'s bounded concurrency; added a plan-build-time duplicate-id check across all five tools plus a unit test, and documented it in both `docs/tool-reference.md` and `docs/operator-recipes.md`. QA found stale-plan-hash rejection was tested for only one of five tools and each adapter's Preflight drift branch was untested (not practically reachable through the full dry_run/confirm flow, since `confirm` rebuilds and digest-checks the plan before Preflight runs); added stale-plan-hash tests for the remaining four tools, a direct per-adapter Preflight-drift test for all five, and a positive exactly-25-item acceptance test. Infosec found no issues (authorization scopes, token single-use/principal-binding, URL validation reuse, error-message safety, and batch-size bounds all verified correct). A focused Go+QA and a focused Product rerun on the follow-up diff found no remaining actionable findings.
+- Residual risk: none beyond the documented coverage gap above; `bulkUpdateMaxItems`/`bulkUpdateConcurrency` are placeholder defaults explicitly deferred to F-S81 for live-evidence tuning.
 
 ### F-S78: Low-Risk Bulk Stock Metadata And Status Updates
 
@@ -2999,7 +3004,7 @@ Tasks:
 
 ### F-S81: Bulk Mutation Throughput And Operator Observability
 
-- Status: `Planned`
+- Status: `Ready`
 - Issue: [#205](https://github.com/davidvanlaatum/inventree-mcp/issues/205)
 - Depends on: F-S76 and at least one public bulk-tool story.
 - Scope: validate and harden bulk mutation behavior under realistic batch sizes and upstream response timing. Add operator-visible progress, bounded output, duration/concurrency evidence, cancellation behavior, and safe retry guidance without exposing credentials or raw response bodies. Tune defaults from live pinned InvenTree evidence rather than assuming the server is the bottleneck.

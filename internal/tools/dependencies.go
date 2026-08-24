@@ -5,6 +5,7 @@ import (
 	"errors"
 	"time"
 
+	"github.com/davidvanlaatum/inventree-mcp/internal/batch"
 	"github.com/davidvanlaatum/inventree-mcp/internal/upload"
 	"github.com/davidvanlaatum/inventree-mcp/internal/weblinks"
 	"github.com/spf13/afero"
@@ -42,6 +43,11 @@ type Dependencies struct {
 	categoryDeletePlanStore              *categoryDeletePlanStore
 	stocktakePlanStore                   *stocktakePlanStore
 	stocktakeTaskStore                   *stocktakeTaskStore
+	partBulkPlanStore                    *batch.Store[partBulkPlan]
+	companyBulkPlanStore                 *batch.Store[companyBulkPlan]
+	categoryBulkPlanStore                *batch.Store[categoryBulkPlan]
+	supplierPartBulkPlanStore            *batch.Store[supplierPartBulkPlan]
+	manufacturerPartBulkPlanStore        *batch.Store[manufacturerPartBulkPlan]
 }
 
 func (d Dependencies) Client(ctx context.Context) (any, error) {
