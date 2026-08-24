@@ -749,3 +749,236 @@ func TestExtraLineBeforeFieldsCoversEveryKey(t *testing.T) {
 	nullBeforeFields := extraLineBeforeFields(noPriceOrDate, nullFields)
 	a.True(extraLineMatchesPatch(noPriceOrDate, nullBeforeFields))
 }
+
+// ---------------------------------------------------------------------------
+// Preflight drift detection
+//
+// Reaching the drifted branch through the full dry_run/confirm handler flow
+// is impractical: confirm rebuilds the plan from fresh state immediately
+// before Store.Consume, so any drift wide enough to observe from outside the
+// handler already fails at the digest check (see the RejectsStalePlanHash
+// tests above) before Preflight ever runs. These tests call the adapter's
+// Preflight directly with a hand-crafted item whose Before no longer matches
+// current state, mirroring TestStockMetadataBulkAdapterPreflightDetectsDrift.
+// ---------------------------------------------------------------------------
+
+func TestPurchaseOrderBulkAdapterPreflightDetectsDrift(t *testing.T) {
+	t.Parallel()
+	a := assert.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	client := newBulkFakePurchaseOrders()
+	client.orders[1] = inventree.PurchaseOrderDetail{PurchaseOrder: inventree.PurchaseOrder{PK: 1, Description: "Drifted"}}
+	adapter := &purchaseOrderBulkAdapter{client: client}
+	item := purchaseOrderBulkPlanItem{
+		bulkPlanItemBase: bulkPlanItemBase{ID: 1},
+		Before:           inventree.PurchaseOrderDetail{PurchaseOrder: inventree.PurchaseOrder{PK: 1, Description: "Original"}},
+		Fields:           inventree.PatchFields{"description": inventree.Set("Target")},
+	}
+
+	skip, reason, err := adapter.Preflight(ctx, item)
+	a.False(skip)
+	a.Error(err)
+	a.Equal(bulkReasonDrifted, reason)
+}
+
+func TestPurchaseOrderLineBulkAdapterPreflightDetectsDrift(t *testing.T) {
+	t.Parallel()
+	a := assert.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	client := newBulkFakePurchaseOrders()
+	client.lines[1] = inventree.PurchaseOrderLineItem{PK: 1, Order: 1, Part: 5, Quantity: 99}
+	adapter := &purchaseOrderLineBulkAdapter{client: client}
+	item := purchaseOrderLineBulkPlanItem{
+		bulkPlanItemBase: bulkPlanItemBase{ID: 1},
+		Before:           inventree.PurchaseOrderLineItem{PK: 1, Order: 1, Part: 5, Quantity: 2},
+		Fields:           inventree.PatchFields{"order": inventree.Set(1), "part": inventree.Set(5), "quantity": inventree.Set(7.0)},
+	}
+
+	skip, reason, err := adapter.Preflight(ctx, item)
+	a.False(skip)
+	a.Error(err)
+	a.Equal(bulkReasonDrifted, reason)
+}
+
+func TestPurchaseOrderExtraLineBulkAdapterPreflightDetectsDrift(t *testing.T) {
+	t.Parallel()
+	a := assert.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	client := newBulkFakePurchaseOrders()
+	client.extraLines[1] = inventree.PurchaseOrderExtraLine{PK: 1, Order: 1, Reference: "r1", Description: "Drifted", Quantity: 1}
+	adapter := &purchaseOrderExtraLineBulkAdapter{client: client}
+	item := purchaseOrderExtraLineBulkPlanItem{
+		bulkPlanItemBase: bulkPlanItemBase{ID: 1},
+		Before:           inventree.PurchaseOrderExtraLine{PK: 1, Order: 1, Reference: "r1", Description: "Original", Quantity: 1},
+		Fields:           inventree.PatchFields{"description": inventree.Set("Target")},
+	}
+
+	skip, reason, err := adapter.Preflight(ctx, item)
+	a.False(skip)
+	a.Error(err)
+	a.Equal(bulkReasonDrifted, reason)
+}
+
+// ---------------------------------------------------------------------------
+// Outstanding plan capacity
+// ---------------------------------------------------------------------------
+
+func TestBulkUpdatePurchaseOrdersRejectsWhenOutstandingPlanCapacityIsExceeded(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	client := newBulkFakePurchaseOrders()
+	client.orders[1] = inventree.PurchaseOrderDetail{PurchaseOrder: inventree.PurchaseOrder{PK: 1, Description: "A"}}
+	client.orders[2] = inventree.PurchaseOrderDetail{PurchaseOrder: inventree.PurchaseOrder{PK: 2, Description: "B"}}
+	deps := testPurchaseOrderBulkDeps(client)
+	deps.purchaseOrderBulkPlanStore = mustBulkStore(batch.Options[purchaseOrderBulkPlan]{
+		IDGenerator: platform.RandomIDGenerator{}, Principal: stockPlanPrincipal,
+		SupersedeKey:           func(p purchaseOrderBulkPlan) string { return bulkSupersedeKey(p.ids()) },
+		MaxEntriesPerPrincipal: 1,
+	})
+	handler := bulkUpdatePurchaseOrders(deps)
+
+	_, first, err := handler(ctx, &mcp.CallToolRequest{}, BulkUpdatePurchaseOrdersInput{Items: []BulkUpdatePurchaseOrderItem{{ID: 1, Description: dvgoutils.Ptr("A2")}}, DryRun: true})
+	r.NoError(err)
+	a.NotEmpty(first.PlanHash)
+
+	_, second, err := handler(ctx, &mcp.CallToolRequest{}, BulkUpdatePurchaseOrdersInput{Items: []BulkUpdatePurchaseOrderItem{{ID: 2, Description: dvgoutils.Ptr("B2")}}, DryRun: true})
+	r.NoError(err)
+	a.Equal(StatusClarificationRequired, second.Status)
+	a.Empty(second.PlanHash)
+}
+
+func TestBulkUpdatePurchaseOrderLinesRejectsWhenOutstandingPlanCapacityIsExceeded(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	client := newBulkFakePurchaseOrders()
+	client.orders[1] = inventree.PurchaseOrderDetail{PurchaseOrder: inventree.PurchaseOrder{PK: 1, Supplier: 10}}
+	client.lines[1] = inventree.PurchaseOrderLineItem{PK: 1, Order: 1, Part: 5, Quantity: 2}
+	client.lines[2] = inventree.PurchaseOrderLineItem{PK: 2, Order: 1, Part: 5, Quantity: 3}
+	deps := testPurchaseOrderBulkDeps(client)
+	deps.purchaseOrderLineBulkPlanStore = mustBulkStore(batch.Options[purchaseOrderLineBulkPlan]{
+		IDGenerator: platform.RandomIDGenerator{}, Principal: stockPlanPrincipal,
+		SupersedeKey:           func(p purchaseOrderLineBulkPlan) string { return bulkSupersedeKey(p.ids()) },
+		MaxEntriesPerPrincipal: 1,
+	})
+	handler := bulkUpdatePurchaseOrderLines(deps)
+
+	_, first, err := handler(ctx, &mcp.CallToolRequest{}, BulkUpdatePurchaseOrderLinesInput{Items: []BulkUpdatePurchaseOrderLineItem{{ID: 1, Quantity: dvgoutils.Ptr(5.0)}}, DryRun: true})
+	r.NoError(err)
+	a.NotEmpty(first.PlanHash)
+
+	_, second, err := handler(ctx, &mcp.CallToolRequest{}, BulkUpdatePurchaseOrderLinesInput{Items: []BulkUpdatePurchaseOrderLineItem{{ID: 2, Quantity: dvgoutils.Ptr(6.0)}}, DryRun: true})
+	r.NoError(err)
+	a.Equal(StatusClarificationRequired, second.Status)
+	a.Empty(second.PlanHash)
+}
+
+func TestBulkUpdatePurchaseOrderExtraLinesRejectsWhenOutstandingPlanCapacityIsExceeded(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	client := newBulkFakePurchaseOrders()
+	client.extraLines[1] = inventree.PurchaseOrderExtraLine{PK: 1, Order: 1, Reference: "r1", Quantity: 1}
+	client.extraLines[2] = inventree.PurchaseOrderExtraLine{PK: 2, Order: 1, Reference: "r2", Quantity: 1}
+	deps := testPurchaseOrderBulkDeps(client)
+	deps.purchaseOrderExtraLineBulkPlanStore = mustBulkStore(batch.Options[purchaseOrderExtraLineBulkPlan]{
+		IDGenerator: platform.RandomIDGenerator{}, Principal: stockPlanPrincipal,
+		SupersedeKey:           func(p purchaseOrderExtraLineBulkPlan) string { return bulkSupersedeKey(p.ids()) },
+		MaxEntriesPerPrincipal: 1,
+	})
+	handler := bulkUpdatePurchaseOrderExtraLines(deps)
+
+	_, first, err := handler(ctx, &mcp.CallToolRequest{}, BulkUpdatePurchaseOrderExtraLinesInput{Items: []BulkUpdatePurchaseOrderExtraLineItem{{ID: 1, Description: dvgoutils.Ptr("A2")}}, DryRun: true})
+	r.NoError(err)
+	a.NotEmpty(first.PlanHash)
+
+	_, second, err := handler(ctx, &mcp.CallToolRequest{}, BulkUpdatePurchaseOrderExtraLinesInput{Items: []BulkUpdatePurchaseOrderExtraLineItem{{ID: 2, Description: dvgoutils.Ptr("B2")}}, DryRun: true})
+	r.NoError(err)
+	a.Equal(StatusClarificationRequired, second.Status)
+	a.Empty(second.PlanHash)
+}
+
+// ---------------------------------------------------------------------------
+// destination_id validation
+// ---------------------------------------------------------------------------
+
+func TestBuildPurchaseOrderBulkPlanItemValidatesDestination(t *testing.T) {
+	t.Parallel()
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	client := newBulkFakePurchaseOrders()
+	client.orders[1] = inventree.PurchaseOrderDetail{PurchaseOrder: inventree.PurchaseOrder{PK: 1}}
+	client.locations[7] = inventree.StockLocation{PK: 7}
+
+	valid := buildPurchaseOrderBulkPlanItem(ctx, client, BulkUpdatePurchaseOrderItem{ID: 1, DestinationID: dvgoutils.Ptr(7)})
+	assert.Empty(t, valid.FailReason)
+	assert.Equal(t, 7, valid.Fields["destination"].Value())
+
+	invalid := buildPurchaseOrderBulkPlanItem(ctx, client, BulkUpdatePurchaseOrderItem{ID: 1, DestinationID: dvgoutils.Ptr(404)})
+	assert.Contains(t, invalid.FailReason, "does not identify a readable stock location")
+}
+
+func TestBuildPurchaseOrderLineBulkPlanItemValidatesDestination(t *testing.T) {
+	t.Parallel()
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	client := newBulkFakePurchaseOrders()
+	client.orders[1] = inventree.PurchaseOrderDetail{PurchaseOrder: inventree.PurchaseOrder{PK: 1, Supplier: 10}}
+	client.lines[1] = inventree.PurchaseOrderLineItem{PK: 1, Order: 1, Part: 5, Quantity: 2}
+	client.locations[7] = inventree.StockLocation{PK: 7}
+
+	valid := buildPurchaseOrderLineBulkPlanItem(ctx, client, BulkUpdatePurchaseOrderLineItem{ID: 1, DestinationID: dvgoutils.Ptr(7)})
+	assert.Empty(t, valid.FailReason)
+	assert.Equal(t, 7, valid.Fields["destination"].Value())
+
+	invalid := buildPurchaseOrderLineBulkPlanItem(ctx, client, BulkUpdatePurchaseOrderLineItem{ID: 1, DestinationID: dvgoutils.Ptr(404)})
+	assert.Contains(t, invalid.FailReason, "does not identify a readable stock location")
+}
+
+// ---------------------------------------------------------------------------
+// Empty and oversized batches
+// ---------------------------------------------------------------------------
+
+func TestBulkUpdatePurchaseOrderLinesRejectsEmptyAndOversizedBatches(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	deps := testPurchaseOrderBulkDeps(newBulkFakePurchaseOrders())
+	handler := bulkUpdatePurchaseOrderLines(deps)
+
+	_, empty, err := handler(ctx, &mcp.CallToolRequest{}, BulkUpdatePurchaseOrderLinesInput{})
+	r.NoError(err)
+	a.Equal(StatusClarificationRequired, empty.Status)
+
+	oversized := make([]BulkUpdatePurchaseOrderLineItem, bulkUpdateMaxItems+1)
+	for i := range oversized {
+		oversized[i] = BulkUpdatePurchaseOrderLineItem{ID: i + 1, Quantity: dvgoutils.Ptr(1.0)}
+	}
+	_, tooMany, err := handler(ctx, &mcp.CallToolRequest{}, BulkUpdatePurchaseOrderLinesInput{Items: oversized})
+	r.NoError(err)
+	a.Equal(StatusClarificationRequired, tooMany.Status)
+}
+
+func TestBulkUpdatePurchaseOrderExtraLinesRejectsEmptyAndOversizedBatches(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	deps := testPurchaseOrderBulkDeps(newBulkFakePurchaseOrders())
+	handler := bulkUpdatePurchaseOrderExtraLines(deps)
+
+	_, empty, err := handler(ctx, &mcp.CallToolRequest{}, BulkUpdatePurchaseOrderExtraLinesInput{})
+	r.NoError(err)
+	a.Equal(StatusClarificationRequired, empty.Status)
+
+	oversized := make([]BulkUpdatePurchaseOrderExtraLineItem, bulkUpdateMaxItems+1)
+	for i := range oversized {
+		oversized[i] = BulkUpdatePurchaseOrderExtraLineItem{ID: i + 1, Description: dvgoutils.Ptr("x")}
+	}
+	_, tooMany, err := handler(ctx, &mcp.CallToolRequest{}, BulkUpdatePurchaseOrderExtraLinesInput{Items: oversized})
+	r.NoError(err)
+	a.Equal(StatusClarificationRequired, tooMany.Status)
+}

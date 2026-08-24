@@ -160,7 +160,7 @@ Before assigning a new story ID, inspect `git worktree list --porcelain`, search
 | [F-S76](#f-s76-shared-bounded-batch-mutation-execution) | Add shared bounded batch planning, confirmation, execution, cancellation, and per-item recovery primitives. | Done |
 | [F-S77](#f-s77-low-risk-bulk-catalog-and-company-updates) | Add low-risk bulk scalar updates for catalog and company record families. | Done |
 | [F-S78](#f-s78-low-risk-bulk-stock-metadata-and-status-updates) | Add low-risk bulk stock-item metadata and status updates. | Done |
-| [F-S79](#f-s79-low-risk-bulk-purchase-order-and-line-metadata-updates) | Add low-risk bulk purchase-order and line metadata updates. | Active |
+| [F-S79](#f-s79-low-risk-bulk-purchase-order-and-line-metadata-updates) | Add low-risk bulk purchase-order and line metadata updates. | Done |
 | [F-S80](#f-s80-low-risk-bulk-attachment-and-parameter-value-updates) | Add low-risk bulk attachment metadata and parameter-value updates. | Ready |
 | [F-S81](#f-s81-bulk-mutation-throughput-and-operator-observability) | Validate bulk throughput, bounded concurrency, progress, cancellation, and operator recovery evidence. | Ready |
 | [F-S82](#f-s82-mcp-facing-image-and-attachment-tool-routing-guidance) | Make image and generic-attachment tool routing explicit to MCP agents. | Done |
@@ -2964,7 +2964,7 @@ Tasks:
 
 ### F-S79: Low-Risk Bulk Purchase-Order And Line Metadata Updates
 
-- Status: `Active`
+- Status: `Done`
 - Issue: [#203](https://github.com/davidvanlaatum/inventree-mcp/issues/203)
 - Depends on: F-S76.
 - Scope: add resource-specific bulk tools for independent metadata-only updates on purchase orders, ordinary purchase-order lines, and extra lines. Preserve each existing PATCH allowlist, nullable-field semantics, supplier/order identity checks, authorization scopes, annotations, and exact read-back behavior. Exclude issue, receive, complete, hold, resume, cancellation, deletion, duplication, and create workflows.
@@ -2976,13 +2976,16 @@ Tasks:
   - Existing single-record purchase-order tools remain behaviorally unchanged.
   - Default-on pinned InvenTree coverage proves successful and mixed-result batches for orders, ordinary lines, and extra lines.
   - Public tool reference, operator recipes, prompts, manifest, schema notes, and authorization metadata are aligned.
+- Validation: `go build ./...`, `go vet ./...`, `gofmt -l .`, `golangci-lint run ./internal/tools/...` (0 issues), `go test ./...` (all packages, including the live Testcontainers `TestMilestoneHappyPathToolsAgainstInvenTree` suite against pinned InvenTree 1.5.1 with the new `bulk_purchase_order_updates` subtest covering orders/lines/extra_lines dry-run/confirm, no-op skip, unknown-ID failure, stale-plan-hash rejection, supplier-mismatch rejection, extra-line reference collision against both an existing line and another item in the same batch, and response-loss recovery), per-package coverage for `internal/tools` compared to `main` (84.6% baseline vs 84.8% after adding the review-requested drift/capacity/destination_id/batch-size unit tests — no regression).
+- Review: full Go/QA/Product/Infosec panel per `docs/reviewers.md`'s "adding new mutating workflow tools" trigger. Go and Infosec found no actionable issues (Go noted two optional low-severity nits — a theoretical NUL-byte composite-key edge case and a duplicable helper — both explicitly framed as not worth fixing). QA found missing adapter-Preflight-drift tests (High), missing plan-store-capacity tests (Medium), and untested `destination_id` validation (Medium) for all three tools, plus missing empty/oversized-batch tests for the line and extra-line tools and a live round-trip for cross-item extra-line reference collision (Low); all added (`TestPurchaseOrder*BulkAdapterPreflightDetectsDrift`, `TestBulkUpdatePurchaseOrder*RejectsWhenOutstandingPlanCapacityIsExceeded`, `TestBuildPurchaseOrder*BulkPlanItemValidatesDestination`, `TestBulkUpdatePurchaseOrder{Lines,ExtraLines}RejectsEmptyAndOversizedBatches`, and a same-batch reference-collision case added to the live `extra_lines` subtest). Product found `docs/operator-recipes.md` was missing the required "Bulk-Update Purchase Orders And Lines" section (Medium); added, mirroring the existing F-S77/F-S78 bulk-recipe sections. Confirmed the `order_id` exclusion on the extra-line tool, scope/mutation-class choices, and `idempotentHint` mirroring are sound and consistently documented.
+- Residual risk: none.
 
 Tasks:
 
-- [ ] Add typed bulk purchase-order, ordinary-line, and extra-line metadata tools.
-- [ ] Preserve endpoint-specific identity, nullable-field, and read-back contracts.
-- [ ] Add deterministic MCP-boundary and pinned live coverage.
-- [ ] Align public documentation and generated tool metadata.
+- [x] Add typed bulk purchase-order, ordinary-line, and extra-line metadata tools.
+- [x] Preserve endpoint-specific identity, nullable-field, and read-back contracts.
+- [x] Add deterministic MCP-boundary and pinned live coverage.
+- [x] Align public documentation and generated tool metadata.
 
 ### F-S80: Low-Risk Bulk Attachment And Parameter-Value Updates
 

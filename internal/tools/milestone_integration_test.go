@@ -3597,6 +3597,16 @@ func TestMilestoneHappyPathToolsAgainstInvenTree(t *testing.T) {
 			r.NoError(err)
 			collides, err := fixture.client.CreatePurchaseOrderExtraLine(ctx, inventree.PurchaseOrderExtraLineCreate{Order: order.PK, Reference: collidesReference, Quantity: 1})
 			r.NoError(err)
+			batchCollideAReference, err := fixture.run.Name("bulk-extra-batch-collide-a")
+			r.NoError(err)
+			batchCollideA, err := fixture.client.CreatePurchaseOrderExtraLine(ctx, inventree.PurchaseOrderExtraLineCreate{Order: order.PK, Reference: batchCollideAReference, Quantity: 1})
+			r.NoError(err)
+			batchCollideBReference, err := fixture.run.Name("bulk-extra-batch-collide-b")
+			r.NoError(err)
+			batchCollideB, err := fixture.client.CreatePurchaseOrderExtraLine(ctx, inventree.PurchaseOrderExtraLineCreate{Order: order.PK, Reference: batchCollideBReference, Quantity: 1})
+			r.NoError(err)
+			sharedNewReference, err := fixture.run.Name("bulk-extra-shared-new")
+			r.NoError(err)
 			newDescription := "bulk-extra-applied"
 
 			items := []BulkUpdatePurchaseOrderExtraLineItem{
@@ -3604,6 +3614,12 @@ func TestMilestoneHappyPathToolsAgainstInvenTree(t *testing.T) {
 				{ID: skips.PK, Description: dvgoutils.Ptr("already-set")}, // matches current: no-op
 				{ID: unknownID, Description: &newDescription},
 				{ID: collides.PK, Reference: &takenReference}, // reference already used by another extra line on this order
+				// Two batch items independently requesting the same brand-new
+				// reference: neither exists upstream yet, so only cross-item
+				// in-batch detection (not the upstream duplicate scan) can
+				// catch this collision.
+				{ID: batchCollideA.PK, Reference: &sharedNewReference},
+				{ID: batchCollideB.PK, Reference: &sharedNewReference},
 			}
 			_, dryRun, err := bulkUpdatePurchaseOrderExtraLines(fixture.deps())(ctx, &mcp.CallToolRequest{}, BulkUpdatePurchaseOrderExtraLinesInput{Items: items, DryRun: true})
 			r.NoError(err)
@@ -3612,6 +3628,10 @@ func TestMilestoneHappyPathToolsAgainstInvenTree(t *testing.T) {
 			byIDDry := bulkResultsByID(dryRun.Items)
 			a.Equal(bulkOutcomeFailed, byIDDry[collides.PK].Outcome)
 			a.Contains(byIDDry[collides.PK].Message, "collides with an existing extra line")
+			a.Equal(bulkOutcomeFailed, byIDDry[batchCollideA.PK].Outcome)
+			a.Equal(bulkReasonDuplicateExtraLineReference, byIDDry[batchCollideA.PK].Message)
+			a.Equal(bulkOutcomeFailed, byIDDry[batchCollideB.PK].Outcome)
+			a.Equal(bulkReasonDuplicateExtraLineReference, byIDDry[batchCollideB.PK].Message)
 
 			_, confirmed, err := bulkUpdatePurchaseOrderExtraLines(fixture.deps())(ctx, &mcp.CallToolRequest{}, BulkUpdatePurchaseOrderExtraLinesInput{Items: items, Confirm: true, PlanHash: dryRun.PlanHash})
 			r.NoError(err)
@@ -3623,6 +3643,8 @@ func TestMilestoneHappyPathToolsAgainstInvenTree(t *testing.T) {
 			a.Equal(string(batch.OutcomeSkipped), byID[skips.PK].Outcome)
 			a.Equal(string(batch.OutcomeFailed), byID[unknownID].Outcome)
 			a.Equal(string(batch.OutcomeFailed), byID[collides.PK].Outcome)
+			a.Equal(string(batch.OutcomeFailed), byID[batchCollideA.PK].Outcome)
+			a.Equal(string(batch.OutcomeFailed), byID[batchCollideB.PK].Outcome)
 
 			refreshed, err := fixture.client.GetPurchaseOrderExtraLine(ctx, applies.PK)
 			r.NoError(err)
