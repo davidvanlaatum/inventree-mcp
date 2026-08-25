@@ -37,6 +37,7 @@ const (
 	SearchObjectParametersToolName            = "search_object_parameters"
 	CreateObjectParameterToolName             = "create_object_parameter"
 	DeleteObjectParameterToolName             = "delete_object_parameter"
+	BulkUpdateObjectParametersToolName        = "bulk_update_object_parameters"
 	CreateParameterTemplateToolName           = "create_parameter_template"
 	UpdateParameterTemplateToolName           = "update_parameter_template"
 	UpdateParameterTemplateUniquenessToolName = "update_parameter_template_uniqueness"
@@ -150,6 +151,7 @@ const (
 	UploadAttachmentFromURLToolName           = "upload_attachment_from_url"
 	CreateLinkAttachmentToolName              = "create_link_attachment"
 	UpdateAttachmentMetadataToolName          = "update_attachment_metadata"
+	BulkUpdateAttachmentsToolName             = "bulk_update_attachment_metadata"
 	DeleteAttachmentToolName                  = "delete_attachment"
 	SetPrimaryImageToolName                   = "set_primary_image"
 	SetCompanyImageToolName                   = "set_company_image"
@@ -260,6 +262,7 @@ var writeToolNames = []string{
 	DeletePartParameterToolName,
 	CreateObjectParameterToolName,
 	DeleteObjectParameterToolName,
+	BulkUpdateObjectParametersToolName,
 	CreateParameterTemplateToolName,
 	UpdateParameterTemplateToolName,
 	UpdateParameterTemplateUniquenessToolName,
@@ -327,6 +330,7 @@ var writeToolNames = []string{
 	UploadAttachmentFromURLToolName,
 	CreateLinkAttachmentToolName,
 	UpdateAttachmentMetadataToolName,
+	BulkUpdateAttachmentsToolName,
 	DeleteAttachmentToolName,
 	SetPrimaryImageToolName,
 	SetCompanyImageToolName,
@@ -378,8 +382,11 @@ func init() {
 		case CreateStockItemToolName, InitialStockWorkflowToolName:
 			scopes = []string{ScopeInventreeWrite, ScopeInventreeOperational}
 			mutationClass = "operational"
-		case AdjustStockQuantityToolName, SetStockStatusToolName, StocktakeAdjustmentToolName, GenerateStocktakeToolName, TransferStockItemToolName, RestructureStockLocationToolName, UpdateStockItemMetadataToolName, AssignStockSerialToolName, InstallStockItemToolName, UpdateParameterTemplateUniquenessToolName, HoldPurchaseOrderToolName, ResumePurchaseOrderToolName, BulkUpdatePartsToolName, BulkUpdateCompaniesToolName, BulkUpdatePartCategoriesToolName, BulkUpdateSupplierPartsToolName, BulkUpdateManufacturerPartsToolName, BulkUpdateStockItemMetadataToolName, BulkSetStockStatusToolName, BulkUpdatePurchaseOrdersToolName, BulkUpdatePurchaseOrderLinesToolName, BulkUpdatePurchaseOrderExtraLinesToolName:
+		case AdjustStockQuantityToolName, SetStockStatusToolName, StocktakeAdjustmentToolName, GenerateStocktakeToolName, TransferStockItemToolName, RestructureStockLocationToolName, UpdateStockItemMetadataToolName, AssignStockSerialToolName, InstallStockItemToolName, UpdateParameterTemplateUniquenessToolName, HoldPurchaseOrderToolName, ResumePurchaseOrderToolName, BulkUpdatePartsToolName, BulkUpdateCompaniesToolName, BulkUpdatePartCategoriesToolName, BulkUpdateSupplierPartsToolName, BulkUpdateManufacturerPartsToolName, BulkUpdateStockItemMetadataToolName, BulkSetStockStatusToolName, BulkUpdatePurchaseOrdersToolName, BulkUpdatePurchaseOrderLinesToolName, BulkUpdatePurchaseOrderExtraLinesToolName, BulkUpdateObjectParametersToolName:
 			scopes = []string{ScopeInventreeRead, ScopeInventreeWrite, ScopeInventreeOperational}
+			mutationClass = "operational"
+		case BulkUpdateAttachmentsToolName:
+			scopes = []string{ScopeInventreeRead, ScopeInventreeWrite, ScopeInventreeUpload, ScopeInventreeOperational}
 			mutationClass = "operational"
 		case SetStockDeleteOnDepleteToolName, DepleteStockItemToolName, UpdatePartFamilyRelationshipsToolName, UpdateStockItemProvenanceToolName, SetStockSerialToolName, UninstallStockItemToolName, CancelPurchaseOrderToolName, DeleteStockLocationToolName:
 			scopes = []string{ScopeInventreeRead, ScopeInventreeWrite, ScopeInventreeOperational, ScopeInventreeDestructive}

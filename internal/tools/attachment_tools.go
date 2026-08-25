@@ -202,22 +202,38 @@ func updateAttachmentMetadata(deps Dependencies) mcp.ToolHandlerFor[UpdateAttach
 			if err := validateAttachmentModelType(existing.ModelType); err != nil {
 				return nil, AttachmentWriteOutput{}, err
 			}
-			fields := inventree.PatchFields{}
-			if input.Filename != nil {
-				fields["filename"] = inventree.Set(*input.Filename)
-			}
-			if input.Comment != nil {
-				fields["comment"] = inventree.Set(*input.Comment)
-			}
-			if input.Tags != nil {
-				fields["tags"] = inventree.Set(input.Tags)
-			}
+			fields := attachmentMetadataFields(input.Filename, input.Comment, input.Tags)
 			if len(fields) == 0 {
 				return hardAttachmentClarification("Which attachment metadata fields should be updated?", "attachment", "update_attachment_metadata requires at least one PATCH field", "id", map[string]any{"id": input.ID})
 			}
 			record, err := client.UpdateAttachmentMetadata(ctx, input.ID, fields)
 			return attachmentWriteRecordOutput(record, "", err)
 		})
+}
+
+// attachmentMetadataFields builds update_attachment_metadata's PATCH field
+// set. bulk_update_attachment_metadata reuses this unchanged so both tools
+// accept exactly the same field allowlist.
+func attachmentMetadataFields(filename, comment *string, tags []string) inventree.PatchFields {
+	fields := inventree.PatchFields{}
+	if filename != nil {
+		fields["filename"] = inventree.Set(*filename)
+	}
+	if comment != nil {
+		fields["comment"] = inventree.Set(*comment)
+	}
+	if tags != nil {
+		fields["tags"] = inventree.Set(tags)
+	}
+	return fields
+}
+
+// attachmentValues projects record's own values for exactly
+// attachmentMetadataFields' keys, so patchMatches/valuesMatchForKeys (shared
+// with catalog_bulk_tools.go) can compare a target PatchFields against
+// current or captured "before" attachment state.
+func attachmentValues(record inventree.Attachment) map[string]any {
+	return map[string]any{"filename": record.Filename, "comment": record.Comment, "tags": record.Tags}
 }
 
 func deleteAttachment(deps Dependencies) mcp.ToolHandlerFor[DeleteAttachmentInput, AttachmentWriteOutput] {

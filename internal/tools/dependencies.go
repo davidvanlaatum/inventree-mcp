@@ -53,6 +53,8 @@ type Dependencies struct {
 	purchaseOrderBulkPlanStore           *batch.Store[purchaseOrderBulkPlan]
 	purchaseOrderLineBulkPlanStore       *batch.Store[purchaseOrderLineBulkPlan]
 	purchaseOrderExtraLineBulkPlanStore  *batch.Store[purchaseOrderExtraLineBulkPlan]
+	attachmentBulkPlanStore              *batch.Store[attachmentBulkPlan]
+	objectParameterBulkPlanStore         *batch.Store[objectParameterBulkPlan]
 }
 
 func (d Dependencies) Client(ctx context.Context) (any, error) {

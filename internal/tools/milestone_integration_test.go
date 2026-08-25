@@ -3668,6 +3668,170 @@ func TestMilestoneHappyPathToolsAgainstInvenTree(t *testing.T) {
 		})
 	})
 
+	t.Run("bulk_update_attachment_metadata", func(t *testing.T) {
+		r := require.New(t)
+		a := assert.New(t)
+		ctx, _, _ := testhandler.SetupTestHandler(t)
+		fixture := newMilestoneToolFixture(t, shared)
+		unknownID := 999999999
+		part := fixture.createPart(t, "bulk-attachment-base")
+		_, appliesUpload, err := uploadAttachment(fixture.deps())(ctx, &mcp.CallToolRequest{}, UploadAttachmentInput{
+			ModelType: "part", ModelID: part.PK, Filename: "bulk-applies.txt", ContentType: "text/plain",
+			InlineBase64: base64.StdEncoding.EncodeToString([]byte("bulk attachment applies")),
+		})
+		r.NoError(err)
+		_, skipsUpload, err := uploadAttachment(fixture.deps())(ctx, &mcp.CallToolRequest{}, UploadAttachmentInput{
+			ModelType: "part", ModelID: part.PK, Filename: "bulk-skips.txt", ContentType: "text/plain", Comment: dvgoutils.Ptr("already-set"),
+			InlineBase64: base64.StdEncoding.EncodeToString([]byte("bulk attachment skips")),
+		})
+		r.NoError(err)
+		applies, skips := appliesUpload.Record.PK, skipsUpload.Record.PK
+
+		items := []BulkUpdateAttachmentItem{
+			{ID: applies, Comment: dvgoutils.Ptr("bulk-metadata-applied")},
+			{ID: skips, Comment: dvgoutils.Ptr("already-set")}, // matches current: no-op
+			{ID: unknownID, Comment: dvgoutils.Ptr("bulk-metadata-applied")},
+		}
+		_, dryRun, err := bulkUpdateAttachments(fixture.deps())(ctx, &mcp.CallToolRequest{}, BulkUpdateAttachmentsInput{Items: items, DryRun: true})
+		r.NoError(err)
+		a.Equal(StatusOK, dryRun.Status)
+		r.NotEmpty(dryRun.PlanHash)
+
+		_, confirmed, err := bulkUpdateAttachments(fixture.deps())(ctx, &mcp.CallToolRequest{}, BulkUpdateAttachmentsInput{Items: items, Confirm: true, PlanHash: dryRun.PlanHash})
+		r.NoError(err)
+		a.Equal(StatusPartialFailure, confirmed.Status)
+		byID := bulkResultsByID(confirmed.Items)
+		r.NotNil(byID[applies].Record)
+		a.Equal("bulk-metadata-applied", byID[applies].Record.Comment)
+		a.Equal(string(batch.OutcomeApplied), byID[applies].Outcome)
+		a.Equal(string(batch.OutcomeSkipped), byID[skips].Outcome)
+		a.Equal(string(batch.OutcomeFailed), byID[unknownID].Outcome)
+
+		refreshed, err := fixture.client.GetAttachmentMetadata(ctx, applies)
+		r.NoError(err)
+		a.Equal("bulk-metadata-applied", refreshed.Comment)
+
+		// Stale plan: state drifts after the dry run but before confirm.
+		staleItems := []BulkUpdateAttachmentItem{{ID: applies, Filename: dvgoutils.Ptr("bulk-stale.txt")}}
+		_, staleDryRun, err := bulkUpdateAttachments(fixture.deps())(ctx, &mcp.CallToolRequest{}, BulkUpdateAttachmentsInput{Items: staleItems, DryRun: true})
+		r.NoError(err)
+		r.NotEmpty(staleDryRun.PlanHash)
+		_, err = fixture.client.UpdateAttachmentMetadata(ctx, applies, inventree.PatchFields{"comment": inventree.Set("someone-else-changed-it")})
+		r.NoError(err)
+		_, staleConfirm, err := bulkUpdateAttachments(fixture.deps())(ctx, &mcp.CallToolRequest{}, BulkUpdateAttachmentsInput{Items: staleItems, Confirm: true, PlanHash: staleDryRun.PlanHash})
+		r.NoError(err)
+		a.Equal(StatusClarificationRequired, staleConfirm.Status)
+
+		// Response-loss recovery: the live PATCH lands upstream but the
+		// response is dropped, so Mutate must recover by reading back
+		// current state rather than reporting a bare ambiguous failure.
+		lostItems := []BulkUpdateAttachmentItem{{ID: applies, Comment: dvgoutils.Ptr("bulk-recovered-comment")}}
+		_, lostDryRun, err := bulkUpdateAttachments(fixture.deps())(ctx, &mcp.CallToolRequest{}, BulkUpdateAttachmentsInput{Items: lostItems, DryRun: true})
+		r.NoError(err)
+		r.NotEmpty(lostDryRun.PlanHash)
+		lostClient, err := shared.ClientWithHTTPClient(fixture.account, &http.Client{Transport: &loseMutationResponseTransport{base: http.DefaultTransport, method: http.MethodPatch, path: fmt.Sprintf("/api/attachment/%d/", applies)}})
+		r.NoError(err)
+		lostFixture := fixture
+		lostFixture.client = lostClient
+		_, lostConfirm, err := bulkUpdateAttachments(lostFixture.deps())(ctx, &mcp.CallToolRequest{}, BulkUpdateAttachmentsInput{Items: lostItems, Confirm: true, PlanHash: lostDryRun.PlanHash})
+		r.NoError(err)
+		r.Len(lostConfirm.Items, 1)
+		a.Equal(string(batch.OutcomeApplied), lostConfirm.Items[0].Outcome)
+		r.NotNil(lostConfirm.Items[0].Record)
+		a.Equal("bulk-recovered-comment", lostConfirm.Items[0].Record.Comment)
+	})
+
+	t.Run("bulk_update_object_parameters", func(t *testing.T) {
+		r := require.New(t)
+		a := assert.New(t)
+		ctx, _, _ := testhandler.SetupTestHandler(t)
+		fixture := newMilestoneToolFixture(t, shared)
+		location := fixture.ensure(t, testenv.FixtureLocation)
+		secondLocationName, err := fixture.run.Name("bulk-object-parameter-second-location")
+		r.NoError(err)
+		secondLocation, err := fixture.client.CreateStockLocation(ctx, inventree.StockLocationCreate{Name: secondLocationName})
+		r.NoError(err)
+		templateName, err := fixture.run.Name("bulk-object-parameter-template")
+		r.NoError(err)
+		template, err := fixture.client.CreateParameterTemplate(ctx, inventree.ParameterTemplateCreate{Name: templateName, Units: "", Description: "bulk object parameter integration", ModelType: "stock.stocklocation", Enabled: true})
+		r.NoError(err)
+		// inventree.NewPartParameter always targets model_type "part.part"; a
+		// stock.stocklocation row needs the qualified ParameterCreate directly.
+		existing, err := fixture.client.CreatePartParameter(ctx, inventree.ParameterCreate{Template: template.PK, ModelType: "stock.stocklocation", ModelID: location.ID, Data: "before"})
+		r.NoError(err)
+
+		items := []BulkUpdateObjectParameterItem{
+			{ModelType: "stock.stocklocation", ModelID: location.ID, TemplateID: template.PK, Value: dvgoutils.Ptr("bulk-updated"), OverwriteExisting: true},
+			{ModelType: "stock.stocklocation", ModelID: secondLocation.PK, TemplateID: template.PK, Value: dvgoutils.Ptr("bulk-created")},
+		}
+		_, dryRun, err := bulkUpdateObjectParameters(fixture.deps())(ctx, &mcp.CallToolRequest{}, BulkUpdateObjectParametersInput{Items: items, DryRun: true})
+		r.NoError(err)
+		a.Equal(StatusOK, dryRun.Status)
+		r.NotEmpty(dryRun.PlanHash)
+
+		_, confirmed, err := bulkUpdateObjectParameters(fixture.deps())(ctx, &mcp.CallToolRequest{}, BulkUpdateObjectParametersInput{Items: items, Confirm: true, PlanHash: dryRun.PlanHash})
+		r.NoError(err)
+		a.Equal(StatusOK, confirmed.Status)
+		r.Len(confirmed.Items, 2)
+		a.Equal(string(batch.OutcomeApplied), confirmed.Items[0].Outcome)
+		r.NotNil(confirmed.Items[0].Record)
+		a.Equal("bulk-updated", confirmed.Items[0].Record.Value)
+		a.Equal(string(batch.OutcomeApplied), confirmed.Items[1].Outcome)
+		r.NotNil(confirmed.Items[1].Record)
+		a.Equal("bulk-created", confirmed.Items[1].Record.Value)
+
+		updatedExisting, err := fixture.client.GetPartParameter(ctx, existing.PK)
+		r.NoError(err)
+		a.Equal("bulk-updated", updatedExisting.Data)
+
+		// Existing differing value without overwrite_existing is reported,
+		// never written; a duplicate key within the same batch is rejected.
+		// A fresh third location (no existing row) isolates the duplicate-key
+		// check from the "existing differing value" check exercised above.
+		thirdLocationName, err := fixture.run.Name("bulk-object-parameter-third-location")
+		r.NoError(err)
+		thirdLocation, err := fixture.client.CreateStockLocation(ctx, inventree.StockLocationCreate{Name: thirdLocationName})
+		r.NoError(err)
+		duplicateItems := []BulkUpdateObjectParameterItem{
+			{ModelType: "stock.stocklocation", ModelID: thirdLocation.PK, TemplateID: template.PK, Value: dvgoutils.Ptr("no-overwrite")},
+			{ModelType: "stock.stocklocation", ModelID: thirdLocation.PK, TemplateID: template.PK, Value: dvgoutils.Ptr("no-overwrite-again")},
+		}
+		_, dupDryRun, err := bulkUpdateObjectParameters(fixture.deps())(ctx, &mcp.CallToolRequest{}, BulkUpdateObjectParametersInput{Items: duplicateItems, DryRun: true})
+		r.NoError(err)
+		r.Len(dupDryRun.Items, 2)
+		a.Equal(objectParameterBulkOutcomeFailed, dupDryRun.Items[0].Outcome)
+		a.Equal(objectParameterBulkReasonDuplicateKey, dupDryRun.Items[0].Message)
+
+		// Stale plan: state drifts after the dry run but before confirm.
+		staleItems := []BulkUpdateObjectParameterItem{{ModelType: "stock.stocklocation", ModelID: location.ID, TemplateID: template.PK, Value: dvgoutils.Ptr("bulk-stale"), OverwriteExisting: true}}
+		_, staleDryRun, err := bulkUpdateObjectParameters(fixture.deps())(ctx, &mcp.CallToolRequest{}, BulkUpdateObjectParametersInput{Items: staleItems, DryRun: true})
+		r.NoError(err)
+		r.NotEmpty(staleDryRun.PlanHash)
+		_, err = fixture.client.UpdatePartParameter(ctx, existing.PK, inventree.PatchFields{"data": inventree.Set("someone-else-changed-it")})
+		r.NoError(err)
+		_, staleConfirm, err := bulkUpdateObjectParameters(fixture.deps())(ctx, &mcp.CallToolRequest{}, BulkUpdateObjectParametersInput{Items: staleItems, Confirm: true, PlanHash: staleDryRun.PlanHash})
+		r.NoError(err)
+		a.Equal(StatusClarificationRequired, staleConfirm.Status)
+
+		// Response-loss recovery: the live PATCH lands upstream but the
+		// response is dropped, so Mutate must recover by reading back
+		// current state rather than reporting a bare ambiguous failure.
+		lostItems := []BulkUpdateObjectParameterItem{{ModelType: "stock.stocklocation", ModelID: location.ID, TemplateID: template.PK, Value: dvgoutils.Ptr("bulk-recovered"), OverwriteExisting: true}}
+		_, lostDryRun, err := bulkUpdateObjectParameters(fixture.deps())(ctx, &mcp.CallToolRequest{}, BulkUpdateObjectParametersInput{Items: lostItems, DryRun: true})
+		r.NoError(err)
+		r.NotEmpty(lostDryRun.PlanHash)
+		lostClient, err := shared.ClientWithHTTPClient(fixture.account, &http.Client{Transport: &loseMutationResponseTransport{base: http.DefaultTransport, method: http.MethodPatch, path: fmt.Sprintf("/api/parameter/%d/", existing.PK)}})
+		r.NoError(err)
+		lostFixture := fixture
+		lostFixture.client = lostClient
+		_, lostConfirm, err := bulkUpdateObjectParameters(lostFixture.deps())(ctx, &mcp.CallToolRequest{}, BulkUpdateObjectParametersInput{Items: lostItems, Confirm: true, PlanHash: lostDryRun.PlanHash})
+		r.NoError(err)
+		r.Len(lostConfirm.Items, 1)
+		a.Equal(string(batch.OutcomeApplied), lostConfirm.Items[0].Outcome)
+		r.NotNil(lostConfirm.Items[0].Record)
+		a.Equal("bulk-recovered", lostConfirm.Items[0].Record.Value)
+	})
+
 	t.Run("deferred_file_surface_boundaries_return_clarifications", func(t *testing.T) {
 		r := require.New(t)
 		a := assert.New(t)
@@ -3721,6 +3885,8 @@ type milestoneToolFixture struct {
 	purchaseOrderBulkPlanStore           *batch.Store[purchaseOrderBulkPlan]
 	purchaseOrderLineBulkPlanStore       *batch.Store[purchaseOrderLineBulkPlan]
 	purchaseOrderExtraLineBulkPlanStore  *batch.Store[purchaseOrderExtraLineBulkPlan]
+	attachmentBulkPlanStore              *batch.Store[attachmentBulkPlan]
+	objectParameterBulkPlanStore         *batch.Store[objectParameterBulkPlan]
 }
 
 type attachmentTarget struct {
@@ -3818,6 +3984,14 @@ func newMilestoneToolFixture(t *testing.T, shared *testenv.SharedInvenTree) mile
 			IDGenerator: platform.RandomIDGenerator{}, Principal: stockPlanPrincipal,
 			SupersedeKey: func(p purchaseOrderExtraLineBulkPlan) string { return bulkSupersedeKey(p.ids()) },
 		}),
+		attachmentBulkPlanStore: mustBulkStore(batch.Options[attachmentBulkPlan]{
+			IDGenerator: platform.RandomIDGenerator{}, Principal: stockPlanPrincipal,
+			SupersedeKey: func(p attachmentBulkPlan) string { return bulkSupersedeKey(p.ids()) },
+		}),
+		objectParameterBulkPlanStore: mustBulkStore(batch.Options[objectParameterBulkPlan]{
+			IDGenerator: platform.RandomIDGenerator{}, Principal: stockPlanPrincipal,
+			SupersedeKey: func(p objectParameterBulkPlan) string { return p.supersedeKey() },
+		}),
 	}
 }
 
@@ -3851,6 +4025,8 @@ func (f milestoneToolFixture) deps() Dependencies {
 		purchaseOrderBulkPlanStore:           f.purchaseOrderBulkPlanStore,
 		purchaseOrderLineBulkPlanStore:       f.purchaseOrderLineBulkPlanStore,
 		purchaseOrderExtraLineBulkPlanStore:  f.purchaseOrderExtraLineBulkPlanStore,
+		attachmentBulkPlanStore:              f.attachmentBulkPlanStore,
+		objectParameterBulkPlanStore:         f.objectParameterBulkPlanStore,
 	}
 }
 

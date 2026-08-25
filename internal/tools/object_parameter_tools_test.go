@@ -30,6 +30,8 @@ type fakeObjectParameterClient struct {
 	deleteNoOp        bool  // when true, DeletePartParameter succeeds without actually removing the row, simulating an upstream no-op delete.
 	getErrAfterDelete error // when set, GetPartParameter returns this error (instead of not-found) once DeletePartParameter has been called.
 	deleted           bool
+	updateErr         map[int]error // when set for a parameter ID, UpdatePartParameter returns this error after applying the patch.
+	applyBeforeErr    map[int]bool  // when true for a parameter ID, UpdatePartParameter's field change is applied to the stored row even when updateErr also fires, simulating a write that landed upstream before the response was lost.
 }
 
 func newFakeObjectParameterClient() *fakeObjectParameterClient {
@@ -148,6 +150,12 @@ func (f *fakeObjectParameterClient) UpdatePartParameter(_ context.Context, id in
 	}
 	if patch, ok := fields["data"]; ok {
 		record.Data = patch.Value().(string)
+	}
+	if f.applyBeforeErr[id] {
+		f.parameters[id] = record
+	}
+	if err := f.updateErr[id]; err != nil {
+		return inventree.Parameter{}, err
 	}
 	f.parameters[id] = record
 	return record, nil
