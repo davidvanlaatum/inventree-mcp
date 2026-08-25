@@ -84,7 +84,7 @@ func TestWrapHTTPClientInjectsTraceContext(t *testing.T) {
 		return &http.Response{StatusCode: http.StatusNoContent, Body: io.NopCloser(http.NoBody), Header: make(http.Header), Request: req}, nil
 	})})
 	parentCtx, span := otel.Tracer("test").Start(context.Background(), "parent")
-	req, err := http.NewRequestWithContext(parentCtx, http.MethodGet, "https://inventory.example.test/api/part/42/", nil)
+	req, err := http.NewRequestWithContext(parentCtx, http.MethodGet, "https://inventory.example.test/api/part/42/?token=do-not-export", nil)
 	require.NoError(t, err)
 	response, err := client.Do(req)
 	span.End()
@@ -92,13 +92,18 @@ func TestWrapHTTPClientInjectsTraceContext(t *testing.T) {
 	require.NoError(t, response.Body.Close())
 	assert.NotEmpty(t, gotTraceparent)
 	assert.NotEmpty(t, exporter.spans)
+	for _, span := range exporter.spans {
+		for _, attr := range span.Attributes() {
+			assert.NotContains(t, attr.Value.AsString(), "do-not-export")
+		}
+	}
 }
 
 func TestWrapHTTPClientClonesDefaultTransport(t *testing.T) {
 	withRecordingProvider(t)
 
 	client := WrapHTTPClient(&http.Client{})
-	require.NotSame(t, http.DefaultTransport, client.Transport)
+	assert.IsType(t, instrumentedRoundTripper(nil), client.Transport)
 }
 
 func TestHTTPHandlerCorrelatesInboundAndOutboundSpans(t *testing.T) {

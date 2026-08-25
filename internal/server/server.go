@@ -266,7 +266,7 @@ func httpMuxWithOptions(ctx context.Context, cfg config.Config, srv *mcp.Server,
 		handler = traffic.middleware(string(config.TransportHTTP), cfg.MCPMaxRequestBodyBytes, handler)
 	}
 	mux.Handle(cfg.Path, handler)
-	return sourceIPMiddleware(logging.FromContext(ctx), sourceResolver, mux), nil
+	return telemetry.HTTPHandler(sourceIPMiddleware(logging.FromContext(ctx), sourceResolver, mux)), nil
 }
 
 func HTTPHandler(ctx context.Context, srv *mcp.Server, maxRequestBodyBytes int64) http.Handler {
@@ -292,7 +292,7 @@ func HTTPHandler(ctx context.Context, srv *mcp.Server, maxRequestBodyBytes int64
 		))
 		baseHandler.ServeHTTP(w, req.WithContext(requestCtx))
 	})
-	return telemetry.HTTPHandler(handler)
+	return handler
 }
 
 func WithTransportLogger(ctx context.Context, transport string) context.Context {

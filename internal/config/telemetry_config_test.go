@@ -43,3 +43,14 @@ func TestParseServeRejectsInvalidEnabledOpenTelemetry(t *testing.T) {
 	}), nil)
 	require.ErrorContains(t, err, "OpenTelemetry endpoint is required")
 }
+
+func TestParseServeRejectsInvalidOpenTelemetrySampleRatio(t *testing.T) {
+	t.Parallel()
+	_, err := ParseServeWithEnv([]string{"--transport", "stdio", "--inventree-url", "https://inventory.example.test"}, mapEnv(map[string]string{
+		EnvInvenTreeToken:  "token",
+		EnvOTelEnabled:     "true",
+		EnvOTelEndpoint:    "collector.example.test:4317",
+		EnvOTelSampleRatio: "not-a-number",
+	}), nil)
+	require.ErrorContains(t, err, "OpenTelemetry sample ratio")
+}

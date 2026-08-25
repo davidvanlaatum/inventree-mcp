@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"net/http"
 	"strings"
 	"sync"
@@ -14,7 +15,6 @@ import (
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
-	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
@@ -78,7 +78,7 @@ func (c Config) Validate() error {
 	default:
 		return fmt.Errorf("OpenTelemetry exporter must be %q or %q", ExporterGRPC, ExporterHTTP)
 	}
-	if c.SampleRatio < 0 || c.SampleRatio > 1 {
+	if math.IsNaN(c.SampleRatio) || math.IsInf(c.SampleRatio, 0) || c.SampleRatio < 0 || c.SampleRatio > 1 {
 		return errors.New("OpenTelemetry sample ratio must be between 0 and 1")
 	}
 	if c.BatchTimeout <= 0 {
@@ -206,15 +206,83 @@ func WrapRoundTripper(transport http.RoundTripper) http.RoundTripper {
 	if transport == nil || !processEnabled.Load() {
 		return transport
 	}
-	return otelhttp.NewTransport(transport)
+	return instrumentedRoundTripper(func(req *http.Request) (*http.Response, error) {
+		ctx, span := otel.Tracer("inventree-mcp").Start(req.Context(), "HTTP "+req.Method, apiTrace.WithSpanKind(apiTrace.SpanKindClient))
+		setHTTPAttributes(span, req)
+		outbound := req.Clone(ctx)
+		otel.GetTextMapPropagator().Inject(ctx, propagation.HeaderCarrier(outbound.Header))
+		response, err := transport.RoundTrip(outbound)
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, "HTTP request failed")
+		} else {
+			span.SetAttributes(attribute.Int("http.response.status_code", response.StatusCode))
+		}
+		span.End()
+		return response, err
+	})
 }
+
+type instrumentedRoundTripper func(*http.Request) (*http.Response, error)
+
+func (f instrumentedRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) { return f(req) }
 
 // HTTPHandler instruments inbound HTTP requests, extracting W3C trace context.
 func HTTPHandler(next http.Handler) http.Handler {
 	if next == nil || !processEnabled.Load() {
 		return next
 	}
-	return otelhttp.NewHandler(next, "mcp.http")
+	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		ctx := otel.GetTextMapPropagator().Extract(req.Context(), propagation.HeaderCarrier(req.Header))
+		ctx, span := otel.Tracer("inventree-mcp").Start(ctx, "HTTP "+req.Method, apiTrace.WithSpanKind(apiTrace.SpanKindServer))
+		setHTTPAttributes(span, req)
+		writer := &statusWriter{ResponseWriter: w}
+		next.ServeHTTP(writer, req.WithContext(ctx))
+		if writer.status != 0 {
+			span.SetAttributes(attribute.Int("http.response.status_code", writer.status))
+		}
+		span.End()
+	})
+}
+
+func setHTTPAttributes(span apiTrace.Span, req *http.Request) {
+	span.SetAttributes(
+		attribute.String("http.request.method", req.Method),
+		attribute.String("url.scheme", req.URL.Scheme),
+		attribute.String("server.address", req.URL.Hostname()),
+		attribute.String("url.path", req.URL.Path),
+	)
+}
+
+type statusWriter struct {
+	http.ResponseWriter
+	status int
+}
+
+func (w *statusWriter) Unwrap() http.ResponseWriter { return w.ResponseWriter }
+
+func (w *statusWriter) WriteHeader(status int) {
+	if w.status != 0 {
+		return
+	}
+	w.status = status
+	w.ResponseWriter.WriteHeader(status)
+}
+
+func (w *statusWriter) Write(body []byte) (int, error) {
+	if w.status == 0 {
+		w.WriteHeader(http.StatusOK)
+	}
+	return w.ResponseWriter.Write(body)
+}
+
+func (w *statusWriter) Flush() {
+	if flusher, ok := w.ResponseWriter.(http.Flusher); ok {
+		if w.status == 0 {
+			w.WriteHeader(http.StatusOK)
+		}
+		flusher.Flush()
+	}
 }
 
 // MCPMiddleware creates a span for every inbound MCP method and records the
