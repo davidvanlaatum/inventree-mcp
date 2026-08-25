@@ -54,3 +54,36 @@ func TestParseServeRejectsInvalidOpenTelemetrySampleRatio(t *testing.T) {
 	}), nil)
 	require.ErrorContains(t, err, "OpenTelemetry sample ratio")
 }
+
+func TestParseServeRejectsInvalidOpenTelemetrySettings(t *testing.T) {
+	t.Parallel()
+	baseArgs := []string{"--transport", "stdio", "--inventree-url", "https://inventory.example.test"}
+	baseEnv := map[string]string{
+		EnvInvenTreeToken: "token",
+		EnvOTelEnabled:    "true",
+		EnvOTelEndpoint:   "collector.example.test:4317",
+	}
+
+	for _, tc := range []struct {
+		name string
+		env  map[string]string
+		want string
+	}{
+		{name: "exporter", env: map[string]string{EnvOTelExporter: "zipkin"}, want: "OpenTelemetry exporter must be"},
+		{name: "batch timeout", env: map[string]string{EnvOTelBatchTimeout: "0s"}, want: "OpenTelemetry batch timeout"},
+		{name: "export timeout", env: map[string]string{EnvOTelExportTimeout: "not-a-duration"}, want: "OpenTelemetry export timeout"},
+		{name: "header", env: map[string]string{EnvOTelHeaders: "missing-equals"}, want: "OpenTelemetry header"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			env := make(map[string]string, len(baseEnv)+len(tc.env))
+			for key, value := range baseEnv {
+				env[key] = value
+			}
+			for key, value := range tc.env {
+				env[key] = value
+			}
+			_, err := ParseServeWithEnv(baseArgs, mapEnv(env), nil)
+			require.ErrorContains(t, err, tc.want)
+		})
+	}
+}

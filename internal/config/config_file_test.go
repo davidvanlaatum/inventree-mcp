@@ -32,6 +32,17 @@ trusted_proxy_cidrs:
   - 192.0.2.0/24
 bulk_max_items: 15
 bulk_concurrency: 6
+otel_enabled: true
+otel_service_name: yaml-telemetry
+otel_exporter: otlphttp
+otel_endpoint: https://collector.yaml.example.test/v1/traces
+otel_insecure: true
+otel_headers:
+  - x-api-key=yaml-secret
+  - x-tenant=warehouse
+otel_sample_ratio: 0.5
+otel_batch_timeout: 3s
+otel_export_timeout: 7s
 `), 0o600))
 
 	cfg, err := parseServeWithDeps([]string{
@@ -62,6 +73,15 @@ bulk_concurrency: 6
 	assert.Equal(t, []string{"198.51.100.0/24"}, cfg.TrustedProxyCIDRs)
 	assert.Equal(t, 15, cfg.BulkMaxItems)
 	assert.Equal(t, 6, cfg.BulkConcurrency)
+	assert.True(t, cfg.Telemetry.Enabled)
+	assert.Equal(t, "yaml-telemetry", cfg.Telemetry.ServiceName)
+	assert.Equal(t, "otlphttp", cfg.Telemetry.Exporter)
+	assert.Equal(t, "https://collector.yaml.example.test/v1/traces", cfg.Telemetry.Endpoint)
+	assert.True(t, cfg.Telemetry.Insecure)
+	assert.Equal(t, map[string]string{"x-api-key": "yaml-secret", "x-tenant": "warehouse"}, cfg.Telemetry.Headers)
+	assert.Equal(t, 0.5, cfg.Telemetry.SampleRatio)
+	assert.Equal(t, 3*time.Second, cfg.Telemetry.BatchTimeout)
+	assert.Equal(t, 7*time.Second, cfg.Telemetry.ExportTimeout)
 }
 
 func TestDiscoverConfigPathUsesFirstExistingFile(t *testing.T) {
@@ -101,6 +121,27 @@ func TestParseServeExplicitConfigPathDoesNotUseDefaultDiscovery(t *testing.T) {
 	})
 	require.NoError(t, err)
 	assert.Equal(t, "https://explicit.example.test", cfg.InvenTreeURL)
+}
+
+func TestParseServeRejectsInvalidTelemetryConfigFileValues(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name string
+		body string
+		want string
+	}{
+		{name: "header", body: "otel_headers:\n  - missing-equals\n", want: "otel_headers[0] is invalid"},
+		{name: "batch timeout", body: "otel_batch_timeout: not-a-duration\n", want: "otel_batch_timeout must be a valid duration"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			fs := afero.NewMemMapFs()
+			require.NoError(t, afero.WriteFile(fs, "/config.yml", []byte(tc.body), 0o600))
+			_, err := parseServeWithDeps([]string{"--config", "/config.yml"}, mapEnv(map[string]string{
+				EnvInvenTreeToken: "token",
+			}), nil, fs, func() (string, error) { return "/unused", nil })
+			require.ErrorContains(t, err, tc.want)
+		})
+	}
 }
 
 func TestParseServeRejectsUnknownOrMalformedConfigWithoutSecretLeak(t *testing.T) {

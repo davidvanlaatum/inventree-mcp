@@ -39,7 +39,10 @@ var (
 	serverRun         = server.Run
 	newSystemdNotify  = systemdnotify.New
 	buildDependencies = dependenciesForConfig
-	runSelfUpdate     = func(ctx context.Context, current string, options localupdate.Options) (localupdate.Result, error) {
+	shutdownTelemetry = func(runtime *telemetry.Runtime, ctx context.Context) error {
+		return runtime.Shutdown(ctx)
+	}
+	runSelfUpdate = func(ctx context.Context, current string, options localupdate.Options) (localupdate.Result, error) {
 		return localupdate.New(localupdate.Dependencies{}).Run(ctx, current, options)
 	}
 )
@@ -193,7 +196,7 @@ func serve(ctx context.Context, cfg config.Config) error {
 	defer func() {
 		shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cfg.Telemetry.ExportTimeout)
 		defer cancel()
-		if err := telemetryRuntime.Shutdown(shutdownCtx); err != nil {
+		if err := shutdownTelemetry(telemetryRuntime, shutdownCtx); err != nil {
 			logger.Error("failed to flush OpenTelemetry traces", logging.Err(err))
 		}
 	}()
