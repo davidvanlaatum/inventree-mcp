@@ -166,6 +166,7 @@ Before assigning a new story ID, inspect `git worktree list --porcelain`, search
 | [F-S82](#f-s82-mcp-facing-image-and-attachment-tool-routing-guidance) | Make image and generic-attachment tool routing explicit to MCP agents. | Done |
 | [F-S83](#f-s83-harden-testcontainers-worker-startup-under-ci-load) | Harden the Testcontainers InvenTree worker health probe against CI resource contention. | Done |
 | [F-S84](#f-s84-add-opentelemetry-tracing-and-optional-metrics) | Add opt-in OpenTelemetry tracing and optional metrics across MCP and InvenTree interactions. | Active |
+| [F-S85](#f-s85-add-opentelemetry-metrics-and-prometheus-export) | Add optional OpenTelemetry metrics and Prometheus export as the F-S84 follow-up. | Planned |
 
 ## Milestone 0: Repository And Planning
 
@@ -3105,6 +3106,7 @@ Tasks:
 - Issue: [#219](https://github.com/davidvanlaatum/inventree-mcp/issues/219)
 - Depends on: none.
 - Progress: implementation started on `codex/f-s84-opentelemetry` from the current `origin/main` baseline. The spike selects tracing as the first coherent slice; metrics/Prometheus exposition is explicitly deferred to a follow-up because it introduces a separate exporter, scrape/lifecycle, and operational contract that should not be hidden inside the tracing foundation.
+- Follow-up: [F-S85](#f-s85-add-opentelemetry-metrics-and-prometheus-export), [issue #222](https://github.com/davidvanlaatum/inventree-mcp/issues/222), owns the deferred metrics/Prometheus scope.
 - Scope: add opt-in OpenTelemetry observability to inventree-mcp, with distributed tracing as the minimum capability and optional metrics support, including a Prometheus-compatible export path where practical. Carry trace context across every supported interaction and outbound call so traces can be correlated across MCP clients, inventree-mcp, InvenTree, and other instrumented services. Support OTLP/gRPC and OTLP/HTTP exporters through typed configuration, remain disabled by default, and avoid exposing credentials, payloads, or unbounded/high-cardinality data.
 - Acceptance:
   - A short implementation spike or design note determines whether tracing and metrics can ship coherently in one story; if not, the story is split into an instrumentation foundation and a metrics follow-up before implementation begins.
@@ -3112,7 +3114,7 @@ Tasks:
   - Trace context is extracted and propagated for HTTP/MCP interactions and injected into outbound InvenTree and other supported HTTP requests, with coverage for STDIO-originated work where no inbound wire context exists.
   - Meaningful spans cover request/transport handling, MCP tool interactions, outbound InvenTree calls, and relevant OAuth/upload/background boundaries without recording secrets or raw payloads.
   - Span attributes include stable operation/tool names and approved record identifiers where useful, with explicit cardinality and privacy limits documented and tested.
-  - Optional metrics are explicitly deferred from this tracing-foundation slice; a follow-up story requires operator approval before issue creation and must define its own exporter, scrape, and lifecycle contract.
+  - Optional metrics are explicitly deferred from this tracing-foundation slice; F-S85 owns its exporter, scrape, and lifecycle contract.
   - Configuration, operator recipes, README/reference documentation, and runtime startup/shutdown behavior remain aligned; disabled telemetry has no exporter dependency and no material behavior change.
   - Unit tests cover propagation, exporter/configuration failure handling, redaction/cardinality policy, sampling/batching, shutdown flushing, and disabled-mode behavior; integration or end-to-end evidence demonstrates a correlated trace across representative MCP and InvenTree interactions.
 - Open decisions:
@@ -3127,3 +3129,19 @@ Tasks:
 - Validation: targeted telemetry/configuration/docs tests, `go vet`, `golangci-lint run ./...`, `go test ./... -run '^$'`, `git diff --check`, and `INVENTREE_TEST_SKIP_DOCKER=true go test -race ./... -count=1` pass. The memory explosion was caused by a recursive HTTP-handler wrapper and is fixed. `GOFLAGS=-trimpath go test -race -p=1 ./...` also passed locally with Docker and localhost access, including `internal/inventree`, `internal/server`, `internal/testenv`, and `internal/tools`. CI coverage passed the 80% threshold at 85.9% versus 86.2% on `main`; package deltas were `cmd/inventree-mcp` 92.7%→90.3%, `internal/config` 93.9%→90.5%, `internal/server` 78.4%→78.6%, and new `internal/telemetry` 0%→55.0%. The package-level reductions still require explicit recovery or residual-risk acceptance before completion.
 - Review: initial Senior Go, Senior QA / Test Architect, and Senior Product Manager reviews found and drove fixes for query-string privacy leakage, NaN sampling validation, OAuth inbound coverage, and HTTP wrapper cleanup. Focused reruns remain required after the latest follow-up; the panel still requires actual MCP-to-InvenTree evidence and package-coverage analysis before completion.
 - Residual risk: metrics scope is intentionally deferred pending an operator-approved follow-up story; actual MCP-to-InvenTree exporter-visible correlation, broader exporter/lifecycle tests, and package-level coverage recovery/justification remain open.
+
+### F-S85: Add OpenTelemetry Metrics And Prometheus Export
+
+- Status: `Planned`
+- Issue: [#222](https://github.com/davidvanlaatum/inventree-mcp/issues/222)
+- Depends on: F-S84.
+- Scope: add opt-in OpenTelemetry metrics and a documented Prometheus-compatible exposition/export path where practical, with explicit names, units, labels, cardinality, privacy, exporter, scrape, lifecycle, and failure semantics.
+- Progress: planned follow-up split from F-S84 after the tracing-versus-metrics implementation spike; intentionally unassigned until implementation starts.
+- Acceptance:
+  - Define metric names, units, labels, cardinality limits, and privacy policy.
+  - Preserve disabled-by-default behavior with documented configuration.
+  - Add representative MCP, outbound InvenTree, OAuth/upload, and batch-operation metrics without duplicating unsafe tracing attributes.
+  - Add unit, integration, documentation, and reviewer coverage, keeping README, PLAN, TASKS, operator recipes, and runtime configuration aligned.
+- Validation: pending implementation.
+- Review: pending implementation.
+- Residual risk: metrics operational design and scrape/export lifecycle are intentionally deferred until this story is started.
