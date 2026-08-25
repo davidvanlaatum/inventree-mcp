@@ -165,7 +165,7 @@ Before assigning a new story ID, inspect `git worktree list --porcelain`, search
 | [F-S81](#f-s81-bulk-mutation-throughput-and-operator-observability) | Validate bulk throughput, bounded concurrency, progress, cancellation, and operator recovery evidence. | Done |
 | [F-S82](#f-s82-mcp-facing-image-and-attachment-tool-routing-guidance) | Make image and generic-attachment tool routing explicit to MCP agents. | Done |
 | [F-S83](#f-s83-harden-testcontainers-worker-startup-under-ci-load) | Harden the Testcontainers InvenTree worker health probe against CI resource contention. | Done |
-| [F-S84](#f-s84-add-opentelemetry-tracing-and-optional-metrics) | Add opt-in OpenTelemetry tracing and optional metrics across MCP and InvenTree interactions. | Active |
+| [F-S84](#f-s84-add-opentelemetry-tracing) | Add opt-in OpenTelemetry tracing across MCP and InvenTree interactions. | Active |
 | [F-S85](#f-s85-add-opentelemetry-metrics-and-prometheus-export) | Add optional OpenTelemetry metrics and Prometheus export as the F-S84 follow-up. | Planned |
 
 ## Milestone 0: Repository And Planning
@@ -3100,12 +3100,12 @@ Tasks:
 - [x] Validate the default local Docker-backed suite; confirm the CI workflow passes once pushed.
 - [x] Run subagent review and address findings.
 
-### F-S84: Add OpenTelemetry Tracing And Optional Metrics
+### F-S84: Add OpenTelemetry Tracing
 
 - Status: `Active`
 - Issue: [#219](https://github.com/davidvanlaatum/inventree-mcp/issues/219)
 - Depends on: none.
-- Progress: implementation started on `codex/f-s84-opentelemetry` from the current `origin/main` baseline. The spike selects tracing as the first coherent slice; metrics/Prometheus exposition is explicitly deferred to a follow-up because it introduces a separate exporter, scrape/lifecycle, and operational contract that should not be hidden inside the tracing foundation.
+- Progress: implementation started on `codex/f-s84-opentelemetry` from the current `origin/main` baseline. The implementation spike split metrics/Prometheus into F-S85 because it introduces a separate exporter, scrape/lifecycle, and operational contract.
 - Follow-up: [F-S85](#f-s85-add-opentelemetry-metrics-and-prometheus-export), [issue #222](https://github.com/davidvanlaatum/inventree-mcp/issues/222), owns the deferred metrics/Prometheus scope.
 - Scope: add opt-in OpenTelemetry observability to inventree-mcp, with distributed tracing as the minimum capability and optional metrics support, including a Prometheus-compatible export path where practical. Carry trace context across every supported interaction and outbound call so traces can be correlated across MCP clients, inventree-mcp, InvenTree, and other instrumented services. Support OTLP/gRPC and OTLP/HTTP exporters through typed configuration, remain disabled by default, and avoid exposing credentials, payloads, or unbounded/high-cardinality data.
 - Acceptance:
@@ -3118,7 +3118,6 @@ Tasks:
   - Configuration, operator recipes, README/reference documentation, and runtime startup/shutdown behavior remain aligned; disabled telemetry has no exporter dependency and no material behavior change.
   - Unit tests cover propagation, exporter/configuration failure handling, redaction/cardinality policy, sampling/batching, shutdown flushing, and disabled-mode behavior; integration or end-to-end evidence demonstrates a correlated trace across representative MCP and InvenTree interactions.
 - Open decisions:
-  - Whether metrics/Prometheus exposition should be implemented as the follow-up story after tracing foundations.
   - Exact approved span attributes and identifier classes.
 - Tasks:
   - [x] Complete the tracing-versus-metrics implementation spike and record the metrics follow-up boundary.
