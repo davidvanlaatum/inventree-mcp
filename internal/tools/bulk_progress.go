@@ -8,6 +8,7 @@ import (
 
 	"github.com/davidvanlaatum/dvgoutils/logging"
 	"github.com/davidvanlaatum/inventree-mcp/internal/batch"
+	"github.com/davidvanlaatum/inventree-mcp/internal/telemetry"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -62,6 +63,7 @@ type bulkProgressReporter struct {
 // newBulkProgressReporter returns nil when req carries no session or no
 // progress token, since there is then nothing to notify.
 func newBulkProgressReporter(req *mcp.CallToolRequest, toolName string) *bulkProgressReporter {
+	telemetry.RecordBulkOperation(context.Background(), toolName, "started")
 	if req == nil || req.Session == nil || req.Params == nil {
 		return nil
 	}

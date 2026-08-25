@@ -17,41 +17,43 @@ import (
 )
 
 type fileConfig struct {
-	Transport              *string  `yaml:"transport"`
-	Environment            *string  `yaml:"environment"`
-	Listen                 *string  `yaml:"listen"`
-	Path                   *string  `yaml:"path"`
-	InvenTreeURL           *string  `yaml:"inventree_url"`
-	InvenTreeWebURL        *string  `yaml:"inventree_web_url"`
-	InvenTreeToken         *string  `yaml:"inventree_token"`
-	InvenTreeAuthScheme    *string  `yaml:"inventree_auth_scheme"`
-	InvenTreeTimeout       *string  `yaml:"inventree_timeout"`
-	InvenTreeTLSSkipVerify *bool    `yaml:"inventree_tls_skip_verify"`
-	UploadAllowRoots       []string `yaml:"upload_allow_roots"`
-	UploadMaxBytes         *int64   `yaml:"upload_max_bytes"`
-	MCPMaxRequestBodyBytes *int64   `yaml:"mcp_max_request_body_bytes"`
-	LogLevel               *string  `yaml:"log_level"`
-	DebugTrafficLog        *string  `yaml:"debug_traffic_log"`
-	DevIncompleteOAuth     *bool    `yaml:"dev_incomplete_oauth"`
-	OAuthIssuerURL         *string  `yaml:"oauth_issuer_url"`
-	OAuthResourceURL       *string  `yaml:"oauth_resource_url"`
-	OAuthKeys              []string `yaml:"oauth_keys"`
-	OAuthClientIDs         []string `yaml:"oauth_client_ids"`
-	TrustedProxyCIDRs      []string `yaml:"trusted_proxy_cidrs"`
-	OAuthAccessLifetime    *string  `yaml:"oauth_access_lifetime"`
-	OAuthRefreshLifetime   *string  `yaml:"oauth_refresh_lifetime"`
-	OAuthSessionLifetime   *string  `yaml:"oauth_session_lifetime"`
-	TelemetryEnabled       *bool    `yaml:"otel_enabled"`
-	TelemetryServiceName   *string  `yaml:"otel_service_name"`
-	TelemetryExporter      *string  `yaml:"otel_exporter"`
-	TelemetryEndpoint      *string  `yaml:"otel_endpoint"`
-	TelemetryInsecure      *bool    `yaml:"otel_insecure"`
-	TelemetryHeaders       []string `yaml:"otel_headers"`
-	TelemetrySampleRatio   *float64 `yaml:"otel_sample_ratio"`
-	TelemetryBatchTimeout  *string  `yaml:"otel_batch_timeout"`
-	TelemetryExportTimeout *string  `yaml:"otel_export_timeout"`
-	BulkMaxItems           *int     `yaml:"bulk_max_items"`
-	BulkConcurrency        *int     `yaml:"bulk_concurrency"`
+	Transport               *string  `yaml:"transport"`
+	Environment             *string  `yaml:"environment"`
+	Listen                  *string  `yaml:"listen"`
+	Path                    *string  `yaml:"path"`
+	InvenTreeURL            *string  `yaml:"inventree_url"`
+	InvenTreeWebURL         *string  `yaml:"inventree_web_url"`
+	InvenTreeToken          *string  `yaml:"inventree_token"`
+	InvenTreeAuthScheme     *string  `yaml:"inventree_auth_scheme"`
+	InvenTreeTimeout        *string  `yaml:"inventree_timeout"`
+	InvenTreeTLSSkipVerify  *bool    `yaml:"inventree_tls_skip_verify"`
+	UploadAllowRoots        []string `yaml:"upload_allow_roots"`
+	UploadMaxBytes          *int64   `yaml:"upload_max_bytes"`
+	MCPMaxRequestBodyBytes  *int64   `yaml:"mcp_max_request_body_bytes"`
+	LogLevel                *string  `yaml:"log_level"`
+	DebugTrafficLog         *string  `yaml:"debug_traffic_log"`
+	DevIncompleteOAuth      *bool    `yaml:"dev_incomplete_oauth"`
+	OAuthIssuerURL          *string  `yaml:"oauth_issuer_url"`
+	OAuthResourceURL        *string  `yaml:"oauth_resource_url"`
+	OAuthKeys               []string `yaml:"oauth_keys"`
+	OAuthClientIDs          []string `yaml:"oauth_client_ids"`
+	TrustedProxyCIDRs       []string `yaml:"trusted_proxy_cidrs"`
+	OAuthAccessLifetime     *string  `yaml:"oauth_access_lifetime"`
+	OAuthRefreshLifetime    *string  `yaml:"oauth_refresh_lifetime"`
+	OAuthSessionLifetime    *string  `yaml:"oauth_session_lifetime"`
+	TelemetryEnabled        *bool    `yaml:"otel_enabled"`
+	TelemetryServiceName    *string  `yaml:"otel_service_name"`
+	TelemetryExporter       *string  `yaml:"otel_exporter"`
+	TelemetryEndpoint       *string  `yaml:"otel_endpoint"`
+	TelemetryInsecure       *bool    `yaml:"otel_insecure"`
+	TelemetryHeaders        []string `yaml:"otel_headers"`
+	TelemetrySampleRatio    *float64 `yaml:"otel_sample_ratio"`
+	TelemetryBatchTimeout   *string  `yaml:"otel_batch_timeout"`
+	TelemetryExportTimeout  *string  `yaml:"otel_export_timeout"`
+	TelemetryMetricsEnabled *bool    `yaml:"otel_metrics_enabled"`
+	TelemetryMetricsPath    *string  `yaml:"otel_metrics_path"`
+	BulkMaxItems            *int     `yaml:"bulk_max_items"`
+	BulkConcurrency         *int     `yaml:"bulk_concurrency"`
 }
 
 func defaultConfig() Config {
@@ -175,6 +177,12 @@ func applyEnvironment(cfg *Config, getenv Env) {
 	if raw := strings.TrimSpace(getenv(EnvOTelExportTimeout)); raw != "" {
 		cfg.Telemetry.ExportTimeout = parseDurationEnv(raw)
 	}
+	if raw := strings.TrimSpace(getenv(EnvOTelMetricsEnabled)); raw != "" {
+		cfg.Telemetry.MetricsEnabled = boolEnv(getenv, EnvOTelMetricsEnabled)
+	}
+	if raw := strings.TrimSpace(getenv(EnvOTelMetricsPath)); raw != "" {
+		cfg.Telemetry.MetricsPath = raw
+	}
 	if raw := strings.TrimSpace(getenv(EnvBulkMaxItems)); raw != "" {
 		cfg.BulkMaxItems = intDefault(getenv, EnvBulkMaxItems, cfg.BulkMaxItems)
 	}
@@ -280,6 +288,12 @@ func applyFileConfig(cfg *Config, fileCfg fileConfig) error {
 			return fmt.Errorf("%s must be a valid duration", field.name)
 		}
 		*field.target = parsed
+	}
+	if fileCfg.TelemetryMetricsEnabled != nil {
+		cfg.Telemetry.MetricsEnabled = *fileCfg.TelemetryMetricsEnabled
+	}
+	if fileCfg.TelemetryMetricsPath != nil {
+		cfg.Telemetry.MetricsPath = *fileCfg.TelemetryMetricsPath
 	}
 	if fileCfg.TelemetryEnabled != nil {
 		cfg.Telemetry.Enabled = *fileCfg.TelemetryEnabled

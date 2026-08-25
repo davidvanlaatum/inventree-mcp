@@ -16,6 +16,7 @@ import (
 	"github.com/davidvanlaatum/dvgoutils"
 	"github.com/davidvanlaatum/dvgoutils/logging"
 	"github.com/davidvanlaatum/inventree-mcp/internal/inventree"
+	"github.com/davidvanlaatum/inventree-mcp/internal/telemetry"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -361,6 +362,7 @@ func bulkPropagatePartParameters(deps Dependencies) mcp.ToolHandlerFor[BulkPropa
 			if deps.parameterPlanStore == nil || input.PlanHash == "" || !deps.parameterPlanStore.consume(ctx, input.PlanHash, plan) {
 				return bulkParameterClarification(out, "Which current dry-run plan should authorize this propagation?", "confirmation", "plan_hash must be the unexpired single-use token from a matching dry run by the same principal; changed inventory state requires a new dry run", "plan_hash", bulkParameterRetryValues(input))
 			}
+			telemetry.RecordBulkOperation(ctx, BulkPropagatePartParametersToolName, "started")
 			executeBulkParameterPlan(ctx, client, &out)
 			countBulkParameterActions(&out)
 			if out.Failed > 0 {

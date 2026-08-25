@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"net"
 	"net/netip"
 	"net/url"
 	"os"
@@ -56,6 +57,8 @@ const (
 	EnvOTelSampleRatio        = "INVENTREE_MCP_OTEL_SAMPLE_RATIO"
 	EnvOTelBatchTimeout       = "INVENTREE_MCP_OTEL_BATCH_TIMEOUT"
 	EnvOTelExportTimeout      = "INVENTREE_MCP_OTEL_EXPORT_TIMEOUT"
+	EnvOTelMetricsEnabled     = "INVENTREE_MCP_OTEL_METRICS_ENABLED"
+	EnvOTelMetricsPath        = "INVENTREE_MCP_OTEL_METRICS_PATH"
 
 	invalidDuration               = time.Duration(-1)
 	DefaultListen                 = "127.0.0.1:28686"
@@ -223,6 +226,8 @@ func parseServeWithDeps(args []string, getenv Env, output io.Writer, filesystem 
 	fs.Float64Var(&cfg.Telemetry.SampleRatio, "otel-sample-ratio", cfg.Telemetry.SampleRatio, flagHelp("OpenTelemetry trace sampling ratio from 0 to 1", EnvOTelSampleRatio))
 	fs.DurationVar(&cfg.Telemetry.BatchTimeout, "otel-batch-timeout", cfg.Telemetry.BatchTimeout, flagHelp("OpenTelemetry trace batch timeout", EnvOTelBatchTimeout))
 	fs.DurationVar(&cfg.Telemetry.ExportTimeout, "otel-export-timeout", cfg.Telemetry.ExportTimeout, flagHelp("OpenTelemetry trace export timeout", EnvOTelExportTimeout))
+	fs.BoolVar(&cfg.Telemetry.MetricsEnabled, "otel-metrics-enabled", cfg.Telemetry.MetricsEnabled, flagHelp("enable OpenTelemetry Prometheus metrics", EnvOTelMetricsEnabled))
+	fs.StringVar(&cfg.Telemetry.MetricsPath, "otel-metrics-path", cfg.Telemetry.MetricsPath, flagHelp("Prometheus metrics HTTP path", EnvOTelMetricsPath))
 	var otelHeaderFlagSeen bool
 	fs.Func("otel-header", flagHelp("OpenTelemetry exporter header key=value; repeatable", EnvOTelHeaders), func(value string) error {
 		if !otelHeaderFlagSeen {
@@ -290,6 +295,19 @@ func (c Config) Validate() error {
 	}
 	if err := c.Telemetry.Validate(); err != nil {
 		validationErrors = append(validationErrors, err)
+	}
+	if c.Telemetry.MetricsEnabled && c.Transport != TransportHTTP {
+		validationErrors = append(validationErrors, errors.New("OpenTelemetry Prometheus metrics require HTTP transport"))
+	}
+	if c.Telemetry.MetricsEnabled && c.Telemetry.MetricsPath == c.Path {
+		validationErrors = append(validationErrors, errors.New("OpenTelemetry metrics path must differ from the MCP path"))
+	}
+	if c.Telemetry.MetricsEnabled && c.Transport == TransportHTTP && c.Environment == EnvironmentProduction {
+		host, _, err := net.SplitHostPort(c.Listen)
+		addr, addrErr := netip.ParseAddr(strings.Trim(host, "[]"))
+		if err != nil || addrErr != nil || (!addr.IsLoopback() && !addr.IsPrivate()) {
+			validationErrors = append(validationErrors, errors.New("production Prometheus metrics require a private, non-wildcard HTTP listener"))
+		}
 	}
 	if c.BulkMaxItems <= 0 {
 		validationErrors = append(validationErrors, errors.New("bulk max items must be greater than zero"))
@@ -447,6 +465,9 @@ func (c Config) validateProductionRoutePaths() []error {
 		"/.well-known/oauth-authorization-server" + issuerBase,
 		issuerBase + "/authorize",
 		issuerBase + "/token",
+	}
+	if c.Telemetry.MetricsEnabled {
+		routes = append(routes, c.Telemetry.MetricsPath)
 	}
 	seen := make(map[string]struct{}, len(routes))
 	for _, route := range routes {

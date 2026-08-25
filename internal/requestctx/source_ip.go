@@ -6,6 +6,18 @@ import (
 )
 
 type sourceIPKey struct{}
+type inventreeAPIKey struct{}
+
+// WithInvenTreeAPI marks a request as an InvenTree API call for instrumentation.
+func WithInvenTreeAPI(ctx context.Context) context.Context {
+	return context.WithValue(ctx, inventreeAPIKey{}, true)
+}
+
+// IsInvenTreeAPI reports whether the request is an InvenTree API call.
+func IsInvenTreeAPI(ctx context.Context) bool {
+	value, ok := ctx.Value(inventreeAPIKey{}).(bool)
+	return ok && value
+}
 
 // WithSourceIP records the normalized client source IP resolved at the trusted
 // reverse-proxy boundary.
