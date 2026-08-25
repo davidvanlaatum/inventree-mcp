@@ -41,6 +41,11 @@ log_level: info
 # otel_sample_ratio: 1.0
 # otel_batch_timeout: 5s
 # otel_export_timeout: 30s
+# Prometheus metrics are disabled by default and require HTTP transport. The
+# scrape endpoint is unauthenticated, so keep it on a trusted/private listener
+# or protect it at the reverse proxy.
+# otel_metrics_enabled: false
+# otel_metrics_path: /metrics
 
 dev_incomplete_oauth: false
 

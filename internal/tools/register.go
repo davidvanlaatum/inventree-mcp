@@ -37,6 +37,19 @@ func Register(server *mcp.Server, deps Dependencies) {
 	}
 }
 
+// RegisteredToolNames returns the tool names registered by Register for the
+// supplied write-tool configuration. It is shared with bounded observability
+// labels so caller-provided unknown tool names cannot create metric series.
+func RegisteredToolNames(enableWriteTools bool) []string {
+	names := make([]string, 0, 2+len(lookupToolNames)+len(writeToolNames))
+	names = append(names, HealthVersionToolName, GetLocalUploadPolicyToolName)
+	names = append(names, lookupToolNames...)
+	if enableWriteTools {
+		names = append(names, writeToolNames...)
+	}
+	return names
+}
+
 func registerHealthVersion(server *mcp.Server, _ Dependencies) {
 	mcp.AddTool(server, ToolDescriptor(HealthVersionToolName, "Health and version", "Returns server health and build version metadata."), healthVersion)
 }

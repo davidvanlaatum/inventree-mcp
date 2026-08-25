@@ -4,6 +4,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/davidvanlaatum/inventree-mcp/internal/telemetry"
 	"github.com/stretchr/testify/require"
 )
 
@@ -86,4 +87,84 @@ func TestParseServeRejectsInvalidOpenTelemetrySettings(t *testing.T) {
 			require.ErrorContains(t, err, tc.want)
 		})
 	}
+}
+
+func TestParseServeConfiguresPrometheusMetricsForHTTP(t *testing.T) {
+	t.Parallel()
+	cfg, err := ParseServeWithEnv([]string{
+		"--transport", "http",
+		"--environment", "development",
+		"--dev-incomplete-oauth",
+		"--inventree-url", "http://inventory.example.test",
+		"--otel-metrics-path", "/internal/metrics",
+	}, mapEnv(map[string]string{
+		EnvOTelMetricsEnabled: "true",
+	}), nil)
+	require.NoError(t, err)
+	require.True(t, cfg.Telemetry.MetricsEnabled)
+	require.Equal(t, "/internal/metrics", cfg.Telemetry.MetricsPath)
+}
+
+func TestValidateProductionMetricsRequiresPrivateListener(t *testing.T) {
+	t.Parallel()
+	base := Config{
+		Transport:           TransportHTTP,
+		Environment:         EnvironmentProduction,
+		Listen:              "127.0.0.1:28686",
+		Path:                "/mcp",
+		InvenTreeURL:        "https://inventory.example.test",
+		InvenTreeAuthScheme: AuthSchemeToken,
+		InvenTreeTimeout:    time.Second,
+		Telemetry:           telemetryConfigForTest(),
+	}
+	for _, tc := range []struct {
+		name   string
+		listen string
+		valid  bool
+	}{
+		{name: "loopback", listen: "127.0.0.1:28686", valid: true},
+		{name: "private", listen: "10.0.0.5:28686", valid: true},
+		{name: "private ipv6", listen: "[fd00::5]:28686", valid: true},
+		{name: "wildcard", listen: ":28686"},
+		{name: "public", listen: "192.0.2.5:28686"},
+		{name: "hostname", listen: "metrics.internal:28686"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := base
+			cfg.Listen = tc.listen
+			err := cfg.Validate()
+			if tc.valid {
+				require.NotContains(t, errString(err), "private, non-wildcard")
+				return
+			}
+			require.Contains(t, errString(err), "private, non-wildcard")
+		})
+	}
+}
+
+func TestValidateProductionMetricsRejectsRouteCollisions(t *testing.T) {
+	t.Parallel()
+	cfg := Config{
+		Path:             "/mcp",
+		OAuthIssuerURL:   "https://mcp.example.test",
+		OAuthResourceURL: "https://mcp.example.test/mcp",
+		Telemetry:        telemetryConfigForTest(),
+	}
+	for _, path := range []string{"/mcp", "/.well-known/oauth-protected-resource/mcp", "/.well-known/oauth-authorization-server", "/authorize", "/token"} {
+		t.Run(path, func(t *testing.T) {
+			cfg.Telemetry.MetricsPath = path
+			require.ErrorContains(t, cfg.ValidateProductionRoutePaths(), "canonical paths collide")
+		})
+	}
+}
+
+func telemetryConfigForTest() telemetry.Config {
+	return telemetry.Config{MetricsEnabled: true, MetricsPath: "/metrics", ServiceName: "inventree-mcp"}
+}
+
+func errString(err error) string {
+	if err == nil {
+		return ""
+	}
+	return err.Error()
 }

@@ -15,6 +15,12 @@ path: /mcp
 environment: production
 log_level: info
 
+# Prometheus metrics are disabled by default. Enable only when the packaged
+# service listens on a trusted/private address; the scrape endpoint is not
+# protected by MCP OAuth.
+# otel_metrics_enabled: false
+# otel_metrics_path: /metrics
+
 inventree_url: https://inventory.example.test
 # Optional exact canonical frontend mount for returned object links. When
 # omitted, the validated inventree_url site base gains the stock /web mount.

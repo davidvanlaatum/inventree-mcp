@@ -2,6 +2,8 @@ package telemetry
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -201,6 +203,274 @@ func TestDisabledTelemetryDoesNotWrapHTTPClient(t *testing.T) {
 	client := &http.Client{}
 	assert.Same(t, client, WrapHTTPClient(client))
 	assert.Same(t, http.DefaultTransport, WrapRoundTripper(http.DefaultTransport))
+}
+
+func TestMetricsOnlyRuntimeExposesPrometheusAndRecordsMCPRequests(t *testing.T) {
+	SetToolAllowlist([]string{"get_part"})
+	runtime, err := New(context.Background(), Config{
+		MetricsEnabled: true,
+		MetricsPath:    "/metrics",
+		ServiceName:    defaultServiceName,
+	})
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, runtime.Shutdown(context.Background())) })
+
+	next := MCPMiddleware(func(context.Context, string, mcp.Request) (mcp.Result, error) {
+		return nil, nil
+	})
+	_, err = next(context.Background(), "tools/call", &mcp.CallToolRequest{Params: &mcp.CallToolParamsRaw{Name: "get_part"}})
+	require.NoError(t, err)
+	_, err = next(context.Background(), "tools/call", &mcp.CallToolRequest{Params: &mcp.CallToolParamsRaw{Name: "future_tool_123"}})
+	require.NoError(t, err)
+	client := &http.Client{Transport: roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader("ok")), Header: make(http.Header), Request: req}, nil
+	})}
+	request, err := http.NewRequestWithContext(WithInvenTreeAPI(context.Background()), http.MethodGet, "https://inventory.example.test/api/part/1/", nil)
+	require.NoError(t, err)
+	clientResponse, err := WrapHTTPClient(client).Do(request)
+	require.NoError(t, err)
+	require.NoError(t, clientResponse.Body.Close())
+	unknownRequest, err := http.NewRequestWithContext(WithInvenTreeAPI(context.Background()), http.MethodGet, "https://inventory.example.test/api/future-resource/opaque-key/", nil)
+	require.NoError(t, err)
+	unknownResponse, err := WrapHTTPClient(client).Do(unknownRequest)
+	require.NoError(t, err)
+	require.NoError(t, unknownResponse.Body.Close())
+	RecordBulkOperation(context.Background(), "bulk_update_parts", "started")
+
+	scrape := httptest.NewRecorder()
+	runtime.MetricsHandler().ServeHTTP(scrape, httptest.NewRequest(http.MethodGet, "/metrics", nil))
+	require.Equal(t, http.StatusOK, scrape.Code)
+	body := scrape.Body.String()
+	assert.Contains(t, body, "inventree_mcp_mcp_requests_total")
+	assert.Contains(t, body, `method="tools/call"`)
+	assert.Contains(t, body, "inventree_mcp_http_client_requests_total")
+	assert.Contains(t, body, `method="GET"`)
+	assert.Contains(t, body, `outcome="success"`)
+	assert.Contains(t, body, `status_class="2xx"`)
+	assert.Contains(t, body, "inventree_mcp_http_client_request_duration_seconds")
+	assert.Contains(t, body, "inventree_mcp_bulk_operations_started_total")
+	assert.Contains(t, body, `operation="bulk"`)
+	assert.Contains(t, body, `outcome="started"`)
+	assert.Contains(t, body, "inventree_mcp_tool_calls_total")
+	assert.Contains(t, body, `tool="get_part"`)
+	assert.Contains(t, body, `tool="other"`)
+	assert.NotContains(t, body, `tool="future_tool_123"`)
+	assert.Contains(t, body, "inventree_mcp_tool_call_duration_seconds")
+	assert.Contains(t, body, "inventree_mcp_tool_calls_in_flight")
+	assert.Contains(t, body, "inventree_mcp_inventree_api_requests_total")
+	assert.Contains(t, body, `operation="part"`)
+	assert.Contains(t, body, "inventree_mcp_inventree_api_request_duration_seconds")
+	assert.Contains(t, body, "inventree_mcp_inventree_api_requests_in_flight")
+	assert.Contains(t, body, `operation="other"`)
+	assert.NotContains(t, body, `operation="future-resource"`)
+}
+
+func TestMetricsConfigRejectsNonCanonicalPath(t *testing.T) {
+	err := (Config{MetricsEnabled: true, MetricsPath: "metrics", ServiceName: defaultServiceName}).Validate()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "metrics path")
+}
+
+func TestMetricsNormalizeUnknownMCPMethods(t *testing.T) {
+	runtime, err := New(context.Background(), Config{MetricsEnabled: true, MetricsPath: "/metrics", ServiceName: defaultServiceName})
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, runtime.Shutdown(context.Background())) })
+
+	next := MCPMiddleware(func(context.Context, string, mcp.Request) (mcp.Result, error) { return nil, nil })
+	for i := 0; i < 100; i++ {
+		_, err := next(context.Background(), fmt.Sprintf("unknown/%d", i), nil)
+		require.NoError(t, err)
+	}
+	response := httptest.NewRecorder()
+	runtime.MetricsHandler().ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/metrics", nil))
+	body := response.Body.String()
+	assert.Contains(t, body, `method="other"`)
+	assert.NotContains(t, body, "unknown/99")
+}
+
+func TestMetricsRuntimeOwnsGlobalLifecycle(t *testing.T) {
+	runtime, err := New(context.Background(), Config{MetricsEnabled: true, MetricsPath: "/metrics", ServiceName: defaultServiceName})
+	require.NoError(t, err)
+	_, err = New(context.Background(), Config{MetricsEnabled: true, MetricsPath: "/metrics", ServiceName: defaultServiceName})
+	require.ErrorContains(t, err, "already active")
+	require.NoError(t, runtime.Shutdown(context.Background()))
+	require.NoError(t, runtime.Shutdown(context.Background()))
+
+	next, err := New(context.Background(), Config{MetricsEnabled: true, MetricsPath: "/metrics", ServiceName: defaultServiceName})
+	require.NoError(t, err)
+	require.NoError(t, next.Shutdown(context.Background()))
+}
+
+func TestMetricsNormalizeUnknownHTTPMethods(t *testing.T) {
+	runtime, err := New(context.Background(), Config{MetricsEnabled: true, MetricsPath: "/metrics", ServiceName: defaultServiceName})
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, runtime.Shutdown(context.Background())) })
+
+	client := &http.Client{Transport: roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader("ok")), Header: make(http.Header), Request: req}, nil
+	})}
+	request, err := http.NewRequestWithContext(context.Background(), "CUSTOM", "https://inventory.example.test/api/part/1/", nil)
+	require.NoError(t, err)
+	response, err := WrapHTTPClient(client).Do(request)
+	require.NoError(t, err)
+	require.NoError(t, response.Body.Close())
+
+	scrape := httptest.NewRecorder()
+	runtime.MetricsHandler().ServeHTTP(scrape, httptest.NewRequest(http.MethodGet, "/metrics", nil))
+	assert.Contains(t, scrape.Body.String(), `method="other"`)
+	assert.NotContains(t, scrape.Body.String(), `method="CUSTOM"`)
+}
+
+func TestMetricsRecordToolAndAPIErrorOutcomes(t *testing.T) {
+	SetToolAllowlist([]string{"failing_tool"})
+	runtime, err := New(context.Background(), Config{MetricsEnabled: true, MetricsPath: "/metrics", ServiceName: defaultServiceName})
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, runtime.Shutdown(context.Background())) })
+
+	toolHandler := MCPMiddleware(func(context.Context, string, mcp.Request) (mcp.Result, error) {
+		return nil, errors.New("tool failed")
+	})
+	_, err = toolHandler(context.Background(), "tools/call", &mcp.CallToolRequest{Params: &mcp.CallToolParamsRaw{Name: "failing_tool"}})
+	require.Error(t, err)
+
+	apiClient := &http.Client{Transport: roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+		return &http.Response{StatusCode: http.StatusServiceUnavailable, Body: io.NopCloser(strings.NewReader("busy")), Header: make(http.Header), Request: req}, nil
+	})}
+	request, err := http.NewRequestWithContext(WithInvenTreeAPI(context.Background()), http.MethodGet, "https://inventory.example.test/api/part/1/", nil)
+	require.NoError(t, err)
+	response, err := WrapHTTPClient(apiClient).Do(request)
+	require.NoError(t, err)
+	require.NoError(t, response.Body.Close())
+
+	scrape := httptest.NewRecorder()
+	runtime.MetricsHandler().ServeHTTP(scrape, httptest.NewRequest(http.MethodGet, "/metrics", nil))
+	body := scrape.Body.String()
+	assert.Contains(t, body, `tool="failing_tool"`)
+	assert.Contains(t, body, `outcome="error"`)
+	assert.Contains(t, body, `operation="part"`)
+	assert.Contains(t, body, `status_class="5xx"`)
+	assertMetricValue(t, body, "inventree_mcp_tool_calls_total", `tool="failing_tool"`, "1")
+	assertMetricValue(t, body, "inventree_mcp_tool_call_duration_seconds_count", `tool="failing_tool"`, "1")
+	assertMetricValue(t, body, "inventree_mcp_inventree_api_requests_total", `operation="part"`, "1")
+	assertMetricValue(t, body, "inventree_mcp_inventree_api_request_duration_seconds_count", `operation="part"`, "1")
+
+	transportErrorClient := &http.Client{Transport: roundTripperFunc(func(*http.Request) (*http.Response, error) {
+		return nil, errors.New("network failed")
+	})}
+	transportRequest, err := http.NewRequestWithContext(WithInvenTreeAPI(context.Background()), http.MethodGet, "https://inventory.example.test/api/part/2/", nil)
+	require.NoError(t, err)
+	_, err = WrapHTTPClient(transportErrorClient).Do(transportRequest)
+	require.Error(t, err)
+
+	scrape = httptest.NewRecorder()
+	runtime.MetricsHandler().ServeHTTP(scrape, httptest.NewRequest(http.MethodGet, "/metrics", nil))
+	body = scrape.Body.String()
+	assertMetricValueWithLabels(t, body, "inventree_mcp_inventree_api_requests_total", []string{`operation="part"`, `outcome="error"`, `status_class="error"`}, "1")
+	assertMetricValueWithLabels(t, body, "inventree_mcp_inventree_api_request_duration_seconds_count", []string{`operation="part"`, `outcome="error"`, `status_class="error"`}, "1")
+	assertMetricValueWithLabels(t, body, "inventree_mcp_inventree_api_requests_total", []string{`operation="part"`, `outcome="success"`, `status_class="5xx"`}, "1")
+	assertMetricValueWithLabels(t, body, "inventree_mcp_inventree_api_request_duration_seconds_count", []string{`operation="part"`, `outcome="success"`, `status_class="5xx"`}, "1")
+	assertMetricValue(t, body, "inventree_mcp_inventree_api_requests_in_flight", `operation="part"`, "0")
+	assert.Contains(t, body, `status_class="error"`)
+}
+
+func TestMetricsInFlightGaugesReturnToZero(t *testing.T) {
+	SetToolAllowlist([]string{"blocking_tool"})
+	runtime, err := New(context.Background(), Config{MetricsEnabled: true, MetricsPath: "/metrics", ServiceName: defaultServiceName})
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, runtime.Shutdown(context.Background())) })
+
+	started := make(chan struct{})
+	release := make(chan struct{})
+	toolHandler := MCPMiddleware(func(context.Context, string, mcp.Request) (mcp.Result, error) {
+		close(started)
+		<-release
+		return nil, nil
+	})
+	done := make(chan struct{})
+	go func() {
+		_, _ = toolHandler(context.Background(), "tools/call", &mcp.CallToolRequest{Params: &mcp.CallToolParamsRaw{Name: "blocking_tool"}})
+		close(done)
+	}()
+	<-started
+	scrape := httptest.NewRecorder()
+	runtime.MetricsHandler().ServeHTTP(scrape, httptest.NewRequest(http.MethodGet, "/metrics", nil))
+	assertMetricValue(t, scrape.Body.String(), "inventree_mcp_tool_calls_in_flight", `tool="blocking_tool"`, "1")
+	close(release)
+	<-done
+	scrape = httptest.NewRecorder()
+	runtime.MetricsHandler().ServeHTTP(scrape, httptest.NewRequest(http.MethodGet, "/metrics", nil))
+	assertMetricValue(t, scrape.Body.String(), "inventree_mcp_tool_calls_in_flight", `tool="blocking_tool"`, "0")
+	assertMetricValue(t, scrape.Body.String(), "inventree_mcp_tool_calls_total", `tool="blocking_tool"`, "1")
+	assertMetricValue(t, scrape.Body.String(), "inventree_mcp_tool_call_duration_seconds_count", `tool="blocking_tool"`, "1")
+	// Wall-clock durations are intentionally nondeterministic; the count and
+	// positive sum prove observation without coupling this test to scheduling.
+	assertMetricPositive(t, scrape.Body.String(), "inventree_mcp_tool_call_duration_seconds_sum", `tool="blocking_tool"`)
+
+	apiStarted := make(chan struct{})
+	apiRelease := make(chan struct{})
+	apiClient := &http.Client{Transport: roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+		close(apiStarted)
+		<-apiRelease
+		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader("ok")), Header: make(http.Header), Request: req}, nil
+	})}
+	apiRequest, err := http.NewRequestWithContext(WithInvenTreeAPI(context.Background()), http.MethodGet, "https://inventory.example.test/api/part/1/", nil)
+	require.NoError(t, err)
+	apiDone := make(chan struct{})
+	go func() {
+		response, requestErr := WrapHTTPClient(apiClient).Do(apiRequest)
+		if response != nil {
+			_ = response.Body.Close()
+		}
+		require.NoError(t, requestErr)
+		close(apiDone)
+	}()
+	<-apiStarted
+	scrape = httptest.NewRecorder()
+	runtime.MetricsHandler().ServeHTTP(scrape, httptest.NewRequest(http.MethodGet, "/metrics", nil))
+	assertMetricValue(t, scrape.Body.String(), "inventree_mcp_inventree_api_requests_in_flight", `operation="part"`, "1")
+	close(apiRelease)
+	<-apiDone
+	scrape = httptest.NewRecorder()
+	runtime.MetricsHandler().ServeHTTP(scrape, httptest.NewRequest(http.MethodGet, "/metrics", nil))
+	assertMetricValue(t, scrape.Body.String(), "inventree_mcp_inventree_api_requests_in_flight", `operation="part"`, "0")
+	assertMetricValue(t, scrape.Body.String(), "inventree_mcp_inventree_api_requests_total", `operation="part"`, "1")
+	assertMetricValue(t, scrape.Body.String(), "inventree_mcp_inventree_api_request_duration_seconds_count", `operation="part"`, "1")
+	assertMetricPositive(t, scrape.Body.String(), "inventree_mcp_inventree_api_request_duration_seconds_sum", `operation="part"`)
+}
+
+func assertMetricValue(t *testing.T, exposition, metricName, label, value string) {
+	assertMetricValueWithLabels(t, exposition, metricName, []string{label}, value)
+}
+
+func assertMetricValueWithLabels(t *testing.T, exposition, metricName string, labels []string, value string) {
+	t.Helper()
+	for _, line := range strings.Split(exposition, "\n") {
+		allLabelsPresent := true
+		for _, label := range labels {
+			if !strings.Contains(line, label) {
+				allLabelsPresent = false
+				break
+			}
+		}
+		if strings.HasPrefix(line, metricName+"{") && allLabelsPresent && strings.HasSuffix(line, "} "+value) {
+			return
+		}
+	}
+	t.Errorf("metric %s with labels %v=%s not found", metricName, labels, value)
+}
+
+func assertMetricPositive(t *testing.T, exposition, metricName, label string) {
+	t.Helper()
+	for _, line := range strings.Split(exposition, "\n") {
+		if !strings.HasPrefix(line, metricName+"{") || !strings.Contains(line, label) {
+			continue
+		}
+		fields := strings.Fields(line)
+		if len(fields) == 2 && fields[1] != "0" {
+			return
+		}
+	}
+	t.Errorf("positive metric %s with %s not found", metricName, label)
 }
 
 func TestNewOTLPHTTPFlushesSpansAndSendsHeadersOnShutdown(t *testing.T) {

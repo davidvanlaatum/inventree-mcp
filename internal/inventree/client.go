@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/davidvanlaatum/inventree-mcp/internal/buildinfo"
+	"github.com/davidvanlaatum/inventree-mcp/internal/requestctx"
 )
 
 type Client struct {
@@ -55,6 +56,10 @@ func NewClient(cfg Config) (*Client, error) {
 }
 
 func (c *Client) NewRequest(ctx context.Context, method string, path string, query url.Values, body any) (*http.Request, error) {
+	if ctx == nil {
+		return nil, errors.New("nil Context")
+	}
+	ctx = requestctx.WithInvenTreeAPI(ctx)
 	target, err := c.resolve(path, query)
 	if err != nil {
 		return nil, err

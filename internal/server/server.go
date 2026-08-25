@@ -40,6 +40,7 @@ func New(deps tools.Dependencies) *mcp.Server {
 	}, &mcp.ServerOptions{Instructions: serverInstructions})
 	srv.AddReceivingMiddleware(telemetry.MCPMiddleware)
 	tools.Register(srv, deps)
+	telemetry.SetToolAllowlist(tools.RegisteredToolNames(deps.EnableWriteTools))
 	return srv
 }
 
@@ -185,12 +186,21 @@ func httpMuxWithOptions(ctx context.Context, cfg config.Config, srv *mcp.Server,
 	if err != nil {
 		return nil, err
 	}
-	handler := HTTPHandler(ctx, srv, cfg.MCPMaxRequestBodyBytes)
-	mux := http.NewServeMux()
 	if cfg.Transport == config.TransportHTTP && cfg.Environment == config.EnvironmentProduction {
 		if err := cfg.ValidateProductionRoutePaths(); err != nil {
 			return nil, err
 		}
+	}
+	handler := HTTPHandler(ctx, srv, cfg.MCPMaxRequestBodyBytes)
+	mux := http.NewServeMux()
+	if cfg.Telemetry.MetricsEnabled {
+		metricsHandler := telemetry.MetricsHandler()
+		if metricsHandler == nil {
+			return nil, errors.New("OpenTelemetry metrics are enabled but the scrape handler is unavailable")
+		}
+		mux.Handle(cfg.Telemetry.MetricsPath, metricsHandler)
+	}
+	if cfg.Transport == config.TransportHTTP && cfg.Environment == config.EnvironmentProduction {
 		keyring, err := cfg.OAuthKeyring.Keyring()
 		if err != nil {
 			return nil, err

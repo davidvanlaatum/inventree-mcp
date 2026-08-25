@@ -166,7 +166,7 @@ Before assigning a new story ID, inspect `git worktree list --porcelain`, search
 | [F-S82](#f-s82-mcp-facing-image-and-attachment-tool-routing-guidance) | Make image and generic-attachment tool routing explicit to MCP agents. | Done |
 | [F-S83](#f-s83-harden-testcontainers-worker-startup-under-ci-load) | Harden the Testcontainers InvenTree worker health probe against CI resource contention. | Done |
 | [F-S84](#f-s84-add-opentelemetry-tracing) | Add opt-in OpenTelemetry tracing across MCP and InvenTree interactions. | Active |
-| [F-S85](#f-s85-add-opentelemetry-metrics-and-prometheus-export) | Add optional OpenTelemetry metrics and Prometheus export as the F-S84 follow-up. | Planned |
+| [F-S85](#f-s85-add-opentelemetry-metrics-and-prometheus-export) | Add optional OpenTelemetry metrics and Prometheus export as the F-S84 follow-up. | Active |
 | [F-S86](#f-s86-packaged-config-file-deployment) | Switch deb/rpm/apk packages from an EnvironmentFile-based `.env` template to a packaged YAML config file. | Done |
 | [F-S87](#f-s87-run-packaged-systemd-service-as-a-non-root-user) | Run the packaged systemd service as a dedicated non-root user instead of root. | Future |
 
@@ -3133,19 +3133,25 @@ Tasks:
 
 ### F-S85: Add OpenTelemetry Metrics And Prometheus Export
 
-- Status: `Planned`
+- Status: `Active`
 - Issue: [#222](https://github.com/davidvanlaatum/inventree-mcp/issues/222)
 - Depends on: F-S84.
 - Scope: add opt-in OpenTelemetry metrics and a documented Prometheus-compatible exposition/export path where practical, with explicit names, units, labels, cardinality, privacy, exporter, scrape, lifecycle, and failure semantics.
-- Progress: planned follow-up split from F-S84 after the tracing-versus-metrics implementation spike; intentionally unassigned until implementation starts.
+- Progress: implementation started on `codex/f-s85-otel-metrics` from merged F-S84 `origin/main` at `8f0e052`. Prometheus metrics use the existing HTTP listener and remain independently opt-in; STDIO rejects metrics configuration rather than opening a second listener.
 - Acceptance:
   - Define metric names, units, labels, cardinality limits, and privacy policy.
   - Preserve disabled-by-default behavior with documented configuration.
-  - Add representative MCP, outbound InvenTree, OAuth/upload, and batch-operation metrics without duplicating unsafe tracing attributes.
+  - Add representative MCP and outbound HTTP metrics (covering InvenTree, OAuth, and upload interactions), plus batch-operation metrics, without duplicating unsafe tracing attributes.
   - Add unit, integration, documentation, and reviewer coverage, keeping README, PLAN, TASKS, operator recipes, and runtime configuration aligned.
-- Validation: pending implementation.
-- Review: pending implementation.
-- Residual risk: metrics operational design and scrape/export lifecycle are intentionally deferred until this story is started.
+- Tasks:
+- [x] Define bounded OpenTelemetry metric names, units, labels, privacy, and Prometheus scrape behavior.
+- [x] Add independent metrics configuration and existing-HTTP-listener lifecycle wiring.
+- [x] Instrument MCP, outbound HTTP, and representative bulk-operation boundaries without payload or record-identifier labels.
+- [x] Add focused runtime, scrape, configuration, and route tests and align operator documentation.
+- [x] Add bounded per-tool call counters, duration histograms, and in-flight gauges, plus allowlisted InvenTree API resource counters, duration histograms, and in-flight gauges.
+- Validation: focused metrics/configuration/server/tools/docs race tests passed; full `go test ./... -race` passed for all runtime packages, with the initial run requiring a documentation-status correction that was then verified by `go test ./docs`; `go test ./... -run '^$'`, `go vet ./...`, `golangci-lint run ./...`, `go mod tidy -diff`, and `git diff --check` passed. Localhost/Docker tests require the escalated execution context in this environment.
+- Review: final Senior Go Developer, Senior QA / Test Architect, Senior Product Manager, and Senior Infosec reviews found no unresolved actionable findings after the expanded per-tool/API metrics review and follow-up fixes.
+- Residual risk: the unauthenticated Prometheus path must remain on the configured private listener; a reverse proxy may additionally enforce a scraper allowlist. Metrics are intentionally bounded and contain no record IDs, payloads, credentials, or upstream URLs.
 
 ### F-S86: Packaged Config-File Deployment
 

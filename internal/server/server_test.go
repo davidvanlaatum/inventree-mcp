@@ -24,6 +24,7 @@ import (
 	"github.com/davidvanlaatum/inventree-mcp/internal/config"
 	"github.com/davidvanlaatum/inventree-mcp/internal/inventree"
 	"github.com/davidvanlaatum/inventree-mcp/internal/oauth"
+	"github.com/davidvanlaatum/inventree-mcp/internal/telemetry"
 	"github.com/davidvanlaatum/inventree-mcp/internal/tools"
 	"github.com/davidvanlaatum/inventree-mcp/internal/upload"
 	"github.com/davidvanlaatum/inventree-mcp/internal/weblinks"
@@ -100,6 +101,33 @@ func TestStdioServerCanInitializeAndListTools(t *testing.T) {
 
 	cancel()
 	<-serverDone
+}
+
+func TestHTTPMuxExposesConfiguredPrometheusMetricsPath(t *testing.T) {
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	runtime, err := telemetry.New(ctx, telemetry.Config{
+		MetricsEnabled: true,
+		MetricsPath:    "/internal/metrics",
+		ServiceName:    "inventree-mcp",
+	})
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, runtime.Shutdown(context.Background())) })
+
+	cfg := config.Config{
+		Transport:              config.TransportHTTP,
+		Environment:            config.EnvironmentDevelopment,
+		Path:                   "/mcp",
+		InvenTreeURL:           "http://inventory.example.test",
+		MCPMaxRequestBodyBytes: config.DefaultMCPMaxRequestBodyBytes,
+		Telemetry:              telemetry.Config{MetricsEnabled: true, MetricsPath: "/internal/metrics"},
+		DevIncompleteOAuth:     true,
+	}
+	handler, err := httpMux(ctx, cfg, New(tools.Dependencies{}), nil)
+	require.NoError(t, err)
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/internal/metrics", nil))
+	require.Equal(t, http.StatusOK, response.Code)
+	assert.Contains(t, response.Body.String(), "# HELP")
 }
 
 func TestTrafficLogCapturesStdioJSONRPCMessages(t *testing.T) {
