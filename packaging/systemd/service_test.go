@@ -23,3 +23,16 @@ func TestPackagedServiceUsesNativeNotifyAndWatchdog(t *testing.T) {
 	a.Contains(text, "Restart=on-failure\n")
 	a.NotContains(text, "Type=simple")
 }
+
+func TestPackagedServiceUsesConfigFile(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+
+	unit, err := os.ReadFile("inventree-mcp.service")
+	r.NoError(err)
+	text := string(unit)
+
+	a.Contains(text, "ExecStart=/usr/bin/inventree-mcp serve --config /etc/inventree-mcp/config.yml\n")
+	a.NotContains(text, "EnvironmentFile=")
+}

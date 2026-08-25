@@ -1,0 +1,43 @@
+# InvenTree MCP packaged HTTP service configuration.
+#
+# Production HTTP startup validates protected MCP OAuth access-token
+# envelopes, but live connector setup and packaged deployment remain gated
+# follow-up work.
+#
+# This file may contain secrets (the InvenTree token, OAuth key material).
+# Packaged installs create it with mode 0600; keep it owner-only. Configuration
+# precedence is: defaults < this YAML file < environment variables < CLI
+# flags. See docs/examples/inventree-mcp.yml for the full annotated field set.
+
+transport: http
+listen: 127.0.0.1:28686
+path: /mcp
+environment: production
+log_level: info
+
+inventree_url: https://inventory.example.test
+# Optional exact canonical frontend mount for returned object links. When
+# omitted, the validated inventree_url site base gains the stock /web mount.
+# inventree_web_url: https://inventory.example.test/web
+
+# Generate 32-byte key material with a cryptographically secure generator such
+# as `openssl rand -base64 32`. Keep exactly one active key. See the operator
+# recipe for normal rotation, retirement, and compromise response.
+# oauth_issuer_url: https://mcp.example.test
+# oauth_resource_url: https://mcp.example.test/mcp
+# oauth_keys:
+#   - current:active:REPLACE_WITH_BASE64_32_BYTE_KEY
+# oauth_client_ids:
+#   - https://chatgpt.com/client-metadata/REPLACE_ME
+# Same-host reverse proxy example. Use only the narrow CIDRs of proxies that
+# can connect to the configured listen address; do not copy private-network
+# supernets.
+# trusted_proxy_cidrs:
+#   - 127.0.0.1/32
+#   - ::1/128
+
+# Development-only HTTP smoke-test settings. Do not enable the packaged
+# service for a live connector until setup and deployment validation are
+# complete.
+# environment: development
+# dev_incomplete_oauth: true

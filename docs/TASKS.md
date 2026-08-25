@@ -167,6 +167,8 @@ Before assigning a new story ID, inspect `git worktree list --porcelain`, search
 | [F-S83](#f-s83-harden-testcontainers-worker-startup-under-ci-load) | Harden the Testcontainers InvenTree worker health probe against CI resource contention. | Done |
 | [F-S84](#f-s84-add-opentelemetry-tracing) | Add opt-in OpenTelemetry tracing across MCP and InvenTree interactions. | Active |
 | [F-S85](#f-s85-add-opentelemetry-metrics-and-prometheus-export) | Add optional OpenTelemetry metrics and Prometheus export as the F-S84 follow-up. | Planned |
+| [F-S86](#f-s86-packaged-config-file-deployment) | Switch deb/rpm/apk packages from an EnvironmentFile-based `.env` template to a packaged YAML config file. | Active |
+| [F-S87](#f-s87-run-packaged-systemd-service-as-a-non-root-user) | Run the packaged systemd service as a dedicated non-root user instead of root. | Future |
 
 ## Milestone 0: Repository And Planning
 
@@ -3144,3 +3146,60 @@ Tasks:
 - Validation: pending implementation.
 - Review: pending implementation.
 - Residual risk: metrics operational design and scrape/export lifecycle are intentionally deferred until this story is started.
+
+### F-S86: Packaged Config-File Deployment
+
+- Status: `Active`
+- Issue: [#224](https://github.com/davidvanlaatum/inventree-mcp/issues/224)
+- Depends on: F-S75.
+- Progress: implementation started on `claude/package-installs-config-file-57e420` from `origin/main` at `672a452`.
+- Scope: replace the deb/rpm/apk packages' `EnvironmentFile`-based `/etc/inventree-mcp/inventree-mcp.env` template with a packaged YAML config file at `/etc/inventree-mcp/config.yml` (mode `0600`, nfpm `noreplace`), consumed via `inventree-mcp serve --config`, reusing the typed configuration loader F-S75 added. The packaged systemd unit's `ExecStart` stops depending on `${INVENTREE_MCP_LISTEN}`/`${INVENTREE_MCP_PATH}` environment substitution and points directly at the packaged config file; `EnvironmentFile=` is dropped from the unit. This is a deliberate, one-time breaking packaging change (pre-1.0, same pattern as F-S72's porcelain-format migration): package upgrades leave the old `noreplace` `.env` file in place, unmanaged by the new package version, and the new unit simply stops reading it. Docs explicitly document the one-time upgrade migration step.
+- Acceptance:
+  - deb/rpm/apk packages install `/etc/inventree-mcp/config.yml` (mode `0600`, `noreplace`) instead of `/etc/inventree-mcp/inventree-mcp.env`; the packaged template documents the commonly needed packaged HTTP-mode settings (transport, listen, path, inventree_url, environment, log_level) with commented OAuth/reverse-proxy placeholders, consistent with `docs/examples/inventree-mcp.yml`.
+  - The packaged systemd unit's `ExecStart` invokes `inventree-mcp serve --config /etc/inventree-mcp/config.yml` and no longer declares `EnvironmentFile=`.
+  - `packaging/systemd/service_test.go` asserts the packaged unit references the new config path and does not declare `EnvironmentFile=`.
+  - `.goreleaser.yaml` nfpm `contents` packages the new YAML template at the new destination with the same `config|noreplace`/mode-0600 semantics as the file it replaces.
+  - README, `docs/PLAN.md`, and `docs/operator-recipes.md` packaged-deployment and OAuth-key-storage guidance describe the new packaged config-file path, drop stale `.env`/`EnvironmentFile` references, and explicitly document the one-time upgrade migration step.
+  - `packaging/README.md` reflects the new packaged config surface.
+  - Validation: `go test ./...`, `golangci-lint run ./...`, `git diff --check`, and a `goreleaser release --snapshot --clean` (or equivalent) pass and prove the built package contents.
+- Validation: pending implementation.
+- Review: pending implementation.
+- Residual risk: pending implementation.
+
+Tasks:
+
+- [ ] Add the packaged `config.yml` YAML template and remove `packaging/inventree-mcp.env`.
+- [ ] Update the packaged systemd unit's `ExecStart`/`EnvironmentFile` wiring.
+- [ ] Update `.goreleaser.yaml` nfpm `contents` for the new packaged file.
+- [ ] Add/adjust packaging tests for the new unit wiring.
+- [ ] Update README, PLAN, operator recipes, and `packaging/README.md`, including the upgrade-migration note.
+- [ ] Run validation and record evidence; run subagent review and address findings.
+
+### F-S87: Run Packaged systemd Service As A Non-Root User
+
+- Status: `Future`
+- Issue: [#225](https://github.com/davidvanlaatum/inventree-mcp/issues/225)
+- Depends on: F-S86.
+- Progress: identified as a gap while implementing F-S86 — the packaged unit has no `User=`/`Group=`/`DynamicUser=` directive and `postinstall.sh` creates no system user, so the packaged service runs as root by default. Intentionally unassigned until implementation starts.
+- Scope: run the packaged systemd service as a dedicated non-root identity instead of root. Evaluate `DynamicUser=yes` versus a package-created static system user/group (created/removed in `postinstall.sh`/`postremove.sh` across `deb`, `rpm`, and `apk`), and pick one with a documented rationale. Keep `/etc/inventree-mcp/config.yml` (which may contain the InvenTree token and OAuth key material) readable only by root and the service identity.
+- Open decisions:
+  - `DynamicUser=yes` versus a package-created static system user/group.
+- Acceptance:
+  - The packaged systemd unit runs the service as a non-root identity, with a documented choice and rationale.
+  - If a static system user is chosen, `postinstall.sh` creates it (and `postremove.sh` removes it on purge) consistently across `deb`, `rpm`, and `apk`.
+  - `/etc/inventree-mcp/config.yml` stays readable only by root and the service identity; ownership/permissions are updated as needed for the chosen approach.
+  - `packaging/systemd/service_test.go` covers the new `User=`/`Group=`/`DynamicUser=` wiring.
+  - README, `docs/PLAN.md`, and `docs/operator-recipes.md` packaged-deployment guidance describe the non-root service identity.
+  - Validation: `go test ./...`, `golangci-lint run ./...`, `git diff --check`, and a `goreleaser release --snapshot --clean` prove the built package contents and permissions.
+- Validation: pending implementation.
+- Review: pending implementation.
+- Residual risk: none yet; the packaged service runs as root until this story is implemented.
+
+Tasks:
+
+- [ ] Decide `DynamicUser=yes` versus a package-created static system user/group and record the rationale.
+- [ ] Wire the chosen non-root identity into the packaged systemd unit and maintainer scripts.
+- [ ] Verify `/etc/inventree-mcp/config.yml` ownership/permissions under the chosen approach.
+- [ ] Add/adjust packaging tests for the new identity wiring.
+- [ ] Update README, PLAN, and operator recipes.
+- [ ] Run validation and record evidence; run subagent review and address findings.

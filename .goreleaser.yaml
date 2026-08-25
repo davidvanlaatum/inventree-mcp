@@ -71,8 +71,8 @@ nfpms:
     contents:
       - src: packaging/systemd/inventree-mcp.service
         dst: /etc/systemd/system/inventree-mcp.service
-      - src: packaging/inventree-mcp.env
-        dst: /etc/inventree-mcp/inventree-mcp.env
+      - src: packaging/inventree-mcp.yml
+        dst: /etc/inventree-mcp/config.yml
         type: config|noreplace
         file_info:
           mode: 0600

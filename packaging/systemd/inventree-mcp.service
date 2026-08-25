@@ -7,10 +7,9 @@ Wants=network-online.target
 Type=notify
 NotifyAccess=main
 WatchdogSec=30s
-EnvironmentFile=-/etc/inventree-mcp/inventree-mcp.env
 Restart=on-failure
 RestartSec=5s
-ExecStart=/usr/bin/inventree-mcp serve --transport http --listen ${INVENTREE_MCP_LISTEN} --path ${INVENTREE_MCP_PATH}
+ExecStart=/usr/bin/inventree-mcp serve --config /etc/inventree-mcp/config.yml
 TimeoutSec=60
 
 [Install]

@@ -88,9 +88,11 @@ Linux packages install:
 
 - `/usr/bin/inventree-mcp`
 - `/etc/systemd/system/inventree-mcp.service`
-- `/etc/inventree-mcp/inventree-mcp.env`
+- `/etc/inventree-mcp/config.yml`
 
 The packaged service is intended for HTTP mode behind a path-preserving reverse proxy. Production HTTP startup validates OAuth envelope keys, issuer/resource URLs, exact public/internal MCP path alignment, trusted proxy CIDRs, allowed client IDs, and token lifetimes before serving protected MCP traffic and connector authorization routes. The systemd unit uses `Type=notify`, reports ready only after those checks pass and the HTTP listener is bound, and sends watchdog heartbeats every half of systemd's configured 30-second watchdog interval. Once the managed HTTP lifecycle is initialized, graceful shutdown and fatal runtime failures publish sanitized service status. Configuration or logger initialization failures that occur before that lifecycle starts still exit non-zero, allowing systemd to record the failure and apply `Restart=on-failure` without a separate status notification path. If a heartbeat cannot be delivered, the server reports a degraded status and keeps serving; systemd's watchdog timeout terminates it and starts a replacement. Install packages now for file layout testing, but do not enable the systemd service for a live ChatGPT connector until F-S10 live packaged deployment validation lands.
+
+Edit `/etc/inventree-mcp/config.yml` (mode `0600`, owner-only) to set the InvenTree URL, OAuth key material, and any other packaged HTTP-mode settings; the packaged unit runs `inventree-mcp serve --config /etc/inventree-mcp/config.yml`. Packages before this change instead installed an `EnvironmentFile`-based `/etc/inventree-mcp/inventree-mcp.env`; upgrading such an existing install requires copying its values into the new YAML file before restarting the service, since the old file is left in place unmanaged and is no longer read by the unit.
 
 For a development-only pre-OAuth HTTP runtime smoke test, run the binary directly. This starts the skeleton streamable HTTP server with only static MCP metadata and the read-only health/version tool.
 
@@ -103,7 +105,7 @@ INVENTREE_MCP_DEV_INCOMPLETE_OAUTH=true \
 
 The default HTTP listen address is `127.0.0.1:28686`. The port is intentionally outside common HTTP development ports, below common Linux ephemeral ranges, and loopback-only by default.
 
-The `apk` package installs the same binary, config template, and systemd unit as the `deb` and `rpm` packages. Alpine/OpenRC service management is not implemented yet; use the binary directly or add an operator-specific OpenRC unit outside the package.
+The `apk` package installs the same binary, YAML config template, and systemd unit as the `deb` and `rpm` packages. Alpine/OpenRC service management is not implemented yet; use the binary directly or add an operator-specific OpenRC unit outside the package.
 
 Package installations must be upgraded with their package manager. `inventree-mcp self-update` deliberately refuses `/usr/bin/inventree-mcp` and never overwrites package-owned files.
 
