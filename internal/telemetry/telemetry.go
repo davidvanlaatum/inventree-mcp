@@ -3,11 +3,14 @@
 package telemetry
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"math"
+	"net"
 	"net/http"
 	"strings"
 	"sync"
@@ -237,11 +240,13 @@ func HTTPHandler(next http.Handler) http.Handler {
 		ctx, span := otel.Tracer("inventree-mcp").Start(ctx, "HTTP "+req.Method, apiTrace.WithSpanKind(apiTrace.SpanKindServer))
 		setHTTPAttributes(span, req)
 		writer := &statusWriter{ResponseWriter: w}
+		defer func() {
+			if writer.status != 0 {
+				span.SetAttributes(attribute.Int("http.response.status_code", writer.status))
+			}
+			span.End()
+		}()
 		next.ServeHTTP(writer, req.WithContext(ctx))
-		if writer.status != 0 {
-			span.SetAttributes(attribute.Int("http.response.status_code", writer.status))
-		}
-		span.End()
 	})
 }
 
@@ -283,6 +288,32 @@ func (w *statusWriter) Flush() {
 		}
 		flusher.Flush()
 	}
+}
+
+func (w *statusWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	hijacker, ok := w.ResponseWriter.(http.Hijacker)
+	if !ok {
+		return nil, nil, http.ErrNotSupported
+	}
+	return hijacker.Hijack()
+}
+
+func (w *statusWriter) Push(target string, options *http.PushOptions) error {
+	pusher, ok := w.ResponseWriter.(http.Pusher)
+	if !ok {
+		return http.ErrNotSupported
+	}
+	return pusher.Push(target, options)
+}
+
+func (w *statusWriter) ReadFrom(src io.Reader) (int64, error) {
+	if w.status == 0 {
+		w.WriteHeader(http.StatusOK)
+	}
+	if readerFrom, ok := w.ResponseWriter.(io.ReaderFrom); ok {
+		return readerFrom.ReadFrom(src)
+	}
+	return io.Copy(w.ResponseWriter, src)
 }
 
 // MCPMiddleware creates a span for every inbound MCP method and records the
