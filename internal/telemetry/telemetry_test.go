@@ -5,9 +5,11 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"testing"
 
+	"github.com/davidvanlaatum/inventree-mcp/internal/inventree"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -74,6 +76,58 @@ func TestMCPMiddlewareRecordsToolAndNumericIdentifiersWithoutArguments(t *testin
 	for _, attr := range attributes {
 		assert.NotContains(t, string(attr.Key), "token")
 	}
+}
+
+func TestMCPServerToolAndInvenTreeClientSpansShareTrace(t *testing.T) {
+	exporter := withRecordingProvider(t)
+	invenTreeClient, err := inventree.NewClient(inventree.Config{
+		BaseURL:    "https://inventory.example.test",
+		Credential: inventree.Credential{Scheme: inventree.AuthSchemeToken, Token: "test-token"},
+		HTTPClient: WrapHTTPClient(&http.Client{Transport: roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+			assert.Equal(t, "/api/part/42/", req.URL.Path)
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Body:       io.NopCloser(strings.NewReader(`{"pk":42,"name":"Trace test"}`)),
+				Header:     make(http.Header),
+				Request:    req,
+			}, nil
+		})}),
+	})
+	require.NoError(t, err)
+	server := mcp.NewServer(&mcp.Implementation{Name: "trace-test", Version: "1"}, nil)
+	server.AddReceivingMiddleware(MCPMiddleware)
+	server.AddTool(&mcp.Tool{Name: "get_part", InputSchema: map[string]any{"type": "object"}}, func(ctx context.Context, _ *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		_, err := invenTreeClient.GetPart(ctx, 42)
+		return &mcp.CallToolResult{}, err
+	})
+
+	ctx := context.Background()
+	clientTransport, serverTransport := mcp.NewInMemoryTransports()
+	_, err = server.Connect(ctx, serverTransport, nil)
+	require.NoError(t, err)
+	client := mcp.NewClient(&mcp.Implementation{Name: "trace-client", Version: "1"}, nil)
+	session, err := client.Connect(ctx, clientTransport, nil)
+	require.NoError(t, err)
+	defer func() { require.NoError(t, session.Close()) }()
+	_, err = session.CallTool(ctx, &mcp.CallToolParams{Name: "get_part"})
+	require.NoError(t, err)
+
+	var toolTrace, clientTrace apiTrace.TraceID
+	for _, span := range exporter.spans {
+		attrs := make(map[attribute.Key]attribute.Value, len(span.Attributes()))
+		for _, attr := range span.Attributes() {
+			attrs[attr.Key] = attr.Value
+		}
+		if attrs["mcp.tool.name"].AsString() == "get_part" {
+			toolTrace = span.SpanContext().TraceID()
+		}
+		if attrs["http.request.method"].AsString() == http.MethodGet && attrs["url.path"].AsString() == "/api/part/42/" {
+			clientTrace = span.SpanContext().TraceID()
+		}
+	}
+	require.NotEqual(t, apiTrace.TraceID{}, toolTrace)
+	require.NotEqual(t, apiTrace.TraceID{}, clientTrace)
+	assert.Equal(t, toolTrace, clientTrace)
 }
 
 func TestWrapHTTPClientInjectsTraceContext(t *testing.T) {
