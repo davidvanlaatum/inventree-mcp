@@ -145,9 +145,9 @@ func (a *attachmentBulkAdapter) Verify(ctx context.Context, item attachmentBulkP
 
 func bulkUpdateAttachments(deps Dependencies) mcp.ToolHandlerFor[BulkUpdateAttachmentsInput, BulkUpdateOutput[AttachmentMetadata]] {
 	return LookupHandler[AttachmentWriteClient, BulkUpdateAttachmentsInput, BulkUpdateOutput[AttachmentMetadata]](deps, BulkUpdateAttachmentsToolName,
-		func(ctx context.Context, _ *mcp.CallToolRequest, client AttachmentWriteClient, input BulkUpdateAttachmentsInput) (*mcp.CallToolResult, BulkUpdateOutput[AttachmentMetadata], error) {
-			if len(input.Items) == 0 || len(input.Items) > bulkUpdateMaxItems {
-				return bulkItemCountClarification[AttachmentMetadata](BulkUpdateAttachmentsToolName, len(input.Items))
+		func(ctx context.Context, req *mcp.CallToolRequest, client AttachmentWriteClient, input BulkUpdateAttachmentsInput) (*mcp.CallToolResult, BulkUpdateOutput[AttachmentMetadata], error) {
+			if len(input.Items) == 0 || len(input.Items) > effectiveBulkMaxItems(deps) {
+				return bulkItemCountClarification[AttachmentMetadata](BulkUpdateAttachmentsToolName, len(input.Items), effectiveBulkMaxItems(deps))
 			}
 			plan := buildAttachmentBulkPlan(ctx, client, input.Items)
 			out := BulkUpdateOutput[AttachmentMetadata]{Status: StatusOK, DryRun: input.DryRun}
@@ -170,9 +170,14 @@ func bulkUpdateAttachments(deps Dependencies) mcp.ToolHandlerFor[BulkUpdateAttac
 				return bulkPlanClarification[AttachmentMetadata]()
 			}
 			adapter := &attachmentBulkAdapter{client: client}
-			results := batch.Execute(ctx, plan.Items, adapter, batch.ExecuteOptions{Concurrency: bulkUpdateConcurrency})
+			progress := newBulkProgressReporter(req, BulkUpdateAttachmentsToolName)
+			results, timing := batch.Execute(ctx, plan.Items, adapter, batch.ExecuteOptions{
+				Concurrency: effectiveBulkConcurrency(deps),
+				OnProgress:  func(done, total int) { progress.report(ctx, done, total) },
+			})
 			out.Items = bulkResults[attachmentBulkPlanItem, AttachmentMetadata](results, adapter.get)
 			out.Status = bulkOutputStatus(out.Items)
+			out.Timing = bulkTimingEvidence(timing, len(plan.Items), effectiveBulkConcurrency(deps))
 			return TextResult(out.Status), out, nil
 		})
 }

@@ -221,6 +221,8 @@ func dependenciesForConfig(cfg config.Config) (tools.Dependencies, error) {
 			UploadTimeout:       cfg.InvenTreeTimeout,
 			ClientFromContext:   server.OAuthClientFromContext(cfg.InvenTreeURL, inventreeHTTPClient(cfg)),
 			WebLinks:            webLinks,
+			BulkMaxItems:        cfg.BulkMaxItems,
+			BulkConcurrency:     cfg.BulkConcurrency,
 		}, nil
 	}
 	if cfg.Transport != config.TransportStdio {
@@ -245,6 +247,8 @@ func dependenciesForConfig(cfg config.Config) (tools.Dependencies, error) {
 		UploadMaxBytes:   cfg.UploadMaxBytes,
 		UploadTimeout:    cfg.InvenTreeTimeout,
 		WebLinks:         webLinks,
+		BulkMaxItems:     cfg.BulkMaxItems,
+		BulkConcurrency:  cfg.BulkConcurrency,
 		ClientFromContext: func(context.Context) (any, error) {
 			return client, nil
 		},

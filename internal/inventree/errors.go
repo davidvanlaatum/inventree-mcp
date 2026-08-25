@@ -86,8 +86,18 @@ func classifyStatus(status int) ErrorKind {
 		return ErrorKindNotFound
 	case http.StatusConflict:
 		return ErrorKindConflict
-	case http.StatusTooManyRequests:
+	// 408 (Request Timeout) shares 429's "the caller's request pacing/timing
+	// exceeded what the server tolerated, back off rather than retry
+	// blindly" semantics, so it is folded into the same classification
+	// (F-S81) rather than left an implicit default-case unexpected error.
+	case http.StatusTooManyRequests, http.StatusRequestTimeout:
 		return ErrorKindRateLimit
+	// 425 (Too Early) is a TLS early-data replay-protection status with no
+	// InvenTree-specific meaning ever observed; this explicit case documents
+	// that the Unexpected classification is deliberate, not an oversight
+	// (F-S81), even though it resolves the same as the default branch below.
+	case http.StatusTooEarly:
+		return ErrorKindUnexpected
 	default:
 		if status >= http.StatusInternalServerError {
 			return ErrorKindServer

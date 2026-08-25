@@ -118,7 +118,7 @@ func TestLifecycleIssueConsumeExecuteSuccessfulBatch(t *testing.T) {
 	r.NoError(err)
 	r.True(store.Consume(ctx, token, plan))
 
-	results := batch.Execute(ctx, plan.Items, inventoryAdapter{inventory: inventory}, batch.ExecuteOptions{Concurrency: 3})
+	results, _ := batch.Execute(ctx, plan.Items, inventoryAdapter{inventory: inventory}, batch.ExecuteOptions{Concurrency: 3})
 
 	r.Len(results, 3)
 	for _, result := range results {
@@ -184,7 +184,8 @@ func TestLifecycleCancellationMidBatchLeavesLaterItemsUnattempted(t *testing.T) 
 
 	resultsCh := make(chan []batch.Result[inventoryItem], 1)
 	go func() {
-		resultsCh <- batch.Execute(execCtx, plan.Items, gatedAdapter, batch.ExecuteOptions{Concurrency: 1})
+		results, _ := batch.Execute(execCtx, plan.Items, gatedAdapter, batch.ExecuteOptions{Concurrency: 1})
+		resultsCh <- results
 	}()
 
 	<-started
@@ -242,7 +243,7 @@ func TestLifecycleMixedPartialFailureBatchReportsIndependentOutcomes(t *testing.
 	r.NoError(err)
 	r.True(store.Consume(ctx, token, plan))
 
-	results := batch.Execute(ctx, plan.Items, inventoryAdapter{inventory: inventory}, batch.ExecuteOptions{Concurrency: 2})
+	results, _ := batch.Execute(ctx, plan.Items, inventoryAdapter{inventory: inventory}, batch.ExecuteOptions{Concurrency: 2})
 
 	r.Len(results, 4)
 	r.Equal(batch.OutcomeApplied, results[0].Outcome)

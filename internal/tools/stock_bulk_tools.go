@@ -195,9 +195,9 @@ func (a *stockMetadataBulkAdapter) Verify(ctx context.Context, item stockMetadat
 
 func bulkUpdateStockItemMetadata(deps Dependencies) mcp.ToolHandlerFor[BulkUpdateStockItemMetadataInput, BulkUpdateOutput[inventree.StockItem]] {
 	return LookupHandler[StockAdminClient, BulkUpdateStockItemMetadataInput, BulkUpdateOutput[inventree.StockItem]](deps, BulkUpdateStockItemMetadataToolName,
-		func(ctx context.Context, _ *mcp.CallToolRequest, client StockAdminClient, input BulkUpdateStockItemMetadataInput) (*mcp.CallToolResult, BulkUpdateOutput[inventree.StockItem], error) {
-			if len(input.Items) == 0 || len(input.Items) > bulkUpdateMaxItems {
-				return bulkItemCountClarification[inventree.StockItem](BulkUpdateStockItemMetadataToolName, len(input.Items))
+		func(ctx context.Context, req *mcp.CallToolRequest, client StockAdminClient, input BulkUpdateStockItemMetadataInput) (*mcp.CallToolResult, BulkUpdateOutput[inventree.StockItem], error) {
+			if len(input.Items) == 0 || len(input.Items) > effectiveBulkMaxItems(deps) {
+				return bulkItemCountClarification[inventree.StockItem](BulkUpdateStockItemMetadataToolName, len(input.Items), effectiveBulkMaxItems(deps))
 			}
 			plan := buildStockMetadataBulkPlan(ctx, client, input.Items)
 			out := BulkUpdateOutput[inventree.StockItem]{Status: StatusOK, DryRun: input.DryRun}
@@ -220,9 +220,14 @@ func bulkUpdateStockItemMetadata(deps Dependencies) mcp.ToolHandlerFor[BulkUpdat
 				return bulkPlanClarification[inventree.StockItem]()
 			}
 			adapter := &stockMetadataBulkAdapter{client: client}
-			results := batch.Execute(ctx, plan.Items, adapter, batch.ExecuteOptions{Concurrency: bulkUpdateConcurrency})
+			progress := newBulkProgressReporter(req, BulkUpdateStockItemMetadataToolName)
+			results, timing := batch.Execute(ctx, plan.Items, adapter, batch.ExecuteOptions{
+				Concurrency: effectiveBulkConcurrency(deps),
+				OnProgress:  func(done, total int) { progress.report(ctx, done, total) },
+			})
 			out.Items = bulkResults[stockMetadataBulkPlanItem, inventree.StockItem](results, adapter.get)
 			out.Status = bulkOutputStatus(out.Items)
+			out.Timing = bulkTimingEvidence(timing, len(plan.Items), effectiveBulkConcurrency(deps))
 			return TextResult(out.Status), out, nil
 		})
 }
@@ -349,9 +354,9 @@ func (a *stockStatusBulkAdapter) Verify(ctx context.Context, item stockStatusBul
 
 func bulkSetStockStatus(deps Dependencies) mcp.ToolHandlerFor[BulkSetStockStatusInput, BulkUpdateOutput[inventree.StockItem]] {
 	return LookupHandler[StockAdjustmentClient, BulkSetStockStatusInput, BulkUpdateOutput[inventree.StockItem]](deps, BulkSetStockStatusToolName,
-		func(ctx context.Context, _ *mcp.CallToolRequest, client StockAdjustmentClient, input BulkSetStockStatusInput) (*mcp.CallToolResult, BulkUpdateOutput[inventree.StockItem], error) {
-			if len(input.Items) == 0 || len(input.Items) > bulkUpdateMaxItems {
-				return bulkItemCountClarification[inventree.StockItem](BulkSetStockStatusToolName, len(input.Items))
+		func(ctx context.Context, req *mcp.CallToolRequest, client StockAdjustmentClient, input BulkSetStockStatusInput) (*mcp.CallToolResult, BulkUpdateOutput[inventree.StockItem], error) {
+			if len(input.Items) == 0 || len(input.Items) > effectiveBulkMaxItems(deps) {
+				return bulkItemCountClarification[inventree.StockItem](BulkSetStockStatusToolName, len(input.Items), effectiveBulkMaxItems(deps))
 			}
 			reason := strings.TrimSpace(input.Reason)
 			if reason == "" {
@@ -379,9 +384,14 @@ func bulkSetStockStatus(deps Dependencies) mcp.ToolHandlerFor[BulkSetStockStatus
 				return bulkPlanClarification[inventree.StockItem]()
 			}
 			adapter := &stockStatusBulkAdapter{client: client, reason: reason}
-			results := batch.Execute(ctx, plan.Items, adapter, batch.ExecuteOptions{Concurrency: bulkUpdateConcurrency})
+			progress := newBulkProgressReporter(req, BulkSetStockStatusToolName)
+			results, timing := batch.Execute(ctx, plan.Items, adapter, batch.ExecuteOptions{
+				Concurrency: effectiveBulkConcurrency(deps),
+				OnProgress:  func(done, total int) { progress.report(ctx, done, total) },
+			})
 			out.Items = bulkResults[stockStatusBulkPlanItem, inventree.StockItem](results, adapter.get)
 			out.Status = bulkOutputStatus(out.Items)
+			out.Timing = bulkTimingEvidence(timing, len(plan.Items), effectiveBulkConcurrency(deps))
 			return TextResult(out.Status), out, nil
 		})
 }

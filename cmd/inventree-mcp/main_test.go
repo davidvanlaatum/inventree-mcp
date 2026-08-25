@@ -453,6 +453,8 @@ func TestDependenciesForConfigBuildsProductionHTTPOAuthDependencies(t *testing.T
 		OAuthResourceURL:    "https://mcp.example.test/mcp",
 		UploadMaxBytes:      1234,
 		OAuthAccessLifetime: 10 * time.Minute,
+		BulkMaxItems:        30,
+		BulkConcurrency:     6,
 	})
 
 	r.NoError(err)
@@ -461,6 +463,8 @@ func TestDependenciesForConfigBuildsProductionHTTPOAuthDependencies(t *testing.T
 	a.Equal("https://mcp.example.test/.well-known/oauth-protected-resource/mcp", deps.ResourceMetadataURL)
 	a.Equal(int64(1234), deps.UploadMaxBytes)
 	a.Equal(5*time.Second, deps.UploadTimeout)
+	a.Equal(30, deps.BulkMaxItems)
+	a.Equal(6, deps.BulkConcurrency)
 	r.NotNil(deps.ClientFromContext)
 	r.NotNil(deps.WebLinks)
 	a.Equal("https://inventory.example.test/web/part/7/", deps.WebLinks.URL(weblinks.Part, 7))
@@ -481,6 +485,8 @@ func TestDependenciesForConfigBuildsStdioClient(t *testing.T) {
 		InvenTreeTLSSkipVerify: true,
 		UploadAllowRoots:       []string{"/tmp/uploads"},
 		UploadMaxBytes:         1234,
+		BulkMaxItems:           30,
+		BulkConcurrency:        6,
 	})
 
 	r.NoError(err)
@@ -488,6 +494,8 @@ func TestDependenciesForConfigBuildsStdioClient(t *testing.T) {
 	r.Equal([]string{"/tmp/uploads"}, deps.UploadAllowRoots)
 	r.Equal(int64(1234), deps.UploadMaxBytes)
 	r.Equal(5*time.Second, deps.UploadTimeout)
+	r.Equal(30, deps.BulkMaxItems)
+	r.Equal(6, deps.BulkConcurrency)
 	r.NotNil(deps.ClientFromContext)
 	client, err := deps.ClientFromContext(context.Background())
 	r.NoError(err)

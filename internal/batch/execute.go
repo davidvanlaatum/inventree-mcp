@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"sync/atomic"
+	"time"
 
 	"github.com/davidvanlaatum/dvgoutils/logging"
 	"golang.org/x/sync/errgroup"
@@ -68,11 +70,32 @@ type Adapter[T any] interface {
 	Verify(ctx context.Context, item T) error
 }
 
-// ExecuteOptions bounds Execute's concurrency.
+// ExecuteOptions bounds Execute's concurrency and, optionally, receives
+// progress as items complete.
 type ExecuteOptions struct {
 	// Concurrency is the maximum number of items processed at once. Values
 	// less than 1 are clamped to 1.
 	Concurrency int
+	// OnProgress, if non-nil, is called once for every item as soon as it
+	// reaches a terminal Result, including items reported as OutcomeUnverified
+	// with Attempted:false because the batch was already cancelled or past
+	// its deadline before their turn — so done always reaches total exactly
+	// once, even under cancellation. Calls may arrive concurrently from
+	// multiple goroutines and in any item order; OnProgress must not block or
+	// panic, and Execute does not retry or serialize calls that fail.
+	OnProgress func(done, total int)
+}
+
+// Timing separates the wall-clock time a caller of Execute actually waited
+// (Orchestration) from the aggregate time spent inside every item's
+// Preflight/Mutate/Verify calls (Upstream). Upstream sums each item's own
+// duration independently of the others, so when Concurrency > 1 and items
+// overlap, Upstream exceeds Orchestration — that gap is exactly the
+// throughput bounded concurrency is buying, made visible for operators
+// tuning batch size and concurrency from real evidence.
+type Timing struct {
+	Orchestration time.Duration
+	Upstream      time.Duration
 }
 
 const (
@@ -95,12 +118,16 @@ const (
 // that item is not attempted at all and is reported as OutcomeUnverified
 // with Attempted:false. In-flight items still receive ctx, so their own
 // upstream calls fail through their normal cancellation handling.
-func Execute[T any](ctx context.Context, items []T, adapter Adapter[T], opts ExecuteOptions) []Result[T] {
+func Execute[T any](ctx context.Context, items []T, adapter Adapter[T], opts ExecuteOptions) ([]Result[T], Timing) {
+	start := time.Now()
 	results := make([]Result[T], len(items))
 	concurrency := opts.Concurrency
 	if concurrency < 1 {
 		concurrency = 1
 	}
+	total := len(items)
+	var completed atomic.Int64
+	var upstreamNanos atomic.Int64
 
 	var group errgroup.Group
 	group.SetLimit(concurrency)
@@ -119,15 +146,20 @@ func Execute[T any](ctx context.Context, items []T, adapter Adapter[T], opts Exe
 					Message:      notAttemptedMessage,
 					RecoveryPlan: notAttemptedRecovery,
 				}
-				return nil
+			} else {
+				itemStart := time.Now()
+				results[index] = runOne(ctx, adapter, item)
+				upstreamNanos.Add(int64(time.Since(itemStart)))
 			}
-			results[index] = runOne(ctx, adapter, item)
+			if opts.OnProgress != nil {
+				opts.OnProgress(int(completed.Add(1)), total)
+			}
 			return nil
 		})
 	}
 	_ = group.Wait()
 
-	return results
+	return results, Timing{Orchestration: time.Since(start), Upstream: time.Duration(upstreamNanos.Load())}
 }
 
 func runOne[T any](ctx context.Context, adapter Adapter[T], item T) Result[T] {

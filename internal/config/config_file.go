@@ -40,6 +40,8 @@ type fileConfig struct {
 	OAuthAccessLifetime    *string  `yaml:"oauth_access_lifetime"`
 	OAuthRefreshLifetime   *string  `yaml:"oauth_refresh_lifetime"`
 	OAuthSessionLifetime   *string  `yaml:"oauth_session_lifetime"`
+	BulkMaxItems           *int     `yaml:"bulk_max_items"`
+	BulkConcurrency        *int     `yaml:"bulk_concurrency"`
 }
 
 func defaultConfig() Config {
@@ -57,6 +59,8 @@ func defaultConfig() Config {
 		OAuthAccessLifetime:    oauth.DefaultAccessTokenLifetime,
 		OAuthRefreshLifetime:   oauth.DefaultRefreshTokenLifetime,
 		OAuthSessionLifetime:   oauth.DefaultSessionLifetime,
+		BulkMaxItems:           DefaultBulkMaxItems,
+		BulkConcurrency:        DefaultBulkConcurrency,
 	}
 }
 
@@ -132,6 +136,12 @@ func applyEnvironment(cfg *Config, getenv Env) {
 	}
 	if raw := strings.TrimSpace(getenv(EnvOAuthSessionLifetime)); raw != "" {
 		cfg.OAuthSessionLifetime = parseDurationEnv(raw)
+	}
+	if raw := strings.TrimSpace(getenv(EnvBulkMaxItems)); raw != "" {
+		cfg.BulkMaxItems = intDefault(getenv, EnvBulkMaxItems, cfg.BulkMaxItems)
+	}
+	if raw := strings.TrimSpace(getenv(EnvBulkConcurrency)); raw != "" {
+		cfg.BulkConcurrency = intDefault(getenv, EnvBulkConcurrency, cfg.BulkConcurrency)
 	}
 }
 
@@ -232,6 +242,12 @@ func applyFileConfig(cfg *Config, fileCfg fileConfig) error {
 			return fmt.Errorf("%s must be a valid duration", field.name)
 		}
 		*field.target = parsed
+	}
+	if fileCfg.BulkMaxItems != nil {
+		cfg.BulkMaxItems = *fileCfg.BulkMaxItems
+	}
+	if fileCfg.BulkConcurrency != nil {
+		cfg.BulkConcurrency = *fileCfg.BulkConcurrency
 	}
 	return nil
 }
