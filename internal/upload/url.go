@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/davidvanlaatum/inventree-mcp/internal/buildinfo"
+	"github.com/davidvanlaatum/inventree-mcp/internal/telemetry"
 )
 
 const defaultMaxRedirects = 3
@@ -59,10 +60,10 @@ func (f URLFetcher) Fetch(ctx context.Context, source URLSource, opts ReadOption
 
 	client := &http.Client{
 		Timeout: timeout,
-		Transport: secureRoundTripper{
+		Transport: telemetry.WrapRoundTripper(secureRoundTripper{
 			resolver:  resolver,
 			allowlist: f.Allowlist,
-		},
+		}),
 	}
 	maxRedirects := f.MaxRedirects
 	if maxRedirects <= 0 {

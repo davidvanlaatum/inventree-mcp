@@ -165,6 +165,7 @@ Before assigning a new story ID, inspect `git worktree list --porcelain`, search
 | [F-S81](#f-s81-bulk-mutation-throughput-and-operator-observability) | Validate bulk throughput, bounded concurrency, progress, cancellation, and operator recovery evidence. | Done |
 | [F-S82](#f-s82-mcp-facing-image-and-attachment-tool-routing-guidance) | Make image and generic-attachment tool routing explicit to MCP agents. | Done |
 | [F-S83](#f-s83-harden-testcontainers-worker-startup-under-ci-load) | Harden the Testcontainers InvenTree worker health probe against CI resource contention. | Done |
+| [F-S84](#f-s84-add-opentelemetry-tracing-and-optional-metrics) | Add opt-in OpenTelemetry tracing and optional metrics across MCP and InvenTree interactions. | Active |
 
 ## Milestone 0: Repository And Planning
 
@@ -3097,3 +3098,32 @@ Tasks:
 - [x] Add deterministic tests for probe timeout, retry, and startup failure classification using a fake container.
 - [x] Validate the default local Docker-backed suite; confirm the CI workflow passes once pushed.
 - [x] Run subagent review and address findings.
+
+### F-S84: Add OpenTelemetry Tracing And Optional Metrics
+
+- Status: `Active`
+- Issue: [#219](https://github.com/davidvanlaatum/inventree-mcp/issues/219)
+- Depends on: none.
+- Progress: implementation started on `codex/f-s84-opentelemetry` from the current `origin/main` baseline. The spike selects tracing as the first coherent slice; metrics/Prometheus exposition is explicitly deferred to a follow-up because it introduces a separate exporter, scrape/lifecycle, and operational contract that should not be hidden inside the tracing foundation.
+- Scope: add opt-in OpenTelemetry observability to inventree-mcp, with distributed tracing as the minimum capability and optional metrics support, including a Prometheus-compatible export path where practical. Carry trace context across every supported interaction and outbound call so traces can be correlated across MCP clients, inventree-mcp, InvenTree, and other instrumented services. Support OTLP/gRPC and OTLP/HTTP exporters through typed configuration, remain disabled by default, and avoid exposing credentials, payloads, or unbounded/high-cardinality data.
+- Acceptance:
+  - A short implementation spike or design note determines whether tracing and metrics can ship coherently in one story; if not, the story is split into an instrumentation foundation and a metrics follow-up before implementation begins.
+  - Tracing is opt-in through documented YAML/environment/CLI configuration and supports OTLP/gRPC and OTLP/HTTP export, including endpoint, TLS, headers/authentication, sampling, batching, and shutdown-flush behavior as appropriate.
+  - Trace context is extracted and propagated for HTTP/MCP interactions and injected into outbound InvenTree and other supported HTTP requests, with coverage for STDIO-originated work where no inbound wire context exists.
+  - Meaningful spans cover request/transport handling, MCP tool interactions, outbound InvenTree calls, and relevant OAuth/upload/background boundaries without recording secrets or raw payloads.
+  - Span attributes include stable operation/tool names and approved record identifiers where useful, with explicit cardinality and privacy limits documented and tested.
+  - Optional metrics are exposed through a documented, configurable path; Prometheus compatibility is included if the selected implementation supports it without duplicating unsafe or incompatible telemetry plumbing.
+  - Configuration, operator recipes, README/reference documentation, and runtime startup/shutdown behavior remain aligned; disabled telemetry has no exporter dependency and no material behavior change.
+  - Unit tests cover propagation, exporter/configuration failure handling, redaction/cardinality policy, sampling/batching, shutdown flushing, and disabled-mode behavior; integration or end-to-end evidence demonstrates a correlated trace across representative MCP and InvenTree interactions.
+- Open decisions:
+  - Whether metrics/Prometheus exposition should be implemented as the follow-up story after tracing foundations.
+  - Exact approved span attributes and identifier classes.
+- Tasks:
+  - [x] Complete the tracing-versus-metrics implementation spike and record the metrics follow-up boundary.
+  - [x] Add typed opt-in configuration for OTLP/gRPC and OTLP/HTTP trace export.
+  - [x] Add W3C propagation and spans across MCP methods, tool names/approved numeric identifiers, InvenTree/OAuth HTTP, and constrained URL-upload HTTP requests.
+  - [x] Add collector-backed or equivalent end-to-end correlated trace evidence and complete propagation/error/lifecycle tests.
+  - [ ] Finalize operator documentation, review privacy/cardinality behavior, and complete full validation.
+- Validation: targeted telemetry/configuration/docs tests, `go vet`, `golangci-lint run ./...`, `go test ./... -run '^$'`, `git diff --check`, and `INVENTREE_TEST_SKIP_DOCKER=true go test -race ./... -count=1` pass. The earlier memory explosion was caused by a recursive HTTP-handler wrapper and is fixed. Docker-backed integration delivery and full race validation remain pending.
+- Review: implementation review panel is required before completion because this changes cross-cutting runtime behavior and observability/privacy contracts.
+- Residual risk: metrics scope is intentionally deferred; live collector delivery and Docker-backed full-race validation remain pending.
