@@ -3137,7 +3137,7 @@ Tasks:
 - Issue: [#222](https://github.com/davidvanlaatum/inventree-mcp/issues/222)
 - Depends on: F-S84.
 - Scope: add opt-in OpenTelemetry metrics and a documented Prometheus-compatible exposition/export path where practical, with explicit names, units, labels, cardinality, privacy, exporter, scrape, lifecycle, and failure semantics.
-- Progress: implementation started on `codex/f-s85-otel-metrics` from merged F-S84 `origin/main` at `8f0e052`. Prometheus metrics use the existing HTTP listener and remain independently opt-in; STDIO rejects metrics configuration rather than opening a second listener.
+- Progress: implementation is on `codex/f-s85-otel-metrics`, rebased onto merged F-S86 `origin/main` at `fb08aa2`. Prometheus metrics use the existing HTTP listener and remain independently opt-in; STDIO rejects metrics configuration rather than opening a second listener. The packaged `packaging/inventree-mcp.yml` template now includes the commented metrics settings alongside the documented example template.
 - Acceptance:
   - Define metric names, units, labels, cardinality limits, and privacy policy.
   - Preserve disabled-by-default behavior with documented configuration.
