@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/davidvanlaatum/inventree-mcp/internal/oauth"
+	"github.com/davidvanlaatum/inventree-mcp/internal/telemetry"
 	"github.com/spf13/afero"
 	"gopkg.in/yaml.v3"
 )
@@ -40,6 +41,15 @@ type fileConfig struct {
 	OAuthAccessLifetime    *string  `yaml:"oauth_access_lifetime"`
 	OAuthRefreshLifetime   *string  `yaml:"oauth_refresh_lifetime"`
 	OAuthSessionLifetime   *string  `yaml:"oauth_session_lifetime"`
+	TelemetryEnabled       *bool    `yaml:"otel_enabled"`
+	TelemetryServiceName   *string  `yaml:"otel_service_name"`
+	TelemetryExporter      *string  `yaml:"otel_exporter"`
+	TelemetryEndpoint      *string  `yaml:"otel_endpoint"`
+	TelemetryInsecure      *bool    `yaml:"otel_insecure"`
+	TelemetryHeaders       []string `yaml:"otel_headers"`
+	TelemetrySampleRatio   *float64 `yaml:"otel_sample_ratio"`
+	TelemetryBatchTimeout  *string  `yaml:"otel_batch_timeout"`
+	TelemetryExportTimeout *string  `yaml:"otel_export_timeout"`
 }
 
 func defaultConfig() Config {
@@ -57,6 +67,7 @@ func defaultConfig() Config {
 		OAuthAccessLifetime:    oauth.DefaultAccessTokenLifetime,
 		OAuthRefreshLifetime:   oauth.DefaultRefreshTokenLifetime,
 		OAuthSessionLifetime:   oauth.DefaultSessionLifetime,
+		Telemetry:              telemetry.DefaultConfig(),
 	}
 }
 
@@ -132,6 +143,33 @@ func applyEnvironment(cfg *Config, getenv Env) {
 	}
 	if raw := strings.TrimSpace(getenv(EnvOAuthSessionLifetime)); raw != "" {
 		cfg.OAuthSessionLifetime = parseDurationEnv(raw)
+	}
+	if raw := strings.TrimSpace(getenv(EnvOTelEnabled)); raw != "" {
+		cfg.Telemetry.Enabled = boolEnv(getenv, EnvOTelEnabled)
+	}
+	if raw := strings.TrimSpace(getenv(EnvOTelServiceName)); raw != "" {
+		cfg.Telemetry.ServiceName = raw
+	}
+	if raw := strings.TrimSpace(getenv(EnvOTelExporter)); raw != "" {
+		cfg.Telemetry.Exporter = strings.ToLower(raw)
+	}
+	if raw := strings.TrimSpace(getenv(EnvOTelEndpoint)); raw != "" {
+		cfg.Telemetry.Endpoint = raw
+	}
+	if raw := strings.TrimSpace(getenv(EnvOTelInsecure)); raw != "" {
+		cfg.Telemetry.Insecure = boolEnv(getenv, EnvOTelInsecure)
+	}
+	if raw := strings.TrimSpace(getenv(EnvOTelHeaders)); raw != "" {
+		cfg.Telemetry.Headers = headerEnv(getenv, EnvOTelHeaders)
+	}
+	if raw := strings.TrimSpace(getenv(EnvOTelSampleRatio)); raw != "" {
+		cfg.Telemetry.SampleRatio = float64Default(getenv, EnvOTelSampleRatio, cfg.Telemetry.SampleRatio)
+	}
+	if raw := strings.TrimSpace(getenv(EnvOTelBatchTimeout)); raw != "" {
+		cfg.Telemetry.BatchTimeout = parseDurationEnv(raw)
+	}
+	if raw := strings.TrimSpace(getenv(EnvOTelExportTimeout)); raw != "" {
+		cfg.Telemetry.ExportTimeout = parseDurationEnv(raw)
 	}
 }
 
@@ -224,6 +262,48 @@ func applyFileConfig(cfg *Config, fileCfg fileConfig) error {
 		value  *string
 		target *time.Duration
 	}{{"oauth_access_lifetime", fileCfg.OAuthAccessLifetime, &cfg.OAuthAccessLifetime}, {"oauth_refresh_lifetime", fileCfg.OAuthRefreshLifetime, &cfg.OAuthRefreshLifetime}, {"oauth_session_lifetime", fileCfg.OAuthSessionLifetime, &cfg.OAuthSessionLifetime}} {
+		if field.value == nil {
+			continue
+		}
+		parsed, err := time.ParseDuration(*field.value)
+		if err != nil {
+			return fmt.Errorf("%s must be a valid duration", field.name)
+		}
+		*field.target = parsed
+	}
+	if fileCfg.TelemetryEnabled != nil {
+		cfg.Telemetry.Enabled = *fileCfg.TelemetryEnabled
+	}
+	if fileCfg.TelemetryServiceName != nil {
+		cfg.Telemetry.ServiceName = *fileCfg.TelemetryServiceName
+	}
+	if fileCfg.TelemetryExporter != nil {
+		cfg.Telemetry.Exporter = strings.ToLower(*fileCfg.TelemetryExporter)
+	}
+	if fileCfg.TelemetryEndpoint != nil {
+		cfg.Telemetry.Endpoint = *fileCfg.TelemetryEndpoint
+	}
+	if fileCfg.TelemetryInsecure != nil {
+		cfg.Telemetry.Insecure = *fileCfg.TelemetryInsecure
+	}
+	if fileCfg.TelemetryHeaders != nil {
+		cfg.Telemetry.Headers = make(map[string]string, len(fileCfg.TelemetryHeaders))
+		for index, raw := range fileCfg.TelemetryHeaders {
+			key, value, err := parseHeader(raw)
+			if err != nil {
+				return fmt.Errorf("otel_headers[%d] is invalid: %w", index, err)
+			}
+			cfg.Telemetry.Headers[key] = value
+		}
+	}
+	if fileCfg.TelemetrySampleRatio != nil {
+		cfg.Telemetry.SampleRatio = *fileCfg.TelemetrySampleRatio
+	}
+	for _, field := range []struct {
+		name   string
+		value  *string
+		target *time.Duration
+	}{{"otel_batch_timeout", fileCfg.TelemetryBatchTimeout, &cfg.Telemetry.BatchTimeout}, {"otel_export_timeout", fileCfg.TelemetryExportTimeout, &cfg.Telemetry.ExportTimeout}} {
 		if field.value == nil {
 			continue
 		}

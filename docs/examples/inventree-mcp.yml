@@ -29,6 +29,19 @@ mcp_max_request_body_bytes: 8388608
 log_level: info
 # debug_traffic_log: /secure/path/mcp-traffic.jsonl
 
+# OpenTelemetry tracing is disabled by default. When enabled, use a trusted
+# OTLP collector and protect any exporter headers as secrets.
+# otel_enabled: false
+# otel_service_name: inventree-mcp
+# otel_exporter: otlpgrpc
+# otel_endpoint: collector.example.test:4317
+# otel_insecure: false
+# otel_headers:
+#   - authorization=Bearer REPLACE_WITH_COLLECTOR_CREDENTIAL
+# otel_sample_ratio: 1.0
+# otel_batch_timeout: 5s
+# otel_export_timeout: 30s
+
 dev_incomplete_oauth: false
 
 # These settings are required for production HTTP mode. OAuth key material is
