@@ -7,7 +7,9 @@ import (
 	"net/http/httptest"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/davidvanlaatum/inventree-mcp/internal/inventree"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -199,6 +201,33 @@ func TestDisabledTelemetryDoesNotWrapHTTPClient(t *testing.T) {
 	client := &http.Client{}
 	assert.Same(t, client, WrapHTTPClient(client))
 	assert.Same(t, http.DefaultTransport, WrapRoundTripper(http.DefaultTransport))
+}
+
+func TestNewOTLPHTTPFlushesSpansAndSendsHeadersOnShutdown(t *testing.T) {
+	var requests atomic.Int32
+	var gotHeader atomic.Value
+	collector := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		requests.Add(1)
+		gotHeader.Store(req.Header.Get("x-test-header"))
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer collector.Close()
+
+	cfg := DefaultConfig()
+	cfg.Enabled = true
+	cfg.Exporter = ExporterHTTP
+	cfg.Endpoint = collector.URL
+	cfg.Insecure = true
+	cfg.Headers = map[string]string{"x-test-header": "present"}
+	runtime, err := New(context.Background(), cfg)
+	require.NoError(t, err)
+	_, span := otel.Tracer("flush-test").Start(context.Background(), "span")
+	span.End()
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	require.NoError(t, runtime.Shutdown(shutdownCtx))
+	assert.Greater(t, requests.Load(), int32(0))
+	assert.Equal(t, "present", gotHeader.Load())
 }
 
 type roundTripperFunc func(*http.Request) (*http.Response, error)
