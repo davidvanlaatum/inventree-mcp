@@ -214,6 +214,75 @@ func TestParseServeRejectsNonPositiveMCPRequestBodyLimit(t *testing.T) {
 	r.ErrorContains(err, "MCP max request body bytes must be greater than zero")
 }
 
+func TestParseServeConfiguresBulkLimits(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+
+	cfg, err := ParseServeWithEnv([]string{
+		"--transport", "stdio",
+		"--inventree-url", "https://inventory.example.test",
+		"--bulk-max-items", "50",
+	}, mapEnv(map[string]string{
+		EnvInvenTreeToken:  "token",
+		EnvBulkConcurrency: "8",
+	}), nil)
+	r.NoError(err)
+	r.Equal(50, cfg.BulkMaxItems)
+	r.Equal(8, cfg.BulkConcurrency)
+}
+
+func TestParseServeUsesBulkLimitDefaults(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+
+	cfg, err := ParseServeWithEnv([]string{
+		"--transport", "stdio",
+		"--inventree-url", "https://inventory.example.test",
+	}, mapEnv(map[string]string{EnvInvenTreeToken: "token"}), nil)
+	r.NoError(err)
+	r.Equal(DefaultBulkMaxItems, cfg.BulkMaxItems)
+	r.Equal(DefaultBulkConcurrency, cfg.BulkConcurrency)
+}
+
+func TestParseServeRejectsNonPositiveBulkLimits(t *testing.T) {
+	t.Parallel()
+	for _, args := range [][]string{
+		{"--bulk-max-items", "0"},
+		{"--bulk-max-items", "-1"},
+		{"--bulk-concurrency", "0"},
+		{"--bulk-concurrency", "-1"},
+	} {
+		t.Run(strings.Join(args, " "), func(t *testing.T) {
+			t.Parallel()
+			r := require.New(t)
+			base := []string{"--transport", "stdio", "--inventree-url", "https://inventory.example.test"}
+			_, err := ParseServeWithEnv(append(base, args...), mapEnv(map[string]string{EnvInvenTreeToken: "token"}), nil)
+			r.Error(err)
+		})
+	}
+}
+
+func TestParseServeRejectsExcessiveBulkLimits(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+
+	_, err := ParseServeWithEnv([]string{
+		"--transport", "stdio",
+		"--inventree-url", "https://inventory.example.test",
+		"--bulk-max-items", "501",
+	}, mapEnv(map[string]string{EnvInvenTreeToken: "token"}), nil)
+	r.Error(err)
+	r.ErrorContains(err, "bulk max items must not exceed")
+
+	_, err = ParseServeWithEnv([]string{
+		"--transport", "stdio",
+		"--inventree-url", "https://inventory.example.test",
+		"--bulk-concurrency", "65",
+	}, mapEnv(map[string]string{EnvInvenTreeToken: "token"}), nil)
+	r.Error(err)
+	r.ErrorContains(err, "bulk concurrency must not exceed")
+}
+
 func TestParseServeDoesNotCoupleStdioUploadAndHTTPBodyLimits(t *testing.T) {
 	t.Parallel()
 	r := require.New(t)

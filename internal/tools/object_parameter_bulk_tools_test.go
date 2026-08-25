@@ -15,7 +15,7 @@ import (
 )
 
 func testObjectParameterBulkDeps(client *fakeObjectParameterClient) Dependencies {
-	deps := Dependencies{ClientFromContext: func(context.Context) (any, error) { return client, nil }}
+	deps := Dependencies{ClientFromContext: func(context.Context) (any, error) { return client, nil }, BulkMaxItems: 25, BulkConcurrency: 4}
 	deps.objectParameterBulkPlanStore = mustBulkStore(batch.Options[objectParameterBulkPlan]{
 		IDGenerator: platform.RandomIDGenerator{}, Principal: stockPlanPrincipal,
 		SupersedeKey: func(p objectParameterBulkPlan) string { return p.supersedeKey() },

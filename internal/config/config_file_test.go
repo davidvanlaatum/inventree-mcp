@@ -30,6 +30,8 @@ oauth_client_ids:
   - https://yaml.example.test/client
 trusted_proxy_cidrs:
   - 192.0.2.0/24
+bulk_max_items: 15
+bulk_concurrency: 6
 `), 0o600))
 
 	cfg, err := parseServeWithDeps([]string{
@@ -58,6 +60,8 @@ trusted_proxy_cidrs:
 	assert.Equal(t, int64(4096), cfg.UploadMaxBytes)
 	assert.Equal(t, []string{"https://flag.example.test/client/a", "https://flag.example.test/client/b"}, cfg.OAuthClientIDs)
 	assert.Equal(t, []string{"198.51.100.0/24"}, cfg.TrustedProxyCIDRs)
+	assert.Equal(t, 15, cfg.BulkMaxItems)
+	assert.Equal(t, 6, cfg.BulkConcurrency)
 }
 
 func TestDiscoverConfigPathUsesFirstExistingFile(t *testing.T) {
@@ -208,6 +212,8 @@ func TestApplyFileConfigCoversTypedFields(t *testing.T) {
 		OAuthAccessLifetime:    stringPtr("1m"),
 		OAuthRefreshLifetime:   stringPtr("2m"),
 		OAuthSessionLifetime:   stringPtr("3m"),
+		BulkMaxItems:           intPtr(10),
+		BulkConcurrency:        intPtr(2),
 	}
 	require.NoError(t, applyFileConfig(&cfg, fileCfg))
 	assert.Equal(t, TransportHTTP, cfg.Transport)
@@ -234,6 +240,8 @@ func TestApplyFileConfigCoversTypedFields(t *testing.T) {
 	assert.Equal(t, time.Minute, cfg.OAuthAccessLifetime)
 	assert.Equal(t, 2*time.Minute, cfg.OAuthRefreshLifetime)
 	assert.Equal(t, 3*time.Minute, cfg.OAuthSessionLifetime)
+	assert.Equal(t, 10, cfg.BulkMaxItems)
+	assert.Equal(t, 2, cfg.BulkConcurrency)
 }
 
 func TestApplyEnvironmentCoversTypedFields(t *testing.T) {
@@ -264,6 +272,8 @@ func TestApplyEnvironmentCoversTypedFields(t *testing.T) {
 		EnvOAuthAccessLifetime:    "1m",
 		EnvOAuthRefreshLifetime:   "2m",
 		EnvOAuthSessionLifetime:   "3m",
+		EnvBulkMaxItems:           "10",
+		EnvBulkConcurrency:        "2",
 	}))
 	assert.Equal(t, TransportHTTP, cfg.Transport)
 	assert.Equal(t, EnvironmentDevelopment, cfg.Environment)
@@ -287,6 +297,8 @@ func TestApplyEnvironmentCoversTypedFields(t *testing.T) {
 	assert.Equal(t, time.Minute, cfg.OAuthAccessLifetime)
 	assert.Equal(t, 2*time.Minute, cfg.OAuthRefreshLifetime)
 	assert.Equal(t, 3*time.Minute, cfg.OAuthSessionLifetime)
+	assert.Equal(t, 10, cfg.BulkMaxItems)
+	assert.Equal(t, 2, cfg.BulkConcurrency)
 }
 
 func TestConfigPathFromArgsRejectsDuplicateAndEmptyValues(t *testing.T) {
@@ -315,3 +327,5 @@ func stringPtr(value string) *string { return &value }
 func boolPtr(value bool) *bool { return &value }
 
 func int64Ptr(value int64) *int64 { return &value }
+
+func intPtr(value int) *int { return &value }

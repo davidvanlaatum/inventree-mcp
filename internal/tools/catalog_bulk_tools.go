@@ -30,9 +30,6 @@ import (
 // single-item tools for those. See docs/tool-reference.md.
 
 const (
-	bulkUpdateMaxItems    = 25
-	bulkUpdateConcurrency = 4
-
 	bulkOutcomePlanned = "planned"
 	bulkOutcomeFailed  = "failed"
 
@@ -84,6 +81,7 @@ type BulkUpdateOutput[View any] struct {
 	PlanHash      string                       `json:"plan_hash,omitempty"`
 	Items         []BulkUpdateItemResult[View] `json:"items,omitempty"`
 	Clarification *ClarificationResponse       `json:"clarification,omitempty"`
+	Timing        *BulkTimingEvidence          `json:"timing,omitempty"`
 }
 
 func bulkClarification[View any](question, field, reason, retry string) (*mcp.CallToolResult, BulkUpdateOutput[View], error) {
@@ -91,11 +89,11 @@ func bulkClarification[View any](question, field, reason, retry string) (*mcp.Ca
 	return TextResult(StatusClarificationRequired), BulkUpdateOutput[View]{Status: StatusClarificationRequired, Clarification: &clarification}, nil
 }
 
-func bulkItemCountClarification[View any](toolName string, count int) (*mcp.CallToolResult, BulkUpdateOutput[View], error) {
+func bulkItemCountClarification[View any](toolName string, count, maxItems int) (*mcp.CallToolResult, BulkUpdateOutput[View], error) {
 	if count == 0 {
 		return bulkClarification[View]("Which records should be updated?", "items", toolName+" requires at least one item", "items")
 	}
-	return bulkClarification[View]("How should this batch be narrowed?", "items", fmt.Sprintf("%s accepts at most %d items per call", toolName, bulkUpdateMaxItems), "items")
+	return bulkClarification[View]("How should this batch be narrowed?", "items", fmt.Sprintf("%s accepts at most %d items per call", toolName, maxItems), "items")
 }
 
 func bulkConfirmClarification[View any]() (*mcp.CallToolResult, BulkUpdateOutput[View], error) {
@@ -422,9 +420,9 @@ func (a *partBulkAdapter) Verify(ctx context.Context, item partBulkPlanItem) err
 
 func bulkUpdateParts(deps Dependencies) mcp.ToolHandlerFor[BulkUpdatePartsInput, BulkUpdateOutput[PartDetailView]] {
 	return LookupHandler[PartWriteClient, BulkUpdatePartsInput, BulkUpdateOutput[PartDetailView]](deps, BulkUpdatePartsToolName,
-		func(ctx context.Context, _ *mcp.CallToolRequest, client PartWriteClient, input BulkUpdatePartsInput) (*mcp.CallToolResult, BulkUpdateOutput[PartDetailView], error) {
-			if len(input.Items) == 0 || len(input.Items) > bulkUpdateMaxItems {
-				return bulkItemCountClarification[PartDetailView](BulkUpdatePartsToolName, len(input.Items))
+		func(ctx context.Context, req *mcp.CallToolRequest, client PartWriteClient, input BulkUpdatePartsInput) (*mcp.CallToolResult, BulkUpdateOutput[PartDetailView], error) {
+			if len(input.Items) == 0 || len(input.Items) > effectiveBulkMaxItems(deps) {
+				return bulkItemCountClarification[PartDetailView](BulkUpdatePartsToolName, len(input.Items), effectiveBulkMaxItems(deps))
 			}
 			plan := buildPartBulkPlan(ctx, client, input.Items)
 			out := BulkUpdateOutput[PartDetailView]{Status: StatusOK, DryRun: input.DryRun}
@@ -447,9 +445,14 @@ func bulkUpdateParts(deps Dependencies) mcp.ToolHandlerFor[BulkUpdatePartsInput,
 				return bulkPlanClarification[PartDetailView]()
 			}
 			adapter := &partBulkAdapter{client: client}
-			results := batch.Execute(ctx, plan.Items, adapter, batch.ExecuteOptions{Concurrency: bulkUpdateConcurrency})
+			progress := newBulkProgressReporter(req, BulkUpdatePartsToolName)
+			results, timing := batch.Execute(ctx, plan.Items, adapter, batch.ExecuteOptions{
+				Concurrency: effectiveBulkConcurrency(deps),
+				OnProgress:  func(done, total int) { progress.report(ctx, done, total) },
+			})
 			out.Items = bulkResults[partBulkPlanItem, PartDetailView](results, adapter.get)
 			out.Status = bulkOutputStatus(out.Items)
+			out.Timing = bulkTimingEvidence(timing, len(plan.Items), effectiveBulkConcurrency(deps))
 			return TextResult(out.Status), out, nil
 		})
 }
@@ -599,9 +602,9 @@ func (a *companyBulkAdapter) Verify(ctx context.Context, item companyBulkPlanIte
 
 func bulkUpdateCompanies(deps Dependencies) mcp.ToolHandlerFor[BulkUpdateCompaniesInput, BulkUpdateOutput[CompanyView]] {
 	return LookupHandler[CompanyAdminClient, BulkUpdateCompaniesInput, BulkUpdateOutput[CompanyView]](deps, BulkUpdateCompaniesToolName,
-		func(ctx context.Context, _ *mcp.CallToolRequest, client CompanyAdminClient, input BulkUpdateCompaniesInput) (*mcp.CallToolResult, BulkUpdateOutput[CompanyView], error) {
-			if len(input.Items) == 0 || len(input.Items) > bulkUpdateMaxItems {
-				return bulkItemCountClarification[CompanyView](BulkUpdateCompaniesToolName, len(input.Items))
+		func(ctx context.Context, req *mcp.CallToolRequest, client CompanyAdminClient, input BulkUpdateCompaniesInput) (*mcp.CallToolResult, BulkUpdateOutput[CompanyView], error) {
+			if len(input.Items) == 0 || len(input.Items) > effectiveBulkMaxItems(deps) {
+				return bulkItemCountClarification[CompanyView](BulkUpdateCompaniesToolName, len(input.Items), effectiveBulkMaxItems(deps))
 			}
 			plan := buildCompanyBulkPlan(ctx, client, input.Items)
 			out := BulkUpdateOutput[CompanyView]{Status: StatusOK, DryRun: input.DryRun}
@@ -624,9 +627,14 @@ func bulkUpdateCompanies(deps Dependencies) mcp.ToolHandlerFor[BulkUpdateCompani
 				return bulkPlanClarification[CompanyView]()
 			}
 			adapter := &companyBulkAdapter{client: client}
-			results := batch.Execute(ctx, plan.Items, adapter, batch.ExecuteOptions{Concurrency: bulkUpdateConcurrency})
+			progress := newBulkProgressReporter(req, BulkUpdateCompaniesToolName)
+			results, timing := batch.Execute(ctx, plan.Items, adapter, batch.ExecuteOptions{
+				Concurrency: effectiveBulkConcurrency(deps),
+				OnProgress:  func(done, total int) { progress.report(ctx, done, total) },
+			})
 			out.Items = bulkResults[companyBulkPlanItem, CompanyView](results, adapter.get)
 			out.Status = bulkOutputStatus(out.Items)
+			out.Timing = bulkTimingEvidence(timing, len(plan.Items), effectiveBulkConcurrency(deps))
 			return TextResult(out.Status), out, nil
 		})
 }
@@ -817,9 +825,9 @@ func (a *categoryBulkAdapter) Verify(ctx context.Context, item categoryBulkPlanI
 
 func bulkUpdatePartCategories(deps Dependencies) mcp.ToolHandlerFor[BulkUpdatePartCategoriesInput, BulkUpdateOutput[inventree.Category]] {
 	return LookupHandler[CategoryAdminClient, BulkUpdatePartCategoriesInput, BulkUpdateOutput[inventree.Category]](deps, BulkUpdatePartCategoriesToolName,
-		func(ctx context.Context, _ *mcp.CallToolRequest, client CategoryAdminClient, input BulkUpdatePartCategoriesInput) (*mcp.CallToolResult, BulkUpdateOutput[inventree.Category], error) {
-			if len(input.Items) == 0 || len(input.Items) > bulkUpdateMaxItems {
-				return bulkItemCountClarification[inventree.Category](BulkUpdatePartCategoriesToolName, len(input.Items))
+		func(ctx context.Context, req *mcp.CallToolRequest, client CategoryAdminClient, input BulkUpdatePartCategoriesInput) (*mcp.CallToolResult, BulkUpdateOutput[inventree.Category], error) {
+			if len(input.Items) == 0 || len(input.Items) > effectiveBulkMaxItems(deps) {
+				return bulkItemCountClarification[inventree.Category](BulkUpdatePartCategoriesToolName, len(input.Items), effectiveBulkMaxItems(deps))
 			}
 			plan := buildCategoryBulkPlan(ctx, client, input.Items)
 			out := BulkUpdateOutput[inventree.Category]{Status: StatusOK, DryRun: input.DryRun}
@@ -842,9 +850,14 @@ func bulkUpdatePartCategories(deps Dependencies) mcp.ToolHandlerFor[BulkUpdatePa
 				return bulkPlanClarification[inventree.Category]()
 			}
 			adapter := &categoryBulkAdapter{client: client}
-			results := batch.Execute(ctx, plan.Items, adapter, batch.ExecuteOptions{Concurrency: bulkUpdateConcurrency})
+			progress := newBulkProgressReporter(req, BulkUpdatePartCategoriesToolName)
+			results, timing := batch.Execute(ctx, plan.Items, adapter, batch.ExecuteOptions{
+				Concurrency: effectiveBulkConcurrency(deps),
+				OnProgress:  func(done, total int) { progress.report(ctx, done, total) },
+			})
 			out.Items = bulkResults[categoryBulkPlanItem, inventree.Category](results, adapter.get)
 			out.Status = bulkOutputStatus(out.Items)
+			out.Timing = bulkTimingEvidence(timing, len(plan.Items), effectiveBulkConcurrency(deps))
 			return TextResult(out.Status), out, nil
 		})
 }
@@ -1003,9 +1016,9 @@ func (a *supplierPartBulkAdapter) Verify(ctx context.Context, item supplierPartB
 
 func bulkUpdateSupplierParts(deps Dependencies) mcp.ToolHandlerFor[BulkUpdateSupplierPartsInput, BulkUpdateOutput[SupplierPartView]] {
 	return LookupHandler[CompanyAdminClient, BulkUpdateSupplierPartsInput, BulkUpdateOutput[SupplierPartView]](deps, BulkUpdateSupplierPartsToolName,
-		func(ctx context.Context, _ *mcp.CallToolRequest, client CompanyAdminClient, input BulkUpdateSupplierPartsInput) (*mcp.CallToolResult, BulkUpdateOutput[SupplierPartView], error) {
-			if len(input.Items) == 0 || len(input.Items) > bulkUpdateMaxItems {
-				return bulkItemCountClarification[SupplierPartView](BulkUpdateSupplierPartsToolName, len(input.Items))
+		func(ctx context.Context, req *mcp.CallToolRequest, client CompanyAdminClient, input BulkUpdateSupplierPartsInput) (*mcp.CallToolResult, BulkUpdateOutput[SupplierPartView], error) {
+			if len(input.Items) == 0 || len(input.Items) > effectiveBulkMaxItems(deps) {
+				return bulkItemCountClarification[SupplierPartView](BulkUpdateSupplierPartsToolName, len(input.Items), effectiveBulkMaxItems(deps))
 			}
 			plan := buildSupplierPartBulkPlan(ctx, client, input.Items)
 			out := BulkUpdateOutput[SupplierPartView]{Status: StatusOK, DryRun: input.DryRun}
@@ -1028,9 +1041,14 @@ func bulkUpdateSupplierParts(deps Dependencies) mcp.ToolHandlerFor[BulkUpdateSup
 				return bulkPlanClarification[SupplierPartView]()
 			}
 			adapter := &supplierPartBulkAdapter{client: client}
-			results := batch.Execute(ctx, plan.Items, adapter, batch.ExecuteOptions{Concurrency: bulkUpdateConcurrency})
+			progress := newBulkProgressReporter(req, BulkUpdateSupplierPartsToolName)
+			results, timing := batch.Execute(ctx, plan.Items, adapter, batch.ExecuteOptions{
+				Concurrency: effectiveBulkConcurrency(deps),
+				OnProgress:  func(done, total int) { progress.report(ctx, done, total) },
+			})
 			out.Items = bulkResults[supplierPartBulkPlanItem, SupplierPartView](results, adapter.get)
 			out.Status = bulkOutputStatus(out.Items)
+			out.Timing = bulkTimingEvidence(timing, len(plan.Items), effectiveBulkConcurrency(deps))
 			return TextResult(out.Status), out, nil
 		})
 }
@@ -1185,9 +1203,9 @@ func (a *manufacturerPartBulkAdapter) Verify(ctx context.Context, item manufactu
 
 func bulkUpdateManufacturerParts(deps Dependencies) mcp.ToolHandlerFor[BulkUpdateManufacturerPartsInput, BulkUpdateOutput[ManufacturerPartView]] {
 	return LookupHandler[CompanyAdminClient, BulkUpdateManufacturerPartsInput, BulkUpdateOutput[ManufacturerPartView]](deps, BulkUpdateManufacturerPartsToolName,
-		func(ctx context.Context, _ *mcp.CallToolRequest, client CompanyAdminClient, input BulkUpdateManufacturerPartsInput) (*mcp.CallToolResult, BulkUpdateOutput[ManufacturerPartView], error) {
-			if len(input.Items) == 0 || len(input.Items) > bulkUpdateMaxItems {
-				return bulkItemCountClarification[ManufacturerPartView](BulkUpdateManufacturerPartsToolName, len(input.Items))
+		func(ctx context.Context, req *mcp.CallToolRequest, client CompanyAdminClient, input BulkUpdateManufacturerPartsInput) (*mcp.CallToolResult, BulkUpdateOutput[ManufacturerPartView], error) {
+			if len(input.Items) == 0 || len(input.Items) > effectiveBulkMaxItems(deps) {
+				return bulkItemCountClarification[ManufacturerPartView](BulkUpdateManufacturerPartsToolName, len(input.Items), effectiveBulkMaxItems(deps))
 			}
 			plan := buildManufacturerPartBulkPlan(ctx, client, input.Items)
 			out := BulkUpdateOutput[ManufacturerPartView]{Status: StatusOK, DryRun: input.DryRun}
@@ -1210,9 +1228,14 @@ func bulkUpdateManufacturerParts(deps Dependencies) mcp.ToolHandlerFor[BulkUpdat
 				return bulkPlanClarification[ManufacturerPartView]()
 			}
 			adapter := &manufacturerPartBulkAdapter{client: client}
-			results := batch.Execute(ctx, plan.Items, adapter, batch.ExecuteOptions{Concurrency: bulkUpdateConcurrency})
+			progress := newBulkProgressReporter(req, BulkUpdateManufacturerPartsToolName)
+			results, timing := batch.Execute(ctx, plan.Items, adapter, batch.ExecuteOptions{
+				Concurrency: effectiveBulkConcurrency(deps),
+				OnProgress:  func(done, total int) { progress.report(ctx, done, total) },
+			})
 			out.Items = bulkResults[manufacturerPartBulkPlanItem, ManufacturerPartView](results, adapter.get)
 			out.Status = bulkOutputStatus(out.Items)
+			out.Timing = bulkTimingEvidence(timing, len(plan.Items), effectiveBulkConcurrency(deps))
 			return TextResult(out.Status), out, nil
 		})
 }

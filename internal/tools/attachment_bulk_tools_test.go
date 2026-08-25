@@ -87,7 +87,7 @@ func (f *bulkFakeAttachments) SetPartPrimaryImage(context.Context, int, inventre
 }
 
 func testAttachmentBulkDeps(client any) Dependencies {
-	deps := Dependencies{ClientFromContext: func(context.Context) (any, error) { return client, nil }}
+	deps := Dependencies{ClientFromContext: func(context.Context) (any, error) { return client, nil }, BulkMaxItems: 25, BulkConcurrency: 4}
 	deps.attachmentBulkPlanStore = mustBulkStore(batch.Options[attachmentBulkPlan]{
 		IDGenerator: platform.RandomIDGenerator{}, Principal: stockPlanPrincipal,
 		SupersedeKey: func(p attachmentBulkPlan) string { return bulkSupersedeKey(p.ids()) },

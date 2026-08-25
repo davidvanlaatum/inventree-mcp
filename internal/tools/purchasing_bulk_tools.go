@@ -230,9 +230,9 @@ func (a *purchaseOrderBulkAdapter) Verify(ctx context.Context, item purchaseOrde
 
 func bulkUpdatePurchaseOrders(deps Dependencies) mcp.ToolHandlerFor[BulkUpdatePurchaseOrdersInput, BulkUpdateOutput[inventree.PurchaseOrderDetail]] {
 	return LookupHandler[PurchaseOrderBulkUpdateClient, BulkUpdatePurchaseOrdersInput, BulkUpdateOutput[inventree.PurchaseOrderDetail]](deps, BulkUpdatePurchaseOrdersToolName,
-		func(ctx context.Context, _ *mcp.CallToolRequest, client PurchaseOrderBulkUpdateClient, input BulkUpdatePurchaseOrdersInput) (*mcp.CallToolResult, BulkUpdateOutput[inventree.PurchaseOrderDetail], error) {
-			if len(input.Items) == 0 || len(input.Items) > bulkUpdateMaxItems {
-				return bulkItemCountClarification[inventree.PurchaseOrderDetail](BulkUpdatePurchaseOrdersToolName, len(input.Items))
+		func(ctx context.Context, req *mcp.CallToolRequest, client PurchaseOrderBulkUpdateClient, input BulkUpdatePurchaseOrdersInput) (*mcp.CallToolResult, BulkUpdateOutput[inventree.PurchaseOrderDetail], error) {
+			if len(input.Items) == 0 || len(input.Items) > effectiveBulkMaxItems(deps) {
+				return bulkItemCountClarification[inventree.PurchaseOrderDetail](BulkUpdatePurchaseOrdersToolName, len(input.Items), effectiveBulkMaxItems(deps))
 			}
 			plan := buildPurchaseOrderBulkPlan(ctx, client, input.Items)
 			out := BulkUpdateOutput[inventree.PurchaseOrderDetail]{Status: StatusOK, DryRun: input.DryRun}
@@ -255,9 +255,14 @@ func bulkUpdatePurchaseOrders(deps Dependencies) mcp.ToolHandlerFor[BulkUpdatePu
 				return bulkPlanClarification[inventree.PurchaseOrderDetail]()
 			}
 			adapter := &purchaseOrderBulkAdapter{client: client}
-			results := batch.Execute(ctx, plan.Items, adapter, batch.ExecuteOptions{Concurrency: bulkUpdateConcurrency})
+			progress := newBulkProgressReporter(req, BulkUpdatePurchaseOrdersToolName)
+			results, timing := batch.Execute(ctx, plan.Items, adapter, batch.ExecuteOptions{
+				Concurrency: effectiveBulkConcurrency(deps),
+				OnProgress:  func(done, total int) { progress.report(ctx, done, total) },
+			})
 			out.Items = bulkResults[purchaseOrderBulkPlanItem, inventree.PurchaseOrderDetail](results, adapter.get)
 			out.Status = bulkOutputStatus(out.Items)
+			out.Timing = bulkTimingEvidence(timing, len(plan.Items), effectiveBulkConcurrency(deps))
 			return TextResult(out.Status), out, nil
 		})
 }
@@ -538,9 +543,9 @@ func (a *purchaseOrderLineBulkAdapter) Verify(ctx context.Context, item purchase
 
 func bulkUpdatePurchaseOrderLines(deps Dependencies) mcp.ToolHandlerFor[BulkUpdatePurchaseOrderLinesInput, BulkUpdateOutput[inventree.PurchaseOrderLineItem]] {
 	return LookupHandler[PurchaseOrderLineWriteClient, BulkUpdatePurchaseOrderLinesInput, BulkUpdateOutput[inventree.PurchaseOrderLineItem]](deps, BulkUpdatePurchaseOrderLinesToolName,
-		func(ctx context.Context, _ *mcp.CallToolRequest, client PurchaseOrderLineWriteClient, input BulkUpdatePurchaseOrderLinesInput) (*mcp.CallToolResult, BulkUpdateOutput[inventree.PurchaseOrderLineItem], error) {
-			if len(input.Items) == 0 || len(input.Items) > bulkUpdateMaxItems {
-				return bulkItemCountClarification[inventree.PurchaseOrderLineItem](BulkUpdatePurchaseOrderLinesToolName, len(input.Items))
+		func(ctx context.Context, req *mcp.CallToolRequest, client PurchaseOrderLineWriteClient, input BulkUpdatePurchaseOrderLinesInput) (*mcp.CallToolResult, BulkUpdateOutput[inventree.PurchaseOrderLineItem], error) {
+			if len(input.Items) == 0 || len(input.Items) > effectiveBulkMaxItems(deps) {
+				return bulkItemCountClarification[inventree.PurchaseOrderLineItem](BulkUpdatePurchaseOrderLinesToolName, len(input.Items), effectiveBulkMaxItems(deps))
 			}
 			plan := buildPurchaseOrderLineBulkPlan(ctx, client, input.Items)
 			out := BulkUpdateOutput[inventree.PurchaseOrderLineItem]{Status: StatusOK, DryRun: input.DryRun}
@@ -563,9 +568,14 @@ func bulkUpdatePurchaseOrderLines(deps Dependencies) mcp.ToolHandlerFor[BulkUpda
 				return bulkPlanClarification[inventree.PurchaseOrderLineItem]()
 			}
 			adapter := &purchaseOrderLineBulkAdapter{client: client}
-			results := batch.Execute(ctx, plan.Items, adapter, batch.ExecuteOptions{Concurrency: bulkUpdateConcurrency})
+			progress := newBulkProgressReporter(req, BulkUpdatePurchaseOrderLinesToolName)
+			results, timing := batch.Execute(ctx, plan.Items, adapter, batch.ExecuteOptions{
+				Concurrency: effectiveBulkConcurrency(deps),
+				OnProgress:  func(done, total int) { progress.report(ctx, done, total) },
+			})
 			out.Items = bulkResults[purchaseOrderLineBulkPlanItem, inventree.PurchaseOrderLineItem](results, adapter.get)
 			out.Status = bulkOutputStatus(out.Items)
+			out.Timing = bulkTimingEvidence(timing, len(plan.Items), effectiveBulkConcurrency(deps))
 			return TextResult(out.Status), out, nil
 		})
 }
@@ -763,9 +773,9 @@ func (a *purchaseOrderExtraLineBulkAdapter) Verify(ctx context.Context, item pur
 
 func bulkUpdatePurchaseOrderExtraLines(deps Dependencies) mcp.ToolHandlerFor[BulkUpdatePurchaseOrderExtraLinesInput, BulkUpdateOutput[inventree.PurchaseOrderExtraLine]] {
 	return LookupHandler[PurchaseOrderExtraLineClient, BulkUpdatePurchaseOrderExtraLinesInput, BulkUpdateOutput[inventree.PurchaseOrderExtraLine]](deps, BulkUpdatePurchaseOrderExtraLinesToolName,
-		func(ctx context.Context, _ *mcp.CallToolRequest, client PurchaseOrderExtraLineClient, input BulkUpdatePurchaseOrderExtraLinesInput) (*mcp.CallToolResult, BulkUpdateOutput[inventree.PurchaseOrderExtraLine], error) {
-			if len(input.Items) == 0 || len(input.Items) > bulkUpdateMaxItems {
-				return bulkItemCountClarification[inventree.PurchaseOrderExtraLine](BulkUpdatePurchaseOrderExtraLinesToolName, len(input.Items))
+		func(ctx context.Context, req *mcp.CallToolRequest, client PurchaseOrderExtraLineClient, input BulkUpdatePurchaseOrderExtraLinesInput) (*mcp.CallToolResult, BulkUpdateOutput[inventree.PurchaseOrderExtraLine], error) {
+			if len(input.Items) == 0 || len(input.Items) > effectiveBulkMaxItems(deps) {
+				return bulkItemCountClarification[inventree.PurchaseOrderExtraLine](BulkUpdatePurchaseOrderExtraLinesToolName, len(input.Items), effectiveBulkMaxItems(deps))
 			}
 			plan := buildPurchaseOrderExtraLineBulkPlan(ctx, client, input.Items)
 			out := BulkUpdateOutput[inventree.PurchaseOrderExtraLine]{Status: StatusOK, DryRun: input.DryRun}
@@ -788,9 +798,14 @@ func bulkUpdatePurchaseOrderExtraLines(deps Dependencies) mcp.ToolHandlerFor[Bul
 				return bulkPlanClarification[inventree.PurchaseOrderExtraLine]()
 			}
 			adapter := &purchaseOrderExtraLineBulkAdapter{client: client}
-			results := batch.Execute(ctx, plan.Items, adapter, batch.ExecuteOptions{Concurrency: bulkUpdateConcurrency})
+			progress := newBulkProgressReporter(req, BulkUpdatePurchaseOrderExtraLinesToolName)
+			results, timing := batch.Execute(ctx, plan.Items, adapter, batch.ExecuteOptions{
+				Concurrency: effectiveBulkConcurrency(deps),
+				OnProgress:  func(done, total int) { progress.report(ctx, done, total) },
+			})
 			out.Items = bulkResults[purchaseOrderExtraLineBulkPlanItem, inventree.PurchaseOrderExtraLine](results, adapter.get)
 			out.Status = bulkOutputStatus(out.Items)
+			out.Timing = bulkTimingEvidence(timing, len(plan.Items), effectiveBulkConcurrency(deps))
 			return TextResult(out.Status), out, nil
 		})
 }

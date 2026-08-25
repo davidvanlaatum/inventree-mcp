@@ -5,7 +5,9 @@ import (
 	"errors"
 	"net/http"
 	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/davidvanlaatum/dvgoutils"
 	"github.com/davidvanlaatum/dvgoutils/logging/testhandler"
@@ -294,6 +296,13 @@ type bulkFakePartWrite struct {
 	updateErr      map[int]error
 	applyBeforeErr map[int]bool
 	updateCalls    int
+
+	// updateDelay and the in-flight counters below let a test observe the
+	// actual concurrency batch.Execute grants UpdatePart, independent of
+	// this fake's own mu (which only guards the parts map, not concurrency).
+	updateDelay        time.Duration
+	inFlightUpdates    atomic.Int64
+	maxInFlightUpdates atomic.Int64
 }
 
 func newBulkFakePartWrite() *bulkFakePartWrite {
@@ -316,6 +325,18 @@ func (f *bulkFakePartWrite) CreatePart(context.Context, inventree.PartCreate) (i
 	return inventree.Part{}, errors.New("not implemented")
 }
 func (f *bulkFakePartWrite) UpdatePart(_ context.Context, id int, fields inventree.PatchFields) (inventree.Part, error) {
+	current := f.inFlightUpdates.Add(1)
+	defer f.inFlightUpdates.Add(-1)
+	for {
+		previous := f.maxInFlightUpdates.Load()
+		if current <= previous || f.maxInFlightUpdates.CompareAndSwap(previous, current) {
+			break
+		}
+	}
+	if f.updateDelay > 0 {
+		time.Sleep(f.updateDelay)
+	}
+
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.updateCalls++
@@ -353,7 +374,7 @@ func bulkResultsByID[View any](items []BulkUpdateItemResult[View]) map[int]BulkU
 // ---------------------------------------------------------------------------
 
 func testCatalogBulkDeps(client any) Dependencies {
-	deps := Dependencies{ClientFromContext: func(context.Context) (any, error) { return client, nil }}
+	deps := Dependencies{ClientFromContext: func(context.Context) (any, error) { return client, nil }, BulkMaxItems: 25, BulkConcurrency: 4}
 	deps.partBulkPlanStore = mustBulkStore(batch.Options[partBulkPlan]{
 		IDGenerator: platform.RandomIDGenerator{}, Principal: stockPlanPrincipal,
 		SupersedeKey: func(p partBulkPlan) string { return bulkSupersedeKey(p.ids()) },
@@ -721,6 +742,79 @@ func TestBulkUpdatePartsAcceptsExactlyMaxItems(t *testing.T) {
 		a.Equal(bulkOutcomePlanned, item.Outcome)
 	}
 	a.NotEmpty(out.PlanHash)
+}
+
+// TestBulkUpdatePartsHonorsConfiguredMaxItems proves the item-count limit is
+// genuinely read from Dependencies.BulkMaxItems (F-S81's operator-configurable
+// setting), not the fixed 25 every other test in this file exercises via
+// testCatalogBulkDeps' default.
+func TestBulkUpdatePartsHonorsConfiguredMaxItems(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	client := newBulkFakePartWrite()
+	deps := testCatalogBulkDeps(client)
+	deps.BulkMaxItems = 3
+	handler := bulkUpdateParts(deps)
+
+	withinLimit := []BulkUpdatePartItem{{ID: 1}, {ID: 2}, {ID: 3}}
+	for _, item := range withinLimit {
+		client.parts[item.ID] = inventree.PartDetail{PK: item.ID, Name: "Widget"}
+	}
+	_, out, err := handler(ctx, &mcp.CallToolRequest{}, BulkUpdatePartsInput{
+		Items: []BulkUpdatePartItem{
+			{ID: 1, Description: dvgoutils.Ptr("d")},
+			{ID: 2, Description: dvgoutils.Ptr("d")},
+			{ID: 3, Description: dvgoutils.Ptr("d")},
+		},
+		DryRun: true,
+	})
+	r.NoError(err)
+	a.Equal(StatusOK, out.Status, "a 3-item batch must be accepted when BulkMaxItems is configured to 3")
+
+	_, out, err = handler(ctx, &mcp.CallToolRequest{}, BulkUpdatePartsInput{
+		Items: []BulkUpdatePartItem{
+			{ID: 1, Description: dvgoutils.Ptr("d")},
+			{ID: 2, Description: dvgoutils.Ptr("d")},
+			{ID: 3, Description: dvgoutils.Ptr("d")},
+			{ID: 4, Description: dvgoutils.Ptr("d")},
+		},
+		DryRun: true,
+	})
+	r.NoError(err)
+	a.Equal(StatusClarificationRequired, out.Status, "a 4-item batch must be rejected when BulkMaxItems is configured to 3, well below the 25 default")
+}
+
+// TestBulkUpdatePartsHonorsConfiguredConcurrency proves worker concurrency is
+// genuinely read from Dependencies.BulkConcurrency, by configuring it to 1
+// and asserting the fake client never sees more than one in-flight mutation
+// at a time even though the batch has multiple items.
+func TestBulkUpdatePartsHonorsConfiguredConcurrency(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	client := newBulkFakePartWrite()
+	for _, id := range []int{1, 2, 3} {
+		client.parts[id] = inventree.PartDetail{PK: id, Name: "Widget", Active: true}
+	}
+	client.updateDelay = 20 * time.Millisecond
+	deps := testCatalogBulkDeps(client)
+	deps.BulkConcurrency = 1
+	handler := bulkUpdateParts(deps)
+
+	items := []BulkUpdatePartItem{
+		{ID: 1, Active: dvgoutils.Ptr(false)},
+		{ID: 2, Active: dvgoutils.Ptr(false)},
+		{ID: 3, Active: dvgoutils.Ptr(false)},
+	}
+	_, dryOut, err := handler(ctx, &mcp.CallToolRequest{}, BulkUpdatePartsInput{Items: items, DryRun: true})
+	r.NoError(err)
+
+	_, confirmOut, err := handler(ctx, &mcp.CallToolRequest{}, BulkUpdatePartsInput{Items: items, Confirm: true, PlanHash: dryOut.PlanHash})
+	r.NoError(err)
+	r.Len(confirmOut.Items, 3)
+	r.LessOrEqual(client.maxInFlightUpdates.Load(), int64(1), "BulkConcurrency:1 must bound the fake client to one in-flight mutation at a time")
 }
 
 func TestBulkUpdatePartsAppliesAndSkipsIndependently(t *testing.T) {

@@ -75,6 +75,7 @@ type BulkUpdateObjectParametersOutput struct {
 	PlanHash      string                          `json:"plan_hash,omitempty"`
 	Items         []BulkObjectParameterItemResult `json:"items,omitempty"`
 	Clarification *ClarificationResponse          `json:"clarification,omitempty"`
+	Timing        *BulkTimingEvidence             `json:"timing,omitempty"`
 }
 
 // objectParameterBulkPlanItem's Before is the exact existing row captured at
@@ -401,18 +402,18 @@ func objectParameterBulkClarification(question, field, reason, retry string) (*m
 	return TextResult(StatusClarificationRequired), BulkUpdateObjectParametersOutput{Status: StatusClarificationRequired, Clarification: &clarification}, nil
 }
 
-func objectParameterBulkItemCountClarification(count int) (*mcp.CallToolResult, BulkUpdateObjectParametersOutput, error) {
+func objectParameterBulkItemCountClarification(count, maxItems int) (*mcp.CallToolResult, BulkUpdateObjectParametersOutput, error) {
 	if count == 0 {
 		return objectParameterBulkClarification("Which object parameters should be updated?", "items", BulkUpdateObjectParametersToolName+" requires at least one item", "items")
 	}
-	return objectParameterBulkClarification("How should this batch be narrowed?", "items", fmt.Sprintf("%s accepts at most %d items per call", BulkUpdateObjectParametersToolName, bulkUpdateMaxItems), "items")
+	return objectParameterBulkClarification("How should this batch be narrowed?", "items", fmt.Sprintf("%s accepts at most %d items per call", BulkUpdateObjectParametersToolName, maxItems), "items")
 }
 
 func bulkUpdateObjectParameters(deps Dependencies) mcp.ToolHandlerFor[BulkUpdateObjectParametersInput, BulkUpdateObjectParametersOutput] {
 	return LookupHandler[ObjectParameterWriteClient, BulkUpdateObjectParametersInput, BulkUpdateObjectParametersOutput](deps, BulkUpdateObjectParametersToolName,
-		func(ctx context.Context, _ *mcp.CallToolRequest, client ObjectParameterWriteClient, input BulkUpdateObjectParametersInput) (*mcp.CallToolResult, BulkUpdateObjectParametersOutput, error) {
-			if len(input.Items) == 0 || len(input.Items) > bulkUpdateMaxItems {
-				return objectParameterBulkItemCountClarification(len(input.Items))
+		func(ctx context.Context, req *mcp.CallToolRequest, client ObjectParameterWriteClient, input BulkUpdateObjectParametersInput) (*mcp.CallToolResult, BulkUpdateObjectParametersOutput, error) {
+			if len(input.Items) == 0 || len(input.Items) > effectiveBulkMaxItems(deps) {
+				return objectParameterBulkItemCountClarification(len(input.Items), effectiveBulkMaxItems(deps))
 			}
 			plan := buildObjectParameterBulkPlan(ctx, client, input.Items)
 			out := BulkUpdateObjectParametersOutput{Status: StatusOK, DryRun: input.DryRun}
@@ -435,9 +436,14 @@ func bulkUpdateObjectParameters(deps Dependencies) mcp.ToolHandlerFor[BulkUpdate
 				return objectParameterBulkClarification("Which current dry-run plan should authorize this batch?", "confirmation", "plan_hash must be the unexpired single-use token from a matching dry run by the same principal; changed inventory state requires a new dry run", "plan_hash")
 			}
 			adapter := &objectParameterBulkAdapter{client: client}
-			results := batch.Execute(ctx, plan.Items, adapter, batch.ExecuteOptions{Concurrency: bulkUpdateConcurrency})
+			progress := newBulkProgressReporter(req, BulkUpdateObjectParametersToolName)
+			results, timing := batch.Execute(ctx, plan.Items, adapter, batch.ExecuteOptions{
+				Concurrency: effectiveBulkConcurrency(deps),
+				OnProgress:  func(done, total int) { progress.report(ctx, done, total) },
+			})
 			out.Items = objectParameterBulkResults(results, adapter)
 			out.Status = objectParameterBulkOutputStatus(out.Items)
+			out.Timing = bulkTimingEvidence(timing, len(plan.Items), effectiveBulkConcurrency(deps))
 			return TextResult(out.Status), out, nil
 		})
 }

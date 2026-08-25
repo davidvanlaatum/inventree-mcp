@@ -154,7 +154,7 @@ func (f *bulkFakeStock) GetGlobalSetting(context.Context, string) (inventree.Set
 }
 
 func testStockBulkDeps(client any) Dependencies {
-	deps := Dependencies{ClientFromContext: func(context.Context) (any, error) { return client, nil }}
+	deps := Dependencies{ClientFromContext: func(context.Context) (any, error) { return client, nil }, BulkMaxItems: 25, BulkConcurrency: 4}
 	deps.stockMetadataBulkPlanStore = mustBulkStore(batch.Options[stockMetadataBulkPlan]{
 		IDGenerator: platform.RandomIDGenerator{}, Principal: stockPlanPrincipal,
 		SupersedeKey: func(p stockMetadataBulkPlan) string { return bulkSupersedeKey(p.ids()) },

@@ -147,6 +147,20 @@ func TestDoJSONClassifiesCommonAPIErrorStatuses(t *testing.T) {
 			wantDetail: "slow down",
 		},
 		{
+			name:       "request timeout",
+			statusCode: http.StatusRequestTimeout,
+			body:       `{"detail":"took too long"}`,
+			wantKind:   ErrorKindRateLimit,
+			wantDetail: "took too long",
+		},
+		{
+			name:       "too early",
+			statusCode: http.StatusTooEarly,
+			body:       `{"detail":"replay rejected"}`,
+			wantKind:   ErrorKindUnexpected,
+			wantDetail: "replay rejected",
+		},
+		{
 			name:       "server",
 			statusCode: http.StatusInternalServerError,
 			body:       `{"detail":"broken"}`,

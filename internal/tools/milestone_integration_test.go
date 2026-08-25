@@ -24,6 +24,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -3328,10 +3329,18 @@ func TestMilestoneHappyPathToolsAgainstInvenTree(t *testing.T) {
 			r.NoError(err)
 			a.Equal(StatusClarificationRequired, staleConfirm.Status)
 
-			// Response-loss recovery: the live PATCH lands upstream but the
-			// response is dropped, so Mutate must recover by reading back
-			// current state rather than reporting a bare ambiguous failure.
-			lostItems := []BulkUpdateStockItemMetadataItem{{ID: applies.PK, Notes: dvgoutils.Ptr("bulk-recovered-notes")}}
+			// Response-loss recovery inside a real concurrent batch: one
+			// item's live PATCH lands upstream but its response is dropped
+			// (Mutate must recover by reading back current state rather than
+			// reporting a bare ambiguous failure), while a sibling item in
+			// the very same confirmed call updates normally through the
+			// batch's other, unaffected requests — proving response loss on
+			// one item does not degrade or block the rest of the batch.
+			sibling := fixture.createStockItem(t, part.PK, location.ID)
+			lostItems := []BulkUpdateStockItemMetadataItem{
+				{ID: applies.PK, Notes: dvgoutils.Ptr("bulk-recovered-notes")},
+				{ID: sibling.PK, Notes: dvgoutils.Ptr("bulk-sibling-notes")},
+			}
 			_, lostDryRun, err := bulkUpdateStockItemMetadata(fixture.deps())(ctx, &mcp.CallToolRequest{}, BulkUpdateStockItemMetadataInput{Items: lostItems, DryRun: true})
 			r.NoError(err)
 			r.NotEmpty(lostDryRun.PlanHash)
@@ -3341,11 +3350,21 @@ func TestMilestoneHappyPathToolsAgainstInvenTree(t *testing.T) {
 			lostFixture.client = lostClient
 			_, lostConfirm, err := bulkUpdateStockItemMetadata(lostFixture.deps())(ctx, &mcp.CallToolRequest{}, BulkUpdateStockItemMetadataInput{Items: lostItems, Confirm: true, PlanHash: lostDryRun.PlanHash})
 			r.NoError(err)
-			r.Len(lostConfirm.Items, 1)
-			a.Equal(string(batch.OutcomeApplied), lostConfirm.Items[0].Outcome)
-			r.NotNil(lostConfirm.Items[0].Record)
-			r.NotNil(lostConfirm.Items[0].Record.Notes)
-			a.Equal("bulk-recovered-notes", *lostConfirm.Items[0].Record.Notes)
+			r.Len(lostConfirm.Items, 2)
+			a.Equal(StatusOK, lostConfirm.Status, "response loss recovers to a clean outcome for every item, so the batch reports StatusOK, not partial failure")
+			lostByID := bulkResultsByID(lostConfirm.Items)
+			a.Equal(string(batch.OutcomeApplied), lostByID[applies.PK].Outcome)
+			r.NotNil(lostByID[applies.PK].Record)
+			r.NotNil(lostByID[applies.PK].Record.Notes)
+			a.Equal("bulk-recovered-notes", *lostByID[applies.PK].Record.Notes)
+			a.Equal(string(batch.OutcomeApplied), lostByID[sibling.PK].Outcome, "a sibling item sharing the same confirmed batch must apply normally, unaffected by another item's injected response loss")
+			r.NotNil(lostByID[sibling.PK].Record)
+			r.NotNil(lostByID[sibling.PK].Record.Notes)
+			a.Equal("bulk-sibling-notes", *lostByID[sibling.PK].Record.Notes)
+			r.NotNil(lostConfirm.Timing, "a confirmed batch call must report throughput evidence separating orchestration from upstream time")
+			a.Equal(2, lostConfirm.Timing.ItemCount)
+			a.Positive(lostConfirm.Timing.OrchestrationMS, "a real live round trip through pinned InvenTree must take measurable wall-clock time")
+			a.Positive(lostConfirm.Timing.UpstreamMS, "a real live round trip through pinned InvenTree must take measurable upstream time")
 		})
 
 		t.Run("status", func(t *testing.T) {
@@ -3898,15 +3917,20 @@ type loseMutationResponseTransport struct {
 	base   http.RoundTripper
 	method string
 	path   string
-	lost   bool
+	lost   atomic.Bool
 }
 
+// RoundTrip is called concurrently once a batch tool call runs more than one
+// item through the same shared *http.Client (F-S81's bulk tools do exactly
+// this), including for requests whose method/path never match this
+// transport's target — every request flows through here, not just the
+// targeted one. lost must therefore be an atomic, compare-and-swapped exactly
+// once, rather than a plain bool racily read-then-written across goroutines.
 func (t *loseMutationResponseTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	response, err := t.base.RoundTrip(req)
-	if err != nil || t.lost || req.Method != t.method || req.URL.Path != t.path {
+	if err != nil || req.Method != t.method || req.URL.Path != t.path || !t.lost.CompareAndSwap(false, true) {
 		return response, err
 	}
-	t.lost = true
 	if response != nil {
 		_, _ = io.Copy(io.Discard, response.Body)
 		_ = response.Body.Close()
@@ -4002,6 +4026,8 @@ func (f milestoneToolFixture) deps() Dependencies {
 		},
 		UploadMode:                           upload.ModeStdio,
 		UploadMaxBytes:                       upload.DefaultMaxBytes,
+		BulkMaxItems:                         bulkUpdateMaxItems, // 25, matching the operator-configurable default (F-S81)
+		BulkConcurrency:                      4,                  // matching the operator-configurable default (F-S81)
 		stockPlanStore:                       f.stockPlanStore,
 		stockProvenancePlanStore:             f.stockProvenancePlanStore,
 		parameterPlanStore:                   f.parameterPlanStore,

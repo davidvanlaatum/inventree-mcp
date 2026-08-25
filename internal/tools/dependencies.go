@@ -14,17 +14,27 @@ import (
 var ErrLookupClientUnavailable = errors.New("InvenTree lookup client unavailable")
 
 type Dependencies struct {
-	ClientFromContext                    func(context.Context) (any, error)
-	EnableWriteTools                     bool
-	AuthorizationMode                    AuthorizationMode
-	ResourceMetadataURL                  string
-	UploadMode                           upload.Mode
-	UploadFS                             afero.Fs
-	UploadAllowRoots                     []string
-	UploadMaxBytes                       int64
-	UploadTimeout                        time.Duration
-	URLFetcher                           upload.URLFetcher
-	WebLinks                             *weblinks.Resolver
+	ClientFromContext   func(context.Context) (any, error)
+	EnableWriteTools    bool
+	AuthorizationMode   AuthorizationMode
+	ResourceMetadataURL string
+	UploadMode          upload.Mode
+	UploadFS            afero.Fs
+	UploadAllowRoots    []string
+	UploadMaxBytes      int64
+	UploadTimeout       time.Duration
+	URLFetcher          upload.URLFetcher
+	WebLinks            *weblinks.Resolver
+	// BulkMaxItems and BulkConcurrency configure every bulk_update_*/
+	// bulk_set_stock_status tool's item-count limit and worker concurrency.
+	// A value <= 0 (including the zero value left by an uninitialized
+	// Dependencies literal, such as in a test fixture) is not enforced
+	// directly — every call site reads these through effectiveBulkMaxItems/
+	// effectiveBulkConcurrency (bulk_progress.go), which fall back to
+	// defaultBulkMaxItems/defaultBulkConcurrency instead of treating every
+	// batch as oversized. Do not read these fields directly in new code.
+	BulkMaxItems                         int
+	BulkConcurrency                      int
 	stockPlanStore                       *stockPlanStore
 	stockProvenancePlanStore             *stockProvenancePlanStore
 	parameterPlanStore                   *parameterPlanStore

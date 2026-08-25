@@ -102,7 +102,7 @@ func TestExecuteAllSuccessPreservesInputOrder(t *testing.T) {
 	}
 	adapter := &recordingAdapter{}
 
-	results := batch.Execute(testContext(t), items, adapter, batch.ExecuteOptions{Concurrency: 3})
+	results, _ := batch.Execute(testContext(t), items, adapter, batch.ExecuteOptions{Concurrency: 3})
 
 	r.Len(results, 3)
 	for i, result := range results {
@@ -119,7 +119,7 @@ func TestExecuteSkipsWithoutMutateOrVerify(t *testing.T) {
 	items := []itemPlan{{id: 0, skip: true, skipReason: "already at target"}}
 	adapter := &recordingAdapter{}
 
-	results := batch.Execute(testContext(t), items, adapter, batch.ExecuteOptions{Concurrency: 1})
+	results, _ := batch.Execute(testContext(t), items, adapter, batch.ExecuteOptions{Concurrency: 1})
 
 	r.Len(results, 1)
 	r.Equal(batch.OutcomeSkipped, results[0].Outcome)
@@ -135,7 +135,7 @@ func TestExecutePreflightErrorFailsWithoutMutateOrVerify(t *testing.T) {
 	items := []itemPlan{{id: 0, preflightErr: errors.New("unsafe drift")}}
 	adapter := &recordingAdapter{}
 
-	results := batch.Execute(testContext(t), items, adapter, batch.ExecuteOptions{Concurrency: 1})
+	results, _ := batch.Execute(testContext(t), items, adapter, batch.ExecuteOptions{Concurrency: 1})
 
 	r.Len(results, 1)
 	r.Equal(batch.OutcomeFailed, results[0].Outcome)
@@ -152,7 +152,7 @@ func TestExecuteMutateErrorIsAmbiguousAndSkipsVerify(t *testing.T) {
 	items := []itemPlan{{id: 0, mutateErr: errors.New("upstream write failed")}}
 	adapter := &recordingAdapter{}
 
-	results := batch.Execute(testContext(t), items, adapter, batch.ExecuteOptions{Concurrency: 1})
+	results, _ := batch.Execute(testContext(t), items, adapter, batch.ExecuteOptions{Concurrency: 1})
 
 	r.Len(results, 1)
 	r.Equal(batch.OutcomeAmbiguous, results[0].Outcome)
@@ -169,7 +169,7 @@ func TestExecuteVerifyErrorIsUnverifiedButAttempted(t *testing.T) {
 	items := []itemPlan{{id: 0, verifyErr: errors.New("read-back mismatch")}}
 	adapter := &recordingAdapter{}
 
-	results := batch.Execute(testContext(t), items, adapter, batch.ExecuteOptions{Concurrency: 1})
+	results, _ := batch.Execute(testContext(t), items, adapter, batch.ExecuteOptions{Concurrency: 1})
 
 	r.Len(results, 1)
 	r.Equal(batch.OutcomeUnverified, results[0].Outcome)
@@ -207,7 +207,7 @@ func TestExecuteOneItemFailureDoesNotAffectSiblings(t *testing.T) {
 	}
 	adapter := &recordingAdapter{}
 
-	results := batch.Execute(testContext(t), items, adapter, batch.ExecuteOptions{Concurrency: 2})
+	results, _ := batch.Execute(testContext(t), items, adapter, batch.ExecuteOptions{Concurrency: 2})
 
 	a.Len(results, 4)
 	a.Equal(batch.OutcomeAmbiguous, results[0].Outcome)
@@ -230,7 +230,7 @@ func TestExecuteAlreadyCancelledContextAttemptsNothing(t *testing.T) {
 	items := []itemPlan{{id: 0}, {id: 1}}
 	adapter := &recordingAdapter{}
 
-	results := batch.Execute(ctx, items, adapter, batch.ExecuteOptions{Concurrency: 2})
+	results, _ := batch.Execute(ctx, items, adapter, batch.ExecuteOptions{Concurrency: 2})
 
 	r.Len(results, 2)
 	for _, result := range results {
@@ -259,7 +259,8 @@ func TestExecuteCancellationPartwayThroughStopsLaterItems(t *testing.T) {
 
 	resultsCh := make(chan []batch.Result[itemPlan], 1)
 	go func() {
-		resultsCh <- batch.Execute(ctx, items, adapter, batch.ExecuteOptions{Concurrency: 1})
+		results, _ := batch.Execute(ctx, items, adapter, batch.ExecuteOptions{Concurrency: 1})
+		resultsCh <- results
 	}()
 
 	<-started
@@ -289,7 +290,8 @@ func TestExecuteDeadlineExceededMidBatchAttemptsNoFutureItems(t *testing.T) {
 
 	resultsCh := make(chan []batch.Result[itemPlan], 1)
 	go func() {
-		resultsCh <- batch.Execute(ctx, items, adapter, batch.ExecuteOptions{Concurrency: 1})
+		results, _ := batch.Execute(ctx, items, adapter, batch.ExecuteOptions{Concurrency: 1})
+		resultsCh <- results
 	}()
 
 	<-started
@@ -320,7 +322,8 @@ func TestExecuteZeroConcurrencyDoesNotDeadlock(t *testing.T) {
 
 	done := make(chan []batch.Result[itemPlan], 1)
 	go func() {
-		done <- batch.Execute(ctx, items, adapter, batch.ExecuteOptions{Concurrency: 0})
+		results, _ := batch.Execute(ctx, items, adapter, batch.ExecuteOptions{Concurrency: 0})
+		done <- results
 	}()
 
 	select {
@@ -336,8 +339,137 @@ func TestExecuteEmptyItemsInvokesNothing(t *testing.T) {
 	r := require.New(t)
 
 	adapter := &recordingAdapter{}
-	results := batch.Execute(testContext(t), []itemPlan{}, adapter, batch.ExecuteOptions{Concurrency: 4})
+	results, _ := batch.Execute(testContext(t), []itemPlan{}, adapter, batch.ExecuteOptions{Concurrency: 4})
 
 	r.Empty(results)
 	r.Empty(adapter.preflightCalls)
+}
+
+func TestExecuteOnProgressFiresOncePerItemEndingAtTotal(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+
+	items := []itemPlan{{id: 0}, {id: 1}, {id: 2, mutateErr: errors.New("boom")}}
+	adapter := &recordingAdapter{}
+
+	var mu sync.Mutex
+	var calls [][2]int
+	onProgress := func(done, total int) {
+		mu.Lock()
+		defer mu.Unlock()
+		calls = append(calls, [2]int{done, total})
+	}
+
+	results, _ := batch.Execute(testContext(t), items, adapter, batch.ExecuteOptions{Concurrency: 2, OnProgress: onProgress})
+
+	r.Len(results, 3)
+	r.Len(calls, 3, "OnProgress must fire exactly once per item, regardless of outcome")
+	seenDone := make(map[int]bool)
+	for _, call := range calls {
+		r.Equal(3, call[1], "total must be the full item count on every call")
+		seenDone[call[0]] = true
+	}
+	r.Equal(map[int]bool{1: true, 2: true, 3: true}, seenDone, "done must reach every value from 1 to total exactly once")
+}
+
+func TestExecuteOnProgressNilIsSafe(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+
+	items := []itemPlan{{id: 0}, {id: 1}}
+	adapter := &recordingAdapter{}
+
+	r.NotPanics(func() {
+		batch.Execute(testContext(t), items, adapter, batch.ExecuteOptions{Concurrency: 2})
+	})
+}
+
+func TestExecuteOnProgressCountsNotAttemptedCancelledItems(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+
+	ctx, cancel := context.WithCancel(testContext(t))
+	cancel()
+
+	items := []itemPlan{{id: 0}, {id: 1}}
+	adapter := &recordingAdapter{}
+
+	var progressCalls atomic.Int64
+	var lastDone, lastTotal atomic.Int64
+	onProgress := func(done, total int) {
+		progressCalls.Add(1)
+		lastDone.Store(int64(done))
+		lastTotal.Store(int64(total))
+	}
+
+	results, _ := batch.Execute(ctx, items, adapter, batch.ExecuteOptions{Concurrency: 2, OnProgress: onProgress})
+
+	r.Len(results, 2)
+	r.Equal(int64(2), progressCalls.Load(), "not-attempted items under an already-cancelled context must still be counted")
+	r.Equal(int64(2), lastDone.Load())
+	r.Equal(int64(2), lastTotal.Load())
+}
+
+func TestExecuteTimingSeparatesOrchestrationFromUpstream(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+
+	const perItemDelay = 40 * time.Millisecond
+	items := []itemPlan{
+		{id: 0, delay: perItemDelay},
+		{id: 1, delay: perItemDelay},
+		{id: 2, delay: perItemDelay},
+	}
+	adapter := &recordingAdapter{}
+
+	_, timing := batch.Execute(testContext(t), items, adapter, batch.ExecuteOptions{Concurrency: 3})
+
+	r.GreaterOrEqual(timing.Upstream, 3*perItemDelay, "Upstream sums each item's own duration independently")
+	r.Less(timing.Orchestration, 2*perItemDelay, "Orchestration should reflect concurrent wall time, not the summed upstream time")
+	r.Greater(timing.Upstream, timing.Orchestration, "concurrent execution must make aggregate upstream time exceed wall-clock orchestration time")
+}
+
+func TestExecuteBoundedConcurrencyIndependentOfCallPacing(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+
+	const itemCount = 6
+	const perItemDelay = 30 * time.Millisecond
+	newItems := func() []itemPlan {
+		items := make([]itemPlan, itemCount)
+		for i := range items {
+			items[i] = itemPlan{id: i, delay: perItemDelay}
+		}
+		return items
+	}
+
+	_, sequentialTiming := batch.Execute(testContext(t), newItems(), &recordingAdapter{}, batch.ExecuteOptions{Concurrency: 1})
+	_, concurrentTiming := batch.Execute(testContext(t), newItems(), &recordingAdapter{}, batch.ExecuteOptions{Concurrency: itemCount})
+
+	r.Greater(sequentialTiming.Orchestration, concurrentTiming.Orchestration*2,
+		"raising Concurrency alone must materially reduce wall time; throughput is governed by the concurrency setting, not by caller pacing")
+}
+
+func TestExecuteFastSlowMixedLatencyPreservesIndependentOutcomes(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+
+	items := []itemPlan{
+		{id: 0, delay: 0},
+		{id: 1, delay: 50 * time.Millisecond},
+		{id: 2, delay: 0, mutateErr: errors.New("boom")},
+		{id: 3, delay: 50 * time.Millisecond},
+	}
+	adapter := &recordingAdapter{}
+
+	start := time.Now()
+	results, _ := batch.Execute(testContext(t), items, adapter, batch.ExecuteOptions{Concurrency: 4})
+	elapsed := time.Since(start)
+
+	r.Len(results, 4)
+	r.Equal(batch.OutcomeApplied, results[0].Outcome)
+	r.Equal(batch.OutcomeApplied, results[1].Outcome)
+	r.Equal(batch.OutcomeAmbiguous, results[2].Outcome)
+	r.Equal(batch.OutcomeApplied, results[3].Outcome)
+	r.Less(elapsed, 200*time.Millisecond, "a fast item must not be held up by a slower sibling under sufficient concurrency")
 }

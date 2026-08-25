@@ -282,7 +282,7 @@ func applyPurchaseOrderLinePatchForTest(line *inventree.PurchaseOrderLineItem, f
 }
 
 func testPurchaseOrderBulkDeps(client any) Dependencies {
-	deps := Dependencies{ClientFromContext: func(context.Context) (any, error) { return client, nil }}
+	deps := Dependencies{ClientFromContext: func(context.Context) (any, error) { return client, nil }, BulkMaxItems: 25, BulkConcurrency: 4}
 	deps.purchaseOrderBulkPlanStore = mustBulkStore(batch.Options[purchaseOrderBulkPlan]{
 		IDGenerator: platform.RandomIDGenerator{}, Principal: stockPlanPrincipal,
 		SupersedeKey: func(p purchaseOrderBulkPlan) string { return bulkSupersedeKey(p.ids()) },
