@@ -326,6 +326,7 @@ func MCPMiddleware(next mcp.MethodHandler) mcp.MethodHandler {
 	}
 	return func(ctx context.Context, method string, req mcp.Request) (mcp.Result, error) {
 		ctx, span := tracer.Start(ctx, "mcp."+method)
+		defer span.End()
 		span.SetAttributes(attribute.String("mcp.method", method))
 		if call, ok := req.(*mcp.CallToolRequest); ok && call.Params != nil {
 			span.SetAttributes(attribute.String("mcp.tool.name", call.Params.Name))
@@ -336,7 +337,6 @@ func MCPMiddleware(next mcp.MethodHandler) mcp.MethodHandler {
 			span.RecordError(err)
 			span.SetStatus(codes.Error, "MCP method failed")
 		}
-		span.End()
 		return result, err
 	}
 }
