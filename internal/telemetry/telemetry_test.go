@@ -1,0 +1,235 @@
+package telemetry
+
+import (
+	"context"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"sync"
+	"sync/atomic"
+	"testing"
+	"time"
+
+	"github.com/davidvanlaatum/inventree-mcp/internal/inventree"
+	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/propagation"
+	"go.opentelemetry.io/otel/sdk/trace"
+	apiTrace "go.opentelemetry.io/otel/trace"
+)
+
+type recordingExporter struct {
+	mu    sync.Mutex
+	spans []trace.ReadOnlySpan
+}
+
+func (e *recordingExporter) ExportSpans(_ context.Context, spans []trace.ReadOnlySpan) error {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.spans = append(e.spans, spans...)
+	return nil
+}
+
+func (e *recordingExporter) Shutdown(context.Context) error { return nil }
+
+func withRecordingProvider(t *testing.T) *recordingExporter {
+	t.Helper()
+	exporter := &recordingExporter{}
+	provider := trace.NewTracerProvider(trace.WithSpanProcessor(trace.NewSimpleSpanProcessor(exporter)))
+	otel.SetTracerProvider(provider)
+	otel.SetTextMapPropagator(propagation.TraceContext{})
+	processEnabled.Store(true)
+	t.Cleanup(func() {
+		processEnabled.Store(false)
+		_ = provider.Shutdown(context.Background())
+	})
+	return exporter
+}
+
+func TestMCPMiddlewareRecordsToolAndNumericIdentifiersWithoutArguments(t *testing.T) {
+	exporter := withRecordingProvider(t)
+	called := false
+	next := MCPMiddleware(func(ctx context.Context, method string, req mcp.Request) (mcp.Result, error) {
+		called = true
+		assert.Equal(t, "tools/call", method)
+		assert.True(t, apiTrace.SpanFromContext(ctx).SpanContext().IsValid())
+		return nil, nil
+	})
+
+	_, err := next(context.Background(), "tools/call", &mcp.CallToolRequest{Params: &mcp.CallToolParamsRaw{
+		Name:      "get_part",
+		Arguments: []byte(`{"part_id":42,"token":"secret"}`),
+	}})
+	require.NoError(t, err)
+	require.True(t, called)
+	require.Len(t, exporter.spans, 1)
+	attributes := exporter.spans[0].Attributes()
+	values := make(map[attribute.Key]attribute.Value, len(attributes))
+	for _, attr := range attributes {
+		values[attr.Key] = attr.Value
+	}
+	assert.Equal(t, "tools/call", values["mcp.method"].AsString())
+	assert.Equal(t, "get_part", values["mcp.tool.name"].AsString())
+	assert.Equal(t, int64(42), values["mcp.tool.identifier.part_id"].AsInt64())
+	for _, attr := range attributes {
+		assert.NotContains(t, string(attr.Key), "token")
+	}
+}
+
+func TestMCPServerToolAndInvenTreeClientSpansShareTrace(t *testing.T) {
+	exporter := withRecordingProvider(t)
+	invenTreeClient, err := inventree.NewClient(inventree.Config{
+		BaseURL:    "https://inventory.example.test",
+		Credential: inventree.Credential{Scheme: inventree.AuthSchemeToken, Token: "test-token"},
+		HTTPClient: WrapHTTPClient(&http.Client{Transport: roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+			assert.Equal(t, "/api/part/42/", req.URL.Path)
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Body:       io.NopCloser(strings.NewReader(`{"pk":42,"name":"Trace test"}`)),
+				Header:     make(http.Header),
+				Request:    req,
+			}, nil
+		})}),
+	})
+	require.NoError(t, err)
+	server := mcp.NewServer(&mcp.Implementation{Name: "trace-test", Version: "1"}, nil)
+	server.AddReceivingMiddleware(MCPMiddleware)
+	server.AddTool(&mcp.Tool{Name: "get_part", InputSchema: map[string]any{"type": "object"}}, func(ctx context.Context, _ *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		_, err := invenTreeClient.GetPart(ctx, 42)
+		return &mcp.CallToolResult{}, err
+	})
+
+	ctx := context.Background()
+	clientTransport, serverTransport := mcp.NewInMemoryTransports()
+	_, err = server.Connect(ctx, serverTransport, nil)
+	require.NoError(t, err)
+	client := mcp.NewClient(&mcp.Implementation{Name: "trace-client", Version: "1"}, nil)
+	session, err := client.Connect(ctx, clientTransport, nil)
+	require.NoError(t, err)
+	defer func() { require.NoError(t, session.Close()) }()
+	_, err = session.CallTool(ctx, &mcp.CallToolParams{Name: "get_part"})
+	require.NoError(t, err)
+
+	var toolTrace, clientTrace apiTrace.TraceID
+	for _, span := range exporter.spans {
+		attrs := make(map[attribute.Key]attribute.Value, len(span.Attributes()))
+		for _, attr := range span.Attributes() {
+			attrs[attr.Key] = attr.Value
+		}
+		if attrs["mcp.tool.name"].AsString() == "get_part" {
+			toolTrace = span.SpanContext().TraceID()
+		}
+		if attrs["http.request.method"].AsString() == http.MethodGet && attrs["url.path"].AsString() == "/api/part/42/" {
+			clientTrace = span.SpanContext().TraceID()
+		}
+	}
+	require.NotEqual(t, apiTrace.TraceID{}, toolTrace)
+	require.NotEqual(t, apiTrace.TraceID{}, clientTrace)
+	assert.Equal(t, toolTrace, clientTrace)
+}
+
+func TestWrapHTTPClientInjectsTraceContext(t *testing.T) {
+	exporter := withRecordingProvider(t)
+	var gotTraceparent string
+	client := WrapHTTPClient(&http.Client{Transport: roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+		gotTraceparent = req.Header.Get("traceparent")
+		return &http.Response{StatusCode: http.StatusNoContent, Body: io.NopCloser(http.NoBody), Header: make(http.Header), Request: req}, nil
+	})})
+	parentCtx, span := otel.Tracer("test").Start(context.Background(), "parent")
+	req, err := http.NewRequestWithContext(parentCtx, http.MethodGet, "https://inventory.example.test/api/part/42/?token=do-not-export", nil)
+	require.NoError(t, err)
+	response, err := client.Do(req)
+	span.End()
+	require.NoError(t, err)
+	require.NoError(t, response.Body.Close())
+	assert.NotEmpty(t, gotTraceparent)
+	assert.NotEmpty(t, exporter.spans)
+	for _, span := range exporter.spans {
+		for _, attr := range span.Attributes() {
+			assert.NotContains(t, attr.Value.AsString(), "do-not-export")
+		}
+	}
+}
+
+func TestWrapHTTPClientClonesDefaultTransport(t *testing.T) {
+	withRecordingProvider(t)
+
+	client := WrapHTTPClient(&http.Client{})
+	assert.IsType(t, instrumentedRoundTripper(nil), client.Transport)
+}
+
+func TestHTTPHandlerCorrelatesInboundAndOutboundSpans(t *testing.T) {
+	exporter := withRecordingProvider(t)
+	client := WrapHTTPClient(&http.Client{Transport: roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+		assert.True(t, apiTrace.SpanFromContext(req.Context()).SpanContext().IsValid())
+		return &http.Response{StatusCode: http.StatusNoContent, Body: io.NopCloser(http.NoBody), Header: make(http.Header), Request: req}, nil
+	})})
+	handler := HTTPHandler(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		outbound, err := http.NewRequestWithContext(req.Context(), http.MethodGet, "https://inventory.example.test/api/version/", nil)
+		require.NoError(t, err)
+		response, err := client.Do(outbound)
+		require.NoError(t, err)
+		require.NoError(t, response.Body.Close())
+		w.WriteHeader(http.StatusNoContent)
+	}))
+
+	parentCtx, parent := otel.Tracer("test").Start(context.Background(), "parent")
+	req := httptest.NewRequest(http.MethodGet, "http://mcp.example.test/mcp", nil).WithContext(parentCtx)
+	propagation.TraceContext{}.Inject(parentCtx, propagation.HeaderCarrier(req.Header))
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, req)
+	parent.End()
+
+	require.Equal(t, http.StatusNoContent, response.Code)
+	require.GreaterOrEqual(t, len(exporter.spans), 3)
+	traceIDs := make(map[apiTrace.TraceID]struct{})
+	for _, span := range exporter.spans {
+		traceIDs[span.SpanContext().TraceID()] = struct{}{}
+	}
+	assert.Len(t, traceIDs, 1)
+}
+
+func TestDisabledTelemetryDoesNotWrapHTTPClient(t *testing.T) {
+	runtime, err := New(context.Background(), DefaultConfig())
+	require.NoError(t, err)
+	require.NoError(t, runtime.Shutdown(context.Background()))
+
+	client := &http.Client{}
+	assert.Same(t, client, WrapHTTPClient(client))
+	assert.Same(t, http.DefaultTransport, WrapRoundTripper(http.DefaultTransport))
+}
+
+func TestNewOTLPHTTPFlushesSpansAndSendsHeadersOnShutdown(t *testing.T) {
+	var requests atomic.Int32
+	var gotHeader atomic.Value
+	collector := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		requests.Add(1)
+		gotHeader.Store(req.Header.Get("x-test-header"))
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer collector.Close()
+
+	cfg := DefaultConfig()
+	cfg.Enabled = true
+	cfg.Exporter = ExporterHTTP
+	cfg.Endpoint = collector.URL
+	cfg.Insecure = true
+	cfg.Headers = map[string]string{"x-test-header": "present"}
+	runtime, err := New(context.Background(), cfg)
+	require.NoError(t, err)
+	_, span := otel.Tracer("flush-test").Start(context.Background(), "span")
+	span.End()
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	require.NoError(t, runtime.Shutdown(shutdownCtx))
+	assert.Greater(t, requests.Load(), int32(0))
+	assert.Equal(t, "present", gotHeader.Load())
+}
+
+type roundTripperFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripperFunc) RoundTrip(req *http.Request) (*http.Response, error) { return f(req) }

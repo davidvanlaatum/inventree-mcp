@@ -22,6 +22,7 @@ import (
 	localupdate "github.com/davidvanlaatum/inventree-mcp/internal/selfupdate"
 	"github.com/davidvanlaatum/inventree-mcp/internal/server"
 	"github.com/davidvanlaatum/inventree-mcp/internal/systemdnotify"
+	"github.com/davidvanlaatum/inventree-mcp/internal/telemetry"
 	"github.com/davidvanlaatum/inventree-mcp/internal/tools"
 	"github.com/davidvanlaatum/inventree-mcp/internal/upload"
 	"github.com/davidvanlaatum/inventree-mcp/internal/weblinks"
@@ -38,7 +39,10 @@ var (
 	serverRun         = server.Run
 	newSystemdNotify  = systemdnotify.New
 	buildDependencies = dependenciesForConfig
-	runSelfUpdate     = func(ctx context.Context, current string, options localupdate.Options) (localupdate.Result, error) {
+	shutdownTelemetry = func(runtime *telemetry.Runtime, ctx context.Context) error {
+		return runtime.Shutdown(ctx)
+	}
+	runSelfUpdate = func(ctx context.Context, current string, options localupdate.Options) (localupdate.Result, error) {
 		return localupdate.New(localupdate.Dependencies{}).Run(ctx, current, options)
 	}
 )
@@ -182,6 +186,20 @@ func serve(ctx context.Context, cfg config.Config) error {
 			return fmt.Errorf("notify systemd of service startup: %w", err)
 		}
 	}
+	telemetryRuntime, err := telemetry.New(ctx, cfg.Telemetry)
+	if err != nil {
+		if managedHTTP {
+			notifyFatal(logger, notifier)
+		}
+		return err
+	}
+	defer func() {
+		shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cfg.Telemetry.ExportTimeout)
+		defer cancel()
+		if err := shutdownTelemetry(telemetryRuntime, shutdownCtx); err != nil {
+			logger.Error("failed to flush OpenTelemetry traces", logging.Err(err))
+		}
+	}()
 	deps, err := buildDependencies(cfg)
 	if err != nil {
 		if managedHTTP {
@@ -260,10 +278,10 @@ func inventreeHTTPClient(cfg config.Config) *http.Client {
 	if cfg.InvenTreeTLSSkipVerify {
 		transport.TLSClientConfig = &tls.Config{InsecureSkipVerify: true} //nolint:gosec // Config validation rejects this in production.
 	}
-	return &http.Client{
+	return telemetry.WrapHTTPClient(&http.Client{
 		Timeout:   cfg.InvenTreeTimeout,
 		Transport: transport,
-	}
+	})
 }
 
 func writeLine(w io.Writer, format string, args ...any) {

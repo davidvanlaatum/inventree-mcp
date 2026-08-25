@@ -66,6 +66,15 @@ Production HTTP includes protected-resource and authorization-server metadata, a
 - Clarify when: auth scheme is neither `Token` nor `Bearer`, URL is missing, upload allowlisted roots are not trusted, or TLS skip verify is requested outside local/test use.
 - Expected output: STDIO MCP server ready for local clients.
 
+### OpenTelemetry Tracing
+
+- Tracing is disabled by default. Enable it only when a trusted collector is configured: set `INVENTREE_MCP_OTEL_ENABLED=true` and provide `INVENTREE_MCP_OTEL_ENDPOINT` plus `INVENTREE_MCP_OTEL_EXPORTER=otlpgrpc` or `otlphttp`.
+- Prefer TLS for collector connections. Use `INVENTREE_MCP_OTEL_INSECURE=true` only for a trusted local/test collector. Keep `INVENTREE_MCP_OTEL_HEADERS` out of shell history where possible because values may contain collector credentials; use owner-only YAML configuration for persistent settings.
+- Start with `INVENTREE_MCP_OTEL_SAMPLE_RATIO=1` while validating delivery, then lower it deliberately for production volume. Batching can delay export until the batch timeout or process shutdown; graceful shutdown flushes pending spans within the configured export timeout.
+- Traces cover inbound MCP HTTP requests, MCP methods/tool names, outbound InvenTree and OAuth HTTP calls, and W3C trace-context propagation. Tool arguments, results, credentials, and response payloads are not recorded. Numeric top-level `id` and `*_id` tool fields may be included as bounded identifiers.
+- Verify a trace in the collector by performing one health/version or read-only tool call and confirming the MCP method/tool span and its child outbound InvenTree HTTP span share a trace ID. If the process reports startup success but no span arrives, check collector DNS/TCP/TLS/protocol and batching before changing application configuration.
+- Metrics and Prometheus exposition are not included in this tracing slice yet; do not treat the presence of trace export as metrics support.
+
 ## Reverse-Proxy HTTP Deployment
 
 Production reverse-proxy HTTP deployment has configured canonical protected-resource and authorization-server metadata, bearer challenges, token audiences, setup/token endpoints, and OAuth-protected startup wiring. It supports path-preserving proxies with explicit trusted proxy CIDRs. Live packaged connector validation remains F-S10 work before this deployment is treated as operator-supported.

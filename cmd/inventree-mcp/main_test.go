@@ -15,6 +15,7 @@ import (
 	"github.com/davidvanlaatum/inventree-mcp/internal/platform"
 	"github.com/davidvanlaatum/inventree-mcp/internal/selfupdate"
 	"github.com/davidvanlaatum/inventree-mcp/internal/systemdnotify"
+	"github.com/davidvanlaatum/inventree-mcp/internal/telemetry"
 	"github.com/davidvanlaatum/inventree-mcp/internal/tools"
 	"github.com/davidvanlaatum/inventree-mcp/internal/weblinks"
 	"github.com/stretchr/testify/assert"
@@ -553,9 +554,11 @@ func TestServePublishesSystemdStartupAndFatalStatus(t *testing.T) {
 
 	originalServerRun := serverRun
 	originalNewSystemdNotify := newSystemdNotify
+	originalShutdownTelemetry := shutdownTelemetry
 	t.Cleanup(func() {
 		serverRun = originalServerRun
 		newSystemdNotify = originalNewSystemdNotify
+		shutdownTelemetry = originalShutdownTelemetry
 	})
 
 	notifier := &recordingNotifier{}
@@ -575,6 +578,133 @@ func TestServePublishesSystemdStartupAndFatalStatus(t *testing.T) {
 
 	r.ErrorIs(err, wantErr)
 	a.Equal([]string{"starting", "fatal"}, notifier.events)
+}
+
+func TestServeReportsInvalidOpenTelemetryConfiguration(t *testing.T) {
+	r := require.New(t)
+	a := assert.New(t)
+
+	originalServerRun := serverRun
+	originalNewSystemdNotify := newSystemdNotify
+	t.Cleanup(func() {
+		serverRun = originalServerRun
+		newSystemdNotify = originalNewSystemdNotify
+	})
+
+	notifier := &recordingNotifier{}
+	newSystemdNotify = func() systemdnotify.Notifier { return notifier }
+	serverRun = func(context.Context, config.Config, tools.Dependencies, systemdnotify.Notifier) error {
+		r.Fail("server started with invalid telemetry configuration")
+		return nil
+	}
+
+	err := serve(loggingTestContext(t), config.Config{
+		Transport: config.TransportHTTP,
+		Telemetry: telemetry.Config{Enabled: true},
+	})
+
+	r.Error(err)
+	a.Contains(err.Error(), "OpenTelemetry service name is required")
+	a.Equal([]string{"starting", "fatal"}, notifier.events)
+}
+
+func TestServeReturnsInvalidOpenTelemetryConfigurationForStdio(t *testing.T) {
+	r := require.New(t)
+
+	err := serve(loggingTestContext(t), config.Config{
+		Transport: config.TransportStdio,
+		Telemetry: telemetry.Config{Enabled: true},
+	})
+
+	r.ErrorContains(err, "OpenTelemetry service name is required")
+}
+
+func TestServeFlushesEnabledOpenTelemetryBeforeReturning(t *testing.T) {
+	r := require.New(t)
+	a := assert.New(t)
+
+	originalServerRun := serverRun
+	originalNewSystemdNotify := newSystemdNotify
+	t.Cleanup(func() {
+		serverRun = originalServerRun
+		newSystemdNotify = originalNewSystemdNotify
+	})
+
+	notifier := &recordingNotifier{}
+	newSystemdNotify = func() systemdnotify.Notifier { return notifier }
+	wantErr := errors.New("server stopped")
+	serverRun = func(context.Context, config.Config, tools.Dependencies, systemdnotify.Notifier) error {
+		return wantErr
+	}
+
+	cfg := config.Config{
+		Transport: config.TransportHTTP,
+		Telemetry: telemetry.Config{
+			Enabled:       true,
+			ServiceName:   "test-server",
+			Exporter:      telemetry.ExporterHTTP,
+			Endpoint:      "http://127.0.0.1:1/v1/traces",
+			SampleRatio:   1,
+			BatchTimeout:  time.Second,
+			ExportTimeout: time.Second,
+		},
+	}
+	err := serve(loggingTestContext(t), cfg)
+
+	r.ErrorIs(err, wantErr)
+	a.Equal([]string{"starting", "fatal"}, notifier.events)
+}
+
+func TestServeLogsTelemetryShutdownFailure(t *testing.T) {
+	r := require.New(t)
+
+	originalServerRun := serverRun
+	originalNewSystemdNotify := newSystemdNotify
+	originalShutdownTelemetry := shutdownTelemetry
+	t.Cleanup(func() {
+		serverRun = originalServerRun
+		newSystemdNotify = originalNewSystemdNotify
+		shutdownTelemetry = originalShutdownTelemetry
+	})
+
+	notifier := &recordingNotifier{}
+	newSystemdNotify = func() systemdnotify.Notifier { return notifier }
+	serverRun = func(context.Context, config.Config, tools.Dependencies, systemdnotify.Notifier) error {
+		return nil
+	}
+	shutdownErr := errors.New("telemetry flush failed")
+	shutdownTelemetry = func(*telemetry.Runtime, context.Context) error { return shutdownErr }
+
+	var stderr bytes.Buffer
+	ctx, err := platform.NewRootContext(t.Context(), platform.LoggerConfig{Output: &stderr})
+	r.NoError(err)
+	err = serve(ctx, config.Config{Transport: config.TransportHTTP})
+
+	r.NoError(err)
+	r.Contains(stderr.String(), "failed to flush OpenTelemetry traces")
+	r.Contains(stderr.String(), shutdownErr.Error())
+}
+
+func TestServeDoesNotPublishFatalStatusWhenCanceled(t *testing.T) {
+	r := require.New(t)
+
+	originalServerRun := serverRun
+	originalNewSystemdNotify := newSystemdNotify
+	t.Cleanup(func() {
+		serverRun = originalServerRun
+		newSystemdNotify = originalNewSystemdNotify
+	})
+
+	notifier := &recordingNotifier{}
+	newSystemdNotify = func() systemdnotify.Notifier { return notifier }
+	serverRun = func(context.Context, config.Config, tools.Dependencies, systemdnotify.Notifier) error {
+		return context.Canceled
+	}
+
+	err := serve(loggingTestContext(t), config.Config{Transport: config.TransportHTTP})
+
+	r.ErrorIs(err, context.Canceled)
+	r.Equal([]string{"starting"}, notifier.events)
 }
 
 func TestServeFailsWhenSystemdStartupStatusCannotBeSent(t *testing.T) {

@@ -10,10 +10,12 @@ import (
 	"net/url"
 	"os"
 	"path"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/davidvanlaatum/inventree-mcp/internal/oauth"
+	"github.com/davidvanlaatum/inventree-mcp/internal/telemetry"
 	"github.com/davidvanlaatum/inventree-mcp/internal/weblinks"
 	"github.com/spf13/afero"
 )
@@ -45,22 +47,24 @@ const (
 	EnvOAuthSessionLifetime   = "INVENTREE_MCP_OAUTH_SESSION_LIFETIME"
 	EnvBulkMaxItems           = "INVENTREE_MCP_BULK_MAX_ITEMS"
 	EnvBulkConcurrency        = "INVENTREE_MCP_BULK_CONCURRENCY"
+	EnvOTelEnabled            = "INVENTREE_MCP_OTEL_ENABLED"
+	EnvOTelServiceName        = "INVENTREE_MCP_OTEL_SERVICE_NAME"
+	EnvOTelExporter           = "INVENTREE_MCP_OTEL_EXPORTER"
+	EnvOTelEndpoint           = "INVENTREE_MCP_OTEL_ENDPOINT"
+	EnvOTelInsecure           = "INVENTREE_MCP_OTEL_INSECURE"
+	EnvOTelHeaders            = "INVENTREE_MCP_OTEL_HEADERS"
+	EnvOTelSampleRatio        = "INVENTREE_MCP_OTEL_SAMPLE_RATIO"
+	EnvOTelBatchTimeout       = "INVENTREE_MCP_OTEL_BATCH_TIMEOUT"
+	EnvOTelExportTimeout      = "INVENTREE_MCP_OTEL_EXPORT_TIMEOUT"
 
 	invalidDuration               = time.Duration(-1)
 	DefaultListen                 = "127.0.0.1:28686"
 	DefaultMCPMaxRequestBodyBytes = int64(8 * 1024 * 1024)
 	mcpRequestBodyOverheadBytes   = int64(1024 * 1024)
-	// DefaultBulkMaxItems and DefaultBulkConcurrency preserve the values the
-	// bulk tools used as fixed internal constants before F-S81 made them
-	// operator-configurable.
-	DefaultBulkMaxItems    = 25
-	DefaultBulkConcurrency = 4
-	// maxBulkMaxItemsLimit and maxBulkConcurrencyLimit bound how far an
-	// operator can raise these settings, so a bulk result payload stays
-	// boundable in MCP context and a single call cannot fan out an
-	// unbounded number of concurrent upstream requests.
-	maxBulkMaxItemsLimit    = 500
-	maxBulkConcurrencyLimit = 64
+	DefaultBulkMaxItems           = 25
+	DefaultBulkConcurrency        = 4
+	maxBulkMaxItemsLimit          = 500
+	maxBulkConcurrencyLimit       = 64
 )
 
 type Environment string
@@ -109,6 +113,7 @@ type Config struct {
 	OAuthAccessLifetime    time.Duration
 	OAuthRefreshLifetime   time.Duration
 	OAuthSessionLifetime   time.Duration
+	Telemetry              telemetry.Config
 	BulkMaxItems           int
 	BulkConcurrency        int
 }
@@ -210,6 +215,30 @@ func parseServeWithDeps(args []string, getenv Env, output io.Writer, filesystem 
 	fs.DurationVar(&cfg.OAuthSessionLifetime, "oauth-session-lifetime", cfg.OAuthSessionLifetime, flagHelp("OAuth maximum connector session lifetime", EnvOAuthSessionLifetime))
 	fs.IntVar(&cfg.BulkMaxItems, "bulk-max-items", cfg.BulkMaxItems, flagHelp("maximum items accepted per bulk mutation call", EnvBulkMaxItems))
 	fs.IntVar(&cfg.BulkConcurrency, "bulk-concurrency", cfg.BulkConcurrency, flagHelp("maximum concurrent workers per bulk mutation call", EnvBulkConcurrency))
+	fs.BoolVar(&cfg.Telemetry.Enabled, "otel-enabled", cfg.Telemetry.Enabled, flagHelp("enable OpenTelemetry trace export", EnvOTelEnabled))
+	fs.StringVar(&cfg.Telemetry.ServiceName, "otel-service-name", cfg.Telemetry.ServiceName, flagHelp("OpenTelemetry service name", EnvOTelServiceName))
+	fs.StringVar(&cfg.Telemetry.Exporter, "otel-exporter", cfg.Telemetry.Exporter, flagHelp("OpenTelemetry trace exporter: otlpgrpc or otlphttp", EnvOTelExporter))
+	fs.StringVar(&cfg.Telemetry.Endpoint, "otel-endpoint", cfg.Telemetry.Endpoint, flagHelp("OpenTelemetry exporter endpoint", EnvOTelEndpoint))
+	fs.BoolVar(&cfg.Telemetry.Insecure, "otel-insecure", cfg.Telemetry.Insecure, flagHelp("disable TLS for the OpenTelemetry exporter", EnvOTelInsecure))
+	fs.Float64Var(&cfg.Telemetry.SampleRatio, "otel-sample-ratio", cfg.Telemetry.SampleRatio, flagHelp("OpenTelemetry trace sampling ratio from 0 to 1", EnvOTelSampleRatio))
+	fs.DurationVar(&cfg.Telemetry.BatchTimeout, "otel-batch-timeout", cfg.Telemetry.BatchTimeout, flagHelp("OpenTelemetry trace batch timeout", EnvOTelBatchTimeout))
+	fs.DurationVar(&cfg.Telemetry.ExportTimeout, "otel-export-timeout", cfg.Telemetry.ExportTimeout, flagHelp("OpenTelemetry trace export timeout", EnvOTelExportTimeout))
+	var otelHeaderFlagSeen bool
+	fs.Func("otel-header", flagHelp("OpenTelemetry exporter header key=value; repeatable", EnvOTelHeaders), func(value string) error {
+		if !otelHeaderFlagSeen {
+			cfg.Telemetry.Headers = nil
+			otelHeaderFlagSeen = true
+		}
+		key, headerValue, err := parseHeader(value)
+		if err != nil {
+			return err
+		}
+		if cfg.Telemetry.Headers == nil {
+			cfg.Telemetry.Headers = make(map[string]string)
+		}
+		cfg.Telemetry.Headers[key] = headerValue
+		return nil
+	})
 
 	if err := fs.Parse(args); err != nil {
 		return Config{}, err
@@ -259,15 +288,9 @@ func (c Config) Validate() error {
 	if c.InvenTreeTimeout <= 0 {
 		validationErrors = append(validationErrors, errors.New("InvenTree timeout must be greater than zero"))
 	}
-
-	if c.InvenTreeTLSSkipVerify && c.Environment == EnvironmentProduction {
-		validationErrors = append(validationErrors, errors.New("production mode rejects InvenTree TLS skip verify"))
+	if err := c.Telemetry.Validate(); err != nil {
+		validationErrors = append(validationErrors, err)
 	}
-
-	if c.UploadMaxBytes <= 0 {
-		validationErrors = append(validationErrors, errors.New("upload max bytes must be greater than zero"))
-	}
-
 	if c.BulkMaxItems <= 0 {
 		validationErrors = append(validationErrors, errors.New("bulk max items must be greater than zero"))
 	} else if c.BulkMaxItems > maxBulkMaxItemsLimit {
@@ -277,6 +300,14 @@ func (c Config) Validate() error {
 		validationErrors = append(validationErrors, errors.New("bulk concurrency must be greater than zero"))
 	} else if c.BulkConcurrency > maxBulkConcurrencyLimit {
 		validationErrors = append(validationErrors, fmt.Errorf("bulk concurrency must not exceed %d", maxBulkConcurrencyLimit))
+	}
+
+	if c.InvenTreeTLSSkipVerify && c.Environment == EnvironmentProduction {
+		validationErrors = append(validationErrors, errors.New("production mode rejects InvenTree TLS skip verify"))
+	}
+
+	if c.UploadMaxBytes <= 0 {
+		validationErrors = append(validationErrors, errors.New("upload max bytes must be greater than zero"))
 	}
 
 	if c.Transport == TransportStdio {
@@ -580,6 +611,18 @@ func int64Default(getenv Env, key string, fallback int64) int64 {
 	return value
 }
 
+func float64Default(getenv Env, key string, fallback float64) float64 {
+	raw := strings.TrimSpace(getenv(key))
+	if raw == "" {
+		return fallback
+	}
+	value, err := strconv.ParseFloat(raw, 64)
+	if err != nil {
+		return math.NaN()
+	}
+	return value
+}
+
 func intDefault(getenv Env, key string, fallback int) int {
 	raw := strings.TrimSpace(getenv(key))
 	if raw == "" {
@@ -590,6 +633,32 @@ func intDefault(getenv Env, key string, fallback int) int {
 		return -1
 	}
 	return value
+}
+
+func headerEnv(getenv Env, key string) map[string]string {
+	raw := getenv(key)
+	if raw == "" {
+		return nil
+	}
+	headers := make(map[string]string)
+	for _, item := range strings.Split(raw, ",") {
+		name, value, err := parseHeader(item)
+		if err != nil {
+			headers[""] = "invalid"
+			continue
+		}
+		headers[name] = value
+	}
+	return headers
+}
+
+func parseHeader(raw string) (string, string, error) {
+	name, value, ok := strings.Cut(raw, "=")
+	name = strings.TrimSpace(name)
+	if !ok || name == "" {
+		return "", "", errors.New("OpenTelemetry header must use key=value")
+	}
+	return name, value, nil
 }
 
 func flagHelp(description string, envVar string) string {

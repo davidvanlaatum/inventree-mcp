@@ -17,6 +17,7 @@ import (
 	"github.com/davidvanlaatum/inventree-mcp/internal/oauth"
 	"github.com/davidvanlaatum/inventree-mcp/internal/requestctx"
 	"github.com/davidvanlaatum/inventree-mcp/internal/systemdnotify"
+	"github.com/davidvanlaatum/inventree-mcp/internal/telemetry"
 	"github.com/davidvanlaatum/inventree-mcp/internal/tools"
 	"github.com/modelcontextprotocol/go-sdk/auth"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -37,6 +38,7 @@ func New(deps tools.Dependencies) *mcp.Server {
 		Version: buildinfo.Version,
 		Icons:   []mcp.Icon{tools.InvenTreeIcon()},
 	}, &mcp.ServerOptions{Instructions: serverInstructions})
+	srv.AddReceivingMiddleware(telemetry.MCPMiddleware)
 	tools.Register(srv, deps)
 	return srv
 }
@@ -217,7 +219,7 @@ func httpMuxWithOptions(ctx context.Context, cfg config.Config, srv *mcp.Server,
 		}))
 		metadataClient := options.metadataClient
 		if metadataClient == nil {
-			metadataClient = &http.Client{Timeout: oauth.DefaultClientMetadataTimeout}
+			metadataClient = telemetry.WrapHTTPClient(&http.Client{Timeout: oauth.DefaultClientMetadataTimeout})
 		}
 		now := options.now
 		if now == nil {
@@ -230,7 +232,7 @@ func httpMuxWithOptions(ctx context.Context, cfg config.Config, srv *mcp.Server,
 		}
 		broker := oauth.InvenTreeCredentialBroker{
 			BaseURL:    cfg.InvenTreeURL,
-			HTTPClient: &http.Client{Timeout: cfg.InvenTreeTimeout},
+			HTTPClient: telemetry.WrapHTTPClient(&http.Client{Timeout: cfg.InvenTreeTimeout}),
 		}
 		oauthService := oauth.Service{
 			Codec:           oauth.EnvelopeCodec{Keyring: keyring},
@@ -264,11 +266,11 @@ func httpMuxWithOptions(ctx context.Context, cfg config.Config, srv *mcp.Server,
 		handler = traffic.middleware(string(config.TransportHTTP), cfg.MCPMaxRequestBodyBytes, handler)
 	}
 	mux.Handle(cfg.Path, handler)
-	return sourceIPMiddleware(logging.FromContext(ctx), sourceResolver, mux), nil
+	return telemetry.HTTPHandler(sourceIPMiddleware(logging.FromContext(ctx), sourceResolver, mux)), nil
 }
 
 func HTTPHandler(ctx context.Context, srv *mcp.Server, maxRequestBodyBytes int64) http.Handler {
-	handler := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server {
+	baseHandler := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server {
 		return srv
 	}, &mcp.StreamableHTTPOptions{
 		Stateless:                    true,
@@ -277,7 +279,7 @@ func HTTPHandler(ctx context.Context, srv *mcp.Server, maxRequestBodyBytes int64
 		PropagateRequestCancellation: true,
 	})
 
-	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+	handler := http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		logger := logging.FromContext(ctx)
 		if _, ok := requestctx.SourceIP(req.Context()); ok {
 			logger = logging.FromContext(req.Context())
@@ -288,8 +290,9 @@ func HTTPHandler(ctx context.Context, srv *mcp.Server, maxRequestBodyBytes int64
 			slog.String("method", req.Method),
 			slog.String("path", req.URL.Path),
 		))
-		handler.ServeHTTP(w, req.WithContext(requestCtx))
+		baseHandler.ServeHTTP(w, req.WithContext(requestCtx))
 	})
+	return handler
 }
 
 func WithTransportLogger(ctx context.Context, transport string) context.Context {
