@@ -2,6 +2,11 @@
 
 set -eu
 
+if [ -e /etc/inventree-mcp/config.yml ]; then
+    chown inventree-mcp:inventree-mcp /etc/inventree-mcp/config.yml
+    chmod 0600 /etc/inventree-mcp/config.yml
+fi
+
 if command -v systemctl >/dev/null 2>&1; then
     systemctl daemon-reload
 

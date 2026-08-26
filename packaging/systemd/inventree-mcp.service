@@ -9,6 +9,8 @@ NotifyAccess=main
 WatchdogSec=30s
 Restart=on-failure
 RestartSec=5s
+User=inventree-mcp
+Group=inventree-mcp
 ExecStart=/usr/bin/inventree-mcp serve --config /etc/inventree-mcp/config.yml
 TimeoutSec=60
 
