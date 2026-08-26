@@ -165,8 +165,8 @@ Before assigning a new story ID, inspect `git worktree list --porcelain`, search
 | [F-S81](#f-s81-bulk-mutation-throughput-and-operator-observability) | Validate bulk throughput, bounded concurrency, progress, cancellation, and operator recovery evidence. | Done |
 | [F-S82](#f-s82-mcp-facing-image-and-attachment-tool-routing-guidance) | Make image and generic-attachment tool routing explicit to MCP agents. | Done |
 | [F-S83](#f-s83-harden-testcontainers-worker-startup-under-ci-load) | Harden the Testcontainers InvenTree worker health probe against CI resource contention. | Done |
-| [F-S84](#f-s84-add-opentelemetry-tracing) | Add opt-in OpenTelemetry tracing across MCP and InvenTree interactions. | Active |
-| [F-S85](#f-s85-add-opentelemetry-metrics-and-prometheus-export) | Add optional OpenTelemetry metrics and Prometheus export as the F-S84 follow-up. | Active |
+| [F-S84](#f-s84-add-opentelemetry-tracing) | Add opt-in OpenTelemetry tracing across MCP and InvenTree interactions. | Done |
+| [F-S85](#f-s85-add-opentelemetry-metrics-and-prometheus-export) | Add optional OpenTelemetry metrics and Prometheus export as the F-S84 follow-up. | Done |
 | [F-S86](#f-s86-packaged-config-file-deployment) | Switch deb/rpm/apk packages from an EnvironmentFile-based `.env` template to a packaged YAML config file. | Done |
 | [F-S87](#f-s87-run-packaged-systemd-service-as-a-non-root-user) | Run the packaged systemd service as a dedicated non-root user instead of root. | Future |
 
@@ -3104,7 +3104,7 @@ Tasks:
 
 ### F-S84: Add OpenTelemetry Tracing
 
-- Status: `Active`
+- Status: `Done`
 - Issue: [#219](https://github.com/davidvanlaatum/inventree-mcp/issues/219)
 - Depends on: none.
 - Progress: implementation started on `codex/f-s84-opentelemetry` from the current `origin/main` baseline. The implementation spike split metrics/Prometheus into F-S85 because it introduces a separate exporter, scrape/lifecycle, and operational contract.
@@ -3126,14 +3126,14 @@ Tasks:
   - [x] Add typed opt-in configuration for OTLP/gRPC and OTLP/HTTP trace export.
   - [x] Add W3C propagation and spans across MCP methods, tool names/approved numeric identifiers, InvenTree/OAuth HTTP, and constrained URL-upload HTTP requests.
   - [x] Add actual MCP-request-to-tool-to-InvenTree end-to-end correlated trace evidence; broader exporter/lifecycle failure and timeout tests remain pending.
-  - [ ] Finalize operator documentation, review privacy/cardinality behavior, and complete full validation.
-- Validation: targeted telemetry/configuration/docs tests, `go vet`, `golangci-lint run ./...`, `go test ./... -run '^$'`, `git diff --check`, and `INVENTREE_TEST_SKIP_DOCKER=true go test -race ./... -count=1` pass. The memory explosion was caused by a recursive HTTP-handler wrapper and is fixed. `GOFLAGS=-trimpath go test -race -p=1 ./...` also passed locally with Docker and localhost access, including `internal/inventree`, `internal/server`, `internal/testenv`, and `internal/tools`. CI coverage passed the 80% threshold at 85.9% versus 86.2% on `main`; package deltas were `cmd/inventree-mcp` 92.7%→90.3%, `internal/config` 93.9%→90.5%, `internal/server` 78.4%→78.6%, and new `internal/telemetry` 0%→55.0%. The `cmd/inventree-mcp` and `internal/config` reductions are from new telemetry startup/configuration branches not all exercised by existing command/config tests; the new telemetry package has no prior baseline and now has propagation, privacy, disabled-mode, HTTP, MCP, and MCP-to-InvenTree correlation coverage. The remaining accepted residual is broader exporter/lifecycle failure and timeout coverage.
-- Review: initial Senior Go, Senior QA / Test Architect, and Senior Product Manager reviews found and drove fixes for query-string privacy leakage, NaN sampling validation, OAuth inbound coverage, and HTTP wrapper cleanup. Focused reruns remain required after the latest follow-up; the panel still requires actual MCP-to-InvenTree evidence and package-coverage analysis before completion.
-- Residual risk: metrics scope is deferred to F-S85; broader exporter/lifecycle failure and timeout coverage remains open, and the command/config package reductions are documented rather than fully recovered.
+  - [x] Finalize operator documentation, review privacy/cardinality behavior, and complete full validation.
+- Validation: targeted telemetry/configuration/docs tests, `go vet`, `golangci-lint run ./...`, `go test ./... -run '^$'`, `git diff --check`, and `INVENTREE_TEST_SKIP_DOCKER=true go test -race ./... -count=1` pass. The memory explosion was caused by a recursive HTTP-handler wrapper and is fixed. `GOFLAGS=-trimpath go test -race -p=1 ./...` also passed locally with Docker and localhost access, including `internal/inventree`, `internal/server`, `internal/testenv`, and `internal/tools`. CI coverage passed the 80% threshold at 85.9% versus 86.2% on `main`; package deltas were `cmd/inventree-mcp` 92.7%→90.3%, `internal/config` 93.9%→90.5%, `internal/server` 78.4%→78.6%, and new `internal/telemetry` 0%→55.0%. The `cmd/inventree-mcp` and `internal/config` reductions are from new telemetry startup/configuration branches not all exercised by existing command/config tests; the new telemetry package has no prior baseline and now has propagation, privacy, disabled-mode, HTTP, MCP, and MCP-to-InvenTree correlation coverage. Re-verified on `main` at `7a5155c` (after the F-S85 merge): `go build ./...`, `go vet ./...`, `golangci-lint run ./...` (0 issues), `git diff --check`, and `go test -race -p=1 ./...` (including Docker-backed `internal/inventree`/`internal/testenv`/`internal/tools` Testcontainers suites) all pass.
+- Review: initial Senior Go, Senior QA / Test Architect, and Senior Product Manager reviews found and drove fixes for query-string privacy leakage, NaN sampling validation, OAuth inbound coverage, and HTTP wrapper cleanup; final review closed [issue #219](https://github.com/davidvanlaatum/inventree-mcp/issues/219) on merge via [PR #221](https://github.com/davidvanlaatum/inventree-mcp/pull/221).
+- Residual risk: accepted and documented rather than blocking — broader OTLP exporter failure/timeout lifecycle coverage (requiring a failing collector or a controlled exporter seam) remains open; the normal OTLP/HTTP construction/header/shutdown-flush path is covered. The `cmd/inventree-mcp` and `internal/config` coverage reductions noted above are documented rather than fully recovered.
 
 ### F-S85: Add OpenTelemetry Metrics And Prometheus Export
 
-- Status: `Active`
+- Status: `Done`
 - Issue: [#222](https://github.com/davidvanlaatum/inventree-mcp/issues/222)
 - Depends on: F-S84.
 - Scope: add opt-in OpenTelemetry metrics and a documented Prometheus-compatible exposition/export path where practical, with explicit names, units, labels, cardinality, privacy, exporter, scrape, lifecycle, and failure semantics.
@@ -3149,8 +3149,8 @@ Tasks:
 - [x] Instrument MCP, outbound HTTP, and representative bulk-operation boundaries without payload or record-identifier labels.
 - [x] Add focused runtime, scrape, configuration, and route tests and align operator documentation.
 - [x] Add bounded per-tool call counters, duration histograms, and in-flight gauges, plus allowlisted InvenTree API resource counters, duration histograms, and in-flight gauges.
-- Validation: focused metrics/configuration/server/tools/docs race tests passed; full `go test ./... -race` passed for all runtime packages, with the initial run requiring a documentation-status correction that was then verified by `go test ./docs`; `go test ./... -run '^$'`, `go vet ./...`, `golangci-lint run ./...`, `go mod tidy -diff`, and `git diff --check` passed. Localhost/Docker tests require the escalated execution context in this environment.
-- Review: final Senior Go Developer, Senior QA / Test Architect, Senior Product Manager, and Senior Infosec reviews found no unresolved actionable findings after the expanded per-tool/API metrics review and follow-up fixes.
+- Validation: focused metrics/configuration/server/tools/docs race tests passed; full `go test ./... -race` passed for all runtime packages, with the initial run requiring a documentation-status correction that was then verified by `go test ./docs`; `go test ./... -run '^$'`, `go vet ./...`, `golangci-lint run ./...`, `go mod tidy -diff`, and `git diff --check` passed. Localhost/Docker tests require the escalated execution context in this environment. Re-verified on `main` at `7a5155c` (post-merge): `go build ./...`, `go vet ./...`, `golangci-lint run ./...` (0 issues), `git diff --check`, and `go test -race -p=1 ./...` (including Docker-backed `internal/inventree`/`internal/testenv`/`internal/tools` Testcontainers suites) all pass.
+- Review: final Senior Go Developer, Senior QA / Test Architect, Senior Product Manager, and Senior Infosec reviews found no unresolved actionable findings after the expanded per-tool/API metrics review and follow-up fixes; [issue #222](https://github.com/davidvanlaatum/inventree-mcp/issues/222) closed on merge via [PR #227](https://github.com/davidvanlaatum/inventree-mcp/pull/227).
 - Residual risk: the unauthenticated Prometheus path must remain on the configured private listener; a reverse proxy may additionally enforce a scraper allowlist. Metrics are intentionally bounded and contain no record IDs, payloads, credentials, or upstream URLs.
 
 ### F-S86: Packaged Config-File Deployment
