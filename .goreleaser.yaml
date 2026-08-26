@@ -76,8 +76,11 @@ nfpms:
         type: config|noreplace
         file_info:
           mode: 0600
+          owner: inventree-mcp
+          group: inventree-mcp
     mtime: "{{ .CommitDate }}"
     scripts:
+      preinstall: packaging/scripts/preinstall.sh
       postinstall: packaging/scripts/postinstall.sh
       preremove: packaging/scripts/preremove.sh
       postremove: packaging/scripts/postremove.sh
