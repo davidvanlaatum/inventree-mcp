@@ -170,6 +170,7 @@ Before assigning a new story ID, inspect `git worktree list --porcelain`, search
 | [F-S86](#f-s86-packaged-config-file-deployment) | Switch deb/rpm/apk packages from an EnvironmentFile-based `.env` template to a packaged YAML config file. | Done |
 | [F-S87](#f-s87-run-packaged-systemd-service-as-a-non-root-user) | Run the packaged systemd service as a dedicated non-root user instead of root. | Done |
 | [F-S88](#f-s88-cross-object-global-search-discovery-and-bounded-search-tool) | Investigate InvenTree-style cross-object global search and add a bounded read-only MCP search tool if its contract is safe and stable. | Future |
+| [F-S90](#f-s90-deterministic-component-image-rendering) | Render deterministic PNG images for common, highly repetitive electronic components. | Future |
 
 ## Milestone 0: Repository And Planning
 
@@ -3237,3 +3238,28 @@ Tasks:
   - [ ] Decide whether to implement the generic tool or the smallest safe curated alternative.
   - [ ] If implementation proceeds, add the client/tool surface, endpoint manifest, docs, generated metadata, and focused/live tests.
   - [ ] Run the applicable Go, Testcontainers, documentation, and reviewer validation; record the decision and residual risk.
+
+### F-S90: Deterministic Component Image Rendering
+
+- Status: `Future`
+- Issue: [#235](https://github.com/davidvanlaatum/inventree-mcp/issues/235)
+- Depends on: F-S40, F-S82.
+- Scope: add a deterministic renderer for common, highly repetitive electronic components whose appearance can be described by a small parameter set. The first templates are axial resistors, axial diodes, through-hole LEDs, radial electrolytic capacitors, and glass fuses. The output is intended to provide useful part imagery for visually similar inventory items, not to replace datasheets or claim physical scale beyond explicitly supplied dimensions.
+- Decisions: rendering is template-driven rather than AI-generated. Exact visual semantics such as resistor colour bands, diode cathode bands, LED polarity, capacitor polarity, fuse markings, orientation, and supplied text must be reproducible and testable. The tool returns PNG output suitable for InvenTree image/attachment workflows; it does not automatically upload, replace, or assign an InvenTree image. Vector-like primitives may be used internally, but SVG is not the storage/output contract.
+- Acceptance:
+  - Define a stable tool contract for component family, package variant, visual parameters, markings, orientation, optional dimensions, background, and output size.
+  - Implement deterministic templates for axial resistors, axial diodes, through-hole LEDs, radial electrolytic capacitors, and glass fuses.
+  - Validate family-specific parameters, including resistor band/value encoding, polarity markers, supported colours, dimensions, text bounds, and maximum output size.
+  - Produce valid bounded PNG output with transparent-background support and deterministic output for identical inputs.
+  - Keep unsupported or ambiguous component variants fail-closed; do not invent package geometry, markings, ratings, pinouts, or scale.
+  - Keep generated imagery separate from InvenTree mutation: callers may pass the PNG to existing attachment/primary-image tools, but this tool must not perform that write implicitly.
+  - Add focused rendering, validation, metadata, and MCP contract tests plus aligned tool reference, operator recipe, plan, schema/capability notes where applicable, generated metadata, and task documentation.
+  - Record extensibility guidance for adding future low-dimensional templates without making AI generation or arbitrary product-image synthesis part of this story.
+- Out of scope: AI-generated or photorealistic product images; general-purpose SVG output as the InvenTree storage contract; MOSFET, IC, connector, USB, or other families with highly variable package/marking conventions; datasheet generation, authoritative electrical interpretation, schematic capture, pinout inference, or automatic category-based parameter inference; automatic attachment upload or primary-image replacement.
+- Residual risk: images are illustrative inventory aids and can be misleading when callers omit dimensions, package variants, or markings. Template coverage is intentionally narrow; unsupported families require a separate reviewed template contract.
+- Tasks:
+  - [ ] Define the renderer contract and the initial family-specific parameter schemas.
+  - [ ] Implement the five initial deterministic templates and bounded PNG encoding.
+  - [ ] Add validation, rendering, metadata, MCP contract, and output determinism tests.
+  - [ ] Align plan, API/capability notes, tool reference, operator recipe, generated metadata, and task documentation.
+  - [ ] Run applicable validation and the required Go/QA/Product review panel.
