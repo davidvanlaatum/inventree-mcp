@@ -6,7 +6,7 @@ const applicationName = "inventree-mcp"
 // build targets. internal/testenv references these same constants so the Testcontainers
 // pin and the CLI's reported baseline cannot drift from each other independently.
 const (
-	PinnedInvenTreeVersion    = "1.5.1"
+	PinnedInvenTreeVersion    = "1.5.2"
 	PinnedInvenTreeAPIVersion = "530"
 )
 
