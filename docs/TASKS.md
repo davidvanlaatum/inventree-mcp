@@ -3242,6 +3242,7 @@ Tasks:
 ### F-S89: Harden Supplier-Part MPN Read-Back Against A CI Nil-Panic
 
 - Status: `Done`
+- Issue: [#233](https://github.com/davidvanlaatum/inventree-mcp/issues/233)
 - Depends on: none.
 - Progress: identified while monitoring CI for PR #232 (the F-S## InvenTree 1.5.2 baseline bump). Implemented directly on `claude/clever-proskuriakova-d29d52`.
 - Scope: investigate a CI-only panic in `TestClientMethodsAgainstInvenTree/writes` and hardened the assertion so a recurrence fails cleanly instead of crashing the test binary.
