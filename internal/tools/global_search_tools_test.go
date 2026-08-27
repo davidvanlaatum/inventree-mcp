@@ -112,6 +112,68 @@ func TestGlobalSearchMapsBucketsToDetailToolsAndOmitsUnrequestedTypes(t *testing
 	a.Nil(output.PurchaseOrders)
 }
 
+// TestGlobalSearchMapsEveryObjectTypeToItsOwnDetailTool guards against a
+// copy-paste slip in globalSearchOutput's eight hand-written per-type
+// branches (for example swapping GetStockItemToolName/GetStockLocationToolName)
+// by populating every bucket at once and asserting each one's exact
+// DetailTool and Count independently.
+func TestGlobalSearchMapsEveryObjectTypeToItsOwnDetailTool(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+
+	fake := &fakeGlobalSearchClient{
+		result: inventree.GlobalSearchResult{
+			Parts:             &inventree.GlobalSearchBucket[inventree.Part]{Count: 1, Results: []inventree.Part{{PK: 1}}},
+			PartCategories:    &inventree.GlobalSearchBucket[inventree.Category]{Count: 2, Results: []inventree.Category{{PK: 2}, {PK: 3}}},
+			StockItems:        &inventree.GlobalSearchBucket[inventree.StockItem]{Count: 3, Results: []inventree.StockItem{{PK: 4}, {PK: 5}, {PK: 6}}},
+			StockLocations:    &inventree.GlobalSearchBucket[inventree.StockLocation]{Count: 4, Results: []inventree.StockLocation{{PK: 7}}},
+			Companies:         &inventree.GlobalSearchBucket[inventree.Company]{Count: 5, Results: []inventree.Company{{PK: 8}}},
+			SupplierParts:     &inventree.GlobalSearchBucket[inventree.SupplierPart]{Count: 6, Results: []inventree.SupplierPart{{PK: 9}}},
+			ManufacturerParts: &inventree.GlobalSearchBucket[inventree.ManufacturerPart]{Count: 7, Results: []inventree.ManufacturerPart{{PK: 10}}},
+			PurchaseOrders:    &inventree.GlobalSearchBucket[inventree.PurchaseOrder]{Count: 8, Results: []inventree.PurchaseOrder{{PK: 11}}},
+		},
+	}
+	handler := globalSearch(depsForFakeGlobalSearch(fake))
+
+	_, output, err := handler(ctx, &mcp.CallToolRequest{}, GlobalSearchInput{Search: "everything"})
+	r.NoError(err)
+	a.Equal(StatusOK, output.Status)
+
+	r.NotNil(output.Parts)
+	a.Equal(1, output.Parts.Count)
+	a.Equal(GetPartToolName, output.Parts.DetailTool)
+
+	r.NotNil(output.PartCategories)
+	a.Equal(2, output.PartCategories.Count)
+	a.Equal(GetPartCategoryToolName, output.PartCategories.DetailTool)
+
+	r.NotNil(output.StockItems)
+	a.Equal(3, output.StockItems.Count)
+	a.Equal(GetStockItemToolName, output.StockItems.DetailTool)
+
+	r.NotNil(output.StockLocations)
+	a.Equal(4, output.StockLocations.Count)
+	a.Equal(GetStockLocationToolName, output.StockLocations.DetailTool)
+
+	r.NotNil(output.Companies)
+	a.Equal(5, output.Companies.Count)
+	a.Equal(GetCompanyToolName, output.Companies.DetailTool)
+
+	r.NotNil(output.SupplierParts)
+	a.Equal(6, output.SupplierParts.Count)
+	a.Equal(GetSupplierPartToolName, output.SupplierParts.DetailTool)
+
+	r.NotNil(output.ManufacturerParts)
+	a.Equal(7, output.ManufacturerParts.Count)
+	a.Equal(GetManufacturerPartToolName, output.ManufacturerParts.DetailTool)
+
+	r.NotNil(output.PurchaseOrders)
+	a.Equal(8, output.PurchaseOrders.Count)
+	a.Equal(GetPurchaseOrderToolName, output.PurchaseOrders.DetailTool)
+}
+
 func TestGlobalSearchReturnsNotFoundWhenEveryRequestedBucketIsEmpty(t *testing.T) {
 	t.Parallel()
 	r := require.New(t)

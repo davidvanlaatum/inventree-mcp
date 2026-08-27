@@ -2778,6 +2778,32 @@ func TestClientMethodsAgainstInvenTree(t *testing.T) {
 			r.Nil(narrow.PurchaseOrders)
 		})
 
+		t.Run("limit_applies_independently_per_bucket", func(t *testing.T) {
+			r := require.New(t)
+			a := assert.New(t)
+
+			// The run-scoped fixtures created above give "company" two real
+			// matches (supplier, manufacturer) and "part" exactly one. limit:1
+			// with both types requested together proves limit truncates each
+			// bucket on its own -- company drops from 2 real matches to 1
+			// returned result, while part's single match is not starved to 0
+			// by company's truncation (which a shared/split global cap would
+			// otherwise risk, since only one top-level "limit" field exists
+			// on the InvenTree request).
+			bounded, err := fixture.client.GlobalSearch(ctx, inventree.GlobalSearchQuery{
+				Search:      fixture.run.Prefix,
+				ObjectTypes: []inventree.GlobalSearchObjectType{inventree.GlobalSearchCompany, inventree.GlobalSearchPart},
+				Limit:       1,
+			})
+			r.NoError(err)
+			r.NotNil(bounded.Companies)
+			a.Equal(2, bounded.Companies.Count, "two run-scoped companies (supplier, manufacturer) must both be counted as matches")
+			a.Len(bounded.Companies.Results, 1, "company results must be truncated to limit:1 despite two real matches")
+			r.NotNil(bounded.Parts)
+			a.Equal(1, bounded.Parts.Count)
+			a.Len(bounded.Parts.Results, 1, "part's own single match must not be starved by the company bucket's truncation")
+		})
+
 		t.Run("search_notes_gates_notes_only_matches", func(t *testing.T) {
 			r := require.New(t)
 			marker, err := fixture.run.Name("notesmarker")
