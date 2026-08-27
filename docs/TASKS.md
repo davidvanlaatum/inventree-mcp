@@ -5,7 +5,6 @@ This backlog turns [PLAN.md](PLAN.md) into executable work. Status values are:
 - `Done`: acceptance criteria met, validation/review recorded, and committed; when a task-status update is part of the current change, `Done` means ready for the same commit.
 - `Active`: implementation has started on a named branch; the linked issue carries matching active progress context and is assigned when repository permissions allow it.
 - `Ready`: actionable with current information.
-- `Active`: implementation is in progress on an assigned story.
 - `Blocked`: needs an explicit decision, external verification, or prerequisite task.
 - `Planned`: valid work, but should wait for dependencies.
 - `Future`: outside the first beta milestone.
@@ -37,6 +36,8 @@ Before marking a story `Done`, add or update story-local completion notes:
 When any story status changes, update both the Task Index row and the story-local `Status:` line in the same change. Before handoff, re-read both locations for every edited story and fix any mismatch.
 
 When a story has an `Issue:` link, keep the GitHub issue aligned with changes to the story's title, status, dependencies, scope, acceptance criteria, and task checklist, and add progress, validation, review, or residual-risk context when it is relevant to the handoff. Ask the operator before creating any GitHub issue for a story, then add the resulting `Issue:` link to the story. Do not close a linked issue merely because the story is marked `Done` locally or a PR is opened; close it through an accurate closing reference in the implementing PR when that PR is merged, or close it only after the merge is verified. If the merged PR does not complete the issue scope, keep the issue open and update it with the remaining work.
+
+For every story with an `Issue:` link, mirror the story status on the issue with exactly one of these labels: `status:future`, `status:planned`, `status:ready`, `status:active`, `status:blocked`, or `status:done`. `docs/TASKS.md` is authoritative; whenever a story status changes, update the issue label in the same workflow, remove any stale status labels, and keep `status:done` on completed historical issues. The status label supplements GitHub's open/closed state and the issue's human-readable status context. `status:done` records task completion and may temporarily coexist with an open issue while its implementing PR is awaiting merge; never close an issue solely because it has `status:done`. If label creation, update, removal, permissions, or read-back fails, stop the status transition, report the specific mismatch or failure, and reconcile the issue and task record before continuing.
 
 When updating an already-pushed branch or existing PR, prefer fresh follow-up commits over amending or force-pushing. Rewrite published history only for an explicit operator request or a concrete repository hygiene issue, and use `--force-with-lease` when a rewrite is unavoidable. Keep existing PR titles, descriptions, checklists, validation notes, review summaries, residual risks, and follow-up lists current whenever follow-up commits change the branch scope or status. Prefer squash merge when merging PRs unless the operator or repository policy requires another strategy.
 
