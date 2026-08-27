@@ -987,7 +987,7 @@ func TestHTTPHelpersFetchVersionCreateAndProveToken(t *testing.T) {
 	version, err := fetchVersion(ctx, client, "http://inventree.test", defaultAdminUser, defaultAdminPassword)
 	r.NoError(err)
 	r.Equal(DefaultVersion, version.Version.Server)
-	r.Equal(530, version.Version.API)
+	r.Equal(DefaultAPIVersion, strconv.Itoa(version.Version.API))
 
 	token, err := createToken(ctx, client, "http://inventree.test", defaultAdminUser, defaultAdminPassword)
 	r.NoError(err)
