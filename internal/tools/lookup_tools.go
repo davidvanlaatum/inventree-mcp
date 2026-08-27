@@ -169,6 +169,7 @@ const (
 	SearchProjectCodesToolName                = "search_project_codes"
 	GetProjectCodeToolName                    = "get_project_code"
 	AssignProjectCodeToolName                 = "assign_project_code"
+	GlobalSearchToolName                      = "global_search"
 
 	defaultDownloadMaxBytes int64 = 5 * 1024 * 1024
 	maxDownloadMaxBytes     int64 = 25 * 1024 * 1024
@@ -245,6 +246,7 @@ var lookupToolNames = []string{
 	GetAddressToolName,
 	SearchProjectCodesToolName,
 	GetProjectCodeToolName,
+	GlobalSearchToolName,
 }
 
 var writeToolNames = []string{
@@ -698,6 +700,7 @@ func registerLookupTools(server *mcp.Server, deps Dependencies) {
 	registerContactLookupTools(server, deps)
 	registerAddressLookupTools(server, deps)
 	registerProjectCodeLookupTools(server, deps)
+	registerGlobalSearchTool(server, deps)
 }
 
 func addReadOnlyTool[In, Out any](server *mcp.Server, deps Dependencies, name string, title string, description string, handler mcp.ToolHandlerFor[In, Out]) {

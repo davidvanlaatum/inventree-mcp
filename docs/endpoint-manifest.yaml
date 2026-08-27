@@ -19,6 +19,7 @@ coverage_areas:
   - instance_info
   - project_codes
   - stocktake_generation
+  - search
 
 forbidden_paths:
   - /api/notes-image-upload/
@@ -272,6 +273,15 @@ endpoints:
     method: GET
     operation_id: project_code_retrieve
     response_schema: '#/components/schemas/ProjectCode'
+  - id: global_search
+    area: search
+    path: /api/search/
+    method: POST
+    operation_id: search_create
+    request_schema: '#/components/schemas/APISearchView'
+    request_content_type: application/json
+    response_status: "200"
+    response_schema: '#/components/schemas/APISearchView'
   - id: search_supplier_parts
     area: purchasing_preview
     path: /api/company/part/

@@ -205,6 +205,15 @@ HTTP mode accepts the same debug traffic log option as STDIO. HTTP debug entries
 - Combined workflows: `create_purchase_order_with_lines`, `issue_purchase_order`, and `receive_purchase_order_items` carry each line/extra-line's current `project_code` through their dry-run plans, hashes, and read-back, but none of them create, replace, or clear it — only `assign_project_code` mutates it.
 - HTTP note: `search_project_codes`/`get_project_code` require `inventree.read`; `assign_project_code` requires `inventree.read`, `inventree.write`, and `inventree.destructive`, and publishes `destructiveHint:true` — it is closed-world and non-idempotent. Creating or deleting project-code records is not exposed by any tool.
 
+## Search Across Object Types When The Kind Of Record Is Unknown
+
+- Applies to: `part`, `partcategory`, `stockitem`, `stocklocation`, `company`, `supplierpart`, `manufacturerpart`, and `purchaseorder`. `salesorder`, `returnorder`, and `build` are not searchable through this tool even though InvenTree's underlying endpoint recognizes them: inventree-mcp has no `get_*` tool to route a match from one of those object families to a complete read yet.
+- When to use: only when the object type itself is unknown — for example, an operator pastes a name or reference and it is unclear whether it names a part, a company, or a purchase order. When the object type is already known, use that type's dedicated `search_*` tool instead; it supports the same field-specific filters `global_search` does not.
+- Call `global_search` with required `search` and optional `object_types` (defaults to all eight supported types when omitted); `search_regex` and `search_whole` change how `search` is matched, and `search_notes` additionally matches free-text notes/description fields, not just names and identifiers.
+- Read the result: one optional bucket per requested type (`parts`, `part_categories`, `stock_items`, `stock_locations`, `companies`, `supplier_parts`, `manufacturer_parts`, `purchase_orders`), each with `count`, `detail_tool` (the exact `get_*` tool name to call with a result's `pk` for a complete read), and `results` using that type's existing `search_*` projection unchanged. `status` is `not_found` when every requested bucket is empty.
+- Bounds: `limit` (default 20, capped at 100) applies per requested object type, not to the call as a whole — requesting all eight types can return up to 800 records across all buckets combined.
+- HTTP note: `global_search` requires only `inventree.read` and is closed-world, non-destructive, and idempotent.
+
 ## Create Or Administer A Part Category
 
 - Required inputs: a stable category ID for reads/updates, or an explicit nonblank name for creation. Parent and default-location choices use stable IDs only.
