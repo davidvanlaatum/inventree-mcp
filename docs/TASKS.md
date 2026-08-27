@@ -169,7 +169,7 @@ Before assigning a new story ID, inspect `git worktree list --porcelain`, search
 | [F-S85](#f-s85-add-opentelemetry-metrics-and-prometheus-export) | Add optional OpenTelemetry metrics and Prometheus export as the F-S84 follow-up. | Done |
 | [F-S86](#f-s86-packaged-config-file-deployment) | Switch deb/rpm/apk packages from an EnvironmentFile-based `.env` template to a packaged YAML config file. | Done |
 | [F-S87](#f-s87-run-packaged-systemd-service-as-a-non-root-user) | Run the packaged systemd service as a dedicated non-root user instead of root. | Done |
-| [F-S88](#f-s88-cross-object-global-search-discovery-and-bounded-search-tool) | Investigate InvenTree-style cross-object global search and add a bounded read-only MCP search tool if its contract is safe and stable. | Future |
+| [F-S88](#f-s88-cross-object-global-search-discovery-and-bounded-search-tool) | Investigate InvenTree-style cross-object global search and add a bounded read-only MCP search tool if its contract is safe and stable. | Done |
 | [F-S89](#f-s89-harden-supplier-part-mpn-read-back-against-a-ci-nil-panic) | Investigate a CI-only nil-pointer panic in the supplier-part MPN read-back test and harden it against recurrence. | Done |
 | [F-S90](#f-s90-deterministic-component-image-rendering) | Render deterministic PNG images for common, highly repetitive electronic components. | Future |
 
@@ -3219,9 +3219,10 @@ Tasks:
 
 ### F-S88: Cross-Object Global Search Discovery And Bounded Search Tool
 
-- Status: `Future`
+- Status: `Done`
 - Issue: [#230](https://github.com/davidvanlaatum/inventree-mcp/issues/230)
 - Depends on: none.
+- Progress: implemented on `claude/f-s88-cross-object-global-search` from `main` at `a8d759e`. A manual Docker-backed spike against pinned InvenTree `1.5.2`/API `530` characterized `POST /api/search/`'s request/response contract; findings recorded in `docs/api-schema.md`'s "Verified Cross-Object Global Search Endpoint" section. The operator's answer to the object-type-scope question was the free-text "depends what inventree exposes" -- ambiguous between "expose everything InvenTree recognizes" and "still bounded by other constraints." That was resolved by a harder technical/scope constraint rather than guessed: inventree-mcp has no `get_*` tool for `salesorder`, `returnorder`, or `build`, so a match in those families could never satisfy the acceptance criterion's "routing to existing exact `get_*` tools," and `AGENTS.md` already keeps sales/customer/build workflows out of scope; the shipped tool therefore covers exactly the 8 object types with an existing `get_*` tool (`part`, `partcategory`, `stockitem`, `stocklocation`, `company`, `supplierpart`, `manufacturerpart`, `purchaseorder`). `search_regex`/`search_whole`/`search_notes` are all exposed per explicit operator selection; `search_notes` only changes upstream match membership, not the returned projection (each bucket reuses that type's existing, already field-inventoried `search_*` projection unchanged). Schema drift (a requested-but-recognized object type missing from InvenTree's response) fails the call closed via `ErrGlobalSearchSchemaDrift` rather than silently returning a partial result.
 - Scope: investigate and, if the contract is sufficiently stable, expose InvenTree's cross-object search capability through a bounded read-only MCP tool. The motivating use case is the InvenTree UI-style search across multiple object types, backed by `POST /api/search/` in the pinned API 530 schema. This story starts with an implementation/design spike; it must not expose the upstream response unchanged.
 - Acceptance:
   - Verify `POST /api/search/` against the pinned InvenTree 1.5.1/API 530 baseline and document its actual request, response, supported model types, permissions, ordering, pagination, and failure behavior.
@@ -3234,11 +3235,15 @@ Tasks:
   - Preserve existing object-specific search tools as the authoritative path for precise filters and complete reads.
 - Out of scope: generic arbitrary-record reads or writes; returning raw upstream serializer payloads; search across unsupported sales/customer/build/transfer object families unless separately approved; full-text indexing, an external search service, or background synchronization.
 - Tasks:
-  - [ ] Reproduce and characterize the pinned `/api/search/` endpoint and compare it with the UI behavior.
-  - [ ] Define the normalized result, privacy, authorization, bounds, and schema-drift contracts.
-  - [ ] Decide whether to implement the generic tool or the smallest safe curated alternative.
-  - [ ] If implementation proceeds, add the client/tool surface, endpoint manifest, docs, generated metadata, and focused/live tests.
-  - [ ] Run the applicable Go, Testcontainers, documentation, and reviewer validation; record the decision and residual risk.
+  - [x] Reproduce and characterize the pinned `/api/search/` endpoint and compare it with the UI behavior.
+  - [x] Define the normalized result, privacy, authorization, bounds, and schema-drift contracts.
+  - [x] Decide whether to implement the generic tool or the smallest safe curated alternative.
+  - [x] If implementation proceeds, add the client/tool surface, endpoint manifest, docs, generated metadata, and focused/live tests.
+  - [x] Run the applicable Go, Testcontainers, documentation, and reviewer validation; record the decision and residual risk.
+
+- Validation: `go build ./...`; `go vet ./...`; `golangci-lint run ./...` (0 issues); `go mod tidy -diff`; `git diff --check`; `go generate ./internal/tools`; `GOFLAGS=-trimpath go test -race -p=1 ./...` (full suite, Docker-backed, every package passes, including the new live `TestClientMethodsAgainstInvenTree/global_search` subtest and its `scopes_to_requested_object_types_only`, `limit_applies_independently_per_bucket`, and `search_notes_gates_notes_only_matches` nested cases against a real pinned InvenTree instance). Per-package coverage versus exact base `main`: `internal/inventree` 82.7% -> 82.8%, `internal/tools` 84.9% -> 84.8% (no meaningful reduction).
+- Review: Senior Go Developer, Senior QA / Test Architect, Senior Product Manager, and Senior Infosec Reviewer panels completed (full panel run because this is a tool-surface change, per `AGENTS.md`). Go and Infosec found no actionable issues. QA found the tool-layer unit tests only exercised 2 of 8 `DetailTool`/count bucket mappings (fixed: `TestGlobalSearchMapsEveryObjectTypeToItsOwnDetailTool` now populates and asserts all eight) and that the live suite never proved `limit` truncates each bucket independently rather than a shared/global cap (fixed: the new `limit_applies_independently_per_bucket` live subtest requests two object types together with `limit:1`, one with two real matches and one with one, and asserts each bucket truncates on its own). Product found this progress note and `docs/api-schema.md`'s closing sentence still described the object-type/bounds/notes decisions as pending operator input after implementation had already landed on this branch (fixed: both now state the decisions were resolved and applied, and this note records the operator's actual ambiguous answer alongside the derived object-type-scope rule for future auditability). Reruns after fixes found no remaining actionable findings.
+- Residual risk: `salesorder`, `returnorder`, and `build` remain unsearchable through this tool even though InvenTree's `/api/search/` recognizes them, since inventree-mcp has no `get_*` tool to route a match to; revisit if those object families are ever separately implemented. Per-model-type authorization/permission-class scoping (for example a token lacking `view_part`) was not exercised live and remains unverified. A future upstream InvenTree model rename or removal would silently drop that bucket from `POST /api/search/`'s response; `global_search` already fails closed on this (`ErrGlobalSearchSchemaDrift`) rather than silently returning a partial result.
 
 ### F-S90: Deterministic Component Image Rendering
 

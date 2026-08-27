@@ -2688,6 +2688,165 @@ func TestClientMethodsAgainstInvenTree(t *testing.T) {
 		r.Nil(nonStaffGeneration.Output)
 		t.Logf("non-staff stocktake generation characterization: rejected with HTTP %d", apiErr.StatusCode)
 	})
+
+	t.Run("global_search", func(t *testing.T) {
+		r := require.New(t)
+		a := assert.New(t)
+		ctx, _, _ := testhandler.SetupTestHandler(t)
+		fixture := newClientMethodFixture(t, shared)
+
+		category := fixture.ensure(t, testenv.FixtureCategory)
+		location := fixture.ensure(t, testenv.FixtureLocation)
+		part := fixture.ensure(t, testenv.FixturePart)
+		supplier := fixture.ensure(t, testenv.FixtureSupplier)
+		manufacturer := fixture.ensure(t, testenv.FixtureManufacturer)
+		supplierPart := fixture.ensure(t, testenv.FixtureSupplierPart)
+
+		mpn, err := fixture.run.Name("mpn")
+		r.NoError(err)
+		manufacturerPart, err := fixture.client.CreateManufacturerPart(ctx, inventree.ManufacturerPartCreate{
+			Part: part.ID, Manufacturer: manufacturer.ID, MPN: &mpn,
+		})
+		r.NoError(err)
+		r.NotZero(manufacturerPart.PK)
+
+		stockItem, err := fixture.client.CreateStockItem(ctx, inventree.StockItemCreate{Part: part.ID, Location: location.ID, Quantity: 5})
+		r.NoError(err)
+		r.NotZero(stockItem.PK)
+
+		// FixturePurchaseOrder's reference ("PO-<supplierID>") must satisfy
+		// InvenTree's configured purchase-order reference pattern, so it
+		// cannot carry the same run-prefix marker every other fixture here
+		// does (fixture.ensure's ownership check would reject it, matching
+		// the same exception internal/tools's milestone fixture makes for
+		// this one fixture kind); it is verified separately below by its
+		// own reference text.
+		purchaseOrder, err := fixture.shared.EnsureFixture(ctx, fixture.account, fixture.run, testenv.FixturePurchaseOrder)
+		r.NoError(err)
+
+		result, err := fixture.client.GlobalSearch(ctx, inventree.GlobalSearchQuery{
+			Search:      fixture.run.Prefix,
+			ObjectTypes: inventree.SupportedGlobalSearchObjectTypes,
+			Limit:       25,
+		})
+		r.NoError(err)
+
+		r.NotNil(result.Parts)
+		a.True(globalSearchContainsPK(result.Parts.Results, part.ID, func(v inventree.Part) int { return v.PK }), "parts bucket must include the run-scoped fixture part")
+		r.NotNil(result.PartCategories)
+		a.True(globalSearchContainsPK(result.PartCategories.Results, category.ID, func(v inventree.Category) int { return v.PK }), "part_categories bucket must include the run-scoped fixture category")
+		r.NotNil(result.StockLocations)
+		a.True(globalSearchContainsPK(result.StockLocations.Results, location.ID, func(v inventree.StockLocation) int { return v.PK }), "stock_locations bucket must include the run-scoped fixture location")
+		r.NotNil(result.StockItems)
+		a.True(globalSearchContainsPK(result.StockItems.Results, stockItem.PK, func(v inventree.StockItem) int { return v.PK }), "stock_items bucket must include the stock item on the run-scoped fixture part")
+		r.NotNil(result.Companies)
+		a.True(globalSearchContainsPK(result.Companies.Results, supplier.ID, func(v inventree.Company) int { return v.PK }), "companies bucket must include the run-scoped fixture supplier")
+		r.NotNil(result.SupplierParts)
+		a.True(globalSearchContainsPK(result.SupplierParts.Results, supplierPart.ID, func(v inventree.SupplierPart) int { return v.PK }), "supplier_parts bucket must include the run-scoped fixture supplier part")
+		r.NotNil(result.ManufacturerParts)
+		a.True(globalSearchContainsPK(result.ManufacturerParts.Results, manufacturerPart.PK, func(v inventree.ManufacturerPart) int { return v.PK }), "manufacturer_parts bucket must include the run-scoped fixture manufacturer part")
+		// result.PurchaseOrders is intentionally not asserted here: it is
+		// requested (so its bucket must still be present), but the fixture
+		// purchase order's reference cannot carry the shared run-prefix
+		// marker, so it is verified separately below by its own reference.
+		r.NotNil(result.PurchaseOrders)
+
+		poResult, err := fixture.client.GlobalSearch(ctx, inventree.GlobalSearchQuery{
+			Search:      purchaseOrder.Name,
+			ObjectTypes: []inventree.GlobalSearchObjectType{inventree.GlobalSearchPurchaseOrder},
+			Limit:       25,
+		})
+		r.NoError(err)
+		r.NotNil(poResult.PurchaseOrders)
+		a.True(globalSearchContainsPK(poResult.PurchaseOrders.Results, purchaseOrder.ID, func(v inventree.PurchaseOrder) int { return v.PK }), "purchase_orders bucket must include the fixture purchase order when searched by its own reference")
+
+		t.Run("scopes_to_requested_object_types_only", func(t *testing.T) {
+			r := require.New(t)
+			narrow, err := fixture.client.GlobalSearch(ctx, inventree.GlobalSearchQuery{
+				Search:      fixture.run.Prefix,
+				ObjectTypes: []inventree.GlobalSearchObjectType{inventree.GlobalSearchCompany},
+				Limit:       25,
+			})
+			r.NoError(err)
+			r.NotNil(narrow.Companies)
+			r.Nil(narrow.Parts)
+			r.Nil(narrow.PartCategories)
+			r.Nil(narrow.StockItems)
+			r.Nil(narrow.StockLocations)
+			r.Nil(narrow.SupplierParts)
+			r.Nil(narrow.ManufacturerParts)
+			r.Nil(narrow.PurchaseOrders)
+		})
+
+		t.Run("limit_applies_independently_per_bucket", func(t *testing.T) {
+			r := require.New(t)
+			a := assert.New(t)
+
+			// The run-scoped fixtures created above give "company" two real
+			// matches (supplier, manufacturer) and "part" exactly one. limit:1
+			// with both types requested together proves limit truncates each
+			// bucket on its own -- company drops from 2 real matches to 1
+			// returned result, while part's single match is not starved to 0
+			// by company's truncation (which a shared/split global cap would
+			// otherwise risk, since only one top-level "limit" field exists
+			// on the InvenTree request).
+			bounded, err := fixture.client.GlobalSearch(ctx, inventree.GlobalSearchQuery{
+				Search:      fixture.run.Prefix,
+				ObjectTypes: []inventree.GlobalSearchObjectType{inventree.GlobalSearchCompany, inventree.GlobalSearchPart},
+				Limit:       1,
+			})
+			r.NoError(err)
+			r.NotNil(bounded.Companies)
+			a.Equal(2, bounded.Companies.Count, "two run-scoped companies (supplier, manufacturer) must both be counted as matches")
+			a.Len(bounded.Companies.Results, 1, "company results must be truncated to limit:1 despite two real matches")
+			r.NotNil(bounded.Parts)
+			a.Equal(1, bounded.Parts.Count)
+			a.Len(bounded.Parts.Results, 1, "part's own single match must not be starved by the company bucket's truncation")
+		})
+
+		t.Run("search_notes_gates_notes_only_matches", func(t *testing.T) {
+			r := require.New(t)
+			marker, err := fixture.run.Name("notesmarker")
+			r.NoError(err)
+			plainName, err := fixture.run.Name("plainnotescompany")
+			r.NoError(err)
+			notesCompany, err := fixture.client.CreateCompany(ctx, inventree.CompanyCreate{Name: plainName, Currency: "USD", IsSupplier: true})
+			r.NoError(err)
+			r.NotZero(notesCompany.PK)
+			_, err = fixture.client.UpdateCompany(ctx, notesCompany.PK, inventree.PatchFields{
+				"notes": inventree.Set("contains " + marker + " marker"),
+			})
+			r.NoError(err)
+
+			withoutNotes, err := fixture.client.GlobalSearch(ctx, inventree.GlobalSearchQuery{
+				Search:      marker,
+				ObjectTypes: []inventree.GlobalSearchObjectType{inventree.GlobalSearchCompany},
+				Limit:       25,
+			})
+			r.NoError(err)
+			r.NotNil(withoutNotes.Companies)
+			r.False(globalSearchContainsPK(withoutNotes.Companies.Results, notesCompany.PK, func(v inventree.Company) int { return v.PK }), "a notes-only match must not surface without search_notes")
+
+			withNotes, err := fixture.client.GlobalSearch(ctx, inventree.GlobalSearchQuery{
+				Search:      marker,
+				SearchNotes: true,
+				ObjectTypes: []inventree.GlobalSearchObjectType{inventree.GlobalSearchCompany},
+				Limit:       25,
+			})
+			r.NoError(err)
+			r.NotNil(withNotes.Companies)
+			r.True(globalSearchContainsPK(withNotes.Companies.Results, notesCompany.PK, func(v inventree.Company) int { return v.PK }), "search_notes:true must surface a notes-only match")
+		})
+	})
+}
+
+func globalSearchContainsPK[T any](records []T, id int, pk func(T) int) bool {
+	for _, record := range records {
+		if pk(record) == id {
+			return true
+		}
+	}
+	return false
 }
 
 func pollDataOutputForStocktakeCharacterization(ctx context.Context, client *inventree.Client, id int, timeout time.Duration) (inventree.DataOutput, bool) {
