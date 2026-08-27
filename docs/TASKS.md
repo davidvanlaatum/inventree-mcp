@@ -169,7 +169,7 @@ Before assigning a new story ID, inspect `git worktree list --porcelain`, search
 | [F-S85](#f-s85-add-opentelemetry-metrics-and-prometheus-export) | Add optional OpenTelemetry metrics and Prometheus export as the F-S84 follow-up. | Done |
 | [F-S86](#f-s86-packaged-config-file-deployment) | Switch deb/rpm/apk packages from an EnvironmentFile-based `.env` template to a packaged YAML config file. | Done |
 | [F-S87](#f-s87-run-packaged-systemd-service-as-a-non-root-user) | Run the packaged systemd service as a dedicated non-root user instead of root. | Done |
-| [F-S88](#f-s88-cross-object-global-search-discovery-and-bounded-search-tool) | Investigate InvenTree-style cross-object global search and add a bounded read-only MCP search tool if its contract is safe and stable. | Future |
+| [F-S88](#f-s88-cross-object-global-search-discovery-and-bounded-search-tool) | Investigate InvenTree-style cross-object global search and add a bounded read-only MCP search tool if its contract is safe and stable. | Active |
 | [F-S89](#f-s89-harden-supplier-part-mpn-read-back-against-a-ci-nil-panic) | Investigate a CI-only nil-pointer panic in the supplier-part MPN read-back test and harden it against recurrence. | Done |
 | [F-S90](#f-s90-deterministic-component-image-rendering) | Render deterministic PNG images for common, highly repetitive electronic components. | Future |
 
@@ -3219,9 +3219,10 @@ Tasks:
 
 ### F-S88: Cross-Object Global Search Discovery And Bounded Search Tool
 
-- Status: `Future`
+- Status: `Active`
 - Issue: [#230](https://github.com/davidvanlaatum/inventree-mcp/issues/230)
 - Depends on: none.
+- Progress: investigation started on `claude/f-s88-cross-object-global-search` from `main` at `a8d759e`. A manual Docker-backed spike against pinned InvenTree `1.5.2`/API `530` characterized `POST /api/search/`'s request/response contract; findings recorded in `docs/api-schema.md`'s "Verified Cross-Object Global Search Endpoint" section. Awaiting operator product decisions (object-type allowlist, `search_notes` exposure, result bounds, schema-drift handling) before the normalized tool contract and implementation proceed.
 - Scope: investigate and, if the contract is sufficiently stable, expose InvenTree's cross-object search capability through a bounded read-only MCP tool. The motivating use case is the InvenTree UI-style search across multiple object types, backed by `POST /api/search/` in the pinned API 530 schema. This story starts with an implementation/design spike; it must not expose the upstream response unchanged.
 - Acceptance:
   - Verify `POST /api/search/` against the pinned InvenTree 1.5.1/API 530 baseline and document its actual request, response, supported model types, permissions, ordering, pagination, and failure behavior.
@@ -3234,7 +3235,7 @@ Tasks:
   - Preserve existing object-specific search tools as the authoritative path for precise filters and complete reads.
 - Out of scope: generic arbitrary-record reads or writes; returning raw upstream serializer payloads; search across unsupported sales/customer/build/transfer object families unless separately approved; full-text indexing, an external search service, or background synchronization.
 - Tasks:
-  - [ ] Reproduce and characterize the pinned `/api/search/` endpoint and compare it with the UI behavior.
+  - [x] Reproduce and characterize the pinned `/api/search/` endpoint and compare it with the UI behavior.
   - [ ] Define the normalized result, privacy, authorization, bounds, and schema-drift contracts.
   - [ ] Decide whether to implement the generic tool or the smallest safe curated alternative.
   - [ ] If implementation proceeds, add the client/tool surface, endpoint manifest, docs, generated metadata, and focused/live tests.
