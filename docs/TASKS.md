@@ -136,9 +136,9 @@ Before assigning a new story ID, inspect `git worktree list --porcelain`, search
 | [F-S52](#f-s52-stock-serial-number-management) | Add dedicated discovery and guarded mutation workflows for stock serial numbers. | Done |
 | [F-S53](#f-s53-guarded-stock-provenance-correction) | Add reviewed correction of supplier, purchase-order, and purchase-price provenance on eligible stock items. | Done |
 | [F-S54](#f-s54-stock-install-and-uninstall-workflows) | Add dedicated guarded workflows for parent/child stock installation relationships. | Done |
-| [F-S55](#f-s55-barcode-workflow-discovery) | Investigate safe barcode presence, generation, resolution, assignment, removal, and scan-history tooling. | Future |
-| [F-S56](#f-s56-cross-object-tag-workflow-discovery) | Investigate tag discovery and consistent assignment/removal across supported object types. | Future |
-| [F-S57](#f-s57-part-testing-workflow-discovery) | Investigate part test templates, stock-item test results, attachments, and safe workflow boundaries. | Future |
+| [F-S55](#f-s55-barcode-workflow-discovery) | Investigate safe barcode presence, generation, resolution, assignment, removal, and scan-history tooling. | Ready |
+| [F-S56](#f-s56-cross-object-tag-workflow-discovery) | Investigate tag discovery and consistent assignment/removal across supported object types. | Ready |
+| [F-S57](#f-s57-part-testing-workflow-discovery) | Investigate part test templates, stock-item test results, attachments, and safe workflow boundaries. | Ready |
 | [F-S58](#f-s58-pricing-and-price-break-workflow-discovery) | Investigate part pricing, supplier price breaks, internal prices, sale prices, currencies, and safe tool boundaries. | Future |
 | [F-S59](#f-s59-part-requirements-visibility-discovery) | Investigate build and order demand visibility through the part requirements API. | Future |
 | [F-S60](#f-s60-stocktake-generation-and-reporting-discovery) | Investigate guarded generation of part stocktake snapshots and reports after history reads exist. | Done |
@@ -2438,7 +2438,7 @@ Tasks:
 
 ### F-S55: Barcode Workflow Discovery
 
-- Status: `Future`
+- Status: `Ready`
 - Issue: [#136](https://github.com/davidvanlaatum/inventree-mcp/issues/136)
 - Depends on: F-S40, F-S43, F-S45, F-S47
 - Decisions: approved by the operator on 2026-08-15 as a separate future discovery story. Object APIs expose only `barcode_hash`; raw assigned custom barcode read-back is not available through the checked API.
@@ -2453,7 +2453,7 @@ Tasks:
 
 ### F-S56: Cross-Object Tag Workflow Discovery
 
-- Status: `Future`
+- Status: `Ready`
 - Issue: [#137](https://github.com/davidvanlaatum/inventree-mcp/issues/137)
 - Depends on: F-S40, F-S44
 - Decisions: approved by the operator on 2026-08-15 as a separate future cross-object story. Tags are opt-in/shared taxonomy data and are not embedded into ordinary exact reads until their lifecycle is defined.
@@ -2468,7 +2468,7 @@ Tasks:
 
 ### F-S57: Part Testing Workflow Discovery
 
-- Status: `Future`
+- Status: `Ready`
 - Issue: [#138](https://github.com/davidvanlaatum/inventree-mcp/issues/138)
 - Depends on: F-S40, F-S45
 - Decisions: approved by the operator on 2026-08-15 as a separate future story. The part `testable` flag belongs in ordinary part maintenance, while templates and results require their own workflow design.
