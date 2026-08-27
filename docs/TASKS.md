@@ -169,6 +169,7 @@ Before assigning a new story ID, inspect `git worktree list --porcelain`, search
 | [F-S85](#f-s85-add-opentelemetry-metrics-and-prometheus-export) | Add optional OpenTelemetry metrics and Prometheus export as the F-S84 follow-up. | Done |
 | [F-S86](#f-s86-packaged-config-file-deployment) | Switch deb/rpm/apk packages from an EnvironmentFile-based `.env` template to a packaged YAML config file. | Done |
 | [F-S87](#f-s87-run-packaged-systemd-service-as-a-non-root-user) | Run the packaged systemd service as a dedicated non-root user instead of root. | Done |
+| [F-S88](#f-s88-cross-object-global-search-discovery-and-bounded-search-tool) | Investigate InvenTree-style cross-object global search and add a bounded read-only MCP search tool if its contract is safe and stable. | Future |
 
 ## Milestone 0: Repository And Planning
 
@@ -3210,3 +3211,26 @@ Tasks:
 - [x] Add/adjust packaging tests for the new identity wiring.
 - [x] Update README, PLAN, and operator recipes.
 - [x] Run validation and record evidence; run subagent review and address findings.
+
+### F-S88: Cross-Object Global Search Discovery And Bounded Search Tool
+
+- Status: `Future`
+- Issue: [#230](https://github.com/davidvanlaatum/inventree-mcp/issues/230)
+- Depends on: none.
+- Scope: investigate and, if the contract is sufficiently stable, expose InvenTree's cross-object search capability through a bounded read-only MCP tool. The motivating use case is the InvenTree UI-style search across multiple object types, backed by `POST /api/search/` in the pinned API 530 schema. This story starts with an implementation/design spike; it must not expose the upstream response unchanged.
+- Acceptance:
+  - Verify `POST /api/search/` against the pinned InvenTree 1.5.1/API 530 baseline and document its actual request, response, supported model types, permissions, ordering, pagination, and failure behavior.
+  - Determine whether the endpoint is the same or materially equivalent to the UI's cross-object search behavior, and record any differences.
+  - Define a privacy-conscious normalized MCP result contract with stable object type and ID fields, safe labels/match context, bounded result counts, and routing to existing exact `get_*` tools.
+  - Decide explicitly whether regex, whole-word, and notes-search options are safe and useful to expose. Do not expose `search_notes` or equivalent free-text fields without an explicit privacy decision.
+  - Define supported object types, authorization/scope behavior, maximum scan/result bounds, empty/ambiguous results, and upstream schema-drift handling.
+  - If the verified contract is viable, add a read-only cross-object search tool and align `docs/PLAN.md`, `docs/api-schema.md`, `docs/endpoint-manifest.yaml`, `docs/tool-reference.md`, `docs/operator-recipes.md`, README guidance, generated metadata, and tests.
+  - If it is not viable as a generic tool, retain the documented decision and identify the smallest safe alternative, such as a bounded curated search across selected existing object-specific endpoints.
+  - Preserve existing object-specific search tools as the authoritative path for precise filters and complete reads.
+- Out of scope: generic arbitrary-record reads or writes; returning raw upstream serializer payloads; search across unsupported sales/customer/build/transfer object families unless separately approved; full-text indexing, an external search service, or background synchronization.
+- Tasks:
+  - [ ] Reproduce and characterize the pinned `/api/search/` endpoint and compare it with the UI behavior.
+  - [ ] Define the normalized result, privacy, authorization, bounds, and schema-drift contracts.
+  - [ ] Decide whether to implement the generic tool or the smallest safe curated alternative.
+  - [ ] If implementation proceeds, add the client/tool surface, endpoint manifest, docs, generated metadata, and focused/live tests.
+  - [ ] Run the applicable Go, Testcontainers, documentation, and reviewer validation; record the decision and residual risk.
