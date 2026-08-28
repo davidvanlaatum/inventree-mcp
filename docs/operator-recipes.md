@@ -328,6 +328,17 @@ HTTP mode accepts the same debug traffic log option as STDIO. HTTP debug entries
 - Expected output: attachment ID, target object, filename, size or link classification, content type, source kind, and thumbnail/image state when available.
 - HTTP note: attachment write tools require OAuth authorization mode plus `inventree.write` and `inventree.upload` before handler dispatch.
 
+## Render A Deterministic Component Image
+
+- When to use: the operator wants placeholder or illustrative imagery for a common, highly repetitive part (an axial resistor, axial diode, through-hole LED, radial electrolytic capacitor, or glass fuse) and does not have a real photo or datasheet image available. Do not use this for anything else — it never claims to be a datasheet, a to-scale drawing (unless the caller supplies explicit dimensions), or a substitute for a real product photo.
+- Required inputs: `family` plus exactly the matching nested parameter object (`resistor`, `diode`, `led`, `capacitor`, or `fuse`). Supplying the wrong object, no object, or more than one object is a validation error, not a guess at operator intent.
+- Resistor bands: never ask the operator for band colors directly. Collect `resistance_ohms` and `tolerance_label` (and optionally `band_count`, 4 or 5); the tool derives IEC 60062 colors deterministically and rejects a resistance value that is not exactly representable with the requested band count's significant digits, rather than rounding to an invented nearby value.
+- Optional canvas controls: `orientation` (`horizontal` default or `vertical`), `background` (`transparent` default, `white`, or `color` with `background_color_hex`), and `width`/`height` (64-1024 pixels, family-appropriate defaults apply when omitted).
+- Clarify when: the operator's request doesn't map cleanly to one of the five supported families (do not approximate an unsupported family, such as a MOSFET or an IC, with the closest template), or a resistor value/tolerance/band-count combination the operator gives isn't exactly representable and no equally-specific corrected value is obvious.
+- This tool never uploads or assigns anything in InvenTree. After it returns, if the operator wants the image attached, pass the returned `base64` bytes to `upload_attachment`, `set_primary_image`, or another existing image/attachment tool as a separate, explicit step.
+- Expected output: `status`, `family`, `content_type` (`image/png`), `width`, `height`, `sha256`, and `base64`-encoded PNG bytes.
+- HTTP note: requires `inventree.read`, even though the tool makes no InvenTree API call — this keeps it behind OAuth authentication rather than reachable unauthenticated.
+
 ## Set, Replace, Or Clear A Company Primary Image
 
 - Required identity: one existing stable `company_id`. Supplier-only, manufacturer-only, customer-only, and mixed-role companies are eligible; these tools never change role state or add sales/customer administration.

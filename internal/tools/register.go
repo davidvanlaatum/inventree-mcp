@@ -30,6 +30,7 @@ func Register(server *mcp.Server, deps Dependencies) {
 	}
 	registerHealthVersion(server, deps)
 	registerLocalUploadPolicyTool(server, deps)
+	registerComponentRenderTool(server, deps)
 	registerPrompts(server)
 	registerLookupTools(server, deps)
 	if deps.EnableWriteTools {
@@ -41,8 +42,8 @@ func Register(server *mcp.Server, deps Dependencies) {
 // supplied write-tool configuration. It is shared with bounded observability
 // labels so caller-provided unknown tool names cannot create metric series.
 func RegisteredToolNames(enableWriteTools bool) []string {
-	names := make([]string, 0, 2+len(lookupToolNames)+len(writeToolNames))
-	names = append(names, HealthVersionToolName, GetLocalUploadPolicyToolName)
+	names := make([]string, 0, 3+len(lookupToolNames)+len(writeToolNames))
+	names = append(names, HealthVersionToolName, GetLocalUploadPolicyToolName, RenderComponentImageToolName)
 	names = append(names, lookupToolNames...)
 	if enableWriteTools {
 		names = append(names, writeToolNames...)

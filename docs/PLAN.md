@@ -53,6 +53,7 @@ Use established libraries for protocol-heavy or environment-heavy concerns, but 
 - Other `dvgoutils` helpers: use `dvgoutils.Ptr` for pointer values such as explicit false tool annotation fields, and use `MapSlice`, `FilterSlice`, or `Must` only where they improve clarity without hiding control flow or error handling.
 - Configuration and secrets: keep config parsing separate from runtime dependencies. Key material, InvenTree credentials, and token lifetimes should enter through a typed config object, not scattered environment lookups.
 - Schema access: parse `docs/api-schema.yaml` through a schema helper for endpoint-manifest checks instead of ad hoc string matching.
+- Deterministic image rendering (F-S90): `internal/render` uses `github.com/fogleman/gg` (MIT) for 2D path/shape drawing and `golang.org/x/image/font/basicfont` (already an indirect dependency, no embedded font asset or font license) for markings text. Every template is a fixed Go drawing routine over a validated parameter struct; there is no AI generation and no general-purpose SVG/vector output contract. PNG encoding uses the standard library `image/png` encoder, which is deterministic given identical pixel data.
 
 OAuth spike acceptance criteria:
 
@@ -645,6 +646,24 @@ URL upload and link attachments are distinct workflows:
 - Dry-run URL uploads must not fetch remote content. They may validate URL syntax and policy configuration only. Actual URL fetches happen only during confirmed execution of `upload_attachment_from_url`.
 
 Before implementing attachment tools, update the endpoint capability table in `docs/api-schema.md` for each target object type. The table should record the InvenTree endpoint, upload field names, supported methods, whether primary-image behavior exists, whether PATCH is supported, and any object-specific constraints. Tool schemas should only expose object types verified in that table.
+
+### Deterministic Component Image Rendering
+
+`render_component_image` (F-S90) is a single generic tool, not five per-family tools: a `family` discriminator (`resistor`, `diode`, `led`, `capacitor`, `fuse`) selects which one nested, family-specific parameter object is required. It is entirely local rendering — no InvenTree API call, no upload, no primary-image assignment — implemented by `internal/render`, a fixed set of Go drawing templates over validated parameter structs. There is no AI generation and no general-purpose SVG/vector output contract; templates may use vector-like primitives internally before rasterizing to a bounded PNG.
+
+Key design points, matching the acceptance criteria in `docs/TASKS.md`'s F-S90 story:
+
+- Determinism: identical input always produces byte-identical PNG bytes (same SHA-256). No `time.Now`, randomness, or map-iteration-order-dependent drawing is used anywhere in a template's happy path.
+- Fail-closed validation: unsupported or ambiguous parameter combinations (an unrepresentable resistor value/tolerance/band-count combination, two colors that must contrast being identical, dimensions supplied for only one of a paired length/diameter, an out-of-range canvas size) are rejected with a validation error rather than guessing a value or silently clamping.
+- No claimed physical scale: package-variant `size` presets (`small`/`medium`/`large`, or family-appropriate equivalents like `3mm`/`5mm`/`10mm` for LEDs and `5x20mm`/`6x30mm` for fuses) are illustrative layout choices only. Only explicitly supplied paired dimensions (for example a resistor's `body_length_mm`/`body_diameter_mm`) influence the drawn aspect ratio, and even then the renderer does not claim absolute canvas-to-millimeter scale.
+- Resistor color bands are always derived, never supplied directly, from `resistance_ohms`, `band_count`, and `tolerance_label` using the IEC 60062 color code. Coverage is 4-band and 5-band; 6-band (adds a temperature-coefficient band) is deferred as a documented future extension, not implemented by this story.
+- Orientation is family-agnostic: `horizontal` is each template's own native drawing frame (whatever that naturally is — elongated left-right for the three axial families, upright for the two radial-view families), and `vertical` rotates the fully rendered glyph 90 degrees clockwise as an exact, pixel-copy operation (no interpolation blur) rather than a per-family geometry change.
+- Markings text uses `golang.org/x/image/font/basicfont` (a fixed bitmap font already available transitively through the `golang.org/x/image` dependency), not an embedded/licensed font asset, and is bounded to printable ASCII and a small maximum length.
+- Output is bounded: canvas width/height are limited to 64-1024 pixels, and the encoded PNG has an explicit maximum-byte-size contract, even though the flat-shaded templates in scope never approach it.
+- The tool requires `inventree.read` even though it makes zero InvenTree API calls. This is a deliberate choice to reuse the existing OAuth authenticate-and-scope-check path (`GuardTool`) so the tool is not reachable unauthenticated over HTTP, rather than inventing a new "authenticated but scope-free" tool-authorization mode.
+- Extensibility: a future low-dimensional template (another axial or radial passive, for example) should follow the same pattern — a new `internal/render` file with a validated parameter struct and a `renderCanvas`-driven template function, a matching nested input struct in `internal/tools/component_render_tools.go`, and a new `render.Family` constant — not a shift toward AI generation or arbitrary product-image synthesis.
+
+Out of scope for this story: AI-generated or photorealistic images; MOSFET, IC, connector, USB, or other families with highly variable package/marking conventions; datasheet generation, authoritative electrical interpretation, schematic capture, pinout inference, or automatic category-based parameter inference; automatic attachment upload or primary-image replacement (the caller passes the returned bytes to an existing attachment/image tool for that).
 
 ### BOM Tools
 

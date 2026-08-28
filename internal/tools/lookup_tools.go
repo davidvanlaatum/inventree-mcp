@@ -360,6 +360,17 @@ var ToolAuthorizations = map[string]ToolAuthorization{
 		Scopes:          nil,
 		Annotations:     ReadOnlyAnnotations,
 	},
+	RenderComponentImageToolName: {
+		Name:            RenderComponentImageToolName,
+		MilestoneStatus: ToolMilestone1,
+		MutationClass:   "read_only",
+		// This tool makes no InvenTree API calls at all; it requires
+		// inventree.read anyway so it still goes through the existing
+		// OAuth authenticate-and-scope-check path (GuardTool) rather
+		// than being reachable unauthenticated over HTTP.
+		Scopes:      []string{ScopeInventreeRead},
+		Annotations: ReadOnlyAnnotations,
+	},
 }
 
 func init() {

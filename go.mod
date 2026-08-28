@@ -5,6 +5,7 @@ go 1.25.0
 require (
 	github.com/coreos/go-systemd/v22 v22.7.0
 	github.com/davidvanlaatum/dvgoutils v0.0.0-20260704011248-9d2ce1ecf3de
+	github.com/fogleman/gg v1.3.0
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/moby/moby/api v1.55.0
 	github.com/modelcontextprotocol/go-sdk v1.7.0
@@ -49,6 +50,7 @@ require (
 	github.com/go-logr/logr v1.4.4 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/go-ole/go-ole v1.3.0 // indirect
+	github.com/golang/freetype v0.0.0-20170609003504-e2365dfdc4a0 // indirect
 	github.com/google/jsonschema-go v0.4.3 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.29.0 // indirect
