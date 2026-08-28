@@ -3304,6 +3304,7 @@ Tasks:
 ### F-S91: Cross-Object Tag Search And Assignment
 
 - Status: `Ready`
+- Issue: [#244](https://github.com/davidvanlaatum/inventree-mcp/issues/244)
 - Depends on: F-S56, F-S40, F-S44, F-S45, F-S43, F-S47, F-S67
 - Decisions: this is the implementation follow-up to F-S56's discovery findings and operator-approved proposal (see that story's Decisions). Scope is limited to the seven tagged object types that already have MCP `get_*`/`update_*` tool coverage; `Build`, `SalesOrder`, `SalesOrderShipment`, `ReturnOrder`, and `TransferOrder` stay deferred until those object families get MCP tools of their own.
 - Scope: add a new read-only cross-object `search_tags` tool and extend `get_part`/`update_part`, `get_company`/`update_company`, `get_stock_location`/its metadata-administration tool, `get_stock_item`, `get_supplier_part`/`update_supplier_part`, `get_manufacturer_part`/`update_manufacturer_part`, and `get_purchase_order`/`update_purchase_order` with a `tags` field, consistent with F-S56's live-pinned findings.
