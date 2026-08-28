@@ -1105,6 +1105,222 @@ func TestClientMethodsAgainstInvenTree(t *testing.T) {
 		r.NoError(fixture.client.DeleteParameterTemplate(ctx, created.PK))
 	})
 
+	t.Run("cross_object_tag_workflow_discovery", func(t *testing.T) {
+		r := require.New(t)
+		a := assert.New(t)
+		ctx, _, _ := testhandler.SetupTestHandler(t)
+		fixture := newClientMethodFixture(t, shared)
+
+		part := fixture.ensure(t, testenv.FixturePart)
+		location := fixture.ensure(t, testenv.FixtureLocation)
+		company := fixture.ensure(t, testenv.FixtureSupplier)
+
+		tagOne, err := fixture.run.Name("fs56-tag-one")
+		r.NoError(err)
+		tagTwo, err := fixture.run.Name("fs56-tag-two")
+		r.NoError(err)
+
+		patchTags := func(path string, id int, tags []string) map[string]any {
+			t.Helper()
+			req, reqErr := fixture.client.NewRequest(ctx, http.MethodPatch, fmt.Sprintf(path, id), nil, map[string]any{"tags": tags})
+			r.NoError(reqErr)
+			var out map[string]any
+			r.NoError(fixture.client.DoJSON(req, &out))
+			return out
+		}
+		searchTags := func(query url.Values) []map[string]any {
+			t.Helper()
+			if query == nil {
+				query = url.Values{}
+			}
+			query.Set("limit", "100")
+			req, reqErr := fixture.client.NewRequest(ctx, http.MethodGet, "/api/tag/", query, nil)
+			r.NoError(reqErr)
+			var out struct {
+				Results []map[string]any `json:"results"`
+			}
+			r.NoError(fixture.client.DoJSON(req, &out))
+			return out.Results
+		}
+
+		// Assign two tags to a part through the ordinary part PATCH endpoint
+		// (no dedicated tags-write scope beyond the object's own write
+		// permission is declared in the pinned schema) and confirm exact
+		// read-back matches.
+		partAfterTag := patchTags("/api/part/%d/", part.ID, []string{tagOne, tagTwo})
+		a.ElementsMatch([]any{tagOne, tagTwo}, partAfterTag["tags"])
+		// A plain detail GET omits the "tags" field entirely; only the
+		// undocumented "?tags=true" query flag includes it. get_part must add
+		// that flag to expose tags at all.
+		getReq, err := fixture.client.NewRequest(ctx, http.MethodGet, fmt.Sprintf("/api/part/%d/", part.ID), nil, nil)
+		r.NoError(err)
+		var partGet map[string]any
+		r.NoError(fixture.client.DoJSON(getReq, &partGet))
+		_, tagsPresentWithoutFlag := partGet["tags"]
+		a.False(tagsPresentWithoutFlag, "plain GET /api/part/{id}/ is expected to omit the tags field")
+		getWithTagsReq, err := fixture.client.NewRequest(ctx, http.MethodGet, fmt.Sprintf("/api/part/%d/", part.ID), url.Values{"tags": []string{"true"}}, nil)
+		r.NoError(err)
+		var partGetWithTags map[string]any
+		r.NoError(fixture.client.DoJSON(getWithTagsReq, &partGetWithTags))
+		a.ElementsMatch([]any{tagOne, tagTwo}, partGetWithTags["tags"], "GET /api/part/{id}/?tags=true must include the assigned tags")
+
+		// Assign the SAME tag name to two other object types (stock location,
+		// company) to characterize whether InvenTree tags are a single shared
+		// global taxonomy or per-model-type duplicates.
+		patchTags("/api/stock/location/%d/", location.ID, []string{tagOne})
+		patchTags("/api/company/%d/", company.ID, []string{tagOne})
+
+		// Confirm the "omitted unless ?tags=true" quirk observed on Part is
+		// (or is not) shared by the other two tagged object types, resolving
+		// F-S44's deferred company tags read-back gap.
+		companyGetReq, err := fixture.client.NewRequest(ctx, http.MethodGet, fmt.Sprintf("/api/company/%d/", company.ID), nil, nil)
+		r.NoError(err)
+		var companyGet map[string]any
+		r.NoError(fixture.client.DoJSON(companyGetReq, &companyGet))
+		_, companyTagsPresent := companyGet["tags"]
+		a.False(companyTagsPresent, "plain GET /api/company/{id}/ is expected to omit the tags field")
+		companyGetWithTagsReq, err := fixture.client.NewRequest(ctx, http.MethodGet, fmt.Sprintf("/api/company/%d/", company.ID), url.Values{"tags": []string{"true"}}, nil)
+		r.NoError(err)
+		var companyGetWithTags map[string]any
+		r.NoError(fixture.client.DoJSON(companyGetWithTagsReq, &companyGetWithTags))
+		a.ElementsMatch([]any{tagOne}, companyGetWithTags["tags"], "GET /api/company/{id}/?tags=true must include the assigned tags")
+
+		locationGetReq, err := fixture.client.NewRequest(ctx, http.MethodGet, fmt.Sprintf("/api/stock/location/%d/", location.ID), nil, nil)
+		r.NoError(err)
+		var locationGet map[string]any
+		r.NoError(fixture.client.DoJSON(locationGetReq, &locationGet))
+		_, locationTagsPresent := locationGet["tags"]
+		a.False(locationTagsPresent, "plain GET /api/stock/location/{id}/ is expected to omit the tags field")
+		locationGetWithTagsReq, err := fixture.client.NewRequest(ctx, http.MethodGet, fmt.Sprintf("/api/stock/location/%d/", location.ID), url.Values{"tags": []string{"true"}}, nil)
+		r.NoError(err)
+		var locationGetWithTags map[string]any
+		r.NoError(fixture.client.DoJSON(locationGetWithTagsReq, &locationGetWithTags))
+		a.ElementsMatch([]any{tagOne}, locationGetWithTags["tags"], "GET /api/stock/location/{id}/?tags=true must include the assigned tags")
+
+		unscoped := searchTags(url.Values{"search": []string{tagOne}})
+		t.Logf("unscoped /api/tag/?search=%s rows: %v", tagOne, unscoped)
+		r.Len(unscoped, 1, "expected exactly one shared Tag row for the same tag name across object types")
+		tagOnePK := unscoped[0]["pk"]
+		tagOneSlug, _ := unscoped[0]["slug"].(string)
+		r.NotEmpty(tagOneSlug)
+
+		partScoped := searchTags(url.Values{"model_type": []string{"part.part"}, "search": []string{tagOne}})
+		locationScoped := searchTags(url.Values{"model_type": []string{"stock.stocklocation"}, "search": []string{tagOne}})
+		companyScoped := searchTags(url.Values{"model_type": []string{"company.company"}, "search": []string{tagOne}})
+		t.Logf("model_type-scoped rows: part=%v location=%v company=%v", partScoped, locationScoped, companyScoped)
+		for _, scoped := range [][]map[string]any{partScoped, locationScoped, companyScoped} {
+			r.Len(scoped, 1)
+			a.Equal(tagOnePK, scoped[0]["pk"], "model_type-scoped /api/tag/ search must resolve to the same shared Tag row")
+		}
+
+		// Case-variant re-assignment: does InvenTree normalize/dedupe tag
+		// names case-insensitively, or treat differently-cased strings as
+		// distinct tags? Run-scoped names are always upper-cased by
+		// testenv.Run.Name, so lower-case tagOne to get a genuine variant.
+		lowerTagOne := strings.ToLower(tagOne)
+		afterLowerPatch := patchTags("/api/part/%d/", part.ID, []string{lowerTagOne, tagTwo})
+		t.Logf("part tags after re-assigning lower-cased variant %q of %q: %v", lowerTagOne, tagOne, afterLowerPatch["tags"])
+		a.Contains(afterLowerPatch["tags"], tagOne, "re-assigning a case-variant of an existing tag name must resolve to the original tag's stored casing")
+		a.NotContains(afterLowerPatch["tags"], lowerTagOne, "a case-variant must not create a sibling tag distinct from the existing one")
+		afterLower := searchTags(url.Values{"search": []string{tagOne}})
+		r.Len(afterLower, 1, "a case-insensitive re-assignment must not create a second Tag row")
+		a.Equal(tagOnePK, afterLower[0]["pk"])
+
+		// Server-side tags__name filter on the part list endpoint works for
+		// tag-based selection.
+		byName := searchPartsRaw(t, ctx, fixture.client, url.Values{"tags__name": []string{tagOne}})
+		t.Logf("/api/part/?tags__name=%s matched IDs: %v", tagOne, rawPartIDs(byName))
+		a.Contains(rawPartIDs(byName), float64(part.ID))
+
+		// The undocumented boolean "tags" list filter on /api/part/ is NOT a
+		// has-tags presence filter: both true and false exclude every part,
+		// including our known-tagged part, while an unfiltered list finds it.
+		// Pinned so an MCP presence design does not rely on this filter.
+		byPresenceTrue := searchPartsRaw(t, ctx, fixture.client, url.Values{"tags": []string{"true"}})
+		byPresenceFalse := searchPartsRaw(t, ctx, fixture.client, url.Values{"tags": []string{"false"}})
+		byPresenceNone := searchPartsRaw(t, ctx, fixture.client, nil)
+		t.Logf("/api/part/?tags=true: %v, ?tags=false: %v, unfiltered: %v", rawPartIDs(byPresenceTrue), rawPartIDs(byPresenceFalse), rawPartIDs(byPresenceNone))
+		a.Empty(byPresenceTrue, "pinned InvenTree 1.5.2 characterization: the tags=true list filter unexpectedly excludes every part")
+		a.Empty(byPresenceFalse, "pinned InvenTree 1.5.2 characterization: the tags=false list filter unexpectedly excludes every part")
+		a.Contains(rawPartIDs(byPresenceNone), float64(part.ID))
+
+		// Orphan behavior: drop every reference to tagOne and see whether the
+		// shared Tag row survives with zero references or is cleaned up.
+		patchTags("/api/part/%d/", part.ID, []string{tagTwo})
+		patchTags("/api/stock/location/%d/", location.ID, []string{})
+		patchTags("/api/company/%d/", company.ID, []string{})
+		orphanReq, err := fixture.client.NewRequest(ctx, http.MethodGet, fmt.Sprintf("/api/tag/%v/", tagOnePK), nil, nil)
+		r.NoError(err)
+		var orphanOut map[string]any
+		r.NoError(fixture.client.DoJSON(orphanReq, &orphanOut),
+			"pinned characterization: InvenTree does not auto-delete a Tag row when its last object reference is removed")
+		a.Equal(tagOnePK, orphanOut["pk"])
+
+		// Direct /api/tag/ mutation is declared staff-only (`a:staff`) in the
+		// pinned schema, unlike ordinary object PATCH above. Confirm live
+		// with a non-staff account that create/delete are rejected even
+		// though the same account's own object writes above were not
+		// specially gated.
+		nonStaffUsername, err := fixture.run.Name("fs56-nonstaff")
+		r.NoError(err)
+		createUserReq, err := fixture.client.NewRequest(ctx, http.MethodPost, "/api/user/", nil, map[string]any{
+			"username":     nonStaffUsername,
+			"first_name":   "Integration",
+			"last_name":    "Nonstaff",
+			"email":        strings.ToLower(nonStaffUsername) + "@example.test",
+			"is_staff":     false,
+			"is_superuser": false,
+			"is_active":    true,
+		})
+		r.NoError(err)
+		var nonStaffUser map[string]any
+		r.NoError(fixture.client.DoJSON(createUserReq, &nonStaffUser))
+		nonStaffID, ok := nonStaffUser["pk"].(float64)
+		r.True(ok)
+		nonStaffPassword := "F-S56-live-characterization-password"
+		setPasswordReq, err := fixture.client.NewRequest(ctx, http.MethodPut, fmt.Sprintf("/api/user/%d/set-password/", int(nonStaffID)), nil, map[string]any{"password": nonStaffPassword, "override_warning": true})
+		r.NoError(err)
+		r.NoError(fixture.client.DoJSON(setPasswordReq, nil))
+		tokenReq, err := http.NewRequestWithContext(ctx, http.MethodGet, shared.Environment().BaseURL+"/api/user/me/token/?name="+url.QueryEscape(nonStaffUsername), nil)
+		r.NoError(err)
+		tokenReq.SetBasicAuth(nonStaffUsername, nonStaffPassword)
+		tokenResponse, err := http.DefaultClient.Do(tokenReq)
+		r.NoError(err)
+		t.Cleanup(func() { _ = tokenResponse.Body.Close() })
+		r.Equal(http.StatusOK, tokenResponse.StatusCode)
+		var nonStaffToken struct {
+			Token string `json:"token"`
+		}
+		r.NoError(json.NewDecoder(tokenResponse.Body).Decode(&nonStaffToken))
+		r.NotEmpty(nonStaffToken.Token)
+		nonStaffClient, err := inventree.NewClient(inventree.Config{BaseURL: shared.Environment().BaseURL, Credential: inventree.Credential{Scheme: inventree.AuthSchemeToken, Token: nonStaffToken.Token}})
+		r.NoError(err)
+
+		// Recreate a live Tag row (via ordinary admin object PATCH) for the
+		// non-staff direct-CRUD characterization.
+		tagThree, err := fixture.run.Name("fs56-tag-three")
+		r.NoError(err)
+		patchTags("/api/part/%d/", part.ID, []string{tagTwo, tagThree})
+		tagThreeRows := searchTags(url.Values{"search": []string{tagThree}})
+		r.Len(tagThreeRows, 1)
+		tagThreePK := tagThreeRows[0]["pk"]
+
+		nonStaffCreateReq, err := nonStaffClient.NewRequest(ctx, http.MethodPost, "/api/tag/", nil, map[string]any{"name": tagThree + "-direct"})
+		r.NoError(err)
+		nonStaffCreateErr := nonStaffClient.DoJSON(nonStaffCreateReq, nil)
+		var createAPIErr *inventree.APIError
+		r.ErrorAs(nonStaffCreateErr, &createAPIErr)
+		a.Equal(http.StatusForbidden, createAPIErr.StatusCode)
+
+		nonStaffDeleteReq, err := nonStaffClient.NewRequest(ctx, http.MethodDelete, fmt.Sprintf("/api/tag/%v/", tagThreePK), nil, nil)
+		r.NoError(err)
+		nonStaffDeleteErr := nonStaffClient.DoJSON(nonStaffDeleteReq, nil)
+		var deleteAPIErr *inventree.APIError
+		r.ErrorAs(nonStaffDeleteErr, &deleteAPIErr)
+		a.Equal(http.StatusForbidden, deleteAPIErr.StatusCode)
+		t.Logf("non-staff direct /api/tag/ create and delete both rejected with HTTP 403, unlike ordinary object PATCH tag assignment")
+	})
+
 	t.Run("attachment", func(t *testing.T) {
 		r := require.New(t)
 		ctx, _, _ := testhandler.SetupTestHandler(t)
@@ -2924,6 +3140,30 @@ func requireDecimalEqual(t *testing.T, expected string, actual inventree.Decimal
 	actualValue, ok := new(big.Rat).SetString(string(actual))
 	r.True(ok)
 	r.Zero(expectedValue.Cmp(actualValue))
+}
+
+func searchPartsRaw(t *testing.T, ctx context.Context, client *inventree.Client, query url.Values) []map[string]any {
+	t.Helper()
+	r := require.New(t)
+	if query == nil {
+		query = url.Values{}
+	}
+	query.Set("limit", "100")
+	req, err := client.NewRequest(ctx, http.MethodGet, "/api/part/", query, nil)
+	r.NoError(err)
+	var out struct {
+		Results []map[string]any `json:"results"`
+	}
+	r.NoError(client.DoJSON(req, &out))
+	return out.Results
+}
+
+func rawPartIDs(rows []map[string]any) []any {
+	ids := make([]any, 0, len(rows))
+	for _, row := range rows {
+		ids = append(ids, row["pk"])
+	}
+	return ids
 }
 
 func authenticatedMediaStatus(t *testing.T, ctx context.Context, rawURL string, token string) int {
