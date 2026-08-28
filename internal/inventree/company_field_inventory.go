@@ -36,5 +36,5 @@ var CompanyFieldInventory = map[string]CompanyFieldClass{
 	"primary_address":    CompanyFieldSeparateLookup,
 	"tax_id":             CompanyFieldExposed,
 	"parameters":         CompanyFieldDeferred,
-	"tags":               CompanyFieldDeferred,
+	"tags":               CompanyFieldExposed,
 }

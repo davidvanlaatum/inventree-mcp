@@ -752,7 +752,7 @@ func TestPartWriteInputsExcludeReadOnlyAndDeferredSerializerFields(t *testing.T)
 		for _, field := range reflect.VisibleFields(schemaType) {
 			fields[jsonFieldName(field.Tag.Get("json"))] = true
 		}
-		for _, excluded := range []string{"creation_user", "responsible", "revision_of", "variant_of", "barcode_hash", "existing_image", "duplicate", "initial_stock", "initial_supplier", "copy_category_parameters", "tags", "price_breaks"} {
+		for _, excluded := range []string{"creation_user", "responsible", "revision_of", "variant_of", "barcode_hash", "existing_image", "duplicate", "initial_stock", "initial_supplier", "copy_category_parameters", "price_breaks"} {
 			a.False(fields[excluded], "%s must not expose %s", schemaType.Name(), excluded)
 		}
 	}

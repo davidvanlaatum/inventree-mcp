@@ -102,7 +102,10 @@ func (c *Client) GetPart(ctx context.Context, id int) (Part, error) {
 
 func (c *Client) GetPartDetail(ctx context.Context, id int) (PartDetail, error) {
 	var out PartDetail
-	err := c.get(ctx, fmt.Sprintf("/api/part/%d/", id), &out)
+	req, err := c.NewRequest(ctx, http.MethodGet, fmt.Sprintf("/api/part/%d/", id), url.Values{"tags": []string{"true"}}, nil)
+	if err == nil {
+		err = c.DoJSON(req, &out)
+	}
 	return out, err
 }
 
@@ -135,7 +138,10 @@ func (c *Client) SearchCompaniesPage(ctx context.Context, query SearchQuery) (Co
 
 func (c *Client) GetCompanyDetail(ctx context.Context, id int) (CompanyDetail, error) {
 	var out CompanyDetail
-	err := c.get(ctx, fmt.Sprintf("/api/company/%d/", id), &out)
+	req, err := c.NewRequest(ctx, http.MethodGet, fmt.Sprintf("/api/company/%d/", id), url.Values{"tags": []string{"true"}}, nil)
+	if err == nil {
+		err = c.DoJSON(req, &out)
+	}
 	return out, err
 }
 
@@ -164,7 +170,7 @@ func (c *Client) SearchStockLocationsPage(ctx context.Context, query StockLocati
 
 func (c *Client) GetStockLocation(ctx context.Context, id int) (StockLocation, error) {
 	var out StockLocation
-	req, err := c.NewRequest(ctx, http.MethodGet, fmt.Sprintf("/api/stock/location/%d/", id), url.Values{"path_detail": []string{"true"}}, nil)
+	req, err := c.NewRequest(ctx, http.MethodGet, fmt.Sprintf("/api/stock/location/%d/", id), url.Values{"path_detail": []string{"true"}, "tags": []string{"true"}}, nil)
 	if err == nil {
 		err = c.DoJSON(req, &out)
 	}
@@ -217,10 +223,11 @@ func (c *Client) GetStockItem(ctx context.Context, id int) (StockItem, error) {
 }
 
 // GetStockItemDetail retrieves one stock item with explicit embedded-detail
-// query flags rather than the endpoint's own defaults: path_detail is enabled
-// so location_path is populated, while part_detail (on by default upstream),
-// location_detail, supplier_part_detail, and tests stay off because nested
-// part, location, and supplier-part records remain separate exact lookups.
+// query flags rather than the endpoint's own defaults: path_detail and tags
+// are enabled so location_path and tags are populated, while part_detail (on
+// by default upstream), location_detail, supplier_part_detail, and tests stay
+// off because nested part, location, and supplier-part records remain
+// separate exact lookups.
 func (c *Client) GetStockItemDetail(ctx context.Context, id int) (StockItemDetail, error) {
 	var out StockItemDetail
 	query := url.Values{
@@ -229,6 +236,7 @@ func (c *Client) GetStockItemDetail(ctx context.Context, id int) (StockItemDetai
 		"location_detail":      []string{"false"},
 		"supplier_part_detail": []string{"false"},
 		"tests":                []string{"false"},
+		"tags":                 []string{"true"},
 	}
 	req, err := c.NewRequest(ctx, http.MethodGet, fmt.Sprintf("/api/stock/%d/", id), query, nil)
 	if err != nil {
@@ -255,6 +263,15 @@ func (c *Client) SearchTemplateParametersPage(ctx context.Context, query Templat
 func (c *Client) SearchObjectParametersPage(ctx context.Context, query ObjectParameterQuery) (PartParameterPage, error) {
 	page, err := listPage[Parameter](ctx, c, "/api/parameter/", query.values())
 	return PartParameterPage{Count: page.Count, Results: page.Results, HasMore: page.Next != nil && *page.Next != ""}, err
+}
+
+// SearchTagsPage fetches a single bounded page over /api/tag/, InvenTree's
+// shared cross-object tag taxonomy. It deliberately does not scan every page
+// like listAll-backed searches: search_tags is a bounded discovery lookup,
+// not a source of exhaustive tag inventory.
+func (c *Client) SearchTagsPage(ctx context.Context, query TagQuery) (TagPage, error) {
+	page, err := listPage[Tag](ctx, c, "/api/tag/", query.values())
+	return TagPage{Count: page.Count, Results: page.Results, HasMore: page.Next != nil && *page.Next != ""}, err
 }
 
 func (c *Client) GetPartParameter(ctx context.Context, id int) (Parameter, error) {
@@ -524,7 +541,10 @@ func (c *Client) SearchSupplierPartsPage(ctx context.Context, query SupplierPart
 
 func (c *Client) GetSupplierPartDetail(ctx context.Context, id int) (SupplierPartDetail, error) {
 	var out SupplierPartDetail
-	err := c.get(ctx, fmt.Sprintf("/api/company/part/%d/", id), &out)
+	req, err := c.NewRequest(ctx, http.MethodGet, fmt.Sprintf("/api/company/part/%d/", id), url.Values{"tags": []string{"true"}}, nil)
+	if err == nil {
+		err = c.DoJSON(req, &out)
+	}
 	return out, err
 }
 
@@ -545,7 +565,10 @@ func (c *Client) SearchManufacturerPartsPage(ctx context.Context, query Manufact
 
 func (c *Client) GetManufacturerPartDetail(ctx context.Context, id int) (ManufacturerPartDetail, error) {
 	var out ManufacturerPartDetail
-	err := c.get(ctx, fmt.Sprintf("/api/company/part/manufacturer/%d/", id), &out)
+	req, err := c.NewRequest(ctx, http.MethodGet, fmt.Sprintf("/api/company/part/manufacturer/%d/", id), url.Values{"tags": []string{"true"}}, nil)
+	if err == nil {
+		err = c.DoJSON(req, &out)
+	}
 	return out, err
 }
 
@@ -568,7 +591,10 @@ func (c *Client) GetPurchaseOrder(ctx context.Context, id int) (PurchaseOrder, e
 
 func (c *Client) GetPurchaseOrderDetail(ctx context.Context, id int) (PurchaseOrderDetail, error) {
 	var out PurchaseOrderDetail
-	err := c.get(ctx, fmt.Sprintf("/api/order/po/%d/", id), &out)
+	req, err := c.NewRequest(ctx, http.MethodGet, fmt.Sprintf("/api/order/po/%d/", id), url.Values{"tags": []string{"true"}}, nil)
+	if err == nil {
+		err = c.DoJSON(req, &out)
+	}
 	return out, err
 }
 

@@ -69,7 +69,7 @@ var PartFieldInventory = map[string]PartFieldClass{
 	"scheduled_to_build":        PartFieldExposed,
 	"starred":                   PartFieldExposed,
 	"stock_item_count":          PartFieldExposed,
-	"tags":                      PartFieldDeferred,
+	"tags":                      PartFieldExposed,
 	"testable":                  PartFieldExposed,
 	"thumbnail":                 PartFieldExposed,
 	"total_in_stock":            PartFieldExposed,

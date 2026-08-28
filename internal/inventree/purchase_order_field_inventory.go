@@ -43,7 +43,7 @@ var PurchaseOrderFieldInventory = map[string]PurchaseOrderFieldClass{
 	"project_code_label":  PurchaseOrderFieldExposed,
 	"responsible_detail":  PurchaseOrderFieldSeparateLookup,
 	"parameters":          PurchaseOrderFieldDeferred,
-	"tags":                PurchaseOrderFieldDeferred,
+	"tags":                PurchaseOrderFieldExposed,
 	"complete_date":       PurchaseOrderFieldExposed,
 	"supplier":            PurchaseOrderFieldExposed,
 	"supplier_detail":     PurchaseOrderFieldSeparateLookup,

@@ -164,9 +164,17 @@ func buildPurchaseOrderBulkPlanItem(ctx context.Context, client PurchaseOrderBul
 	if err != nil || before.PK != item.ID {
 		return purchaseOrderBulkPlanItem{bulkPlanItemBase: bulkPlanItemBase{ID: item.ID, FailReason: "id does not identify a readable purchase order"}}
 	}
-	// BulkUpdatePurchaseOrderItem mirrors UpdatePurchaseOrderInput's exact
-	// field set, so this is a plain field-preserving type conversion.
-	fields, err := updatePurchaseOrderPatch(UpdatePurchaseOrderInput(item))
+	// BulkUpdatePurchaseOrderItem mirrors UpdatePurchaseOrderInput's field set
+	// except tags, which stays out of bulk scope per F-S91; this maps every
+	// other field through explicitly rather than relying on a type conversion.
+	fields, err := updatePurchaseOrderPatch(UpdatePurchaseOrderInput{
+		ID: item.ID, Description: item.Description, Notes: item.Notes, ClearNotes: item.ClearNotes,
+		SupplierReference: item.SupplierReference, CreationDate: item.CreationDate,
+		StartDate: item.StartDate, ClearStartDate: item.ClearStartDate,
+		TargetDate: item.TargetDate, ClearTargetDate: item.ClearTargetDate,
+		Currency: item.Currency, DestinationID: item.DestinationID,
+		ClearDestination: item.ClearDestination, Link: item.Link,
+	})
 	if err != nil {
 		return purchaseOrderBulkPlanItem{bulkPlanItemBase: bulkPlanItemBase{ID: item.ID, FailReason: err.Error()}, Before: before}
 	}

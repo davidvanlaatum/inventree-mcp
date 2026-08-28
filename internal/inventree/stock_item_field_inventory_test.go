@@ -57,7 +57,7 @@ func TestStockItemDetailPreservesNullableScalarsAndOmitsUnapprovedFields(t *test
 	r := require.New(t)
 	a := assert.New(t)
 
-	raw := []byte(`{"pk":50,"part":5,"quantity":2,"SKU":null,"MPN":"MPN-50","expired":true,"stale":false,"sales_order":null,"sales_order_reference":null,"location_path":[{"pk":40,"name":"Bin"}],"barcode_hash":"secret","location_detail":{"pk":40},"part_detail":{"pk":5},"supplier_part_detail":{"pk":9},"tags":["deferred"],"tests":[{"pk":1}],"use_pack_size":true,"serial_numbers":"1-5"}`)
+	raw := []byte(`{"pk":50,"part":5,"quantity":2,"SKU":null,"MPN":"MPN-50","expired":true,"stale":false,"sales_order":null,"sales_order_reference":null,"location_path":[{"pk":40,"name":"Bin"}],"barcode_hash":"secret","location_detail":{"pk":40},"part_detail":{"pk":5},"supplier_part_detail":{"pk":9},"tags":["reference"],"tests":[{"pk":1}],"use_pack_size":true,"serial_numbers":"1-5"}`)
 	var detail inventree.StockItemDetail
 	r.NoError(json.Unmarshal(raw, &detail))
 	for field, expected := range map[string]inventree.StockItemFieldClass{
@@ -69,7 +69,7 @@ func TestStockItemDetailPreservesNullableScalarsAndOmitsUnapprovedFields(t *test
 		"location_detail":      inventree.StockItemFieldSeparateLookup,
 		"part_detail":          inventree.StockItemFieldSeparateLookup,
 		"supplier_part_detail": inventree.StockItemFieldSeparateLookup,
-		"tags":                 inventree.StockItemFieldDeferred,
+		"tags":                 inventree.StockItemFieldExposed,
 		"tests":                inventree.StockItemFieldDeferred,
 		"use_pack_size":        inventree.StockItemFieldWriteOnly,
 		"serial_numbers":       inventree.StockItemFieldWriteOnly,
@@ -89,6 +89,7 @@ func TestStockItemDetailPreservesNullableScalarsAndOmitsUnapprovedFields(t *test
 	a.Nil(detail.SalesOrderReference)
 	r.Len(detail.LocationPath, 1)
 	a.Equal("Bin", detail.LocationPath[0].Name)
+	a.Equal([]string{"reference"}, detail.Tags)
 
 	encoded, err := json.Marshal(detail)
 	r.NoError(err)
@@ -98,7 +99,7 @@ func TestStockItemDetailPreservesNullableScalarsAndOmitsUnapprovedFields(t *test
 	a.NotContains(keys, "location_detail")
 	a.NotContains(keys, "part_detail")
 	a.NotContains(keys, "supplier_part_detail")
-	a.NotContains(keys, "tags")
+	a.Contains(keys, "tags")
 	a.NotContains(keys, "tests")
 	a.NotContains(keys, "use_pack_size")
 	a.NotContains(keys, "serial_numbers")

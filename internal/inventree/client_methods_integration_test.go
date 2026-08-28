@@ -334,7 +334,7 @@ func TestClientMethodsAgainstInvenTree(t *testing.T) {
 		r.NotNil(supplierPartDetail.AvailabilityUpdated)
 		r.NotNil(supplierPartDetail.Updated)
 		var supplierRaw map[string]any
-		req, err := fixture.client.NewRequest(ctx, "GET", fmt.Sprintf("/api/company/part/%d/", supplierPart.PK), nil, nil)
+		req, err := fixture.client.NewRequest(ctx, "GET", fmt.Sprintf("/api/company/part/%d/", supplierPart.PK), url.Values{"tags": []string{"true"}}, nil)
 		r.NoError(err)
 		r.NoError(fixture.client.DoJSON(req, &supplierRaw))
 		for field, class := range inventree.SupplierPartFieldInventory {
@@ -372,7 +372,7 @@ func TestClientMethodsAgainstInvenTree(t *testing.T) {
 		r.Equal(manufacturerPart.PK, manufacturerPartDetail.PK)
 		r.Equal(manufacturerNotes, *manufacturerPartDetail.Notes)
 		var manufacturerRaw map[string]any
-		req, err = fixture.client.NewRequest(ctx, "GET", fmt.Sprintf("/api/company/part/manufacturer/%d/", manufacturerPart.PK), nil, nil)
+		req, err = fixture.client.NewRequest(ctx, "GET", fmt.Sprintf("/api/company/part/manufacturer/%d/", manufacturerPart.PK), url.Values{"tags": []string{"true"}}, nil)
 		r.NoError(err)
 		r.NoError(fixture.client.DoJSON(req, &manufacturerRaw))
 		for field, class := range inventree.ManufacturerPartFieldInventory {
@@ -469,7 +469,11 @@ func TestClientMethodsAgainstInvenTree(t *testing.T) {
 		r.NoError(err)
 		r.NoError(fixture.client.DoJSON(req, &companyRaw))
 		for field, class := range inventree.CompanyFieldInventory {
-			if class == inventree.CompanyFieldExposed {
+			// tags is Exposed but, per F-S56/F-S91, only appears when the
+			// request carries the ?tags=true query flag GetCompanyDetail
+			// always sends; a plain GET (this probe) omits it like the
+			// still-deferred/separate-lookup fields below.
+			if class == inventree.CompanyFieldExposed && field != "tags" {
 				r.Contains(companyRaw, field, "pinned company response field %s", field)
 			}
 		}
@@ -480,8 +484,14 @@ func TestClientMethodsAgainstInvenTree(t *testing.T) {
 		_, hasTags := companyRaw["tags"]
 		_, hasPrimaryAddress := companyRaw["primary_address"]
 		a.False(hasParameters, "deferred parameters field must not appear in the live raw response the classification was checked against")
-		a.False(hasTags, "deferred tags field must not appear in the live raw response the classification was checked against")
+		a.False(hasTags, "tags must not appear in a plain GET without the ?tags=true query flag")
 		a.False(hasPrimaryAddress, "separate-lookup primary_address field must not appear in the live raw response the classification was checked against")
+
+		var companyRawWithTags map[string]any
+		reqWithTags, err := fixture.client.NewRequest(ctx, "GET", fmt.Sprintf("/api/company/%d/", customer.PK), url.Values{"tags": []string{"true"}}, nil)
+		r.NoError(err)
+		r.NoError(fixture.client.DoJSON(reqWithTags, &companyRawWithTags))
+		a.Contains(companyRawWithTags, "tags", "pinned company response field tags with the ?tags=true query flag")
 
 		// Customer-role dependency audit: SearchStockItemsPage and
 		// SearchSalesOrdersPage are new bounded existence-count client
@@ -1261,40 +1271,7 @@ func TestClientMethodsAgainstInvenTree(t *testing.T) {
 		// with a non-staff account that create/delete are rejected even
 		// though the same account's own object writes above were not
 		// specially gated.
-		nonStaffUsername, err := fixture.run.Name("fs56-nonstaff")
-		r.NoError(err)
-		createUserReq, err := fixture.client.NewRequest(ctx, http.MethodPost, "/api/user/", nil, map[string]any{
-			"username":     nonStaffUsername,
-			"first_name":   "Integration",
-			"last_name":    "Nonstaff",
-			"email":        strings.ToLower(nonStaffUsername) + "@example.test",
-			"is_staff":     false,
-			"is_superuser": false,
-			"is_active":    true,
-		})
-		r.NoError(err)
-		var nonStaffUser map[string]any
-		r.NoError(fixture.client.DoJSON(createUserReq, &nonStaffUser))
-		nonStaffID, ok := nonStaffUser["pk"].(float64)
-		r.True(ok)
-		nonStaffPassword := "F-S56-live-characterization-password"
-		setPasswordReq, err := fixture.client.NewRequest(ctx, http.MethodPut, fmt.Sprintf("/api/user/%d/set-password/", int(nonStaffID)), nil, map[string]any{"password": nonStaffPassword, "override_warning": true})
-		r.NoError(err)
-		r.NoError(fixture.client.DoJSON(setPasswordReq, nil))
-		tokenReq, err := http.NewRequestWithContext(ctx, http.MethodGet, shared.Environment().BaseURL+"/api/user/me/token/?name="+url.QueryEscape(nonStaffUsername), nil)
-		r.NoError(err)
-		tokenReq.SetBasicAuth(nonStaffUsername, nonStaffPassword)
-		tokenResponse, err := http.DefaultClient.Do(tokenReq)
-		r.NoError(err)
-		t.Cleanup(func() { _ = tokenResponse.Body.Close() })
-		r.Equal(http.StatusOK, tokenResponse.StatusCode)
-		var nonStaffToken struct {
-			Token string `json:"token"`
-		}
-		r.NoError(json.NewDecoder(tokenResponse.Body).Decode(&nonStaffToken))
-		r.NotEmpty(nonStaffToken.Token)
-		nonStaffClient, err := inventree.NewClient(inventree.Config{BaseURL: shared.Environment().BaseURL, Credential: inventree.Credential{Scheme: inventree.AuthSchemeToken, Token: nonStaffToken.Token}})
-		r.NoError(err)
+		nonStaffClient := newNonStaffClient(t, ctx, fixture, "fs56-nonstaff", "F-S56-live-characterization-password")
 
 		// Recreate a live Tag row (via ordinary admin object PATCH) for the
 		// non-staff direct-CRUD characterization.
@@ -1319,6 +1296,101 @@ func TestClientMethodsAgainstInvenTree(t *testing.T) {
 		r.ErrorAs(nonStaffDeleteErr, &deleteAPIErr)
 		a.Equal(http.StatusForbidden, deleteAPIErr.StatusCode)
 		t.Logf("non-staff direct /api/tag/ create and delete both rejected with HTTP 403, unlike ordinary object PATCH tag assignment")
+	})
+
+	t.Run("cross_object_tag_search_and_assignment", func(t *testing.T) {
+		r := require.New(t)
+		a := assert.New(t)
+		ctx, _, _ := testhandler.SetupTestHandler(t)
+		fixture := newClientMethodFixture(t, shared)
+
+		part := fixture.ensure(t, testenv.FixturePart)
+		company := fixture.ensure(t, testenv.FixtureSupplier)
+		location := fixture.ensure(t, testenv.FixtureLocation)
+		// FixturePurchaseOrder's reference ("PO-<supplierID>") is not
+		// run-prefixed like every other fixture kind (see the
+		// global_search subtest's comment on this same exception), so it
+		// must bypass fixture.ensure's ownership check.
+		order, err := fixture.shared.EnsureFixture(ctx, fixture.account, fixture.run, testenv.FixturePurchaseOrder)
+		r.NoError(err)
+
+		sharedTag, err := fixture.run.Name("fs91-shared-tag")
+		r.NoError(err)
+		partOnlyTag, err := fixture.run.Name("fs91-part-only-tag")
+		r.NoError(err)
+
+		// Assign through the typed UpdatePart/UpdateCompany/UpdateStockLocation
+		// client methods (PatchFields{"tags": Set(...)}) rather than raw
+		// requests, proving the F-S91 production code path end to end.
+		_, err = fixture.client.UpdatePart(ctx, part.ID, inventree.PatchFields{"tags": inventree.Set([]string{sharedTag, partOnlyTag})})
+		r.NoError(err)
+		_, err = fixture.client.UpdateCompany(ctx, company.ID, inventree.PatchFields{"tags": inventree.Set([]string{sharedTag})})
+		r.NoError(err)
+		_, err = fixture.client.UpdateStockLocation(ctx, location.ID, inventree.PatchFields{"tags": inventree.Set([]string{sharedTag})})
+		r.NoError(err)
+		// UpdatePurchaseOrderDetail is the one Update*Detail method that
+		// requests ?tags=true on its own PATCH request rather than relying on
+		// a later GetPurchaseOrderDetail read-back (update_purchase_order
+		// returns this PATCH response directly); assert its response carries
+		// tags immediately, not just on a follow-up GET.
+		orderAfterPatch, err := fixture.client.UpdatePurchaseOrderDetail(ctx, order.ID, inventree.PatchFields{"tags": inventree.Set([]string{sharedTag})})
+		r.NoError(err)
+		a.Equal([]string{sharedTag}, orderAfterPatch.Tags, "UpdatePurchaseOrderDetail's own PATCH response must already carry tags")
+
+		// Exact read-back through the ?tags=true-requesting Get*Detail methods
+		// must expose the assigned tags.
+		partDetail, err := fixture.client.GetPartDetail(ctx, part.ID)
+		r.NoError(err)
+		a.ElementsMatch([]string{sharedTag, partOnlyTag}, partDetail.Tags)
+		companyDetail, err := fixture.client.GetCompanyDetail(ctx, company.ID)
+		r.NoError(err)
+		a.Equal([]string{sharedTag}, companyDetail.Tags)
+		locationDetail, err := fixture.client.GetStockLocation(ctx, location.ID)
+		r.NoError(err)
+		a.Equal([]string{sharedTag}, locationDetail.Tags)
+		orderDetail, err := fixture.client.GetPurchaseOrderDetail(ctx, order.ID)
+		r.NoError(err)
+		a.Equal([]string{sharedTag}, orderDetail.Tags)
+
+		// search_tags backing method: unscoped search for the shared tag name
+		// must resolve to exactly one row (InvenTree's tag taxonomy is
+		// global, not per-model-type), matching F-S56's pinned finding.
+		unscoped, err := fixture.client.SearchTagsPage(ctx, inventree.TagQuery{Search: sharedTag, Limit: 20})
+		r.NoError(err)
+		r.Len(unscoped.Results, 1, "expected exactly one shared Tag row across part/company/location/purchase-order")
+		sharedTagPK := unscoped.Results[0].PK
+		r.NotEmpty(unscoped.Results[0].Slug)
+
+		// model_type-scoped search_tags must resolve to the very same Tag row
+		// for every object type it was assigned to.
+		for _, modelType := range []string{"part.part", "company.company", "stock.stocklocation", "order.purchaseorder"} {
+			scoped, err := fixture.client.SearchTagsPage(ctx, inventree.TagQuery{ModelType: modelType, Search: sharedTag, Limit: 20})
+			r.NoError(err)
+			r.Len(scoped.Results, 1, "model_type %s", modelType)
+			a.Equal(sharedTagPK, scoped.Results[0].PK, "model_type %s must resolve to the shared Tag row", modelType)
+		}
+
+		// partOnlyTag was never assigned to company/location/order, so a
+		// company-scoped search for it must find nothing even though an
+		// unscoped search for it still finds the part's own row.
+		partOnlyUnscoped, err := fixture.client.SearchTagsPage(ctx, inventree.TagQuery{Search: partOnlyTag, Limit: 20})
+		r.NoError(err)
+		r.Len(partOnlyUnscoped.Results, 1)
+		partOnlyCompanyScoped, err := fixture.client.SearchTagsPage(ctx, inventree.TagQuery{ModelType: "company.company", Search: partOnlyTag, Limit: 20})
+		r.NoError(err)
+		r.Empty(partOnlyCompanyScoped.Results, "a tag never assigned to any company must not appear in a company-scoped search")
+
+		// Whole-array replace with explicit [] clears every tag; PATCH
+		// response and read-back must both reflect the empty array, not
+		// merely omit the field.
+		// UpdatePart returns the concise Part projection, which has no tags
+		// field to assert on directly; only the exact-read GetPartDetail
+		// below proves the clear took effect.
+		_, err = fixture.client.UpdatePart(ctx, part.ID, inventree.PatchFields{"tags": inventree.Set([]string{})})
+		r.NoError(err)
+		clearedPartDetail, err := fixture.client.GetPartDetail(ctx, part.ID)
+		r.NoError(err)
+		a.Empty(clearedPartDetail.Tags, "explicit tags:[] must clear every tag on read-back")
 	})
 
 	t.Run("attachment", func(t *testing.T) {
@@ -2863,40 +2935,7 @@ func TestClientMethodsAgainstInvenTree(t *testing.T) {
 		// intentionally logged rather than assumed from the schema: this is a
 		// live product fact that must remain visible if the upstream permission
 		// policy changes.
-		nonStaffUsername, err := fixture.run.Name("stocktake-nonstaff")
-		r.NoError(err)
-		createUserReq, err := fixture.client.NewRequest(ctx, http.MethodPost, "/api/user/", nil, map[string]any{
-			"username":     nonStaffUsername,
-			"first_name":   "Integration",
-			"last_name":    "Nonstaff",
-			"email":        strings.ToLower(nonStaffUsername) + "@example.test",
-			"is_staff":     false,
-			"is_superuser": false,
-			"is_active":    true,
-		})
-		r.NoError(err)
-		var nonStaffUser map[string]any
-		r.NoError(fixture.client.DoJSON(createUserReq, &nonStaffUser))
-		nonStaffID, ok := nonStaffUser["pk"].(float64)
-		r.True(ok)
-		nonStaffPassword := "F-S74-live-characterization-password"
-		setPasswordReq, err := fixture.client.NewRequest(ctx, http.MethodPut, fmt.Sprintf("/api/user/%d/set-password/", int(nonStaffID)), nil, map[string]any{"password": nonStaffPassword, "override_warning": true})
-		r.NoError(err)
-		r.NoError(fixture.client.DoJSON(setPasswordReq, nil))
-		tokenReq, err := http.NewRequestWithContext(ctx, http.MethodGet, shared.Environment().BaseURL+"/api/user/me/token/?name="+url.QueryEscape(nonStaffUsername), nil)
-		r.NoError(err)
-		tokenReq.SetBasicAuth(nonStaffUsername, nonStaffPassword)
-		tokenResponse, err := http.DefaultClient.Do(tokenReq)
-		r.NoError(err)
-		t.Cleanup(func() { _ = tokenResponse.Body.Close() })
-		r.Equal(http.StatusOK, tokenResponse.StatusCode)
-		var nonStaffToken struct {
-			Token string `json:"token"`
-		}
-		r.NoError(json.NewDecoder(tokenResponse.Body).Decode(&nonStaffToken))
-		r.NotEmpty(nonStaffToken.Token)
-		nonStaffClient, err := inventree.NewClient(inventree.Config{BaseURL: shared.Environment().BaseURL, Credential: inventree.Credential{Scheme: inventree.AuthSchemeToken, Token: nonStaffToken.Token}})
-		r.NoError(err)
+		nonStaffClient := newNonStaffClient(t, ctx, fixture, "stocktake-nonstaff", "F-S74-live-characterization-password")
 		nonStaffGeneration, err := nonStaffClient.GeneratePartStocktake(ctx, inventree.PartStocktakeGenerate{Part: &part.ID, GenerateEntry: true, GenerateReport: true})
 		var apiErr *inventree.APIError
 		r.ErrorAs(err, &apiErr)
@@ -3214,6 +3253,52 @@ func (f clientMethodFixture) ensure(t *testing.T, kind testenv.FixtureKind) test
 	r.NoError(err)
 	r.NoError(f.run.RequireOwnedName(record.Name))
 	return record
+}
+
+// newNonStaffClient creates a run-scoped non-staff InvenTree account through
+// the fixture's staff client and returns an authenticated client for it, so
+// live tests can characterize permission boundaries that differ between
+// staff and ordinary accounts. Extracted per the F-S56 review note in
+// docs/TASKS.md, which flagged this block duplicated between the
+// cross-object-tag and stocktake-generation subtests; F-S91 is its third
+// caller.
+func newNonStaffClient(t *testing.T, ctx context.Context, fixture clientMethodFixture, usernamePrefix, password string) *inventree.Client {
+	t.Helper()
+	r := require.New(t)
+	nonStaffUsername, err := fixture.run.Name(usernamePrefix)
+	r.NoError(err)
+	createUserReq, err := fixture.client.NewRequest(ctx, http.MethodPost, "/api/user/", nil, map[string]any{
+		"username":     nonStaffUsername,
+		"first_name":   "Integration",
+		"last_name":    "Nonstaff",
+		"email":        strings.ToLower(nonStaffUsername) + "@example.test",
+		"is_staff":     false,
+		"is_superuser": false,
+		"is_active":    true,
+	})
+	r.NoError(err)
+	var nonStaffUser map[string]any
+	r.NoError(fixture.client.DoJSON(createUserReq, &nonStaffUser))
+	nonStaffID, ok := nonStaffUser["pk"].(float64)
+	r.True(ok)
+	setPasswordReq, err := fixture.client.NewRequest(ctx, http.MethodPut, fmt.Sprintf("/api/user/%d/set-password/", int(nonStaffID)), nil, map[string]any{"password": password, "override_warning": true})
+	r.NoError(err)
+	r.NoError(fixture.client.DoJSON(setPasswordReq, nil))
+	tokenReq, err := http.NewRequestWithContext(ctx, http.MethodGet, fixture.shared.Environment().BaseURL+"/api/user/me/token/?name="+url.QueryEscape(nonStaffUsername), nil)
+	r.NoError(err)
+	tokenReq.SetBasicAuth(nonStaffUsername, password)
+	tokenResponse, err := http.DefaultClient.Do(tokenReq)
+	r.NoError(err)
+	t.Cleanup(func() { _ = tokenResponse.Body.Close() })
+	r.Equal(http.StatusOK, tokenResponse.StatusCode)
+	var nonStaffToken struct {
+		Token string `json:"token"`
+	}
+	r.NoError(json.NewDecoder(tokenResponse.Body).Decode(&nonStaffToken))
+	r.NotEmpty(nonStaffToken.Token)
+	nonStaffClient, err := inventree.NewClient(inventree.Config{BaseURL: fixture.shared.Environment().BaseURL, Credential: inventree.Credential{Scheme: inventree.AuthSchemeToken, Token: nonStaffToken.Token}})
+	r.NoError(err)
+	return nonStaffClient
 }
 
 func createParameterTemplate(t *testing.T, client *inventree.Client, run *testenv.Run, suffix string, units string, choices string) inventree.ParameterTemplate {

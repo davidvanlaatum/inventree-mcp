@@ -32,24 +32,25 @@ type CompanyAdminClient interface {
 
 type CompanyView struct {
 	inventree.WebLinkFields
-	ID                int     `json:"id"`
-	Name              string  `json:"name"`
-	Description       string  `json:"description"`
-	Website           string  `json:"website"`
-	Phone             string  `json:"phone,omitempty"`
-	Email             *string `json:"email,omitempty"`
-	Contact           string  `json:"contact,omitempty"`
-	TaxID             string  `json:"tax_id,omitempty"`
-	Link              string  `json:"link,omitempty"`
-	ImageURL          string  `json:"image_url,omitempty"`
-	Currency          string  `json:"currency"`
-	Active            bool    `json:"active"`
-	IsSupplier        bool    `json:"is_supplier"`
-	IsManufacturer    bool    `json:"is_manufacturer"`
-	IsCustomer        bool    `json:"is_customer"`
-	PartsSupplied     int     `json:"parts_supplied"`
-	PartsManufactured int     `json:"parts_manufactured"`
-	Notes             *string `json:"notes,omitempty"`
+	ID                int      `json:"id"`
+	Name              string   `json:"name"`
+	Description       string   `json:"description"`
+	Website           string   `json:"website"`
+	Phone             string   `json:"phone,omitempty"`
+	Email             *string  `json:"email,omitempty"`
+	Contact           string   `json:"contact,omitempty"`
+	TaxID             string   `json:"tax_id,omitempty"`
+	Link              string   `json:"link,omitempty"`
+	ImageURL          string   `json:"image_url,omitempty"`
+	Currency          string   `json:"currency"`
+	Active            bool     `json:"active"`
+	IsSupplier        bool     `json:"is_supplier"`
+	IsManufacturer    bool     `json:"is_manufacturer"`
+	IsCustomer        bool     `json:"is_customer"`
+	PartsSupplied     int      `json:"parts_supplied"`
+	PartsManufactured int      `json:"parts_manufactured"`
+	Notes             *string  `json:"notes,omitempty"`
+	Tags              []string `json:"tags,omitempty"`
 }
 
 type CompanyRecoveryView struct {
@@ -85,6 +86,7 @@ type SupplierPartView struct {
 	InStock             *float64 `json:"in_stock"`
 	OnOrder             *float64 `json:"on_order"`
 	Updated             *string  `json:"updated"`
+	Tags                []string `json:"tags,omitempty"`
 }
 
 type SupplierPartRecoveryView struct {
@@ -100,13 +102,14 @@ type SupplierPartRecoveryView struct {
 
 type ManufacturerPartView struct {
 	inventree.WebLinkFields
-	ID             int     `json:"id"`
-	PartID         int     `json:"part_id"`
-	ManufacturerID int     `json:"manufacturer_id"`
-	MPN            *string `json:"mpn"`
-	Description    *string `json:"description"`
-	Link           string  `json:"link,omitempty"`
-	Notes          *string `json:"notes"`
+	ID             int      `json:"id"`
+	PartID         int      `json:"part_id"`
+	ManufacturerID int      `json:"manufacturer_id"`
+	MPN            *string  `json:"mpn"`
+	Description    *string  `json:"description"`
+	Link           string   `json:"link,omitempty"`
+	Notes          *string  `json:"notes"`
+	Tags           []string `json:"tags,omitempty"`
 }
 
 type ManufacturerPartRecoveryView struct {
@@ -158,24 +161,25 @@ type ManufacturerPartSearchInput struct {
 }
 
 type UpdateCompanyInput struct {
-	ID             int     `json:"id" jsonschema:"Stable company primary key."`
-	Name           *string `json:"name,omitempty"`
-	Description    *string `json:"description,omitempty"`
-	Website        *string `json:"website,omitempty" jsonschema:"Complete HTTP(S) company website URL without userinfo; query parameters and fragments are preserved. An explicit empty string clears it."`
-	Phone          *string `json:"phone,omitempty" jsonschema:"Replacement contact phone number. An explicit empty string clears it. Never echoed in errors or recovery projections."`
-	Email          *string `json:"email,omitempty" jsonschema:"Replacement contact email. Mutually exclusive with clear_email. Never echoed in errors or recovery projections."`
-	ClearEmail     bool    `json:"clear_email,omitempty" jsonschema:"Explicitly PATCH email to null; mutually exclusive with email."`
-	Contact        *string `json:"contact,omitempty" jsonschema:"Replacement free-text point-of-contact name; not a linked contact record. An explicit empty string clears it. Never echoed in errors or recovery projections."`
-	TaxID          *string `json:"tax_id,omitempty" jsonschema:"Replacement business tax identifier (for example ABN/ACN), not a personal identifier. An explicit empty string clears it. Never echoed in errors or recovery projections."`
-	Link           *string `json:"link,omitempty" jsonschema:"Complete HTTP(S) external company-information URL without userinfo, distinct from website; query parameters and fragments are preserved. An explicit empty string clears it."`
-	Currency       *string `json:"currency,omitempty"`
-	Active         *bool   `json:"active,omitempty"`
-	IsSupplier     *bool   `json:"is_supplier,omitempty"`
-	IsManufacturer *bool   `json:"is_manufacturer,omitempty"`
-	IsCustomer     *bool   `json:"is_customer,omitempty" jsonschema:"Set true to add the customer role. An explicit false is rejected here; use remove_company_customer_role for guarded removal."`
-	Notes          *string `json:"notes,omitempty" jsonschema:"Replacement markdown notes. Notes are never included in recovery or error projections."`
-	ClearNotes     bool    `json:"clear_notes,omitempty" jsonschema:"Explicitly PATCH notes to null; mutually exclusive with notes."`
-	Confirm        bool    `json:"confirm,omitempty" jsonschema:"Required when removing supplier or manufacturer role."`
+	ID             int      `json:"id" jsonschema:"Stable company primary key."`
+	Name           *string  `json:"name,omitempty"`
+	Description    *string  `json:"description,omitempty"`
+	Website        *string  `json:"website,omitempty" jsonschema:"Complete HTTP(S) company website URL without userinfo; query parameters and fragments are preserved. An explicit empty string clears it."`
+	Phone          *string  `json:"phone,omitempty" jsonschema:"Replacement contact phone number. An explicit empty string clears it. Never echoed in errors or recovery projections."`
+	Email          *string  `json:"email,omitempty" jsonschema:"Replacement contact email. Mutually exclusive with clear_email. Never echoed in errors or recovery projections."`
+	ClearEmail     bool     `json:"clear_email,omitempty" jsonschema:"Explicitly PATCH email to null; mutually exclusive with email."`
+	Contact        *string  `json:"contact,omitempty" jsonschema:"Replacement free-text point-of-contact name; not a linked contact record. An explicit empty string clears it. Never echoed in errors or recovery projections."`
+	TaxID          *string  `json:"tax_id,omitempty" jsonschema:"Replacement business tax identifier (for example ABN/ACN), not a personal identifier. An explicit empty string clears it. Never echoed in errors or recovery projections."`
+	Link           *string  `json:"link,omitempty" jsonschema:"Complete HTTP(S) external company-information URL without userinfo, distinct from website; query parameters and fragments are preserved. An explicit empty string clears it."`
+	Currency       *string  `json:"currency,omitempty"`
+	Active         *bool    `json:"active,omitempty"`
+	IsSupplier     *bool    `json:"is_supplier,omitempty"`
+	IsManufacturer *bool    `json:"is_manufacturer,omitempty"`
+	IsCustomer     *bool    `json:"is_customer,omitempty" jsonschema:"Set true to add the customer role. An explicit false is rejected here; use remove_company_customer_role for guarded removal."`
+	Notes          *string  `json:"notes,omitempty" jsonschema:"Replacement markdown notes. Notes are never included in recovery or error projections."`
+	ClearNotes     bool     `json:"clear_notes,omitempty" jsonschema:"Explicitly PATCH notes to null; mutually exclusive with notes."`
+	Confirm        bool     `json:"confirm,omitempty" jsonschema:"Required when removing supplier or manufacturer role."`
+	Tags           []string `json:"tags,omitempty" jsonschema:"Optional whole-array replacement of this company's tags from InvenTree's shared tag taxonomy; an explicitly empty array clears every tag."`
 }
 
 type UpdateSupplierPartInput struct {
@@ -199,20 +203,22 @@ type UpdateSupplierPartInput struct {
 	Notes                 *string  `json:"notes,omitempty" jsonschema:"Replacement long Markdown notes, distinct from the short note field."`
 	ClearNotes            bool     `json:"clear_notes,omitempty" jsonschema:"Explicitly PATCH long Markdown notes to null; mutually exclusive with notes."`
 	Available             *float64 `json:"available,omitempty" jsonschema:"Replacement upstream availability quantity. Explicit zero is preserved."`
+	Tags                  []string `json:"tags,omitempty" jsonschema:"Optional whole-array replacement of this supplier part's tags from InvenTree's shared tag taxonomy; an explicitly empty array clears every tag."`
 }
 
 type UpdateManufacturerPartInput struct {
-	ID               int     `json:"id"`
-	PartID           *int    `json:"part_id,omitempty"`
-	ManufacturerID   *int    `json:"manufacturer_id,omitempty"`
-	MPN              *string `json:"mpn,omitempty"`
-	ClearMPN         bool    `json:"clear_mpn,omitempty"`
-	Description      *string `json:"description,omitempty"`
-	ClearDescription bool    `json:"clear_description,omitempty"`
-	Link             *string `json:"link,omitempty" jsonschema:"Complete HTTP(S) manufacturer-part URL without userinfo; query parameters and fragments are preserved."`
-	ClearLink        bool    `json:"clear_link,omitempty"`
-	Notes            *string `json:"notes,omitempty" jsonschema:"Replacement long Markdown notes."`
-	ClearNotes       bool    `json:"clear_notes,omitempty" jsonschema:"Explicitly PATCH long Markdown notes to null; mutually exclusive with notes."`
+	ID               int      `json:"id"`
+	PartID           *int     `json:"part_id,omitempty"`
+	ManufacturerID   *int     `json:"manufacturer_id,omitempty"`
+	MPN              *string  `json:"mpn,omitempty"`
+	ClearMPN         bool     `json:"clear_mpn,omitempty"`
+	Description      *string  `json:"description,omitempty"`
+	ClearDescription bool     `json:"clear_description,omitempty"`
+	Link             *string  `json:"link,omitempty" jsonschema:"Complete HTTP(S) manufacturer-part URL without userinfo; query parameters and fragments are preserved."`
+	ClearLink        bool     `json:"clear_link,omitempty"`
+	Notes            *string  `json:"notes,omitempty" jsonschema:"Replacement long Markdown notes."`
+	ClearNotes       bool     `json:"clear_notes,omitempty" jsonschema:"Explicitly PATCH long Markdown notes to null; mutually exclusive with notes."`
+	Tags             []string `json:"tags,omitempty" jsonschema:"Optional whole-array replacement of this manufacturer part's tags from InvenTree's shared tag taxonomy; an explicitly empty array clears every tag."`
 }
 
 func registerCompanyAdminLookupTools(server *mcp.Server, deps Dependencies) {
@@ -539,6 +545,9 @@ func companyPatch(input UpdateCompanyInput) (inventree.PatchFields, error) {
 	} else if input.ClearNotes {
 		fields["notes"] = inventree.Null()
 	}
+	if input.Tags != nil {
+		fields["tags"] = inventree.Set(input.Tags)
+	}
 	return fields, nil
 }
 
@@ -633,6 +642,10 @@ func supplierPartPatch(input UpdateSupplierPartInput, before inventree.SupplierP
 		fields["available"] = inventree.Set(*input.Available)
 		target.Available = *input.Available
 	}
+	if input.Tags != nil {
+		fields["tags"] = inventree.Set(input.Tags)
+		target.Tags = input.Tags
+	}
 	return fields, target, nil
 }
 
@@ -685,6 +698,10 @@ func manufacturerPartPatch(input UpdateManufacturerPartInput, before inventree.M
 		target.Notes = input.Notes
 	} else if input.ClearNotes {
 		target.Notes = nil
+	}
+	if input.Tags != nil {
+		fields["tags"] = inventree.Set(input.Tags)
+		target.Tags = input.Tags
 	}
 	return fields, target, nil
 }
@@ -993,13 +1010,13 @@ func manufacturerPartFieldsMatch(record inventree.ManufacturerPartDetail, fields
 // and freshly re-fetched current state, not just to confirm a post-write
 // read-back.
 func companyValues(record inventree.CompanyDetail) map[string]any {
-	return map[string]any{"name": record.Name, "description": record.Description, "website": record.Website, "phone": record.Phone, "email": record.Email, "contact": record.Contact, "tax_id": record.TaxID, "link": record.Link, "currency": record.Currency, "active": record.Active, "is_supplier": record.IsSupplier, "is_manufacturer": record.IsManufacturer, "is_customer": record.IsCustomer, "notes": record.Notes}
+	return map[string]any{"name": record.Name, "description": record.Description, "website": record.Website, "phone": record.Phone, "email": record.Email, "contact": record.Contact, "tax_id": record.TaxID, "link": record.Link, "currency": record.Currency, "active": record.Active, "is_supplier": record.IsSupplier, "is_manufacturer": record.IsManufacturer, "is_customer": record.IsCustomer, "notes": record.Notes, "tags": record.Tags}
 }
 func supplierPartValues(record inventree.SupplierPartDetail) map[string]any {
-	return map[string]any{"part": record.Part, "supplier": record.Supplier, "SKU": record.SKU, "description": record.Description, "link": record.Link, "active": record.Active, "primary": record.Primary, "manufacturer_part": record.ManufacturerPart, "packaging": record.Packaging, "pack_quantity": record.PackQuantity, "note": record.Note, "notes": record.Notes, "available": record.Available}
+	return map[string]any{"part": record.Part, "supplier": record.Supplier, "SKU": record.SKU, "description": record.Description, "link": record.Link, "active": record.Active, "primary": record.Primary, "manufacturer_part": record.ManufacturerPart, "packaging": record.Packaging, "pack_quantity": record.PackQuantity, "note": record.Note, "notes": record.Notes, "available": record.Available, "tags": record.Tags}
 }
 func manufacturerPartValues(record inventree.ManufacturerPartDetail) map[string]any {
-	return map[string]any{"part": record.Part, "manufacturer": record.Manufacturer, "MPN": record.MPN, "description": record.Description, "link": record.Link, "notes": record.Notes}
+	return map[string]any{"part": record.Part, "manufacturer": record.Manufacturer, "MPN": record.MPN, "description": record.Description, "link": record.Link, "notes": record.Notes, "tags": record.Tags}
 }
 
 func patchMatches(fields inventree.PatchFields, values map[string]any) bool {
@@ -1037,20 +1054,20 @@ func companyView(record inventree.CompanyDetail) CompanyView {
 		Currency: record.Currency, Active: record.Active,
 		IsSupplier: record.IsSupplier, IsManufacturer: record.IsManufacturer, IsCustomer: record.IsCustomer,
 		PartsSupplied: record.PartsSupplied, PartsManufactured: record.PartsManufactured,
-		Notes: record.Notes,
+		Notes: record.Notes, Tags: record.Tags,
 	}
 }
 func companyRecovery(record inventree.CompanyDetail) CompanyRecoveryView {
 	return CompanyRecoveryView{ID: record.PK, Name: record.Name, Currency: record.Currency, Active: record.Active, IsSupplier: record.IsSupplier, IsManufacturer: record.IsManufacturer, IsCustomer: record.IsCustomer}
 }
 func supplierPartView(record inventree.SupplierPartDetail) SupplierPartView {
-	return SupplierPartView{ID: record.PK, PartID: record.Part, SupplierID: record.Supplier, SKU: record.SKU, Description: record.Description, Link: projectExternalURL(record.Link), Active: record.Active, Primary: record.Primary, ManufacturerPartID: record.ManufacturerPart, MPN: record.MPN, Packaging: record.Packaging, PackQuantity: record.PackQuantity, PackQuantityNative: record.PackQuantityNative, Note: record.Note, Notes: record.Notes, Available: record.Available, AvailabilityUpdated: record.AvailabilityUpdated, InStock: record.InStock, OnOrder: record.OnOrder, Updated: record.Updated}
+	return SupplierPartView{ID: record.PK, PartID: record.Part, SupplierID: record.Supplier, SKU: record.SKU, Description: record.Description, Link: projectExternalURL(record.Link), Active: record.Active, Primary: record.Primary, ManufacturerPartID: record.ManufacturerPart, MPN: record.MPN, Packaging: record.Packaging, PackQuantity: record.PackQuantity, PackQuantityNative: record.PackQuantityNative, Note: record.Note, Notes: record.Notes, Available: record.Available, AvailabilityUpdated: record.AvailabilityUpdated, InStock: record.InStock, OnOrder: record.OnOrder, Updated: record.Updated, Tags: record.Tags}
 }
 func supplierPartRecovery(record inventree.SupplierPartDetail) SupplierPartRecoveryView {
 	return SupplierPartRecoveryView{ID: record.PK, PartID: record.Part, SupplierID: record.Supplier, SKU: record.SKU, Active: record.Active, Primary: record.Primary, ManufacturerPartID: record.ManufacturerPart}
 }
 func manufacturerPartView(record inventree.ManufacturerPartDetail) ManufacturerPartView {
-	return ManufacturerPartView{ID: record.PK, PartID: record.Part, ManufacturerID: record.Manufacturer, MPN: record.MPN, Description: record.Description, Link: projectExternalURL(record.Link), Notes: record.Notes}
+	return ManufacturerPartView{ID: record.PK, PartID: record.Part, ManufacturerID: record.Manufacturer, MPN: record.MPN, Description: record.Description, Link: projectExternalURL(record.Link), Notes: record.Notes, Tags: record.Tags}
 }
 func manufacturerPartRecovery(record inventree.ManufacturerPartDetail) ManufacturerPartRecoveryView {
 	return ManufacturerPartRecoveryView{ID: record.PK, PartID: record.Part, ManufacturerID: record.Manufacturer, MPN: record.MPN}
