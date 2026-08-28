@@ -111,7 +111,7 @@ Before assigning a new story ID, inspect `git worktree list --porcelain`, search
 | [F-S26](#f-s26-mcp-functionality-gap-guidance) | Guide consuming agents to surface untracked MCP functionality gaps for operator-approved issue creation. | Done |
 | [F-S27](#f-s27-guarded-full-stock-item-transfer) | Move one complete safe stock item to an explicit valid destination. | Done |
 | [F-S28](#f-s28-partial-stock-item-transfer-and-split-recovery) | Add partial transfers after split identity and recovery semantics are approved. | Done |
-| [F-S29](#f-s29-reviewed-multi-item-stock-transfer-batches) | Add reviewed transfer batches after atomicity and failure semantics are verified. | Planned |
+| [F-S29](#f-s29-reviewed-multi-item-stock-transfer-batches) | Add reviewed transfer batches after atomicity and failure semantics are verified. | Ready |
 | [F-S30](#f-s30-clarify-endpoint-specific-model-type-contracts) | Distinguish attachment and parameter endpoint `model_type` vocabularies without changing behavior. | Done |
 | [F-S31](#f-s31-guarded-company-primary-images) | Add guarded upload, replacement, verification, and supported removal of company primary images. | Done |
 | [F-S32](#f-s32-guarded-purchase-order-line-deletion) | Add guarded deletion of one unreceived ordinary purchase-order line, distinct from extra-line deletion. | Done |
@@ -140,12 +140,12 @@ Before assigning a new story ID, inspect `git worktree list --porcelain`, search
 | [F-S55](#f-s55-barcode-workflow-discovery) | Investigate safe barcode presence, generation, resolution, assignment, removal, and scan-history tooling. | Ready |
 | [F-S56](#f-s56-cross-object-tag-workflow-discovery) | Investigate tag discovery and consistent assignment/removal across supported object types. | Ready |
 | [F-S57](#f-s57-part-testing-workflow-discovery) | Investigate part test templates, stock-item test results, attachments, and safe workflow boundaries. | Ready |
-| [F-S58](#f-s58-pricing-and-price-break-workflow-discovery) | Investigate part pricing, supplier price breaks, internal prices, sale prices, currencies, and safe tool boundaries. | Future |
-| [F-S59](#f-s59-part-requirements-visibility-discovery) | Investigate build and order demand visibility through the part requirements API. | Future |
+| [F-S58](#f-s58-pricing-and-price-break-workflow-discovery) | Investigate part pricing, supplier price breaks, internal prices, sale prices, currencies, and safe tool boundaries. | Ready |
+| [F-S59](#f-s59-part-requirements-visibility-discovery) | Investigate build and order demand visibility through the part requirements API. | Ready |
 | [F-S60](#f-s60-stocktake-generation-and-reporting-discovery) | Investigate guarded generation of part stocktake snapshots and reports after history reads exist. | Done |
 | [F-S61](#f-s61-adopt-inventree-150-api-530-baseline) | Adopt InvenTree 1.5.0 and API 530 as the blocking compatibility baseline. | Done |
 | [F-S62](#f-s62-guarded-purchase-order-hold-resume-and-cancellation) | Add explicit current-state-planned hold, resume, and cancellation workflows without generic status editing or whole-order deletion. | Done |
-| [F-S63](#f-s63-guarded-purchase-order-duplication-discovery) | Investigate a deferred, low-frequency workflow for safely duplicating selected purchase-order state. | Future |
+| [F-S63](#f-s63-guarded-purchase-order-duplication-discovery) | Investigate a deferred, low-frequency workflow for safely duplicating selected purchase-order state. | Ready |
 | [F-S64](#f-s64-cross-object-generic-parameter-values-and-uniqueness) | Add bounded generic parameter values across supported non-part-row object types and administer template uniqueness. | Done |
 | [F-S65](#f-s65-guarded-stock-custom-status-management) | Extend the guarded stock-status workflow to assign or clear compatible custom status keys. | Blocked |
 | [F-S66](#f-s66-guarded-stock-item-merge-discovery) | Investigate a deferred, fail-closed merge workflow for explicitly selected compatible stock items. | Future |
@@ -172,7 +172,7 @@ Before assigning a new story ID, inspect `git worktree list --porcelain`, search
 | [F-S87](#f-s87-run-packaged-systemd-service-as-a-non-root-user) | Run the packaged systemd service as a dedicated non-root user instead of root. | Done |
 | [F-S88](#f-s88-cross-object-global-search-discovery-and-bounded-search-tool) | Investigate InvenTree-style cross-object global search and add a bounded read-only MCP search tool if its contract is safe and stable. | Done |
 | [F-S89](#f-s89-harden-supplier-part-mpn-read-back-against-a-ci-nil-panic) | Investigate a CI-only nil-pointer panic in the supplier-part MPN read-back test and harden it against recurrence. | Done |
-| [F-S90](#f-s90-deterministic-component-image-rendering) | Render deterministic PNG images for common, highly repetitive electronic components. | Future |
+| [F-S90](#f-s90-deterministic-component-image-rendering) | Render deterministic PNG images for common, highly repetitive electronic components. | Ready |
 
 ## Milestone 0: Repository And Planning
 
@@ -1802,9 +1802,9 @@ Tasks:
 
 ### F-S29: Reviewed Multi-Item Stock-Transfer Batches
 
-- Status: `Planned`
+- Status: `Ready`
 - Issue: [#98](https://github.com/davidvanlaatum/inventree-mcp/issues/98)
-- Depends on: F-S27, pinned InvenTree batch atomicity/failure verification, product review, QA review, and infosec review; also F-S28 if partial quantities are approved for batches
+- Depends on: F-S27; also F-S28 if partial quantities are approved for batches
 - Scope: add bounded reviewed multi-item transfers only after native atomicity, validation, response-loss, and partial-progress behavior are characterized. Preserve F-S27 as the simple single-item workflow and do not silently include F-S28 partial quantities. Do not add transfer-order workflows or implicit default-location resolution.
 - Acceptance:
   - Product review explicitly selects complete-only versus partial-capable batches, duplicate-source handling, maximum size, ordering, and any source/provenance restrictions.
@@ -2485,7 +2485,7 @@ Tasks:
 
 ### F-S58: Pricing And Price-Break Workflow Discovery
 
-- Status: `Future`
+- Status: `Ready`
 - Issue: [#139](https://github.com/davidvanlaatum/inventree-mcp/issues/139)
 - Depends on: F-S40, F-S43, F-S47
 - Decisions: approved by the operator on 2026-08-15 as a generic future pricing discovery story rather than a committed implementation contract.
@@ -2500,7 +2500,7 @@ Tasks:
 
 ### F-S59: Part Requirements Visibility Discovery
 
-- Status: `Future`
+- Status: `Ready`
 - Issue: [#140](https://github.com/davidvanlaatum/inventree-mcp/issues/140)
 - Depends on: F-S40
 - Decisions: approved by the operator on 2026-08-15 as future discovery rather than a current `get_part_requirements` implementation.
@@ -2600,7 +2600,7 @@ Tasks:
 
 ### F-S63: Guarded Purchase-Order Duplication Discovery
 
-- Status: `Future`
+- Status: `Ready`
 - Issue: [#145](https://github.com/davidvanlaatum/inventree-mcp/issues/145)
 - Depends on: F-S47, F-S61
 - Decisions: approved by the operator on 2026-08-15 as a deferred, low-frequency workflow. Duplication is never folded into ordinary purchase-order creation or update.
@@ -3248,7 +3248,7 @@ Tasks:
 
 ### F-S90: Deterministic Component Image Rendering
 
-- Status: `Future`
+- Status: `Ready`
 - Issue: [#235](https://github.com/davidvanlaatum/inventree-mcp/issues/235)
 - Depends on: F-S40, F-S82.
 - Scope: add a deterministic renderer for common, highly repetitive electronic components whose appearance can be described by a small parameter set. The first templates are axial resistors, axial diodes, through-hole LEDs, radial electrolytic capacitors, and glass fuses. The output is intended to provide useful part imagery for visually similar inventory items, not to replace datasheets or claim physical scale beyond explicitly supplied dimensions.
