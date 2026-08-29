@@ -57,7 +57,7 @@ func TestPartDetailPreservesNullableScalarsAndOmitsUnapprovedFields(t *testing.T
 	r := require.New(t)
 	a := assert.New(t)
 
-	raw := []byte(`{"pk":10,"name":"resistor","IPN":"R-10K","notes":null,"pricing_min":null,"pricing_max":"2.500000","in_stock":null,"allocated_to_build_orders":3.5,"creation_user":7,"barcode_hash":"secret","category_detail":{"pk":20},"tags":["deferred"]}`)
+	raw := []byte(`{"pk":10,"name":"resistor","IPN":"R-10K","notes":null,"pricing_min":null,"pricing_max":"2.500000","in_stock":null,"allocated_to_build_orders":3.5,"creation_user":7,"barcode_hash":"secret","category_detail":{"pk":20},"tags":["reference"]}`)
 	var detail inventree.PartDetail
 	r.NoError(json.Unmarshal(raw, &detail))
 	for field, expected := range map[string]inventree.PartFieldClass{
@@ -66,7 +66,7 @@ func TestPartDetailPreservesNullableScalarsAndOmitsUnapprovedFields(t *testing.T
 		"pricing_min":     inventree.PartFieldExposed,
 		"barcode_hash":    inventree.PartFieldExcluded,
 		"category_detail": inventree.PartFieldSeparateLookup,
-		"tags":            inventree.PartFieldDeferred,
+		"tags":            inventree.PartFieldExposed,
 	} {
 		a.Equal(expected, inventree.PartFieldInventory[field], "representative raw field %s", field)
 	}
@@ -79,6 +79,7 @@ func TestPartDetailPreservesNullableScalarsAndOmitsUnapprovedFields(t *testing.T
 	a.Nil(detail.InStock)
 	r.NotNil(detail.AllocatedToBuildOrders)
 	a.Equal(3.5, *detail.AllocatedToBuildOrders)
+	a.Equal([]string{"reference"}, detail.Tags)
 
 	encoded, err := json.Marshal(detail)
 	r.NoError(err)
@@ -86,7 +87,7 @@ func TestPartDetailPreservesNullableScalarsAndOmitsUnapprovedFields(t *testing.T
 	r.NoError(json.Unmarshal(encoded, &keys))
 	a.NotContains(keys, "barcode_hash")
 	a.NotContains(keys, "category_detail")
-	a.NotContains(keys, "tags")
+	a.Contains(keys, "tags")
 }
 
 func selectSchemaProperties(schemaFields map[string]schema.SchemaRef, inventory map[string]inventree.PartFieldClass) map[string]schema.SchemaRef {

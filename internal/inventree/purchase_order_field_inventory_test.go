@@ -61,7 +61,7 @@ func TestPurchaseOrderDetailsPreserveNullableFieldsAndOmitUnapprovedData(t *test
 	a := assert.New(t)
 
 	var order inventree.PurchaseOrderDetail
-	r.NoError(json.Unmarshal([]byte(`{"pk":10,"reference":"PO-0001","supplier":30,"supplier_reference":"","description":"","status":10,"created_by":{"pk":7,"username":"admin"},"creation_date":null,"issue_date":null,"start_date":null,"target_date":null,"complete_date":null,"line_items":null,"completed_lines":0,"link":"","status_text":"Pending","status_custom_key":null,"notes":null,"overdue":false,"supplier_name":"Acme","total_price":null,"order_currency":null,"destination":null,"updated_at":null,"barcode_hash":"secret","project_code":50,"responsible":3,"contact":4,"address":null,"address_detail":null,"contact_detail":{"pk":4},"project_code_detail":{"pk":50},"project_code_label":"PRJ-050","responsible_detail":{"pk":3},"parameters":[],"tags":["deferred"],"supplier_detail":{"pk":30}}`), &order))
+	r.NoError(json.Unmarshal([]byte(`{"pk":10,"reference":"PO-0001","supplier":30,"supplier_reference":"","description":"","status":10,"created_by":{"pk":7,"username":"admin"},"creation_date":null,"issue_date":null,"start_date":null,"target_date":null,"complete_date":null,"line_items":null,"completed_lines":0,"link":"","status_text":"Pending","status_custom_key":null,"notes":null,"overdue":false,"supplier_name":"Acme","total_price":null,"order_currency":null,"destination":null,"updated_at":null,"barcode_hash":"secret","project_code":50,"responsible":3,"contact":4,"address":null,"address_detail":null,"contact_detail":{"pk":4},"project_code_detail":{"pk":50},"project_code_label":"PRJ-050","responsible_detail":{"pk":3},"parameters":[],"tags":["reference"],"supplier_detail":{"pk":30}}`), &order))
 	a.Equal(7, order.CreatedBy.PK)
 	a.Nil(order.CreationDate)
 	a.Nil(order.LineItems)
@@ -78,7 +78,8 @@ func TestPurchaseOrderDetailsPreserveNullableFieldsAndOmitUnapprovedData(t *test
 	r.NotNil(order.ProjectCode)
 	a.Equal(50, *order.ProjectCode)
 	a.Equal("PRJ-050", order.ProjectCodeLabel)
-	assertPurchaseOrderJSONOmits(t, order, "barcode_hash", "address_detail", "contact_detail", "project_code_detail", "responsible_detail", "parameters", "tags", "supplier_detail")
+	a.Equal([]string{"reference"}, order.Tags)
+	assertPurchaseOrderJSONOmits(t, order, "barcode_hash", "address_detail", "contact_detail", "project_code_detail", "responsible_detail", "parameters", "supplier_detail")
 
 	encoded, err := json.Marshal(order)
 	r.NoError(err)

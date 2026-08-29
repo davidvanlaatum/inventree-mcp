@@ -8,6 +8,7 @@ import (
 	"mime"
 	"mime/multipart"
 	"net/http"
+	"net/url"
 	"testing"
 
 	"github.com/davidvanlaatum/dvgoutils"
@@ -602,6 +603,40 @@ func TestWriteMethodsUseExpectedEndpoints(t *testing.T) {
 			r.NoError(tt.call(ctx, client))
 		})
 	}
+}
+
+// TestUpdatePurchaseOrderDetailRequestsTagsQueryFlag covers
+// UpdatePurchaseOrderDetail's bespoke request construction, the one
+// Update*Detail client method that bypasses Client.Patch to add the
+// ?tags=true query flag directly onto its PATCH request (F-S91): update_purchase_order
+// returns this PATCH response as its exact-read view rather than re-fetching
+// through GetPurchaseOrderDetail afterward.
+func TestUpdatePurchaseOrderDetailRequestsTagsQueryFlag(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	client, err := NewClient(Config{
+		BaseURL:    "https://inventory.example.test",
+		Credential: Credential{Scheme: AuthSchemeToken, Token: "secret"},
+		HTTPClient: &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			a.Equal(http.MethodPatch, req.Method)
+			a.Equal("/api/order/po/120/", req.URL.Path)
+			a.Equal(url.Values{"tags": []string{"true"}}.Encode(), req.URL.Query().Encode())
+			var body map[string]any
+			r.NoError(json.NewDecoder(req.Body).Decode(&body))
+			a.Equal([]any{"reference"}, body["tags"])
+			return jsonResponse(req, http.StatusOK, `{"pk":120,"reference":"PO-0001","tags":["reference"]}`), nil
+		})},
+	})
+	r.NoError(err)
+	updated, err := client.UpdatePurchaseOrderDetail(ctx, 120, PatchFields{"tags": Set([]string{"reference"})})
+	r.NoError(err)
+	a.Equal(120, updated.PK)
+	a.Equal([]string{"reference"}, updated.Tags)
+
+	_, err = client.UpdatePurchaseOrderDetail(ctx, 120, PatchFields{})
+	r.ErrorContains(err, "at least one field")
 }
 
 func TestDeletePurchaseOrderExtraLineUsesStableDetailEndpoint(t *testing.T) {

@@ -60,7 +60,7 @@ var StockItemFieldInventory = map[string]StockItemFieldClass{
 	"location_path":            StockItemFieldExposed,
 	"part_detail":              StockItemFieldSeparateLookup,
 	"supplier_part_detail":     StockItemFieldSeparateLookup,
-	"tags":                     StockItemFieldDeferred,
+	"tags":                     StockItemFieldExposed,
 	"tests":                    StockItemFieldDeferred,
 	"tracking_items":           StockItemFieldExposed,
 }

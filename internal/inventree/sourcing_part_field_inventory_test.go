@@ -60,7 +60,7 @@ func TestSourcingPartDetailsPreserveNullableFieldsAndOmitUnapprovedData(t *testi
 	a := assert.New(t)
 
 	var supplier inventree.SupplierPartDetail
-	r.NoError(json.Unmarshal([]byte(`{"pk":40,"part":10,"supplier":30,"SKU":"SKU-1","pretty_name":null,"available":0,"availability_updated":null,"in_stock":null,"on_order":2.5,"MPN":null,"note":"short","notes":null,"updated":null,"barcode_hash":"secret","supplier_detail":{"pk":30},"tags":["deferred"],"price_breaks":[],"parameters":[]}`), &supplier))
+	r.NoError(json.Unmarshal([]byte(`{"pk":40,"part":10,"supplier":30,"SKU":"SKU-1","pretty_name":null,"available":0,"availability_updated":null,"in_stock":null,"on_order":2.5,"MPN":null,"note":"short","notes":null,"updated":null,"barcode_hash":"secret","supplier_detail":{"pk":30},"tags":["reference"],"price_breaks":[],"parameters":[]}`), &supplier))
 	a.Zero(supplier.Available)
 	a.Nil(supplier.InStock)
 	r.NotNil(supplier.OnOrder)
@@ -68,12 +68,14 @@ func TestSourcingPartDetailsPreserveNullableFieldsAndOmitUnapprovedData(t *testi
 	a.Nil(supplier.MPN)
 	a.Equal("short", *supplier.Note)
 	a.Nil(supplier.Notes)
-	assertSourcingJSONOmits(t, supplier, "barcode_hash", "supplier_detail", "tags", "price_breaks", "parameters")
+	a.Equal([]string{"reference"}, supplier.Tags)
+	assertSourcingJSONOmits(t, supplier, "barcode_hash", "supplier_detail", "price_breaks", "parameters")
 
 	var manufacturer inventree.ManufacturerPartDetail
-	r.NoError(json.Unmarshal([]byte(`{"pk":50,"part":10,"manufacturer":31,"pretty_name":null,"MPN":null,"description":null,"link":null,"notes":"markdown","barcode_hash":"secret","manufacturer_detail":{"pk":31},"parameters":[]}`), &manufacturer))
+	r.NoError(json.Unmarshal([]byte(`{"pk":50,"part":10,"manufacturer":31,"pretty_name":null,"MPN":null,"description":null,"link":null,"notes":"markdown","barcode_hash":"secret","manufacturer_detail":{"pk":31},"parameters":[],"tags":["reference"]}`), &manufacturer))
 	a.Nil(manufacturer.MPN)
 	a.Equal("markdown", *manufacturer.Notes)
+	a.Equal([]string{"reference"}, manufacturer.Tags)
 	assertSourcingJSONOmits(t, manufacturer, "barcode_hash", "manufacturer_detail", "parameters")
 }
 

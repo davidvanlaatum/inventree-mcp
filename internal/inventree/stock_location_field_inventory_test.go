@@ -60,18 +60,20 @@ func TestStockLocationPreservesEffectiveIconAndOmitsExcludedFields(t *testing.T)
 	a := assert.New(t)
 
 	var location inventree.StockLocation
-	r.NoError(json.Unmarshal([]byte(`{"pk":1,"barcode_hash":"secret","name":"Bin 1","level":0,"description":"","parent":null,"pathstring":"Bin 1","path":[{"pk":1,"name":"Bin 1","icon":""}],"items":0,"sublocations":0,"owner":null,"icon":"ti:box:outline","custom_icon":null,"structural":false,"external":false,"location_type":2,"location_type_detail":{"pk":2,"name":"Bin","description":"","icon":"ti:box:outline","location_count":1},"tags":["deferred"],"parameters":[]}`), &location))
+	r.NoError(json.Unmarshal([]byte(`{"pk":1,"barcode_hash":"secret","name":"Bin 1","level":0,"description":"","parent":null,"pathstring":"Bin 1","path":[{"pk":1,"name":"Bin 1","icon":""}],"items":0,"sublocations":0,"owner":null,"icon":"ti:box:outline","custom_icon":null,"structural":false,"external":false,"location_type":2,"location_type_detail":{"pk":2,"name":"Bin","description":"","icon":"ti:box:outline","location_count":1},"tags":["reference"],"parameters":[]}`), &location))
 	a.Equal("ti:box:outline", location.Icon)
 	a.Nil(location.CustomIcon)
 	r.NotNil(location.LocationTypeDetail)
 	a.Equal("ti:box:outline", location.LocationTypeDetail.Icon)
-	assertStockLocationJSONOmits(t, location, "barcode_hash", "tags", "parameters")
+	a.Equal([]string{"reference"}, location.Tags)
+	assertStockLocationJSONOmits(t, location, "barcode_hash", "parameters")
 
 	encoded, err := json.Marshal(location)
 	r.NoError(err)
 	var keys map[string]any
 	r.NoError(json.Unmarshal(encoded, &keys))
 	a.Equal("ti:box:outline", keys["icon"], "icon must project the effective InvenTree-computed icon")
+	a.Contains(keys, "tags")
 }
 
 func stockLocationModelFields(model any) map[string]bool {

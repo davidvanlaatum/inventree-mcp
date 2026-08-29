@@ -15,11 +15,13 @@ const (
 )
 
 // StockLocationFieldInventory classifies every pinned Location serializer
-// field. barcode_hash stays excluded pending F-S55; tags and parameters stay
-// deferred to F-S56 and F-S64 respectively. location_type_detail is exposed
-// rather than a separate lookup because InvenTree always embeds it in this
-// serializer and the existing get_stock_location/search_stock_locations
-// projection already carries it.
+// field. barcode_hash stays excluded pending F-S55; parameters stays
+// deferred to F-S64. location_type_detail is exposed rather than a separate
+// lookup because InvenTree always embeds it in this serializer and the
+// existing get_stock_location/search_stock_locations projection already
+// carries it. tags is exposed per F-S91: the underlying GET only requests
+// the ?tags=true query flag from GetStockLocation, so it stays empty on
+// concise search_stock_locations results despite sharing this struct.
 var StockLocationFieldInventory = map[string]StockLocationFieldClass{
 	"pk":                   StockLocationFieldExposed,
 	"barcode_hash":         StockLocationFieldExcluded,
@@ -38,7 +40,7 @@ var StockLocationFieldInventory = map[string]StockLocationFieldClass{
 	"external":             StockLocationFieldExposed,
 	"location_type":        StockLocationFieldExposed,
 	"location_type_detail": StockLocationFieldExposed,
-	"tags":                 StockLocationFieldDeferred,
+	"tags":                 StockLocationFieldExposed,
 	"parameters":           StockLocationFieldDeferred,
 }
 

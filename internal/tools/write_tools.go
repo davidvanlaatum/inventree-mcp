@@ -136,6 +136,7 @@ type UpdatePartInput struct {
 	Testable        *bool    `json:"testable,omitempty" jsonschema:"Optional explicit testable flag."`
 	Notes           *string  `json:"notes,omitempty" jsonschema:"Replacement markdown notes."`
 	ClearNotes      bool     `json:"clear_notes,omitempty" jsonschema:"Explicitly PATCH notes to null; mutually exclusive with notes."`
+	Tags            []string `json:"tags,omitempty" jsonschema:"Optional whole-array replacement of this part's tags from InvenTree's shared tag taxonomy; an explicitly empty array clears every tag."`
 }
 
 type CreateCompanyInput struct {
@@ -1806,6 +1807,9 @@ func partPatchFields(input UpdatePartInput, before inventree.PartDetail) (invent
 	setPatchBool(fields, "salable", input.Salable)
 	setPatchBool(fields, "testable", input.Testable)
 	setNullableString(fields, "notes", input.Notes, input.ClearNotes)
+	if input.Tags != nil {
+		fields["tags"] = inventree.Set(input.Tags)
+	}
 	return fields, nil
 }
 

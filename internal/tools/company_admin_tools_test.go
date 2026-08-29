@@ -247,6 +247,34 @@ func TestUpdateCompanyWritesAndClearsContactTaxAndLinkFields(t *testing.T) {
 	assert.ErrorContains(t, err, "email and clear_email are mutually exclusive")
 }
 
+func TestUpdateCompanyTagsPostflightVerificationIgnoresOrder(t *testing.T) {
+	t.Parallel()
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	fake := &fakeCompanyAdmin{company: inventree.CompanyDetail{Company: inventree.Company{PK: 30, Name: "Acme", Currency: "AUD"}}}
+
+	// InvenTree's shared tag taxonomy gives no ordering guarantee on
+	// read-back; simulate it returning the assigned tags in a different
+	// order than they were submitted and confirm postflight verification
+	// still succeeds instead of spuriously reporting partial_failure.
+	fake.afterCompanyUpdate = func(inventree.PatchFields) {
+		fake.company.Tags = []string{"beta", "alpha"}
+	}
+	_, out, err := updateCompanyAdmin(companyAdminDeps(fake))(ctx, &mcp.CallToolRequest{}, UpdateCompanyInput{ID: 30, Tags: []string{"alpha", "beta"}})
+	require.NoError(t, err)
+	assert.Equal(t, StatusOK, out.Status)
+	require.NotNil(t, out.Record)
+	assert.ElementsMatch(t, []string{"alpha", "beta"}, out.Record.Tags)
+
+	// A genuine mismatch (a tag missing from read-back) must still be
+	// caught: order-insensitivity must not become a blanket bypass.
+	fake.afterCompanyUpdate = func(inventree.PatchFields) {
+		fake.company.Tags = []string{"alpha"}
+	}
+	_, out, err = updateCompanyAdmin(companyAdminDeps(fake))(ctx, &mcp.CallToolRequest{}, UpdateCompanyInput{ID: 30, Tags: []string{"alpha", "beta"}})
+	require.NoError(t, err)
+	assert.Equal(t, StatusPartialFailure, out.Status)
+}
+
 func TestUpdateCompanyDetectsPostWriteRoleDependencyRace(t *testing.T) {
 	t.Parallel()
 	ctx, _, _ := testhandler.SetupTestHandler(t)
@@ -335,6 +363,34 @@ func TestUpdateSupplierAndManufacturerPartSuccess(t *testing.T) {
 	require.NotNil(t, manufacturer.Record)
 	require.NotNil(t, manufacturer.Record.Description)
 	assert.Equal(t, description, *manufacturer.Record.Description)
+}
+
+func TestUpdateSupplierPartTagsPostflightVerificationIgnoresOrder(t *testing.T) {
+	t.Parallel()
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	fake := baseSourcingFake()
+
+	// InvenTree's shared tag taxonomy gives no ordering guarantee on
+	// read-back; simulate it returning the assigned tags in a different
+	// order than they were submitted and confirm postflight verification
+	// still succeeds instead of spuriously reporting partial_failure.
+	fake.afterSupplierUpdate = func(inventree.PatchFields) {
+		fake.supplier.Tags = []string{"beta", "alpha"}
+	}
+	_, out, err := updateSupplierPartAdmin(companyAdminDeps(fake))(ctx, &mcp.CallToolRequest{}, UpdateSupplierPartInput{ID: 40, Tags: []string{"alpha", "beta"}})
+	require.NoError(t, err)
+	assert.Equal(t, StatusOK, out.Status)
+	require.NotNil(t, out.Record)
+	assert.ElementsMatch(t, []string{"alpha", "beta"}, out.Record.Tags)
+
+	// A genuine mismatch (a tag missing from read-back) must still be
+	// caught: order-insensitivity must not become a blanket bypass.
+	fake.afterSupplierUpdate = func(inventree.PatchFields) {
+		fake.supplier.Tags = []string{"alpha"}
+	}
+	_, out, err = updateSupplierPartAdmin(companyAdminDeps(fake))(ctx, &mcp.CallToolRequest{}, UpdateSupplierPartInput{ID: 40, Tags: []string{"alpha", "beta"}})
+	require.NoError(t, err)
+	assert.Equal(t, StatusPartialFailure, out.Status)
 }
 
 func TestCompanyAndSourcingUpdatesPreserveCompleteLinksAndRejectCredentials(t *testing.T) {

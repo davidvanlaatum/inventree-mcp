@@ -2,7 +2,6 @@ package oauth
 
 import (
 	"context"
-	"crypto/ecdh"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rsa"
@@ -195,10 +194,11 @@ func (k jwk) publicKey() (any, error) {
 		encoded[0] = 4
 		x.FillBytes(encoded[1 : 1+(len(encoded)-1)/2])
 		y.FillBytes(encoded[1+(len(encoded)-1)/2:])
-		if _, err := ecdh.P256().NewPublicKey(encoded); err != nil {
+		publicKey, err := ecdsa.ParseUncompressedPublicKey(elliptic.P256(), encoded)
+		if err != nil {
 			return nil, ErrInvalidClientAssertion
 		}
-		return &ecdsa.PublicKey{Curve: elliptic.P256(), X: x, Y: y}, nil
+		return publicKey, nil
 	default:
 		return nil, ErrInvalidClientAssertion
 	}
