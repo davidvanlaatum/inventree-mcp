@@ -4,8 +4,17 @@
 // small, validated input struct; there is no AI generation, no free-form
 // vector/SVG output contract, and no attempt to infer package geometry,
 // markings, ratings, pinouts, or physical scale beyond what a caller
-// explicitly supplies. Identical input always produces byte-identical PNG
-// output.
+// explicitly supplies. Identical input on the same build (same Go
+// toolchain, same GOARCH) always produces byte-identical PNG output.
+// Across different CPU architectures, gg's floating-point anti-aliasing
+// rasterizer can round a handful of edge pixels by a couple of
+// least-significant bits differently — confirmed by rendering the checked-in
+// gallery under an emulated linux/amd64 build and comparing against the
+// arm64-built originals: at most a few pixels per image differed, each by a
+// small fraction of full color range, invisible to the eye. That is
+// architecture-level floating-point noise inherent to the rasterizer, not a
+// contract violation; see internal/render/samples_test.go's bounded pixel
+// tolerance for the same reasoning applied to the checked-in gallery test.
 package render
 
 import (
