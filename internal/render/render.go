@@ -42,6 +42,16 @@ const (
 	FamilyFuse      Family = "fuse"
 )
 
+// familyOrder is the fixed, stable order of the supported Family values,
+// for use in error messages, documentation, and JSON Schema enums.
+var familyOrder = []Family{FamilyResistor, FamilyDiode, FamilyLED, FamilyCapacitor, FamilyFuse}
+
+// Families returns the supported component family values in a fixed,
+// stable order.
+func Families() []Family {
+	return append([]Family(nil), familyOrder...)
+}
+
 // Orientation controls whole-glyph placement within the output canvas.
 // Horizontal is each template's native drawing orientation. Vertical
 // rotates the fully rendered glyph 90 degrees clockwise as a final,
@@ -54,6 +64,12 @@ const (
 	OrientationVertical   Orientation = "vertical"
 )
 
+// Orientations returns the supported canvas orientation values in a fixed,
+// stable order.
+func Orientations() []string {
+	return []string{string(OrientationHorizontal), string(OrientationVertical)}
+}
+
 // Background selects how the canvas is filled before the glyph is drawn.
 type Background string
 
@@ -62,6 +78,12 @@ const (
 	BackgroundWhite       Background = "white"
 	BackgroundColor       Background = "color"
 )
+
+// Backgrounds returns the supported canvas background values in a fixed,
+// stable order.
+func Backgrounds() []string {
+	return []string{string(BackgroundTransparent), string(BackgroundWhite), string(BackgroundColor)}
+}
 
 const (
 	// MinDimensionPx and MaxDimensionPx bound the requested output width

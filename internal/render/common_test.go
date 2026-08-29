@@ -46,6 +46,22 @@ func TestFitFontSize(t *testing.T) {
 	a.LessOrEqualf(h, 400.0, "chosen size must fit the requested height")
 }
 
+func TestBodySizes(t *testing.T) {
+	a := assert.New(t)
+	a.Equal([]string{"small", "medium", "large"}, BodySizes())
+
+	// The returned slice must be a copy: mutating it must not affect the
+	// next call's result.
+	values := BodySizes()
+	values[0] = "mutated"
+	a.Equal([]string{"small", "medium", "large"}, BodySizes())
+}
+
+func TestSides(t *testing.T) {
+	a := assert.New(t)
+	a.Equal([]string{"left", "right"}, Sides())
+}
+
 func TestMixColor(t *testing.T) {
 	a := assert.New(t)
 	red := color.RGBA{R: 0xff, A: 0xff}

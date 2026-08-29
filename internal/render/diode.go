@@ -2,6 +2,7 @@ package render
 
 import (
 	"errors"
+	"fmt"
 	"image/color"
 	"math"
 
@@ -48,7 +49,7 @@ func RenderDiode(canvas CanvasOptions, params DiodeParams) (Result, error) {
 		side = "left"
 	}
 	if side != "left" && side != "right" {
-		return Result{}, errors.New("diode cathode_side must be \"left\" or \"right\"")
+		return Result{}, fmt.Errorf("diode cathode_side must be one of %v", Sides())
 	}
 	if err := validateMarkings(params.Markings); err != nil {
 		return Result{}, err
