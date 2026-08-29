@@ -29,10 +29,11 @@ type FuseParams struct {
 }
 
 var (
-	fuseDefaultCapColor = color.RGBA{R: 0xc0, G: 0xc0, B: 0xc0, A: 0xff}
-	fuseGlassColor      = color.RGBA{R: 0xd8, G: 0xe8, B: 0xf0, A: 0xa0}
-	fuseWireColor       = color.RGBA{R: 0x30, G: 0x30, B: 0x30, A: 0xff}
-	fuseLeadColor       = color.RGBA{R: 0xb0, G: 0xb0, B: 0xb0, A: 0xff}
+	fuseDefaultCapColor  = color.RGBA{R: 0xc0, G: 0xc0, B: 0xc0, A: 0xff}
+	fuseGlassColor       = straightRGBA(0xd8, 0xe8, 0xf0, 0xa0)
+	fuseWireColor        = color.RGBA{R: 0x30, G: 0x30, B: 0x30, A: 0xff}
+	fuseLeadColor        = color.RGBA{R: 0xb0, G: 0xb0, B: 0xb0, A: 0xff}
+	fuseMarkingBackColor = straightRGBA(0xf6, 0xf6, 0xf2, 0xf0)
 )
 
 var fuseSizeAspect = map[string]float64{
@@ -135,11 +136,12 @@ func drawFuseGlyph(dc *gg.Context, w, h int, aspect float64, capColor color.RGBA
 	dc.Fill()
 
 	if marking != "" {
-		scale := 1
-		if fh >= 240 {
-			scale = 2
-		}
-		drawCenteredMarkings(dc, marking, cx, cy, color.RGBA{A: 0xff}, scale)
+		// An opaque backing panel keeps the rating legible over the
+		// fusible element (especially the slow-blow coil) regardless of
+		// what's drawn underneath, matching a real fuse's printed label.
+		maxWidth := (wireEndX - wireStartX) * 0.92
+		points := fitFontSize(marking, maxWidth, bodyHeight*0.5, false)
+		drawCenteredTextOnBacking(dc, marking, cx, cy, points, false, color.RGBA{A: 0xff}, fuseMarkingBackColor)
 	}
 }
 

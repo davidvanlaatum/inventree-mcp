@@ -19,6 +19,14 @@ const (
 	renderDefaultAxialHeight   = 160
 	renderDefaultUprightWidth  = 200
 	renderDefaultUprightHeight = 300
+
+	// renderDefaultAxialLabeledHeight and renderDefaultUprightLabeledHeight
+	// apply instead of the plain defaults above when show_label is set and
+	// the caller does not also supply an explicit height, so the value
+	// line and caption have room instead of being cramped into the
+	// unlabeled default canvas.
+	renderDefaultAxialLabeledHeight   = 300
+	renderDefaultUprightLabeledHeight = 320
 )
 
 // RenderComponentImageInput is the shared contract for every deterministic
@@ -49,6 +57,15 @@ type RenderResistorInput struct {
 	Size           string  `json:"size,omitempty" jsonschema:"Body size preset: small, medium (default), or large. Illustrative layout only, not a physical scale claim unless body_length_mm/body_diameter_mm are supplied."`
 	BodyLengthMM   float64 `json:"body_length_mm,omitempty" jsonschema:"Optional body length in millimeters. Must be supplied together with body_diameter_mm; sets the drawn aspect ratio only."`
 	BodyDiameterMM float64 `json:"body_diameter_mm,omitempty" jsonschema:"Optional body diameter in millimeters. Must be supplied together with body_length_mm."`
+	Type           string  `json:"type,omitempty" jsonschema:"carbon_film (default) or metal_film. Sets the default body color (beige or blue, matching near-universal manufacturer convention) and the show_label caption's type line; body_color_hex overrides the color when supplied. Wirewound and similar constructions are out of scope: they are not normally marked with painted color bands at all."`
+	BodyColorHex   string  `json:"body_color_hex,omitempty" jsonschema:"6-digit RGB hex color. Overrides type's default body color when supplied."`
+	// PowerRatingWatts is intentionally not annotated with omitempty's
+	// implicit "optional" phrasing alone: its jsonschema description below
+	// spells out the size-preset side effect so a caller understands why
+	// supplying it can change the drawn proportions even though size is
+	// still nominally optional.
+	PowerRatingWatts float64 `json:"power_rating_watts,omitempty" jsonschema:"Optional power rating in watts, > 0. Used in the show_label caption and, when size is not also explicitly supplied, to pick a larger body size preset for higher power ratings (a real convention, not a physical scale claim). Only include this when the caller explicitly stated a wattage; do not infer or estimate one."`
+	ShowLabel        bool    `json:"show_label,omitempty" jsonschema:"Draw a bold resistance-and-tolerance line above the body (for example \"4.7 kΩ ±5%\") and a caption below it with the type, power rating when supplied, band count, and band color names. Every value is already present in the request or derived from it; nothing about material or package is invented."`
 }
 
 // RenderDiodeInput mirrors render.DiodeParams.
@@ -66,8 +83,9 @@ type RenderDiodeInput struct {
 type RenderLEDInput struct {
 	LensColor   string `json:"lens_color" jsonschema:"LED lens color: red, green, blue, yellow, orange, white, or clear."`
 	Diffused    bool   `json:"diffused,omitempty" jsonschema:"true for a matte diffused lens, false (default) for a clear/water-clear lens with a specular highlight."`
-	CathodeSide string `json:"cathode_side,omitempty" jsonschema:"left (default) or right: the shorter lead and flat-edge flange marker."`
+	CathodeSide string `json:"cathode_side,omitempty" jsonschema:"left (default) or right: the side of the chamfered polarity corner and the \"+\" anode mark."`
 	Size        string `json:"size,omitempty" jsonschema:"3mm, 5mm (default), or 10mm."`
+	ShowLabel   bool   `json:"show_label,omitempty" jsonschema:"Draw a caption below the LED with its size, lens color, and lens finish (diffused or clear). Every value is already present in the request; nothing about brightness, forward voltage, or viewing angle is invented."`
 }
 
 // RenderCapacitorInput mirrors render.CapacitorParams.
@@ -153,9 +171,17 @@ func renderComponentImage(ctx context.Context, _ *mcp.CallToolRequest, input Ren
 
 func resolveRenderCanvas(input RenderComponentImageInput) (render.CanvasOptions, error) {
 	defaultW, defaultH := renderDefaultAxialWidth, renderDefaultAxialHeight
+	showLabel := (input.Resistor != nil && input.Resistor.ShowLabel) || (input.LED != nil && input.LED.ShowLabel)
 	switch render.Family(input.Family) {
 	case render.FamilyLED, render.FamilyCapacitor:
 		defaultW, defaultH = renderDefaultUprightWidth, renderDefaultUprightHeight
+		if showLabel {
+			defaultH = renderDefaultUprightLabeledHeight
+		}
+	case render.FamilyResistor:
+		if showLabel {
+			defaultH = renderDefaultAxialLabeledHeight
+		}
 	}
 	width, height := input.Width, input.Height
 	if width == 0 {
@@ -196,12 +222,16 @@ func renderResistorFamily(canvas render.CanvasOptions, input RenderComponentImag
 	}
 	p := input.Resistor
 	return render.RenderResistor(canvas, render.ResistorParams{
-		ResistanceOhms: p.ResistanceOhms,
-		BandCount:      p.BandCount,
-		ToleranceLabel: p.ToleranceLabel,
-		Size:           p.Size,
-		BodyLengthMM:   p.BodyLengthMM,
-		BodyDiameterMM: p.BodyDiameterMM,
+		ResistanceOhms:   p.ResistanceOhms,
+		BandCount:        p.BandCount,
+		ToleranceLabel:   p.ToleranceLabel,
+		Size:             p.Size,
+		BodyLengthMM:     p.BodyLengthMM,
+		BodyDiameterMM:   p.BodyDiameterMM,
+		Type:             p.Type,
+		BodyColorHex:     p.BodyColorHex,
+		PowerRatingWatts: p.PowerRatingWatts,
+		ShowLabel:        p.ShowLabel,
 	})
 }
 
@@ -237,6 +267,7 @@ func renderLEDFamily(canvas render.CanvasOptions, input RenderComponentImageInpu
 		Diffused:    p.Diffused,
 		CathodeSide: p.CathodeSide,
 		Size:        p.Size,
+		ShowLabel:   p.ShowLabel,
 	})
 }
 

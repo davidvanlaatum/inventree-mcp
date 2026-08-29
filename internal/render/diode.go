@@ -92,11 +92,16 @@ func drawAxialDiodeGlyph(dc *gg.Context, w, h int, sizeFrac, aspect float64, bod
 	dc.Fill()
 
 	bandWidth := bodyWidth * 0.12
-	var bandX float64
+	var bandX, freeZoneStart, freeZoneEnd float64
+	margin := bodyWidth * 0.04
 	if cathodeSide == "left" {
 		bandX = bx + bodyWidth*0.12
+		freeZoneStart = bandX + bandWidth + margin
+		freeZoneEnd = bx + bodyWidth - margin
 	} else {
 		bandX = bx + bodyWidth*0.88 - bandWidth
+		freeZoneStart = bx + margin
+		freeZoneEnd = bandX - margin
 	}
 	dc.SetColor(bandColor)
 	dc.DrawRectangle(bandX, by, bandWidth, bodyHeight)
@@ -104,11 +109,9 @@ func drawAxialDiodeGlyph(dc *gg.Context, w, h int, sizeFrac, aspect float64, bod
 
 	if markings != "" {
 		textColor := contrastingTextColor(bodyColor)
-		scale := 1
-		if fh >= 240 {
-			scale = 2
-		}
-		drawCenteredMarkings(dc, markings, cx, cy, textColor, scale)
+		textCX := (freeZoneStart + freeZoneEnd) / 2
+		points := fitFontSize(markings, (freeZoneEnd-freeZoneStart)*0.92, bodyHeight*0.6, false)
+		drawCenteredText(dc, markings, textCX, cy, points, false, textColor)
 	}
 }
 

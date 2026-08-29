@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"image/color"
 	"math"
+	"strconv"
+	"strings"
 
 	"github.com/fogleman/gg"
 )
@@ -29,11 +31,77 @@ type ResistorParams struct {
 	// to claim physical scale.
 	BodyLengthMM   float64
 	BodyDiameterMM float64
+	// Type is "carbon_film" (default) or "metal_film". It only sets the
+	// default body color (beige or blue, matching near-universal
+	// manufacturer convention); BodyColorHex overrides it when supplied.
+	// Wirewound and similar constructions are out of scope: they are not
+	// normally marked with painted IEC 60062 color bands at all, so they
+	// do not fit this band-based template.
+	Type string
+	// BodyColorHex overrides Type's default body color when supplied.
+	BodyColorHex string
+	// PowerRatingWatts is optional and must be > 0 when supplied. It is
+	// only used for the ShowLabel caption and, when Size is not also
+	// explicitly supplied, to pick a larger body size preset for higher
+	// power ratings (a real, well-established convention, not a claim of
+	// exact physical scale).
+	PowerRatingWatts float64
+	// ShowLabel draws a bold resistance-and-tolerance line above the body
+	// (for example "4.7 kΩ ±5%") and a caption below it with the resistor
+	// type, power rating when supplied, band count, and band color names
+	// in order. Every value is already present in the request or derived
+	// from it; nothing about material or package is invented.
+	ShowLabel bool
 }
 
 var resistorLeadColor = color.RGBA{R: 0xb8, G: 0xb8, B: 0xb8, A: 0xff}
-var resistorBodyColor = color.RGBA{R: 0xe6, G: 0xd9, B: 0xb3, A: 0xff}
 var resistorOutlineColor = color.RGBA{R: 0x40, G: 0x38, B: 0x28, A: 0xff}
+var resistorLightOutlineColor = color.RGBA{R: 0xc8, G: 0xc8, B: 0xc8, A: 0xff}
+
+// resistorTypes maps the supported Type values to a human-readable label
+// (used only in the derived ShowLabel caption) and a default body color
+// matching near-universal manufacturer convention. Fixed and ordered; do
+// not derive from a map range.
+var resistorTypes = []struct {
+	value     string
+	label     string
+	bodyColor color.RGBA
+}{
+	{"carbon_film", "Carbon film", color.RGBA{R: 0xe6, G: 0xd9, B: 0xb3, A: 0xff}},
+	{"metal_film", "Metal film", color.RGBA{R: 0x4a, G: 0x8f, B: 0xe0, A: 0xff}},
+}
+
+func resistorTypeInfo(value string) (label string, bodyColor color.RGBA, ok bool) {
+	if value == "" {
+		value = "carbon_film"
+	}
+	for _, t := range resistorTypes {
+		if t.value == value {
+			return t.label, t.bodyColor, true
+		}
+	}
+	return "", color.RGBA{}, false
+}
+
+// ResistorTypes returns the supported resistor type values in a fixed,
+// stable order.
+func ResistorTypes() []string {
+	values := make([]string, len(resistorTypes))
+	for i, t := range resistorTypes {
+		values[i] = t.value
+	}
+	return values
+}
+
+// resistorOutlineColorFor picks a dark or light outline so the body edge
+// stays visible against both light ceramic tones and dark body colors.
+func resistorOutlineColorFor(bodyColor color.RGBA) color.RGBA {
+	luminance := 0.299*float64(bodyColor.R) + 0.587*float64(bodyColor.G) + 0.114*float64(bodyColor.B)
+	if luminance < 100 {
+		return resistorLightOutlineColor
+	}
+	return resistorOutlineColor
+}
 
 // RenderResistor renders an axial resistor with IEC 60062 color bands
 // derived from ResistanceOhms, BandCount, and ToleranceLabel.
@@ -56,11 +124,26 @@ func RenderResistor(canvas CanvasOptions, params ResistorParams) (Result, error)
 	if err != nil {
 		return Result{}, err
 	}
-	size, err := resolveBodySize(params.Size)
+	if params.PowerRatingWatts < 0 || math.IsInf(params.PowerRatingWatts, 0) || math.IsNaN(params.PowerRatingWatts) {
+		return Result{}, errors.New("resistor power_rating_watts must not be negative")
+	}
+	requestedSize := params.Size
+	if requestedSize == "" && params.PowerRatingWatts > 0 {
+		requestedSize = sizeForPowerRating(params.PowerRatingWatts)
+	}
+	size, err := resolveBodySize(requestedSize)
 	if err != nil {
 		return Result{}, err
 	}
 	aspect, err := resolveAspect(params.BodyLengthMM, params.BodyDiameterMM, 2.6)
+	if err != nil {
+		return Result{}, err
+	}
+	typeLabel, typeBodyColor, ok := resistorTypeInfo(params.Type)
+	if !ok {
+		return Result{}, fmt.Errorf("resistor type must be one of %v", ResistorTypes())
+	}
+	bodyColor, err := validateHexOrDefault(params.BodyColorHex, typeBodyColor)
 	if err != nil {
 		return Result{}, err
 	}
@@ -72,24 +155,91 @@ func RenderResistor(canvas CanvasOptions, params ResistorParams) (Result, error)
 	bands = append(bands, multiplierColor(multiplierExp))
 	bands = append(bands, toleranceColor)
 
+	var valueLine string
+	var captionLines []string
+	if params.ShowLabel {
+		valueLine = formatResistanceValue(params.ResistanceOhms) + " ±" + params.ToleranceLabel
+
+		bandNames := make([]string, len(bands))
+		for i, b := range bands {
+			bandNames[i] = b.name
+		}
+		typeCaption := fmt.Sprintf("%s, %d-band", typeLabel, bandCount)
+		if params.PowerRatingWatts > 0 {
+			typeCaption = fmt.Sprintf("%s, %s, %d-band", typeLabel, formatWattage(params.PowerRatingWatts), bandCount)
+		}
+		captionLines = []string{
+			typeCaption,
+			"Bands: " + strings.Join(bandNames, " / "),
+		}
+	}
+
 	return renderCanvas(canvas, func(dc *gg.Context, w, h int) error {
-		drawAxialResistorGlyph(dc, w, h, size, aspect, bands)
+		drawAxialResistorGlyph(dc, w, h, size, aspect, bodyColor, bands, valueLine, captionLines)
 		return nil
 	})
 }
 
-func drawAxialResistorGlyph(dc *gg.Context, w, h int, sizeFrac float64, aspect float64, bands []bandColor) {
+// sizeForPowerRating maps a power rating to a body size preset, matching
+// the well-established convention that higher-wattage resistors have
+// physically larger bodies. It is only used as a default when the caller
+// does not also supply Size explicitly.
+func sizeForPowerRating(watts float64) string {
+	switch {
+	case watts <= 0.2:
+		return "small"
+	case watts <= 0.6:
+		return "medium"
+	default:
+		return "large"
+	}
+}
+
+// formatResistanceValue formats ohms as a decimal value with its SI-prefixed
+// ohm unit, for example 4700 -> "4.7 kΩ", 100 -> "100 Ω".
+func formatResistanceValue(ohms float64) string {
+	unit, div := "Ω", 1.0
+	switch {
+	case ohms >= 1e9:
+		unit, div = "GΩ", 1e9
+	case ohms >= 1e6:
+		unit, div = "MΩ", 1e6
+	case ohms >= 1e3:
+		unit, div = "kΩ", 1e3
+	}
+	return strconv.FormatFloat(ohms/div, 'f', -1, 64) + " " + unit
+}
+
+// formatWattage formats a power rating using the common fraction notation
+// (1/8W, 1/4W, 1/2W) for the values it applies to, or a plain decimal
+// suffix otherwise (for example 2 -> "2W", 0.33 -> "0.33W").
+func formatWattage(watts float64) string {
+	switch watts {
+	case 0.125:
+		return "1/8W"
+	case 0.25:
+		return "1/4W"
+	case 0.5:
+		return "1/2W"
+	}
+	return strconv.FormatFloat(watts, 'f', -1, 64) + "W"
+}
+
+func drawAxialResistorGlyph(dc *gg.Context, w, h int, sizeFrac float64, aspect float64, bodyColor color.RGBA, bands []bandColor, valueLine string, captionLines []string) {
 	fw, fh := float64(w), float64(h)
-	bodyHeight := fh * sizeFrac
+	top, bottom := verticalLayoutBand(fh, valueLine != "", len(captionLines))
+	componentAreaHeight := bottom - top
+
+	bodyHeight := componentAreaHeight * sizeFrac
 	bodyWidth := math.Min(bodyHeight*aspect, fw*0.85)
 	bodyWidth = math.Max(bodyWidth, fw*0.2)
 
-	cx, cy := fw/2, fh/2
+	cx, cy := fw/2, top+componentAreaHeight/2
 	bx := cx - bodyWidth/2
 	by := cy - bodyHeight/2
 	radius := bodyHeight * 0.4
 
-	leadWidth := math.Max(2, fh/40)
+	leadWidth := math.Max(2, componentAreaHeight/40)
 
 	dc.SetColor(resistorLeadColor)
 	dc.SetLineWidth(leadWidth)
@@ -97,16 +247,44 @@ func drawAxialResistorGlyph(dc *gg.Context, w, h int, sizeFrac float64, aspect f
 	dc.DrawLine(bx+bodyWidth, cy, fw, cy)
 	dc.Stroke()
 
-	dc.SetColor(resistorBodyColor)
+	dc.SetColor(bodyColor)
 	dc.DrawRoundedRectangle(bx, by, bodyWidth, bodyHeight, radius)
 	dc.Fill()
 
 	drawResistorBands(dc, bx, by, bodyWidth, bodyHeight, radius, bands)
 
-	dc.SetColor(resistorOutlineColor)
-	dc.SetLineWidth(math.Max(1, fh/120))
+	dc.SetColor(resistorOutlineColorFor(bodyColor))
+	dc.SetLineWidth(math.Max(1, componentAreaHeight/120))
 	dc.DrawRoundedRectangle(bx, by, bodyWidth, bodyHeight, radius)
 	dc.Stroke()
+
+	if valueLine != "" {
+		points := fitFontSize(valueLine, fw*0.92, top*0.7, true)
+		drawCenteredText(dc, valueLine, fw/2, top/2, points, true, shadeBlack)
+	}
+	drawCaptionLines(dc, captionLines, fw/2, bottom, fh, fw)
+}
+
+// drawCaptionLines lays out one or more derived-value caption lines
+// (never caller-supplied free text) centered below componentBottom,
+// scaled to fill the available caption band.
+func drawCaptionLines(dc *gg.Context, lines []string, cx, componentBottom, fh, fw float64) {
+	if len(lines) == 0 {
+		return
+	}
+	captionHeight := fh - componentBottom
+	longest := lines[0]
+	for _, l := range lines {
+		if len(l) > len(longest) {
+			longest = l
+		}
+	}
+	points := fitFontSize(longest, fw*0.92, captionHeight/float64(len(lines))*0.7, false)
+	lineGap := points * 1.5
+	startY := componentBottom + captionHeight/2 - lineGap*float64(len(lines)-1)/2
+	for i, line := range lines {
+		drawCenteredText(dc, line, cx, startY+lineGap*float64(i), points, false, shadeBlack)
+	}
 }
 
 // drawResistorBands lays out the value/multiplier bands evenly across the

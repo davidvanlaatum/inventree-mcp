@@ -81,3 +81,54 @@ func TestMultiplierColor(t *testing.T) {
 	assert.Equal(t, digitColors[0], multiplierColor(0))
 	assert.Equal(t, digitColors[9], multiplierColor(9))
 }
+
+func TestSizeForPowerRating(t *testing.T) {
+	cases := []struct {
+		watts float64
+		want  string
+	}{
+		{0.125, "small"},
+		{0.2, "small"},
+		{0.21, "medium"},
+		{0.25, "medium"},
+		{0.6, "medium"},
+		{0.61, "large"},
+		{1, "large"},
+		{5, "large"},
+	}
+	for _, c := range cases {
+		assert.Equalf(t, c.want, sizeForPowerRating(c.watts), "watts=%v", c.watts)
+	}
+}
+
+func TestResistorExplicitSizeOverridesPowerRating(t *testing.T) {
+	r := require.New(t)
+	canvas := validResistorCanvas()
+	params := ResistorParams{ResistanceOhms: 100, ToleranceLabel: "5%"}
+
+	// A large wattage alone picks the "large" preset.
+	withWattageOnly, err := RenderResistor(canvas, mergeResistorParams(params, ResistorParams{PowerRatingWatts: 5}))
+	r.NoError(err)
+	large, err := RenderResistor(canvas, mergeResistorParams(params, ResistorParams{Size: "large"}))
+	r.NoError(err)
+	r.Equal(large.SHA256, withWattageOnly.SHA256, "power_rating_watts alone must resolve to the same body as size: large")
+
+	// An explicit small size must win over a large wattage: the drawn
+	// body must exactly match a plain small-size render (dimension-level
+	// check, not just "the hash differs from something else").
+	small, err := RenderResistor(canvas, mergeResistorParams(params, ResistorParams{Size: "small"}))
+	r.NoError(err)
+	explicitSmallWithLargeWattage, err := RenderResistor(canvas, mergeResistorParams(params, ResistorParams{Size: "small", PowerRatingWatts: 5}))
+	r.NoError(err)
+	r.Equal(small.SHA256, explicitSmallWithLargeWattage.SHA256, "explicit size must override a power_rating_watts-derived preset")
+}
+
+// mergeResistorParams overlays extra's non-zero fields onto base's shared
+// resistance_ohms/tolerance_label, so each ResistorParams case above states
+// only what it's actually testing.
+func mergeResistorParams(base, extra ResistorParams) ResistorParams {
+	out := base
+	out.Size = extra.Size
+	out.PowerRatingWatts = extra.PowerRatingWatts
+	return out
+}

@@ -5,6 +5,7 @@ import (
 	"image/color"
 	"math"
 	"strconv"
+	"strings"
 
 	"github.com/fogleman/gg"
 )
@@ -115,54 +116,86 @@ func drawCapacitorGlyph(dc *gg.Context, w, h int, sizeFrac, aspect float64, body
 	dc.DrawLine(cx+leadGap/2, bodyBottom, cx+leadGap/2, fh)
 	dc.Stroke()
 
-	dc.SetColor(bodyColor)
+	// Cylindrical shading: a left-to-right gradient with a highlight band
+	// suggests a rounded can rather than a flat rectangle.
+	shadow := mixColor(bodyColor, shadeBlack, 0.35)
+	highlight := mixColor(bodyColor, shadeWhite, 0.3)
+	bodyGradient := gg.NewLinearGradient(bx, 0, bx+bodyWidth, 0)
+	bodyGradient.AddColorStop(0, shadow)
+	bodyGradient.AddColorStop(0.38, highlight)
+	bodyGradient.AddColorStop(0.6, bodyColor)
+	bodyGradient.AddColorStop(1, shadow)
+	dc.SetFillStyle(bodyGradient)
 	dc.DrawRoundedRectangle(bx, bodyTop, bodyWidth, bodyHeight, radius)
 	dc.Fill()
 
-	stripeWidth := bodyWidth * 0.22
+	// Clip the stripe to the can's own rounded silhouette so its corners
+	// follow the same rounding instead of a flat rectangle edge poking
+	// past the curved top/bottom.
+	dc.DrawRoundedRectangle(bx, bodyTop, bodyWidth, bodyHeight, radius)
+	dc.Clip()
+
+	// The negative stripe is a printed marking on the can, not a separate
+	// panel: it gets the same left-to-right shading as the body (in its
+	// own tone) so it curves with the cylinder instead of reading as a
+	// flat piece stuck on top.
+	stripeWidth := bodyWidth * 0.16
 	var stripeX float64
 	if negativeSide == "left" {
 		stripeX = bx
 	} else {
 		stripeX = bx + bodyWidth - stripeWidth
 	}
-	dc.SetColor(stripeColor)
+	stripeShadow := mixColor(stripeColor, shadeBlack, 0.3)
+	stripeGradient := gg.NewLinearGradient(bx, 0, bx+bodyWidth, 0)
+	stripeGradient.AddColorStop(0, stripeShadow)
+	stripeGradient.AddColorStop(0.38, mixColor(stripeColor, shadeWhite, 0.25))
+	stripeGradient.AddColorStop(0.6, stripeColor)
+	stripeGradient.AddColorStop(1, stripeShadow)
+	dc.SetFillStyle(stripeGradient)
 	dc.DrawRectangle(stripeX, bodyTop, stripeWidth, bodyHeight)
 	dc.Fill()
 
-	drawMinusMarks(dc, stripeX+stripeWidth/2, bodyTop+bodyHeight*0.2, bodyTop+bodyHeight*0.8, stripeWidth*0.5)
+	drawMinusMarks(dc, stripeX+stripeWidth/2, bodyTop+bodyHeight*0.08, bodyTop+bodyHeight*0.92, stripeWidth*0.55, contrastingTextColor(stripeColor))
 
+	// The top cap ellipse is drawn after (and still clipped to the can),
+	// matching a real capacitor where the crimped top disk is a single
+	// continuous surface that the printed stripe stops short of, rather
+	// than the stripe running all the way into the rounded top.
+	dc.SetColor(mixColor(bodyColor, shadeWhite, 0.15))
+	dc.DrawEllipse(cx, bodyTop+radius*0.15, bodyWidth/2*0.94, radius*0.5)
+	dc.Fill()
+
+	dc.ResetClip()
+
+	// Printed markings run vertically along the can, matching real
+	// electrolytic capacitors: the tall, narrow body has far more usable
+	// length top-to-bottom than side-to-side.
 	textColor := contrastingTextColor(bodyColor)
-	var textCX float64
+	var textCX, freeZoneWidth float64
 	if negativeSide == "left" {
 		textCX = bx + stripeWidth + (bodyWidth-stripeWidth)/2
 	} else {
 		textCX = bx + (bodyWidth-stripeWidth)/2
 	}
-	lines := nonEmptyLines(primaryMarking, extraMarking)
-	lineGap := 15.0
-	startY := bodyTop + bodyHeight/2 - lineGap*float64(len(lines)-1)/2
-	for i, line := range lines {
-		drawCenteredMarkings(dc, line, textCX, startY+lineGap*float64(i), textColor, 1)
+	freeZoneWidth = bodyWidth - stripeWidth
+
+	marking := strings.TrimSpace(primaryMarking + " " + extraMarking)
+	if marking != "" {
+		points := fitFontSize(marking, bodyHeight*0.85, freeZoneWidth*0.8, false)
+		dc.Push()
+		dc.RotateAbout(-math.Pi/2, textCX, bodyTop+bodyHeight/2)
+		drawCenteredText(dc, marking, textCX, bodyTop+bodyHeight/2, points, false, textColor)
+		dc.Pop()
 	}
 }
 
-func nonEmptyLines(lines ...string) []string {
-	out := make([]string, 0, len(lines))
-	for _, l := range lines {
-		if l != "" {
-			out = append(out, l)
-		}
-	}
-	return out
-}
-
-func drawMinusMarks(dc *gg.Context, cx, top, bottom, width float64) {
-	count := 3
+func drawMinusMarks(dc *gg.Context, cx, top, bottom, width float64, markColor color.RGBA) {
+	count := 6
+	dc.SetColor(markColor)
+	dc.SetLineWidth(math.Max(1, width/6))
 	for i := 0; i < count; i++ {
 		y := top + (bottom-top)*float64(i)/float64(count-1)
-		dc.SetColor(color.RGBA{A: 0xff})
-		dc.SetLineWidth(math.Max(1, width/6))
 		dc.DrawLine(cx-width/2, y, cx+width/2, y)
 		dc.Stroke()
 	}

@@ -7,6 +7,23 @@ import (
 	"image/color"
 )
 
+// straightRGBA converts straight (non-premultiplied) 0-255 red, green,
+// blue, and alpha into a correctly premultiplied color.RGBA. Go's
+// color.RGBA is defined as already alpha-premultiplied, so every component
+// must be <= alpha; constructing it directly from straight RGB values with
+// alpha < 255 (for example color.RGBA{R: 0xf6, ..., A: 0xf0}, where R
+// exceeds A) is an invalid premultiplied color and can blend into badly
+// wrong pixels. Any non-opaque color in this package must be built through
+// this helper rather than a direct struct literal.
+func straightRGBA(r, g, b, a uint8) color.RGBA {
+	return color.RGBA{
+		R: uint8(uint32(r) * uint32(a) / 0xff),
+		G: uint8(uint32(g) * uint32(a) / 0xff),
+		B: uint8(uint32(b) * uint32(a) / 0xff),
+		A: a,
+	}
+}
+
 // bandColor is one entry in the standard IEC 60062 resistor color code,
 // shared with other families that reuse the same physical marking colors
 // (for example a fuse's metal cap or a capacitor's polarity stripe).

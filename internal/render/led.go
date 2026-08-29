@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"image/color"
 	"math"
+	"strings"
 
 	"github.com/fogleman/gg"
 )
@@ -20,6 +21,11 @@ type LEDParams struct {
 	CathodeSide string
 	// Size is "3mm", "5mm" (default), or "10mm".
 	Size string
+	// ShowLabel draws a caption below the LED with its size and lens
+	// color, and whether the lens is diffused or clear. Every value in
+	// the caption is already present in the request; nothing about
+	// brightness, forward voltage, or viewing angle is invented.
+	ShowLabel bool
 }
 
 type ledLensColor struct {
@@ -58,10 +64,8 @@ func ledLensColorByName(name string) (color.RGBA, bool) {
 }
 
 var (
-	ledFlangeColor   = color.RGBA{R: 0x2a, G: 0x2a, B: 0x2a, A: 0xff}
-	ledCathodeMark   = color.RGBA{R: 0x0, G: 0x0, B: 0x0, A: 0xff}
-	ledLeadColor     = color.RGBA{R: 0xb8, G: 0xb8, B: 0xb8, A: 0xff}
-	ledHighlightFill = color.RGBA{R: 0xff, G: 0xff, B: 0xff, A: 0x90}
+	ledLeadColor    = color.RGBA{R: 0xb8, G: 0xb8, B: 0xb8, A: 0xff}
+	ledPolarityMark = color.RGBA{A: 0xff}
 )
 
 var ledSizeFractions = map[string]float64{
@@ -92,47 +96,89 @@ func RenderLED(canvas CanvasOptions, params LEDParams) (Result, error) {
 		return Result{}, fmt.Errorf("led size must be \"3mm\", \"5mm\", or \"10mm\"")
 	}
 
+	var captionLines []string
+	if params.ShowLabel {
+		lensState := "Clear"
+		if params.Diffused {
+			lensState = "Diffused"
+		}
+		captionLines = []string{
+			strings.ToUpper(size[:1]) + size[1:] + " " + strings.ToUpper(params.LensColor[:1]) + params.LensColor[1:] + " LED",
+			lensState + " lens",
+		}
+	}
+
 	return renderCanvas(canvas, func(dc *gg.Context, w, h int) error {
-		drawLEDGlyph(dc, w, h, domeFrac, lens, params.Diffused, side)
+		drawLEDGlyph(dc, w, h, domeFrac, lens, params.Diffused, side, captionLines)
 		return nil
 	})
 }
 
-func drawLEDGlyph(dc *gg.Context, w, h int, domeFrac float64, lens color.RGBA, diffused bool, cathodeSide string) {
+// drawLEDGlyph draws a single-silhouette side view: a domed top and a
+// straight-sided epoxy body as one continuous outline (not a round dome
+// sitting on a separately shaped base, which reads as two different
+// viewing angles mashed together). The cathode side gets a small chamfered
+// corner at the base, the common simplified-icon convention for an LED's
+// flat polarity indicator.
+func drawLEDGlyph(dc *gg.Context, w, h int, domeFrac float64, lens color.RGBA, diffused bool, cathodeSide string, captionLines []string) {
 	fw, fh := float64(w), float64(h)
-	domeDiameter := math.Min(fw, fh) * domeFrac
+	top, bottom := verticalLayoutBand(fh, false, len(captionLines))
+	componentAreaHeight := bottom - top
+	domeDiameter := math.Min(fw, componentAreaHeight) * domeFrac
 	domeRadius := domeDiameter / 2
 	cx := fw / 2
-	flangeHeight := domeDiameter * 0.35
-	domeCenterY := fh*0.32 + domeRadius*0.1
-	flangeTop := domeCenterY + domeRadius*0.55
-	flangeBottom := flangeTop + flangeHeight
+	cylHeight := domeRadius * 1.1
+	yCylTop := top + componentAreaHeight*0.30 + domeRadius*0.1
+	yBottom := yCylTop + cylHeight
+	x0, x1 := cx-domeRadius, cx+domeRadius
+	chamfer := domeRadius * 0.4
 
-	dc.SetColor(ledFlangeColor)
-	dc.DrawRoundedRectangle(cx-domeRadius, flangeTop, domeDiameter, flangeHeight, flangeHeight*0.25)
-	dc.Fill()
+	dc.NewSubPath()
+	if cathodeSide == "left" {
+		dc.MoveTo(x0+chamfer, yBottom)
+		dc.LineTo(x1, yBottom)
+		dc.LineTo(x1, yCylTop)
+		dc.DrawArc(cx, yCylTop, domeRadius, 0, -math.Pi)
+		dc.LineTo(x0, yBottom-chamfer)
+		dc.LineTo(x0+chamfer, yBottom)
+	} else {
+		dc.MoveTo(x1-chamfer, yBottom)
+		dc.LineTo(x0, yBottom)
+		dc.LineTo(x0, yCylTop)
+		dc.DrawArc(cx, yCylTop, domeRadius, -math.Pi, 0)
+		dc.LineTo(x1, yBottom-chamfer)
+		dc.LineTo(x1-chamfer, yBottom)
+	}
+	dc.ClosePath()
 
-	dc.SetColor(lens)
-	dc.DrawCircle(cx, domeCenterY, domeRadius)
+	// Self-shading radial gradient (light source upper-left) gives the
+	// body a rounded look instead of a single flat fill color, for both
+	// diffused and clear lenses.
+	domeCenterY := yCylTop
+	lightX, lightY := cx-domeRadius*0.4, domeCenterY-domeRadius*0.4
+	rimShade := mixColor(lens, shadeBlack, 0.35)
+	bodyGradient := gg.NewRadialGradient(lightX, lightY, 0, cx, domeCenterY, domeRadius*1.6)
+	bodyGradient.AddColorStop(0, mixColor(lens, shadeWhite, 0.3))
+	bodyGradient.AddColorStop(0.45, lens)
+	bodyGradient.AddColorStop(1, rimShade)
+	dc.SetFillStyle(bodyGradient)
 	dc.Fill()
 
 	if !diffused {
-		dc.SetColor(ledHighlightFill)
-		dc.DrawEllipse(cx-domeRadius*0.35, domeCenterY-domeRadius*0.35, domeRadius*0.28, domeRadius*0.18)
+		// A soft specular highlight reads as glossy plastic rather than a
+		// flat fill. Every stop stays fully opaque and fades into the
+		// body gradient's own light tone at the edge (rather than to a
+		// transparent stop): gg's gradient color interpolation produces
+		// visible artifacts when a stop's alpha differs from its
+		// neighbors, so the fade is achieved through color alone.
+		hx, hy := cx-domeRadius*0.32, domeCenterY-domeRadius*0.38
+		highlightGradient := gg.NewRadialGradient(hx, hy, 0, hx, hy, domeRadius*0.34)
+		highlightGradient.AddColorStop(0, shadeWhite)
+		highlightGradient.AddColorStop(1, mixColor(lens, shadeWhite, 0.3))
+		dc.SetFillStyle(highlightGradient)
+		dc.DrawCircle(hx, hy, domeRadius*0.34)
 		dc.Fill()
 	}
-
-	notchWidth := domeDiameter * 0.14
-	var notchX float64
-	if cathodeSide == "left" {
-		notchX = cx - domeRadius
-	} else {
-		notchX = cx + domeRadius - notchWidth
-	}
-	dc.SetColor(ledCathodeMark)
-	dc.SetLineWidth(math.Max(1, fh/100))
-	dc.DrawLine(notchX, flangeTop+2, notchX+notchWidth, flangeTop+2)
-	dc.Stroke()
 
 	leadGap := domeDiameter * 0.36
 	anodeX := cx + leadGap/2
@@ -140,10 +186,21 @@ func drawLEDGlyph(dc *gg.Context, w, h int, domeFrac float64, lens color.RGBA, d
 	if cathodeSide == "right" {
 		anodeX, cathodeX = cathodeX, anodeX
 	}
-	leadWidth := math.Max(2, fh/60)
+	leadWidth := math.Max(2, componentAreaHeight/60)
 	dc.SetColor(ledLeadColor)
 	dc.SetLineWidth(leadWidth)
-	dc.DrawLine(anodeX, flangeBottom, anodeX, fh)
-	dc.DrawLine(cathodeX, flangeBottom, cathodeX, fh*0.82)
+	dc.DrawLine(anodeX, yBottom, anodeX, bottom)
+	dc.DrawLine(cathodeX, yBottom, cathodeX, yBottom+(bottom-yBottom)*0.82)
 	dc.Stroke()
+
+	// "+" beside the anode lead is a second, unambiguous polarity cue
+	// alongside the chamfered cathode corner.
+	plusX := anodeX + leadGap*0.55
+	if cathodeSide == "right" {
+		plusX = anodeX - leadGap*0.55
+	}
+	markPoints := fitFontSize("+", leadGap*0.7, (bottom-yBottom)*0.5, true)
+	drawCenteredText(dc, "+", plusX, yBottom+(bottom-yBottom)*0.25, markPoints, true, ledPolarityMark)
+
+	drawCaptionLines(dc, captionLines, cx, bottom, fh, fw)
 }
