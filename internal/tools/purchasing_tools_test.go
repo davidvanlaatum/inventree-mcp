@@ -1168,6 +1168,33 @@ func TestUpdatePurchaseOrderValidatesAndPatches(t *testing.T) {
 	a.Equal("", upstreamErr.Status)
 }
 
+func TestUpdatePurchaseOrderTagsDistinguishesOmittedFromExplicitClear(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	fake := &fakePurchasingClient{orders: []inventree.PurchaseOrder{{PK: 120, Reference: "PO-1", Supplier: 30}}}
+	deps := purchasingDeps(fake)
+
+	_, tagged, err := updatePurchaseOrder(deps)(ctx, &mcp.CallToolRequest{}, UpdatePurchaseOrderInput{ID: 120, Tags: []string{"urgent", "reorder"}})
+	r.NoError(err)
+	a.Equal(StatusOK, tagged.Status)
+	r.NotNil(tagged.Record)
+	a.Equal([]string{"urgent", "reorder"}, tagged.Record.Tags)
+
+	_, cleared, err := updatePurchaseOrder(deps)(ctx, &mcp.CallToolRequest{}, UpdatePurchaseOrderInput{ID: 120, Tags: []string{}})
+	r.NoError(err)
+	a.Equal(StatusOK, cleared.Status)
+	r.NotNil(cleared.Record)
+	a.Equal([]string{}, cleared.Record.Tags, "an explicit empty array must still PATCH tags to clear them")
+
+	_, untouched, err := updatePurchaseOrder(deps)(ctx, &mcp.CallToolRequest{}, UpdatePurchaseOrderInput{ID: 120, Description: dvgoutils.Ptr("no tags change")})
+	r.NoError(err)
+	a.Equal(StatusOK, untouched.Status)
+	r.NotNil(untouched.Record)
+	a.Empty(untouched.Record.Tags, "an omitted tags field must not be part of the PATCH")
+}
+
 func TestUpdatePurchaseOrderLineRejectsMalformedLink(t *testing.T) {
 	t.Parallel()
 	r := require.New(t)
@@ -1517,6 +1544,17 @@ func (f *fakePurchasingClient) UpdatePurchaseOrderDetail(ctx context.Context, id
 	}
 	if value, ok := decoded["link"]; ok {
 		detail.Link, _ = value.(string)
+	}
+	if value, ok := decoded["tags"]; ok {
+		if raw, isSlice := value.([]any); isSlice {
+			tags := make([]string, 0, len(raw))
+			for _, item := range raw {
+				if text, isString := item.(string); isString {
+					tags = append(tags, text)
+				}
+			}
+			detail.Tags = tags
+		}
 	}
 	for index := range f.orders {
 		if f.orders[index].PK == order.PK {

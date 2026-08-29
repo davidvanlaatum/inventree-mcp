@@ -333,6 +333,11 @@ func TestClientMethodsAgainstInvenTree(t *testing.T) {
 		r.Equal(available, supplierPartDetail.Available)
 		r.NotNil(supplierPartDetail.AvailabilityUpdated)
 		r.NotNil(supplierPartDetail.Updated)
+		var supplierRawPlain map[string]any
+		plainSupplierReq, err := fixture.client.NewRequest(ctx, "GET", fmt.Sprintf("/api/company/part/%d/", supplierPart.PK), nil, nil)
+		r.NoError(err)
+		r.NoError(fixture.client.DoJSON(plainSupplierReq, &supplierRawPlain))
+		r.NotContains(supplierRawPlain, "tags", "plain GET /api/company/part/{id}/ is expected to omit the tags field")
 		var supplierRaw map[string]any
 		req, err := fixture.client.NewRequest(ctx, "GET", fmt.Sprintf("/api/company/part/%d/", supplierPart.PK), url.Values{"tags": []string{"true"}}, nil)
 		r.NoError(err)
@@ -371,6 +376,11 @@ func TestClientMethodsAgainstInvenTree(t *testing.T) {
 		r.NoError(err)
 		r.Equal(manufacturerPart.PK, manufacturerPartDetail.PK)
 		r.Equal(manufacturerNotes, *manufacturerPartDetail.Notes)
+		var manufacturerRawPlain map[string]any
+		plainManufacturerReq, err := fixture.client.NewRequest(ctx, "GET", fmt.Sprintf("/api/company/part/manufacturer/%d/", manufacturerPart.PK), nil, nil)
+		r.NoError(err)
+		r.NoError(fixture.client.DoJSON(plainManufacturerReq, &manufacturerRawPlain))
+		r.NotContains(manufacturerRawPlain, "tags", "plain GET /api/company/part/manufacturer/{id}/ is expected to omit the tags field")
 		var manufacturerRaw map[string]any
 		req, err = fixture.client.NewRequest(ctx, "GET", fmt.Sprintf("/api/company/part/manufacturer/%d/", manufacturerPart.PK), url.Values{"tags": []string{"true"}}, nil)
 		r.NoError(err)
@@ -1318,6 +1328,16 @@ func TestClientMethodsAgainstInvenTree(t *testing.T) {
 		r.NoError(err)
 		partOnlyTag, err := fixture.run.Name("fs91-part-only-tag")
 		r.NoError(err)
+
+		// A plain GET (no ?tags=true flag) must omit tags for PurchaseOrder
+		// too, matching the already-pinned Part/Company/StockLocation
+		// behavior: GetPurchaseOrderDetail's own ?tags=true flag is the only
+		// reason its exact reads above and below ever see tags at all.
+		var orderRawPlain map[string]any
+		plainOrderReq, err := fixture.client.NewRequest(ctx, "GET", fmt.Sprintf("/api/order/po/%d/", order.ID), nil, nil)
+		r.NoError(err)
+		r.NoError(fixture.client.DoJSON(plainOrderReq, &orderRawPlain))
+		r.NotContains(orderRawPlain, "tags", "plain GET /api/order/po/{id}/ is expected to omit the tags field")
 
 		// Assign through the typed UpdatePart/UpdateCompany/UpdateStockLocation
 		// client methods (PatchFields{"tags": Set(...)}) rather than raw

@@ -1022,7 +1022,47 @@ func manufacturerPartValues(record inventree.ManufacturerPartDetail) map[string]
 func patchMatches(fields inventree.PatchFields, values map[string]any) bool {
 	for key, field := range fields {
 		got, ok := values[key]
-		if !ok || !reflect.DeepEqual(comparablePatchValue(got), comparablePatchValue(field.Value())) {
+		if !ok {
+			return false
+		}
+		if key == "tags" {
+			if !tagSetsMatch(got, field.Value()) {
+				return false
+			}
+			continue
+		}
+		if !reflect.DeepEqual(comparablePatchValue(got), comparablePatchValue(field.Value())) {
+			return false
+		}
+	}
+	return true
+}
+
+// tagSetsMatch compares a submitted tags PATCH value against a re-fetched
+// record's tags as an unordered multiset rather than an exact sequence.
+// InvenTree's shared cross-object tag taxonomy gives no guarantee that a
+// read-back preserves the order tags were submitted in, so patchMatches and
+// locationFieldsMatch must not require one; an order-sensitive compare would
+// report a spuriously failed postflight verification for any successful
+// multi-tag write InvenTree happens to reorder.
+func tagSetsMatch(got, want any) bool {
+	gotTags, gotOK := got.([]string)
+	wantTags, wantOK := want.([]string)
+	if !gotOK || !wantOK {
+		return reflect.DeepEqual(got, want)
+	}
+	if len(gotTags) != len(wantTags) {
+		return false
+	}
+	counts := make(map[string]int, len(wantTags))
+	for _, tag := range wantTags {
+		counts[tag]++
+	}
+	for _, tag := range gotTags {
+		counts[tag]--
+	}
+	for _, count := range counts {
+		if count != 0 {
 			return false
 		}
 	}

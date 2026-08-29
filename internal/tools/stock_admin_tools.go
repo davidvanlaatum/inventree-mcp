@@ -921,8 +921,19 @@ func locationFieldsMatch(location inventree.StockLocation, fields inventree.Patc
 	if json.Unmarshal(data, &patch) != nil {
 		return false
 	}
-	checks := map[string]any{"name": location.Name, "description": location.Description, "parent": location.Parent, "owner": location.Owner, "custom_icon": location.CustomIcon, "structural": location.Structural, "external": location.External, "location_type": location.LocationType, "tags": location.Tags}
+	checks := map[string]any{"name": location.Name, "description": location.Description, "parent": location.Parent, "owner": location.Owner, "custom_icon": location.CustomIcon, "structural": location.Structural, "external": location.External, "location_type": location.LocationType}
 	for key, raw := range patch {
+		// tags is compared as an unordered set: InvenTree's shared
+		// cross-object taxonomy gives no ordering guarantee on read-back,
+		// so an order-sensitive compare would spuriously fail postflight
+		// verification for a successful multi-tag write InvenTree reorders.
+		if key == "tags" {
+			var wantTags []string
+			if json.Unmarshal(raw, &wantTags) != nil || !tagSetsMatch(location.Tags, wantTags) {
+				return false
+			}
+			continue
+		}
 		actual, ok := checks[key]
 		if !ok {
 			return false

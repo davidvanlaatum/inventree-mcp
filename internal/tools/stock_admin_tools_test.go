@@ -101,6 +101,37 @@ func TestUpdateStockLocationKeepsOperationalFieldsOutOfOrdinaryPatch(t *testing.
 	a.True(out.Record.External)
 }
 
+func TestUpdateStockLocationTagsPostflightVerificationIgnoresOrder(t *testing.T) {
+	t.Parallel()
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	r := require.New(t)
+	a := assert.New(t)
+	fake := newStockAdminFake()
+	fake.locations[40] = inventree.StockLocation{PK: 40, Name: "Bin"}
+
+	// InvenTree's shared tag taxonomy gives no ordering guarantee on
+	// read-back; simulate it returning the assigned tags in a different
+	// order than they were submitted and confirm postflight verification
+	// still succeeds instead of spuriously reporting partial_failure.
+	fake.afterLocationUpdate = func(location *inventree.StockLocation) {
+		location.Tags = []string{"beta", "alpha"}
+	}
+	_, out, err := updateStockLocation(stockAdminDeps(fake))(ctx, &mcp.CallToolRequest{}, UpdateStockLocationInput{ID: 40, Tags: []string{"alpha", "beta"}})
+	r.NoError(err)
+	a.Equal(StatusOK, out.Status)
+	r.NotNil(out.Record)
+	a.ElementsMatch([]string{"alpha", "beta"}, out.Record.Tags)
+
+	// A genuine mismatch (a tag missing from read-back) must still be
+	// caught: order-insensitivity must not become a blanket bypass.
+	fake.afterLocationUpdate = func(location *inventree.StockLocation) {
+		location.Tags = []string{"alpha"}
+	}
+	_, out, err = updateStockLocation(stockAdminDeps(fake))(ctx, &mcp.CallToolRequest{}, UpdateStockLocationInput{ID: 40, Tags: []string{"alpha", "beta"}})
+	r.NoError(err)
+	a.Equal(StatusPartialFailure, out.Status)
+}
+
 func TestRestructureStockLocationRequiresCurrentPlanAndRefusesCycles(t *testing.T) {
 	t.Parallel()
 	t.Run("review and execute", func(t *testing.T) {
@@ -675,6 +706,7 @@ type stockAdminFake struct {
 	updateStockErr        error
 	stockItemErr          error
 	afterStockPatch       func(*inventree.StockItem)
+	afterLocationUpdate   func(*inventree.StockLocation)
 	suppressLocationPatch bool
 	lastCreate            inventree.StockLocationCreate
 	lastPatch             inventree.PatchFields
@@ -756,6 +788,9 @@ func (f *stockAdminFake) UpdateStockLocation(_ context.Context, id int, fields i
 	if !f.suppressLocationPatch {
 		applyLocationPatch(&value, fields)
 	}
+	if f.afterLocationUpdate != nil {
+		f.afterLocationUpdate(&value)
+	}
 	f.locations[id] = value
 	return value, nil
 }
@@ -833,6 +868,8 @@ func applyLocationPatch(value *inventree.StockLocation, fields inventree.PatchFi
 			value.Structural = patch.Value().(bool)
 		case "external":
 			value.External = patch.Value().(bool)
+		case "tags":
+			value.Tags, _ = patch.Value().([]string)
 		}
 	}
 }

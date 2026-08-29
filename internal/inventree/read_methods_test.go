@@ -596,6 +596,19 @@ func TestReadMethodsUseExpectedEndpoints(t *testing.T) {
 			response: `{"pk":120,"reference":"PO-1","supplier":30}`,
 		},
 		{
+			name: "get purchase order detail",
+			call: func(ctx context.Context, client *Client) error {
+				record, err := client.GetPurchaseOrderDetail(ctx, 120)
+				if err == nil && (record.PK != 120 || len(record.Tags) != 1 || record.Tags[0] != "reference") {
+					return errors.New("purchase order detail did not preserve exact fields")
+				}
+				return err
+			},
+			wantPath:  "/api/order/po/120/",
+			wantQuery: url.Values{"tags": []string{"true"}},
+			response:  `{"pk":120,"reference":"PO-1","supplier":30,"tags":["reference"]}`,
+		},
+		{
 			name: "search purchase order lines",
 			call: func(ctx context.Context, client *Client) error {
 				pending, received := true, false
