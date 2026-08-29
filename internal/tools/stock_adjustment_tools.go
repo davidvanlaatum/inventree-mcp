@@ -369,7 +369,7 @@ func adjustStockQuantity(deps Dependencies) mcp.ToolHandlerFor[AdjustStockQuanti
 			if result != nil || err != nil {
 				return result, out, err
 			}
-			if before.Serial != nil {
+			if stockItemHasSerial(before) {
 				return stockClarification(out, "How should this serialized stock item be handled?", "delta", "InvenTree does not apply relative quantity adjustments to serialized stock; adjust the individual serialized items instead", "stock_item_id", map[string]any{"stock_item_id": input.StockItemID, "serial": before.Serial})
 			}
 			delta, normalizedDelta, ok := normalizedStockDecimal(math.Abs(input.Delta), false)
@@ -438,7 +438,7 @@ func stocktakeAdjustment(deps Dependencies) mcp.ToolHandlerFor[StocktakeAdjustme
 			if result != nil || err != nil {
 				return result, out, err
 			}
-			if before.Serial != nil {
+			if stockItemHasSerial(before) {
 				return stockClarification(out, "How should this serialized stock item be counted?", "observed_quantity", "InvenTree does not apply absolute quantity counts to serialized stock; count the individual serialized items instead", "stock_item_id", map[string]any{"stock_item_id": input.StockItemID, "serial": before.Serial})
 			}
 			quantity, normalizedQuantity, ok := normalizedStockDecimal(input.ObservedQuantity, true)
@@ -542,6 +542,13 @@ func stockUnknownResult(out StockAdjustmentOutput, message string) (*mcp.CallToo
 		RecoveryPlan: "Do not retry the mutation blindly. Run the same tool again with dry_run:true and the stable stock_item_id to read current state and prepare a new plan only if needed.",
 	}
 	return TextResult(StatusPartialFailure), out, nil
+}
+
+// stockItemHasSerial reports whether item carries a real serial number.
+// InvenTree returns Serial as a non-nil empty string for non-serialized
+// stock, so a nil check alone misclassifies ordinary stock as serialized.
+func stockItemHasSerial(item inventree.StockItem) bool {
+	return item.Serial != nil && strings.TrimSpace(*item.Serial) != ""
 }
 
 func snapshotStockItem(item inventree.StockItem) StockStateSnapshot {
