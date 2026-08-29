@@ -18,21 +18,68 @@ import (
 // layout presets only, not a claim of physical scale; BodyLengthMM/
 // BodyDiameterMM (or family-specific equivalents) are the only inputs that
 // influence drawn proportions to an explicitly supplied dimension.
+// BodySize is the shared resistor/diode/capacitor body size preset values.
+type BodySize string
+
+const (
+	BodySizeSmall  BodySize = "small"
+	BodySizeMedium BodySize = "medium"
+	BodySizeLarge  BodySize = "large"
+)
+
 var bodySizeFractions = map[string]float64{
-	"small":  0.35,
-	"medium": 0.5,
-	"large":  0.68,
+	string(BodySizeSmall):  0.35,
+	string(BodySizeMedium): 0.5,
+	string(BodySizeLarge):  0.68,
+}
+
+// bodySizeOrder is resolveBodySize's supported values in a fixed, stable
+// order for use in error messages, documentation, and JSON Schema enums.
+var bodySizeOrder = []BodySize{BodySizeSmall, BodySizeMedium, BodySizeLarge}
+
+// BodySizes returns the shared resistor/diode/capacitor body size preset
+// values in a fixed, stable order.
+func BodySizes() []string {
+	values := make([]string, len(bodySizeOrder))
+	for i, s := range bodySizeOrder {
+		values[i] = string(s)
+	}
+	return values
 }
 
 func resolveBodySize(size string) (float64, error) {
 	if size == "" {
-		size = "medium"
+		size = string(BodySizeMedium)
 	}
 	frac, ok := bodySizeFractions[size]
 	if !ok {
-		return 0, errors.New("size must be \"small\", \"medium\", or \"large\"")
+		return 0, fmt.Errorf("size must be one of %v", BodySizes())
 	}
 	return frac, nil
+}
+
+// Side is the shared left/right polarity side used by diode cathode_side,
+// LED cathode_side, and capacitor negative_side.
+type Side string
+
+const (
+	SideLeft  Side = "left"
+	SideRight Side = "right"
+)
+
+// sideOrder is the fixed, stable order of the shared left/right polarity
+// side used by diode cathode_side, LED cathode_side, and capacitor
+// negative_side.
+var sideOrder = []Side{SideLeft, SideRight}
+
+// Sides returns the supported left/right polarity side values in a fixed,
+// stable order.
+func Sides() []string {
+	values := make([]string, len(sideOrder))
+	for i, s := range sideOrder {
+		values[i] = string(s)
+	}
+	return values
 }
 
 // resolveAspect returns the drawn length:diameter aspect ratio for an axial

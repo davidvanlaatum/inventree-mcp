@@ -58,25 +58,34 @@ var resistorLeadColor = color.RGBA{R: 0xb8, G: 0xb8, B: 0xb8, A: 0xff}
 var resistorOutlineColor = color.RGBA{R: 0x40, G: 0x38, B: 0x28, A: 0xff}
 var resistorLightOutlineColor = color.RGBA{R: 0xc8, G: 0xc8, B: 0xc8, A: 0xff}
 
+// ResistorType is the accepted render_component_image resistor body-type
+// values.
+type ResistorType string
+
+const (
+	ResistorTypeCarbonFilm ResistorType = "carbon_film"
+	ResistorTypeMetalFilm  ResistorType = "metal_film"
+)
+
 // resistorTypes maps the supported Type values to a human-readable label
 // (used only in the derived ShowLabel caption) and a default body color
 // matching near-universal manufacturer convention. Fixed and ordered; do
 // not derive from a map range.
 var resistorTypes = []struct {
-	value     string
+	value     ResistorType
 	label     string
 	bodyColor color.RGBA
 }{
-	{"carbon_film", "Carbon film", color.RGBA{R: 0xe6, G: 0xd9, B: 0xb3, A: 0xff}},
-	{"metal_film", "Metal film", color.RGBA{R: 0x4a, G: 0x8f, B: 0xe0, A: 0xff}},
+	{ResistorTypeCarbonFilm, "Carbon film", color.RGBA{R: 0xe6, G: 0xd9, B: 0xb3, A: 0xff}},
+	{ResistorTypeMetalFilm, "Metal film", color.RGBA{R: 0x4a, G: 0x8f, B: 0xe0, A: 0xff}},
 }
 
 func resistorTypeInfo(value string) (label string, bodyColor color.RGBA, ok bool) {
 	if value == "" {
-		value = "carbon_film"
+		value = string(ResistorTypeCarbonFilm)
 	}
 	for _, t := range resistorTypes {
-		if t.value == value {
+		if string(t.value) == value {
 			return t.label, t.bodyColor, true
 		}
 	}
@@ -88,7 +97,7 @@ func resistorTypeInfo(value string) (label string, bodyColor color.RGBA, ok bool
 func ResistorTypes() []string {
 	values := make([]string, len(resistorTypes))
 	for i, t := range resistorTypes {
-		values[i] = t.value
+		values[i] = string(t.value)
 	}
 	return values
 }

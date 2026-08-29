@@ -35,6 +35,23 @@ func TestValidateCanvasOptions(t *testing.T) {
 	a.NoError(ValidateCanvasOptions(CanvasOptions{Width: 100, Height: 100, Orientation: OrientationHorizontal, Background: BackgroundColor, BackgroundColorHex: "#ff00ff"}))
 }
 
+func TestOrientationsAndBackgrounds(t *testing.T) {
+	a := assert.New(t)
+	a.Equal([]string{"horizontal", "vertical"}, Orientations())
+	a.Equal([]string{"transparent", "white", "color"}, Backgrounds())
+}
+
+func TestFamilies(t *testing.T) {
+	a := assert.New(t)
+	a.Equal([]Family{FamilyResistor, FamilyDiode, FamilyLED, FamilyCapacitor, FamilyFuse}, Families())
+
+	// The returned slice must be a copy: mutating it must not affect the
+	// next call's result.
+	families := Families()
+	families[0] = "mutated"
+	a.Equal([]Family{FamilyResistor, FamilyDiode, FamilyLED, FamilyCapacitor, FamilyFuse}, Families())
+}
+
 func TestRenderDeterministic(t *testing.T) {
 	r := require.New(t)
 	canvas := validResistorCanvas()

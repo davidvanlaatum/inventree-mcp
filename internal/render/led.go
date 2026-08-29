@@ -28,20 +28,34 @@ type LEDParams struct {
 	ShowLabel bool
 }
 
+// LEDLensColor is the accepted render_component_image LED lens_color
+// values.
+type LEDLensColor string
+
+const (
+	LEDLensColorRed    LEDLensColor = "red"
+	LEDLensColorGreen  LEDLensColor = "green"
+	LEDLensColorBlue   LEDLensColor = "blue"
+	LEDLensColorYellow LEDLensColor = "yellow"
+	LEDLensColorOrange LEDLensColor = "orange"
+	LEDLensColorWhite  LEDLensColor = "white"
+	LEDLensColorClear  LEDLensColor = "clear"
+)
+
 type ledLensColor struct {
-	name string
+	name LEDLensColor
 	fill color.RGBA
 }
 
 // ledLensColors is fixed and ordered; do not derive from a map range.
 var ledLensColors = []ledLensColor{
-	{"red", color.RGBA{R: 0xd9, G: 0x1f, B: 0x1f, A: 0xff}},
-	{"green", color.RGBA{R: 0x2a, G: 0x8a, B: 0x2a, A: 0xff}},
-	{"blue", color.RGBA{R: 0x1f, G: 0x4a, B: 0xd9, A: 0xff}},
-	{"yellow", color.RGBA{R: 0xf0, G: 0xd8, B: 0x10, A: 0xff}},
-	{"orange", color.RGBA{R: 0xe8, G: 0x7a, B: 0x11, A: 0xff}},
-	{"white", color.RGBA{R: 0xf5, G: 0xf5, B: 0xf5, A: 0xff}},
-	{"clear", color.RGBA{R: 0xd8, G: 0xe8, B: 0xf0, A: 0xff}},
+	{LEDLensColorRed, color.RGBA{R: 0xd9, G: 0x1f, B: 0x1f, A: 0xff}},
+	{LEDLensColorGreen, color.RGBA{R: 0x2a, G: 0x8a, B: 0x2a, A: 0xff}},
+	{LEDLensColorBlue, color.RGBA{R: 0x1f, G: 0x4a, B: 0xd9, A: 0xff}},
+	{LEDLensColorYellow, color.RGBA{R: 0xf0, G: 0xd8, B: 0x10, A: 0xff}},
+	{LEDLensColorOrange, color.RGBA{R: 0xe8, G: 0x7a, B: 0x11, A: 0xff}},
+	{LEDLensColorWhite, color.RGBA{R: 0xf5, G: 0xf5, B: 0xf5, A: 0xff}},
+	{LEDLensColorClear, color.RGBA{R: 0xd8, G: 0xe8, B: 0xf0, A: 0xff}},
 }
 
 // LEDLensColors returns the supported LED lens color names in a fixed,
@@ -49,14 +63,14 @@ var ledLensColors = []ledLensColor{
 func LEDLensColors() []string {
 	names := make([]string, len(ledLensColors))
 	for i, c := range ledLensColors {
-		names[i] = c.name
+		names[i] = string(c.name)
 	}
 	return names
 }
 
 func ledLensColorByName(name string) (color.RGBA, bool) {
 	for _, c := range ledLensColors {
-		if c.name == name {
+		if string(c.name) == name {
 			return c.fill, true
 		}
 	}
@@ -68,10 +82,33 @@ var (
 	ledPolarityMark = color.RGBA{A: 0xff}
 )
 
+// LEDSize is the accepted render_component_image LED size values.
+type LEDSize string
+
+const (
+	LEDSize3mm  LEDSize = "3mm"
+	LEDSize5mm  LEDSize = "5mm"
+	LEDSize10mm LEDSize = "10mm"
+)
+
 var ledSizeFractions = map[string]float64{
-	"3mm":  0.3,
-	"5mm":  0.42,
-	"10mm": 0.6,
+	string(LEDSize3mm):  0.3,
+	string(LEDSize5mm):  0.42,
+	string(LEDSize10mm): 0.6,
+}
+
+// ledSizeOrder is the fixed, stable order of ledSizeFractions' supported
+// values, for use in error messages, documentation, and JSON Schema enums.
+var ledSizeOrder = []LEDSize{LEDSize3mm, LEDSize5mm, LEDSize10mm}
+
+// LEDSizes returns the supported LED size preset values in a fixed, stable
+// order.
+func LEDSizes() []string {
+	values := make([]string, len(ledSizeOrder))
+	for i, s := range ledSizeOrder {
+		values[i] = string(s)
+	}
+	return values
 }
 
 // RenderLED renders a through-hole LED front view.
@@ -85,7 +122,7 @@ func RenderLED(canvas CanvasOptions, params LEDParams) (Result, error) {
 		side = "left"
 	}
 	if side != "left" && side != "right" {
-		return Result{}, fmt.Errorf("led cathode_side must be \"left\" or \"right\"")
+		return Result{}, fmt.Errorf("led cathode_side must be one of %v", Sides())
 	}
 	size := params.Size
 	if size == "" {
@@ -93,7 +130,7 @@ func RenderLED(canvas CanvasOptions, params LEDParams) (Result, error) {
 	}
 	domeFrac, ok := ledSizeFractions[size]
 	if !ok {
-		return Result{}, fmt.Errorf("led size must be \"3mm\", \"5mm\", or \"10mm\"")
+		return Result{}, fmt.Errorf("led size must be one of %v", LEDSizes())
 	}
 
 	var captionLines []string

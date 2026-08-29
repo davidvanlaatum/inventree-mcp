@@ -36,9 +36,53 @@ var (
 	fuseMarkingBackColor = straightRGBA(0xf6, 0xf6, 0xf2, 0xf0)
 )
 
+// FuseSize is the accepted render_component_image fuse size values.
+type FuseSize string
+
+const (
+	FuseSize5x20mm FuseSize = "5x20mm"
+	FuseSize6x30mm FuseSize = "6x30mm"
+)
+
 var fuseSizeAspect = map[string]float64{
-	"5x20mm": 4.0,
-	"6x30mm": 5.0,
+	string(FuseSize5x20mm): 4.0,
+	string(FuseSize6x30mm): 5.0,
+}
+
+// fuseSizeOrder is the fixed, stable order of fuseSizeAspect's supported
+// values, for use in error messages, documentation, and JSON Schema enums.
+var fuseSizeOrder = []FuseSize{FuseSize5x20mm, FuseSize6x30mm}
+
+// FuseSizes returns the supported fuse size preset values in a fixed,
+// stable order.
+func FuseSizes() []string {
+	values := make([]string, len(fuseSizeOrder))
+	for i, s := range fuseSizeOrder {
+		values[i] = string(s)
+	}
+	return values
+}
+
+// FuseSpeed is the accepted render_component_image fuse speed values.
+type FuseSpeed string
+
+const (
+	FuseSpeedFast FuseSpeed = "fast"
+	FuseSpeedSlow FuseSpeed = "slow"
+)
+
+// fuseSpeedOrder is the fixed, stable order of the supported fuse speed
+// values, for use in error messages, documentation, and JSON Schema enums.
+var fuseSpeedOrder = []FuseSpeed{FuseSpeedFast, FuseSpeedSlow}
+
+// FuseSpeeds returns the supported fuse speed values in a fixed, stable
+// order.
+func FuseSpeeds() []string {
+	values := make([]string, len(fuseSpeedOrder))
+	for i, s := range fuseSpeedOrder {
+		values[i] = string(s)
+	}
+	return values
 }
 
 // RenderFuse renders an axial glass cartridge fuse.
@@ -54,7 +98,7 @@ func RenderFuse(canvas CanvasOptions, params FuseParams) (Result, error) {
 		speed = "fast"
 	}
 	if speed != "fast" && speed != "slow" {
-		return Result{}, errors.New("fuse speed must be \"fast\" or \"slow\"")
+		return Result{}, fmt.Errorf("fuse speed must be one of %v", FuseSpeeds())
 	}
 	capColor, err := validateHexOrDefault(params.CapColorHex, fuseDefaultCapColor)
 	if err != nil {
@@ -66,7 +110,7 @@ func RenderFuse(canvas CanvasOptions, params FuseParams) (Result, error) {
 	}
 	aspect, ok := fuseSizeAspect[size]
 	if !ok {
-		return Result{}, fmt.Errorf("fuse size must be \"5x20mm\" or \"6x30mm\"")
+		return Result{}, fmt.Errorf("fuse size must be one of %v", FuseSizes())
 	}
 
 	marking := formatFuseMarking(speed, params.RatingAmps, params.RatingVoltage)

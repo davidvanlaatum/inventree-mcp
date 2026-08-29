@@ -53,27 +53,42 @@ var (
 	colorSilver = bandColor{"silver", color.RGBA{R: 0xc0, G: 0xc0, B: 0xc0, A: 0xff}}
 )
 
+// ToleranceLabel is the accepted render_component_image resistor
+// tolerance_label values.
+type ToleranceLabel string
+
+const (
+	ToleranceLabel005Percent ToleranceLabel = "0.05%"
+	ToleranceLabel01Percent  ToleranceLabel = "0.1%"
+	ToleranceLabel025Percent ToleranceLabel = "0.25%"
+	ToleranceLabel05Percent  ToleranceLabel = "0.5%"
+	ToleranceLabel1Percent   ToleranceLabel = "1%"
+	ToleranceLabel2Percent   ToleranceLabel = "2%"
+	ToleranceLabel5Percent   ToleranceLabel = "5%"
+	ToleranceLabel10Percent  ToleranceLabel = "10%"
+)
+
 // toleranceColors is the fixed, ordered IEC 60062 tolerance band mapping.
 // The 20% "no band" case is intentionally not represented: this package
 // always draws one discrete color per band position, so a tolerance with
 // no drawn color cannot be expressed in a fixed band_count contract.
 var toleranceColors = []struct {
-	label string
+	label ToleranceLabel
 	color bandColor
 }{
-	{"0.05%", bandColor{"grey", digitColors[8].rgb}},
-	{"0.1%", bandColor{"violet", digitColors[7].rgb}},
-	{"0.25%", bandColor{"blue", digitColors[6].rgb}},
-	{"0.5%", bandColor{"green", digitColors[5].rgb}},
-	{"1%", bandColor{"brown", digitColors[1].rgb}},
-	{"2%", bandColor{"red", digitColors[2].rgb}},
-	{"5%", colorGold},
-	{"10%", colorSilver},
+	{ToleranceLabel005Percent, bandColor{"grey", digitColors[8].rgb}},
+	{ToleranceLabel01Percent, bandColor{"violet", digitColors[7].rgb}},
+	{ToleranceLabel025Percent, bandColor{"blue", digitColors[6].rgb}},
+	{ToleranceLabel05Percent, bandColor{"green", digitColors[5].rgb}},
+	{ToleranceLabel1Percent, bandColor{"brown", digitColors[1].rgb}},
+	{ToleranceLabel2Percent, bandColor{"red", digitColors[2].rgb}},
+	{ToleranceLabel5Percent, colorGold},
+	{ToleranceLabel10Percent, colorSilver},
 }
 
 func toleranceColorByLabel(label string) (bandColor, bool) {
 	for _, entry := range toleranceColors {
-		if entry.label == label {
+		if string(entry.label) == label {
 			return entry.color, true
 		}
 	}
@@ -85,7 +100,7 @@ func toleranceColorByLabel(label string) (bandColor, bool) {
 func ToleranceLabels() []string {
 	labels := make([]string, len(toleranceColors))
 	for i, entry := range toleranceColors {
-		labels[i] = entry.label
+		labels[i] = string(entry.label)
 	}
 	return labels
 }

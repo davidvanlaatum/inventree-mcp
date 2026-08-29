@@ -67,6 +67,9 @@ func TestRenderResistorValidation(t *testing.T) {
 	_, err = RenderResistor(canvas, ResistorParams{ResistanceOhms: 100, ToleranceLabel: "5%", BodyLengthMM: 6})
 	require.Error(t, err, "dimensions must be supplied together")
 
+	_, err = RenderResistor(canvas, ResistorParams{ResistanceOhms: 100, ToleranceLabel: "5%", Type: "wirewound"})
+	require.Error(t, err, "unsupported resistor type")
+
 	_, err = RenderResistor(canvas, ResistorParams{ResistanceOhms: 4712, ToleranceLabel: "5%", BandCount: 5})
 	require.Error(t, err, "4712 is not exactly representable with 5-band's 3 significant digits either")
 

@@ -2,6 +2,7 @@ package render
 
 import (
 	"errors"
+	"fmt"
 	"image/color"
 	"math"
 	"strconv"
@@ -65,7 +66,7 @@ func RenderCapacitor(canvas CanvasOptions, params CapacitorParams) (Result, erro
 		side = "left"
 	}
 	if side != "left" && side != "right" {
-		return Result{}, errors.New("capacitor negative_side must be \"left\" or \"right\"")
+		return Result{}, fmt.Errorf("capacitor negative_side must be one of %v", Sides())
 	}
 	size, err := resolveBodySize(params.Size)
 	if err != nil {

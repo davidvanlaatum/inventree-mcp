@@ -7,10 +7,73 @@ import (
 	"testing"
 
 	"github.com/davidvanlaatum/dvgoutils/logging/testhandler"
+	"github.com/davidvanlaatum/inventree-mcp/internal/render"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+// TestComponentRenderInputSchemaEnums proves render_component_image's
+// generated JSON Schema actually carries a real enum for every
+// closed-vocabulary field, sourced from the same internal/render accessor
+// functions the runtime validates against — a schema-generation mistake
+// here (a missing or mistyped TypeSchemas entry) would otherwise silently
+// fall back to no enum and go uncaught by every other test.
+func TestComponentRenderInputSchemaEnums(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+
+	schema, err := componentRenderInputSchema()
+	r.NoError(err)
+
+	stringValues := func(vs []string) []any {
+		out := make([]any, len(vs))
+		for i, v := range vs {
+			out[i] = v
+		}
+		return out
+	}
+	familyValues := func() []any {
+		families := render.Families()
+		out := make([]any, len(families))
+		for i, f := range families {
+			out[i] = string(f)
+		}
+		return out
+	}
+
+	a.Equal(familyValues(), schema.Properties["family"].Enum)
+	a.Equal(stringValues(render.Orientations()), schema.Properties["orientation"].Enum)
+	a.Equal(stringValues(render.Backgrounds()), schema.Properties["background"].Enum)
+
+	resistor := schema.Properties["resistor"]
+	r.NotNil(resistor)
+	a.Equal(stringValues(render.ToleranceLabels()), resistor.Properties["tolerance_label"].Enum)
+	a.Equal(stringValues(render.BodySizes()), resistor.Properties["size"].Enum)
+	a.Equal(stringValues(render.ResistorTypes()), resistor.Properties["type"].Enum)
+
+	diode := schema.Properties["diode"]
+	r.NotNil(diode)
+	a.Equal(stringValues(render.Sides()), diode.Properties["cathode_side"].Enum)
+	a.Equal(stringValues(render.BodySizes()), diode.Properties["size"].Enum)
+
+	led := schema.Properties["led"]
+	r.NotNil(led)
+	a.Equal(stringValues(render.LEDLensColors()), led.Properties["lens_color"].Enum)
+	a.Equal(stringValues(render.Sides()), led.Properties["cathode_side"].Enum)
+	a.Equal(stringValues(render.LEDSizes()), led.Properties["size"].Enum)
+
+	capacitor := schema.Properties["capacitor"]
+	r.NotNil(capacitor)
+	a.Equal(stringValues(render.Sides()), capacitor.Properties["negative_side"].Enum)
+	a.Equal(stringValues(render.BodySizes()), capacitor.Properties["size"].Enum)
+
+	fuse := schema.Properties["fuse"]
+	r.NotNil(fuse)
+	a.Equal(stringValues(render.FuseSpeeds()), fuse.Properties["speed"].Enum)
+	a.Equal(stringValues(render.FuseSizes()), fuse.Properties["size"].Enum)
+}
 
 func TestRenderComponentImageEachFamily(t *testing.T) {
 	t.Parallel()
