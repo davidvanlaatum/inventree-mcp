@@ -111,6 +111,7 @@ type PartDetail struct {
 	UnallocatedStock        *float64       `json:"unallocated_stock"`
 	VariantStock            *float64       `json:"variant_stock"`
 	Responsible             *int           `json:"responsible"`
+	Tags                    []string       `json:"tags,omitempty"`
 }
 
 type PartPage struct {
@@ -186,6 +187,7 @@ type StockLocation struct {
 	LocationType       *int               `json:"location_type"`
 	LocationTypeDetail *StockLocationType `json:"location_type_detail,omitempty"`
 	Path               []TreePath         `json:"path,omitempty"`
+	Tags               []string           `json:"tags,omitempty"`
 }
 
 type StockLocationPage struct {
@@ -304,7 +306,7 @@ type StockItem struct {
 
 // StockItemDetail is the approved complete scalar projection returned by the
 // exact stock-item endpoint. Nested location, part, and supplier-part detail
-// remain separate lookups, and tags/tests remain deferred; see
+// remain separate lookups, and tests remain deferred; see
 // StockItemFieldInventory for the pinned classification.
 type StockItemDetail struct {
 	WebLinkFields
@@ -349,6 +351,7 @@ type StockItemDetail struct {
 	PurchaseOrder          *int           `json:"purchase_order"`
 	PurchaseOrderReference *string        `json:"purchase_order_reference"`
 	LocationPath           []TreePath     `json:"location_path,omitempty"`
+	Tags                   []string       `json:"tags,omitempty"`
 }
 
 // StockItemPage is a bounded single-request page over /api/stock/, used by
@@ -380,6 +383,22 @@ type Parameter struct {
 	ModelType string `json:"model_type"`
 	ModelID   int    `json:"model_id"`
 	Data      string `json:"data"`
+}
+
+// Tag is one row of InvenTree's shared cross-object tag taxonomy
+// (/api/tag/). The same Name/PK is reused across every object type that
+// references it; Slug is server-derived and read-only. Direct /api/tag/
+// mutation (rename/delete) is staff-only and out of MCP scope.
+type Tag struct {
+	PK   int    `json:"pk"`
+	Name string `json:"name"`
+	Slug string `json:"slug"`
+}
+
+type TagPage struct {
+	Count   int
+	Results []Tag
+	HasMore bool
 }
 
 type PartParameterPage struct {
@@ -466,20 +485,20 @@ type ManufacturerPart struct {
 
 // CompanyDetail is the approved complete scalar projection returned by the
 // exact company endpoint. API 530 `primary_address` remains a separate
-// structured-address lookup, and `parameters`/`tags` remain deferred to
-// their dedicated stories; see CompanyFieldInventory for the pinned
-// classification. Deferred/separate-lookup/write-only fields have no
-// corresponding Go field so json.Unmarshal silently drops them and they
-// never appear on re-marshal.
+// structured-address lookup, and `parameters` remains deferred to its own
+// dedicated story; see CompanyFieldInventory for the pinned classification.
+// Deferred/separate-lookup/write-only fields have no corresponding Go field
+// so json.Unmarshal silently drops them and they never appear on re-marshal.
 type CompanyDetail struct {
 	Company
-	Website string  `json:"website"`
-	Phone   string  `json:"phone"`
-	Email   *string `json:"email"`
-	Contact string  `json:"contact"`
-	Link    string  `json:"link"`
-	Notes   *string `json:"notes"`
-	TaxID   string  `json:"tax_id"`
+	Website string   `json:"website"`
+	Phone   string   `json:"phone"`
+	Email   *string  `json:"email"`
+	Contact string   `json:"contact"`
+	Link    string   `json:"link"`
+	Notes   *string  `json:"notes"`
+	TaxID   string   `json:"tax_id"`
+	Tags    []string `json:"tags,omitempty"`
 }
 
 type SupplierPartDetail struct {
@@ -504,17 +523,19 @@ type SupplierPartDetail struct {
 	InStock             *float64 `json:"in_stock"`
 	OnOrder             *float64 `json:"on_order"`
 	Updated             *string  `json:"updated"`
+	Tags                []string `json:"tags,omitempty"`
 }
 
 type ManufacturerPartDetail struct {
 	WebLinkFields
-	PK           int     `json:"pk"`
-	Part         int     `json:"part"`
-	Manufacturer int     `json:"manufacturer"`
-	MPN          *string `json:"MPN"`
-	Description  *string `json:"description"`
-	Link         *string `json:"link"`
-	Notes        *string `json:"notes"`
+	PK           int      `json:"pk"`
+	Part         int      `json:"part"`
+	Manufacturer int      `json:"manufacturer"`
+	MPN          *string  `json:"MPN"`
+	Description  *string  `json:"description"`
+	Link         *string  `json:"link"`
+	Notes        *string  `json:"notes"`
+	Tags         []string `json:"tags,omitempty"`
 }
 
 type CompanyPage struct {
@@ -622,6 +643,7 @@ type PurchaseOrderDetail struct {
 	Address          *int                   `json:"address"`
 	ProjectCode      *int                   `json:"project_code"`
 	ProjectCodeLabel string                 `json:"project_code_label"`
+	Tags             []string               `json:"tags,omitempty"`
 }
 
 type PurchaseOrderLineItem struct {

@@ -46,11 +46,12 @@ func TestCompanyDetailPreservesNullableFieldsAndOmitsUnapprovedData(t *testing.T
 	a := assert.New(t)
 
 	var company inventree.CompanyDetail
-	r.NoError(json.Unmarshal([]byte(`{"pk":10,"name":"Acme","description":"","website":"","phone":"","email":null,"currency":"AUD","contact":"","link":"","image":null,"active":true,"is_customer":false,"is_manufacturer":false,"is_supplier":true,"notes":null,"parts_supplied":0,"parts_manufactured":0,"primary_address":null,"tax_id":"","parameters":[],"tags":["deferred"]}`), &company))
+	r.NoError(json.Unmarshal([]byte(`{"pk":10,"name":"Acme","description":"","website":"","phone":"","email":null,"currency":"AUD","contact":"","link":"","image":null,"active":true,"is_customer":false,"is_manufacturer":false,"is_supplier":true,"notes":null,"parts_supplied":0,"parts_manufactured":0,"primary_address":null,"tax_id":"","parameters":[],"tags":[]}`), &company))
 	a.Equal(10, company.PK)
 	a.Nil(company.Email)
 	a.Nil(company.Notes)
-	assertCompanyJSONOmits(t, company, "primary_address", "parameters", "tags")
+	a.Empty(company.Tags)
+	assertCompanyJSONOmits(t, company, "primary_address", "parameters")
 
 	var populated inventree.CompanyDetail
 	r.NoError(json.Unmarshal([]byte(`{"pk":11,"name":"Acme","description":"","website":"","phone":"555-0100","email":"ap@example.com","currency":"AUD","contact":"Jane Doe","link":"","image":null,"active":true,"is_customer":true,"is_manufacturer":false,"is_supplier":false,"notes":"secret notes","parts_supplied":0,"parts_manufactured":0,"primary_address":{"pk":1},"tax_id":"ABN123","parameters":[{"pk":1}],"tags":["a"]}`), &populated))
@@ -61,7 +62,8 @@ func TestCompanyDetailPreservesNullableFieldsAndOmitsUnapprovedData(t *testing.T
 	a.Equal("ABN123", populated.TaxID)
 	r.NotNil(populated.Notes)
 	a.Equal("secret notes", *populated.Notes)
-	assertCompanyJSONOmits(t, populated, "primary_address", "parameters", "tags")
+	a.Equal([]string{"a"}, populated.Tags)
+	assertCompanyJSONOmits(t, populated, "primary_address", "parameters")
 }
 
 func companyModelFields(model any) map[string]bool {

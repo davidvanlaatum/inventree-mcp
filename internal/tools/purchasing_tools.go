@@ -142,20 +142,21 @@ type CreatePurchaseOrderInput struct {
 }
 
 type UpdatePurchaseOrderInput struct {
-	ID                int     `json:"id" jsonschema:"Existing purchase-order primary key."`
-	Description       *string `json:"description,omitempty" jsonschema:"Optional replacement order description, including an explicit empty string."`
-	Notes             *string `json:"notes,omitempty" jsonschema:"Optional replacement Markdown notes."`
-	ClearNotes        bool    `json:"clear_notes,omitempty" jsonschema:"Explicitly PATCH notes to null; mutually exclusive with notes."`
-	SupplierReference *string `json:"supplier_reference,omitempty" jsonschema:"Optional replacement supplier or external order identifier, including an explicit empty string."`
-	CreationDate      *string `json:"creation_date,omitempty" jsonschema:"Optional replacement creation date in YYYY-MM-DD form. Pinned InvenTree 1.5.0 behavior resets this to the current date rather than clearing it when sent null, so no clear flag is offered."`
-	StartDate         *string `json:"start_date,omitempty" jsonschema:"Optional replacement scheduled start date in YYYY-MM-DD form."`
-	ClearStartDate    bool    `json:"clear_start_date,omitempty" jsonschema:"Explicitly PATCH start_date to null; mutually exclusive with start_date."`
-	TargetDate        *string `json:"target_date,omitempty" jsonschema:"Optional replacement target delivery date in YYYY-MM-DD form."`
-	ClearTargetDate   bool    `json:"clear_target_date,omitempty" jsonschema:"Explicitly PATCH target_date to null; mutually exclusive with target_date."`
-	Currency          *string `json:"currency,omitempty" jsonschema:"Optional replacement order currency, including an explicit empty string to use the supplier default."`
-	DestinationID     *int    `json:"destination_id,omitempty" jsonschema:"Optional replacement receiving stock-location primary key."`
-	ClearDestination  bool    `json:"clear_destination,omitempty" jsonschema:"Explicitly PATCH destination to null; mutually exclusive with destination_id."`
-	Link              *string `json:"link,omitempty" jsonschema:"Optional replacement complete HTTP(S) link without userinfo; an explicit empty string clears it."`
+	ID                int      `json:"id" jsonschema:"Existing purchase-order primary key."`
+	Description       *string  `json:"description,omitempty" jsonschema:"Optional replacement order description, including an explicit empty string."`
+	Notes             *string  `json:"notes,omitempty" jsonschema:"Optional replacement Markdown notes."`
+	ClearNotes        bool     `json:"clear_notes,omitempty" jsonschema:"Explicitly PATCH notes to null; mutually exclusive with notes."`
+	SupplierReference *string  `json:"supplier_reference,omitempty" jsonschema:"Optional replacement supplier or external order identifier, including an explicit empty string."`
+	CreationDate      *string  `json:"creation_date,omitempty" jsonschema:"Optional replacement creation date in YYYY-MM-DD form. Pinned InvenTree 1.5.0 behavior resets this to the current date rather than clearing it when sent null, so no clear flag is offered."`
+	StartDate         *string  `json:"start_date,omitempty" jsonschema:"Optional replacement scheduled start date in YYYY-MM-DD form."`
+	ClearStartDate    bool     `json:"clear_start_date,omitempty" jsonschema:"Explicitly PATCH start_date to null; mutually exclusive with start_date."`
+	TargetDate        *string  `json:"target_date,omitempty" jsonschema:"Optional replacement target delivery date in YYYY-MM-DD form."`
+	ClearTargetDate   bool     `json:"clear_target_date,omitempty" jsonschema:"Explicitly PATCH target_date to null; mutually exclusive with target_date."`
+	Currency          *string  `json:"currency,omitempty" jsonschema:"Optional replacement order currency, including an explicit empty string to use the supplier default."`
+	DestinationID     *int     `json:"destination_id,omitempty" jsonschema:"Optional replacement receiving stock-location primary key."`
+	ClearDestination  bool     `json:"clear_destination,omitempty" jsonschema:"Explicitly PATCH destination to null; mutually exclusive with destination_id."`
+	Link              *string  `json:"link,omitempty" jsonschema:"Optional replacement complete HTTP(S) link without userinfo; an explicit empty string clears it."`
+	Tags              []string `json:"tags,omitempty" jsonschema:"Optional whole-array replacement of this purchase order's tags from InvenTree's shared tag taxonomy; an explicitly empty array clears every tag."`
 }
 
 type AddPurchaseOrderLineInput struct {
@@ -1341,6 +1342,9 @@ func updatePurchaseOrderPatch(input UpdatePurchaseOrderInput) (inventree.PatchFi
 	setNullableString(fields, "start_date", input.StartDate, input.ClearStartDate)
 	setNullableString(fields, "target_date", input.TargetDate, input.ClearTargetDate)
 	setNullableIntPatch(fields, "destination", input.DestinationID, input.ClearDestination)
+	if input.Tags != nil {
+		fields["tags"] = inventree.Set(input.Tags)
+	}
 	return fields, nil
 }
 

@@ -88,8 +88,9 @@ func TestReadMethodsUseExpectedEndpoints(t *testing.T) {
 				}
 				return err
 			},
-			wantPath: "/api/part/10/",
-			response: `{"pk":10,"name":"resistor","notes":"detail","creation_user":7,"minimum_stock":1.5,"revision_of":8,"revision_count":2,"variant_of":9}`,
+			wantPath:  "/api/part/10/",
+			wantQuery: url.Values{"tags": []string{"true"}},
+			response:  `{"pk":10,"name":"resistor","notes":"detail","creation_user":7,"minimum_stock":1.5,"revision_of":8,"revision_count":2,"variant_of":9}`,
 		},
 		{
 			name: "search part relations page",
@@ -200,7 +201,7 @@ func TestReadMethodsUseExpectedEndpoints(t *testing.T) {
 				_, err := client.GetCompanyDetail(ctx, 30)
 				return err
 			},
-			wantPath: "/api/company/30/", response: `{"pk":30,"name":"acme","notes":"private"}`,
+			wantPath: "/api/company/30/", wantQuery: url.Values{"tags": []string{"true"}}, response: `{"pk":30,"name":"acme","notes":"private"}`,
 		},
 		{
 			name: "search stock locations",
@@ -219,7 +220,7 @@ func TestReadMethodsUseExpectedEndpoints(t *testing.T) {
 				return err
 			},
 			wantPath:  "/api/stock/location/40/",
-			wantQuery: url.Values{"path_detail": []string{"true"}},
+			wantQuery: url.Values{"path_detail": []string{"true"}, "tags": []string{"true"}},
 			response:  `{"pk":40,"name":"bin"}`,
 		},
 		{
@@ -415,7 +416,7 @@ func TestReadMethodsUseExpectedEndpoints(t *testing.T) {
 				return err
 			},
 			wantPath:  "/api/stock/50/",
-			wantQuery: url.Values{"path_detail": []string{"true"}, "part_detail": []string{"false"}, "location_detail": []string{"false"}, "supplier_part_detail": []string{"false"}, "tests": []string{"false"}},
+			wantQuery: url.Values{"path_detail": []string{"true"}, "part_detail": []string{"false"}, "location_detail": []string{"false"}, "supplier_part_detail": []string{"false"}, "tests": []string{"false"}, "tags": []string{"true"}},
 			response:  `{"pk":50,"part":10,"location":40,"quantity":2,"status":10,"SKU":"SKU-50","MPN":null,"expired":true,"stale":false,"location_path":[{"pk":40,"name":"Bin"}]}`,
 		},
 		{
@@ -545,7 +546,7 @@ func TestReadMethodsUseExpectedEndpoints(t *testing.T) {
 				_, err := client.GetSupplierPartDetail(ctx, 100)
 				return err
 			},
-			wantPath: "/api/company/part/100/", response: `{"pk":100,"part":10,"supplier":30,"SKU":"abc","note":"private"}`,
+			wantPath: "/api/company/part/100/", wantQuery: url.Values{"tags": []string{"true"}}, response: `{"pk":100,"part":10,"supplier":30,"SKU":"abc","note":"private"}`,
 		},
 		{
 			name: "search manufacturer parts",
@@ -572,7 +573,7 @@ func TestReadMethodsUseExpectedEndpoints(t *testing.T) {
 				_, err := client.GetManufacturerPartDetail(ctx, 110)
 				return err
 			},
-			wantPath: "/api/company/part/manufacturer/110/", response: `{"pk":110,"part":10,"manufacturer":31,"MPN":"mfg-1"}`,
+			wantPath: "/api/company/part/manufacturer/110/", wantQuery: url.Values{"tags": []string{"true"}}, response: `{"pk":110,"part":10,"manufacturer":31,"MPN":"mfg-1"}`,
 		},
 		{
 			name: "search purchase orders",
@@ -593,6 +594,19 @@ func TestReadMethodsUseExpectedEndpoints(t *testing.T) {
 			},
 			wantPath: "/api/order/po/120/",
 			response: `{"pk":120,"reference":"PO-1","supplier":30}`,
+		},
+		{
+			name: "get purchase order detail",
+			call: func(ctx context.Context, client *Client) error {
+				record, err := client.GetPurchaseOrderDetail(ctx, 120)
+				if err == nil && (record.PK != 120 || len(record.Tags) != 1 || record.Tags[0] != "reference") {
+					return errors.New("purchase order detail did not preserve exact fields")
+				}
+				return err
+			},
+			wantPath:  "/api/order/po/120/",
+			wantQuery: url.Values{"tags": []string{"true"}},
+			response:  `{"pk":120,"reference":"PO-1","supplier":30,"tags":["reference"]}`,
 		},
 		{
 			name: "search purchase order lines",
@@ -632,6 +646,29 @@ func TestReadMethodsUseExpectedEndpoints(t *testing.T) {
 			},
 			wantPath: "/api/order/po-extra-line/140/",
 			response: `{"pk":140,"order":120,"reference":"CE05129","quantity":1}`,
+		},
+		{
+			name: "search tags unscoped",
+			call: func(ctx context.Context, client *Client) error {
+				page, err := client.SearchTagsPage(ctx, TagQuery{Search: "resistor", Limit: 20})
+				if err == nil && (page.Count != 1 || len(page.Results) != 1 || page.Results[0].PK != 5 || page.Results[0].Slug != "resistor") {
+					return errors.New("tag page did not preserve exact fields")
+				}
+				return err
+			},
+			wantPath:  "/api/tag/",
+			wantQuery: url.Values{"search": []string{"resistor"}, "limit": []string{"20"}},
+			response:  `{"count":1,"next":null,"previous":null,"results":[{"pk":5,"name":"resistor","slug":"resistor"}]}`,
+		},
+		{
+			name: "search tags model_type scoped defaults limit",
+			call: func(ctx context.Context, client *Client) error {
+				_, err := client.SearchTagsPage(ctx, TagQuery{ModelType: "part.part", Search: "resistor"})
+				return err
+			},
+			wantPath:  "/api/tag/",
+			wantQuery: url.Values{"model_type": []string{"part.part"}, "search": []string{"resistor"}, "limit": []string{"20"}},
+			response:  `{"count":1,"next":null,"previous":null,"results":[{"pk":5,"name":"resistor","slug":"resistor"}]}`,
 		},
 	}
 

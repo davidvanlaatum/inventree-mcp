@@ -58,6 +58,18 @@ type ObjectParameterQuery struct {
 	Offset     int
 }
 
+// TagQuery lists /api/tag/ rows, InvenTree's shared cross-object tag
+// taxonomy. ModelType optionally scopes results to tags currently referenced
+// by that qualified app.model value; /api/tag/ requires an explicit limit or
+// it returns a bare JSON array instead of the normal paginated shape, so
+// values() always sets one.
+type TagQuery struct {
+	ModelType string
+	Search    string
+	Limit     int
+	Offset    int
+}
+
 type CategoryParameterTemplateQuery struct {
 	CategoryID  int
 	FetchParent *bool
@@ -303,6 +315,28 @@ func (q ObjectParameterQuery) values() url.Values {
 	}
 	values.Set("model_type", q.ModelType)
 	setPagination(values, q.Limit, q.Offset)
+	return values
+}
+
+// defaultTagLimit backs TagQuery.values() when the caller passes a
+// non-positive Limit, since /api/tag/ requires an explicit limit query
+// parameter or it returns a bare JSON array instead of the normal
+// {count, results} paginated shape.
+const defaultTagLimit = 20
+
+func (q TagQuery) values() url.Values {
+	values := url.Values{}
+	if q.Search != "" {
+		values.Set("search", q.Search)
+	}
+	if q.ModelType != "" {
+		values.Set("model_type", q.ModelType)
+	}
+	limit := q.Limit
+	if limit <= 0 {
+		limit = defaultTagLimit
+	}
+	setPagination(values, limit, q.Offset)
 	return values
 }
 

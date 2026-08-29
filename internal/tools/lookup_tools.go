@@ -170,6 +170,7 @@ const (
 	GetProjectCodeToolName                    = "get_project_code"
 	AssignProjectCodeToolName                 = "assign_project_code"
 	GlobalSearchToolName                      = "global_search"
+	SearchTagsToolName                        = "search_tags"
 
 	defaultDownloadMaxBytes int64 = 5 * 1024 * 1024
 	maxDownloadMaxBytes     int64 = 25 * 1024 * 1024
@@ -247,6 +248,7 @@ var lookupToolNames = []string{
 	SearchProjectCodesToolName,
 	GetProjectCodeToolName,
 	GlobalSearchToolName,
+	SearchTagsToolName,
 }
 
 var writeToolNames = []string{
@@ -701,6 +703,7 @@ func registerLookupTools(server *mcp.Server, deps Dependencies) {
 	registerAddressLookupTools(server, deps)
 	registerProjectCodeLookupTools(server, deps)
 	registerGlobalSearchTool(server, deps)
+	addReadOnlyTool(server, deps, SearchTagsToolName, "Search tags", "Searches InvenTree's shared cross-object tag taxonomy, optionally scoped to one qualified app.model value.", searchTags(deps))
 }
 
 func addReadOnlyTool[In, Out any](server *mcp.Server, deps Dependencies, name string, title string, description string, handler mcp.ToolHandlerFor[In, Out]) {

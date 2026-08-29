@@ -358,10 +358,20 @@ func buildPartBulkPlanItem(ctx context.Context, client PartWriteClient, item Bul
 	if err != nil || before.PK != item.ID {
 		return partBulkPlanItem{bulkPlanItemBase: bulkPlanItemBase{ID: item.ID, FailReason: "id does not identify a readable part"}}
 	}
-	// BulkUpdatePartItem mirrors UpdatePartInput's exact field set (update_part
-	// has no fields that need excluding for bulk use), so this is a plain
-	// field-preserving type conversion, not a lossy or reordering one.
-	fields, err := partPatchFields(UpdatePartInput(item), before)
+	// BulkUpdatePartItem mirrors UpdatePartInput's field set except tags,
+	// which stays out of bulk scope per F-S91; this maps every other field
+	// through explicitly rather than relying on a type conversion.
+	fields, err := partPatchFields(UpdatePartInput{
+		ID: item.ID, Name: item.Name, Description: item.Description, CategoryID: item.CategoryID,
+		IPN: item.IPN, Units: item.Units, Active: item.Active, Assembly: item.Assembly,
+		Component: item.Component, Purchaseable: item.Purchaseable, Trackable: item.Trackable,
+		Virtual: item.Virtual, DefaultLocation: item.DefaultLocation, Consumable: item.Consumable,
+		DefaultExpiry: item.DefaultExpiry, IsTemplate: item.IsTemplate, Keywords: item.Keywords,
+		ClearKeywords: item.ClearKeywords, Link: item.Link, ClearLink: item.ClearLink,
+		Locked: item.Locked, MinimumStock: item.MinimumStock, MaximumStock: item.MaximumStock,
+		Revision: item.Revision, ClearRevision: item.ClearRevision, Salable: item.Salable,
+		Testable: item.Testable, Notes: item.Notes, ClearNotes: item.ClearNotes,
+	}, before)
 	if err != nil {
 		return partBulkPlanItem{bulkPlanItemBase: bulkPlanItemBase{ID: item.ID, FailReason: err.Error()}, Before: before}
 	}

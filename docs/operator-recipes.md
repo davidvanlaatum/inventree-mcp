@@ -214,6 +214,17 @@ HTTP mode accepts the same debug traffic log option as STDIO. HTTP debug entries
 - Bounds: `limit` (default 20, capped at 100) applies per requested object type, not to the call as a whole — requesting all eight types can return up to 800 records across all buckets combined.
 - HTTP note: `global_search` requires only `inventree.read` and is closed-world, non-destructive, and idempotent.
 
+## Discover And Assign Tags Across Object Types
+
+- Applies to: `part`, `company`, `stock_location`, `supplier_part`, `manufacturer_part`, and `purchase_order` for both discovery and assignment; `stock_item` for discovery only (`get_stock_item` exposes `tags`, but no `update_stock_item` tag-assignment tool exists yet). `build`, `sales_order`, `sales_order_shipment`, `return_order`, and `transfer_order` are not covered: inventree-mcp has no MCP tool surface for those object families yet.
+- Tags are a single InvenTree-wide shared taxonomy, not per-object-type duplicates: the same tag name assigned to a part, a stock location, and a company resolves to one shared row. Before adding a tag, call `search_tags` with a `search` term to find an existing tag rather than creating a near-duplicate through a differently spelled or cased name. Optionally scope with `model_type` to one of `part.part`, `company.company`, `stock.stocklocation`, `stock.stockitem`, `company.supplierpart`, `company.manufacturerpart`, or `order.purchaseorder`; InvenTree does not validate this value, so a misspelled or unsupported `model_type` returns zero rows silently rather than an error — when in doubt, search unscoped first.
+- Tag-name matching is case-insensitive server-side and InvenTree keeps the original stored casing; do not attempt to normalize case yourself, and do not treat a case-variant match as a different tag.
+- Read: each covered object's exact-read tool (`get_part`, `get_company`, `get_stock_location`, `get_stock_item`, `get_supplier_part`, `get_manufacturer_part`, `get_purchase_order`) includes a `tags` array. The corresponding concise `search_*`/list tools do not include `tags`, even where a search and exact-read tool share the same output type (`stock_location`).
+- Assign or clear: call the object's `update_*` tool with an ordinary `tags` field — a plain array of tag names. This is a whole-array replace, not an incremental add/remove: supply the complete intended tag set every time, including tags you want to keep. An explicit empty array (`tags: []`) clears every tag from the object; omitting `tags` entirely leaves existing tags untouched.
+- A `search_tags` match only proves the tag name exists somewhere in the shared taxonomy, not that any particular object currently references it — InvenTree never auto-deletes a tag row when its last reference is removed, so orphaned tag names can still appear in search results.
+- Direct tag administration (renaming or deleting a `Tag` row itself) is not exposed by any tool; it is staff-only in InvenTree and out of MCP scope.
+- HTTP note: `search_tags` requires only `inventree.read` and is closed-world, non-destructive, and idempotent. Each `update_*` tool's `tags` field uses that tool's existing `inventree.read`+`inventree.write` scopes and non-destructive annotations — assigning or clearing tags never requires `inventree.destructive`.
+
 ## Create Or Administer A Part Category
 
 - Required inputs: a stable category ID for reads/updates, or an explicit nonblank name for creation. Parent and default-location choices use stable IDs only.

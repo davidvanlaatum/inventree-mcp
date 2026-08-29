@@ -42,7 +42,7 @@ var SupplierPartFieldInventory = map[string]SourcingPartFieldClass{
 	"updated":                  SourcingPartFieldExposed,
 	"notes":                    SourcingPartFieldExposed,
 	"part_detail":              SourcingPartFieldSeparateLookup,
-	"tags":                     SourcingPartFieldDeferred,
+	"tags":                     SourcingPartFieldExposed,
 	"price_breaks":             SourcingPartFieldDeferred,
 	"parameters":               SourcingPartFieldSeparateLookup,
 }
@@ -60,6 +60,6 @@ var ManufacturerPartFieldInventory = map[string]SourcingPartFieldClass{
 	"link":                SourcingPartFieldExposed,
 	"barcode_hash":        SourcingPartFieldExcluded,
 	"notes":               SourcingPartFieldExposed,
-	"tags":                SourcingPartFieldDeferred,
+	"tags":                SourcingPartFieldExposed,
 	"parameters":          SourcingPartFieldSeparateLookup,
 }

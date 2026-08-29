@@ -55,13 +55,14 @@ type CreateStockLocationInput struct {
 }
 
 type UpdateStockLocationInput struct {
-	ID                int     `json:"id" jsonschema:"Stable stock-location primary key."`
-	Name              *string `json:"name,omitempty" jsonschema:"Optional replacement name; surrounding whitespace is removed."`
-	Description       *string `json:"description,omitempty" jsonschema:"Optional replacement description; an explicit empty string is preserved."`
-	CustomIcon        *string `json:"custom_icon,omitempty" jsonschema:"Optional replacement custom icon; an explicit empty string is preserved."`
-	ClearCustomIcon   bool    `json:"clear_custom_icon,omitempty" jsonschema:"Explicitly clear custom_icon; mutually exclusive with custom_icon."`
-	LocationTypeID    *int    `json:"location_type_id,omitempty" jsonschema:"Optional existing stock-location-type primary key."`
-	ClearLocationType bool    `json:"clear_location_type,omitempty" jsonschema:"Explicitly clear location_type; mutually exclusive with location_type_id."`
+	ID                int      `json:"id" jsonschema:"Stable stock-location primary key."`
+	Name              *string  `json:"name,omitempty" jsonschema:"Optional replacement name; surrounding whitespace is removed."`
+	Description       *string  `json:"description,omitempty" jsonschema:"Optional replacement description; an explicit empty string is preserved."`
+	CustomIcon        *string  `json:"custom_icon,omitempty" jsonschema:"Optional replacement custom icon; an explicit empty string is preserved."`
+	ClearCustomIcon   bool     `json:"clear_custom_icon,omitempty" jsonschema:"Explicitly clear custom_icon; mutually exclusive with custom_icon."`
+	LocationTypeID    *int     `json:"location_type_id,omitempty" jsonschema:"Optional existing stock-location-type primary key."`
+	ClearLocationType bool     `json:"clear_location_type,omitempty" jsonschema:"Explicitly clear location_type; mutually exclusive with location_type_id."`
+	Tags              []string `json:"tags,omitempty" jsonschema:"Optional whole-array replacement of this stock location's tags from InvenTree's shared tag taxonomy; an explicitly empty array clears every tag."`
 }
 
 type RestructureStockLocationInput struct {
@@ -792,6 +793,9 @@ func ordinaryLocationPatch(input UpdateStockLocationInput, before inventree.Stoc
 	}
 	setNullableStringPatch(fields, "custom_icon", input.CustomIcon, input.ClearCustomIcon)
 	setNullableIntPatch(fields, "location_type", input.LocationTypeID, input.ClearLocationType)
+	if input.Tags != nil {
+		fields["tags"] = inventree.Set(input.Tags)
+	}
 	if len(fields) == 0 {
 		return nil, "", errors.New("at least one ordinary metadata field is required")
 	}
@@ -919,6 +923,17 @@ func locationFieldsMatch(location inventree.StockLocation, fields inventree.Patc
 	}
 	checks := map[string]any{"name": location.Name, "description": location.Description, "parent": location.Parent, "owner": location.Owner, "custom_icon": location.CustomIcon, "structural": location.Structural, "external": location.External, "location_type": location.LocationType}
 	for key, raw := range patch {
+		// tags is compared as an unordered set: InvenTree's shared
+		// cross-object taxonomy gives no ordering guarantee on read-back,
+		// so an order-sensitive compare would spuriously fail postflight
+		// verification for a successful multi-tag write InvenTree reorders.
+		if key == "tags" {
+			var wantTags []string
+			if json.Unmarshal(raw, &wantTags) != nil || !tagSetsMatch(location.Tags, wantTags) {
+				return false
+			}
+			continue
+		}
 		actual, ok := checks[key]
 		if !ok {
 			return false

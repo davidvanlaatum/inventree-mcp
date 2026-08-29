@@ -4,12 +4,14 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"mime"
 	"mime/multipart"
 	"net/http"
 	"net/textproto"
+	"net/url"
 	"strconv"
 	"strings"
 )
@@ -550,9 +552,20 @@ func (c *Client) UpdatePurchaseOrder(ctx context.Context, id int, fields PatchFi
 	return out, err
 }
 
+// UpdatePurchaseOrderDetail PATCHes with the ?tags=true query flag, unlike
+// Client.Patch's other callers, because update_purchase_order returns this
+// PATCH response directly as its exact-read view instead of re-fetching
+// through GetPurchaseOrderDetail afterward.
 func (c *Client) UpdatePurchaseOrderDetail(ctx context.Context, id int, fields PatchFields) (PurchaseOrderDetail, error) {
 	var out PurchaseOrderDetail
-	err := c.Patch(ctx, fmt.Sprintf("/api/order/po/%d/", id), fields, &out)
+	if len(fields) == 0 {
+		return out, errors.New("InvenTree PATCH requires at least one field")
+	}
+	req, err := c.NewRequest(ctx, http.MethodPatch, fmt.Sprintf("/api/order/po/%d/", id), url.Values{"tags": []string{"true"}}, fields)
+	if err != nil {
+		return out, err
+	}
+	err = c.DoJSON(req, &out)
 	return out, err
 }
 

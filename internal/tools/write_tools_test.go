@@ -752,7 +752,7 @@ func TestPartWriteInputsExcludeReadOnlyAndDeferredSerializerFields(t *testing.T)
 		for _, field := range reflect.VisibleFields(schemaType) {
 			fields[jsonFieldName(field.Tag.Get("json"))] = true
 		}
-		for _, excluded := range []string{"creation_user", "responsible", "revision_of", "variant_of", "barcode_hash", "existing_image", "duplicate", "initial_stock", "initial_supplier", "copy_category_parameters", "tags", "price_breaks"} {
+		for _, excluded := range []string{"creation_user", "responsible", "revision_of", "variant_of", "barcode_hash", "existing_image", "duplicate", "initial_stock", "initial_supplier", "copy_category_parameters", "price_breaks"} {
 			a.False(fields[excluded], "%s must not expose %s", schemaType.Name(), excluded)
 		}
 	}
@@ -1624,6 +1624,33 @@ func TestUpdatePartPatchPreservesExplicitEmptyAndFalse(t *testing.T) {
 	r.NoError(err)
 	a.Equal(StatusOK, output.Status)
 	a.Equal(inventree.PatchFields{"description": inventree.Set(""), "active": inventree.Set(false)}, fake.lastUpdatePartFields)
+}
+
+func TestUpdatePartTagsDistinguishesOmittedFromExplicitClear(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+
+	fake := &fakeMilestoneLookupClient{}
+	_, output, err := updatePart(depsForFake(fake))(ctx, &mcp.CallToolRequest{}, UpdatePartInput{ID: 10, Tags: []string{"resistor", "smd"}})
+	r.NoError(err)
+	a.Equal(StatusOK, output.Status)
+	r.Contains(fake.lastUpdatePartFields, "tags")
+	a.Equal([]string{"resistor", "smd"}, fake.lastUpdatePartFields["tags"].Value())
+
+	fake = &fakeMilestoneLookupClient{}
+	_, output, err = updatePart(depsForFake(fake))(ctx, &mcp.CallToolRequest{}, UpdatePartInput{ID: 10, Tags: []string{}})
+	r.NoError(err)
+	a.Equal(StatusOK, output.Status)
+	r.Contains(fake.lastUpdatePartFields, "tags", "an explicit empty array must still PATCH tags to clear them")
+	a.Equal([]string{}, fake.lastUpdatePartFields["tags"].Value())
+
+	fake = &fakeMilestoneLookupClient{}
+	_, output, err = updatePart(depsForFake(fake))(ctx, &mcp.CallToolRequest{}, UpdatePartInput{ID: 10, Active: dvgoutils.Ptr(true)})
+	r.NoError(err)
+	a.Equal(StatusOK, output.Status)
+	a.NotContains(fake.lastUpdatePartFields, "tags", "an omitted tags field must leave existing tags untouched")
 }
 
 func TestCreatePartExactReadbackFailuresReturnURLFreeRecovery(t *testing.T) {
