@@ -148,7 +148,7 @@ func unsafeStockTransfer(out StockTransferOutput, item inventree.StockItem) (*mc
 	switch {
 	case item.Location == nil:
 		return clarify("Which currently located stock item should be transferred?", "location", "the selected stock item has no current source location, so a complete source-to-destination plan cannot be prepared")
-	case item.Serial != nil:
+	case stockItemHasSerial(item):
 		retry["serial"] = item.Serial
 		return clarify("How should the serialized stock item be moved?", "serial", "serialized stock is outside the complete ordinary-stock transfer contract")
 	case !item.InStock:

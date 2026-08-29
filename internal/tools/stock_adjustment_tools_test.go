@@ -184,6 +184,38 @@ func TestStockAdjustmentRefusesSerializedQuantityChanges(t *testing.T) {
 	a.Zero(fake.countCalls)
 }
 
+func TestStockAdjustmentAcceptsEmptyOrWhitespaceSerial(t *testing.T) {
+	t.Parallel()
+	empty := ""
+	whitespace := "   "
+
+	for _, tc := range []struct {
+		name   string
+		serial *string
+	}{
+		{name: "nil serial", serial: nil},
+		{name: "empty serial", serial: &empty},
+		{name: "whitespace-only serial", serial: &whitespace},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r := require.New(t)
+			a := assert.New(t)
+			ctx, _, _ := testhandler.SetupTestHandler(t)
+			fake := &fakeStockAdjustmentClient{item: inventree.StockItem{PK: 50, Part: 10, Quantity: 1, Status: stockStatusOK, Serial: tc.serial}}
+
+			_, relative, err := adjustStockQuantity(stockAdjustmentDeps(fake))(ctx, &mcp.CallToolRequest{}, AdjustStockQuantityInput{DryRun: true, StockItemID: 50, Delta: 1, Reason: "count"})
+			r.NoError(err)
+			a.Equal(StatusOK, relative.Status)
+			r.Nil(relative.Clarification)
+
+			_, absolute, err := stocktakeAdjustment(stockAdjustmentDeps(fake))(ctx, &mcp.CallToolRequest{}, StocktakeAdjustmentInput{DryRun: true, StockItemID: 50, ObservedQuantity: 2, Reason: "count"})
+			r.NoError(err)
+			a.Equal(StatusOK, absolute.Status)
+			r.Nil(absolute.Clarification)
+		})
+	}
+}
+
 func TestSetStockStatusFlagsWriteOffAndRequiresSupportedStatus(t *testing.T) {
 	t.Parallel()
 	r := require.New(t)

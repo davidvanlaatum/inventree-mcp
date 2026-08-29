@@ -62,7 +62,7 @@ func stockDepletionContext(item inventree.StockItem) *StockDepletionContext {
 func unsafeStockDepletion(out StockAdjustmentOutput, item inventree.StockItem) (*mcp.CallToolResult, StockAdjustmentOutput, bool) {
 	retry := map[string]any{"stock_item_id": item.PK, "dry_run": true}
 	switch {
-	case item.Serial != nil:
+	case stockItemHasSerial(item):
 		retry["serial"] = item.Serial
 		result, clarified, _ := stockClarification(out, "How should the serialized stock item be handled?", "serial", "serialized stock cannot be depleted through this deletion workflow", "stock_item_id", retry)
 		return result, clarified, true

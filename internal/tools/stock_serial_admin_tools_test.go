@@ -81,6 +81,32 @@ func TestAssignStockSerialRejectsBlankSerialAlreadySerializedAndMultiQuantity(t 
 	a.Equal("quantity", multi.Clarification.Field)
 }
 
+func TestAssignStockSerialTreatsEmptyOrWhitespaceExistingSerialAsUnserialized(t *testing.T) {
+	t.Parallel()
+	empty := ""
+	whitespace := "   "
+
+	for _, tc := range []struct {
+		name   string
+		serial *string
+	}{
+		{name: "empty existing serial", serial: &empty},
+		{name: "whitespace-only existing serial", serial: &whitespace},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r := require.New(t)
+			a := assert.New(t)
+			ctx, _, _ := testhandler.SetupTestHandler(t)
+			fake := &fakeStockAdjustmentClient{item: safeStockItem(50, 10, 1, tc.serial), part: inventree.Part{PK: 10, Trackable: true}}
+
+			_, planned, err := assignStockSerial(stockAdjustmentDeps(fake))(ctx, &mcp.CallToolRequest{}, AssignStockSerialInput{DryRun: true, StockItemID: 50, Serial: "1001", Reason: "assign serial for new receipt"})
+			r.NoError(err)
+			a.Equal(StatusOK, planned.Status)
+			r.Nil(planned.Clarification)
+		})
+	}
+}
+
 func TestAssignStockSerialRejectsNonTrackablePartAndDuplicateSerial(t *testing.T) {
 	t.Parallel()
 	r := require.New(t)
@@ -312,6 +338,32 @@ func TestSetStockSerialRejectsAmbiguousInputUnserializedAndNoOp(t *testing.T) {
 	r.NoError(err)
 	a.Equal(StatusClarificationRequired, noOp.Status)
 	a.Contains(noOp.Clarification.Reason, "already has this serial number")
+}
+
+func TestSetStockSerialTreatsEmptyOrWhitespaceExistingSerialAsUnserialized(t *testing.T) {
+	t.Parallel()
+	empty := ""
+	whitespace := "   "
+
+	for _, tc := range []struct {
+		name   string
+		serial *string
+	}{
+		{name: "empty existing serial", serial: &empty},
+		{name: "whitespace-only existing serial", serial: &whitespace},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r := require.New(t)
+			a := assert.New(t)
+			ctx, _, _ := testhandler.SetupTestHandler(t)
+			deps := stockAdjustmentDeps(&fakeStockAdjustmentClient{item: inventree.StockItem{PK: 50, Part: 10, Quantity: 1, Serial: tc.serial}})
+
+			_, unserialized, err := setStockSerial(deps)(ctx, &mcp.CallToolRequest{}, SetStockSerialInput{DryRun: true, StockItemID: 50, Serial: "5", Reason: "fix"})
+			r.NoError(err)
+			a.Equal(StatusClarificationRequired, unserialized.Status)
+			a.Contains(unserialized.Clarification.Reason, "no serial number yet")
+		})
+	}
 }
 
 // TestUnsafeStockSerialChangeRejectsEveryUnsafeRelationshipState exercises

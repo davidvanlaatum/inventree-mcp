@@ -106,6 +106,35 @@ func TestDepleteStockItemRejectsUnsafeStates(t *testing.T) {
 	}
 }
 
+func TestDepleteStockItemAcceptsEmptyOrWhitespaceSerial(t *testing.T) {
+	t.Parallel()
+	empty := ""
+	whitespace := "   "
+
+	for _, tc := range []struct {
+		name   string
+		serial *string
+	}{
+		{name: "nil serial", serial: nil},
+		{name: "empty serial", serial: &empty},
+		{name: "whitespace-only serial", serial: &whitespace},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r := require.New(t)
+			a := assert.New(t)
+			ctx, _, _ := testhandler.SetupTestHandler(t)
+			item := safeDepletionStockItem(2)
+			item.Serial = tc.serial
+			fake := &fakeStockAdjustmentClient{item: item}
+
+			_, output, err := depleteStockItem(stockAdjustmentDeps(fake))(ctx, &mcp.CallToolRequest{}, DepleteStockItemInput{DryRun: true, StockItemID: 50, Reason: "cleanup"})
+			r.NoError(err)
+			a.Equal(StatusOK, output.Status)
+			r.Nil(output.Clarification)
+		})
+	}
+}
+
 func TestDepleteStockItemRejectsNonPositiveOrUnrepresentableCurrentQuantity(t *testing.T) {
 	t.Parallel()
 	for _, quantity := range []float64{0, -1, 0.0000000001} {

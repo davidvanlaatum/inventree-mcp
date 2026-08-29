@@ -44,7 +44,7 @@ func assignStockSerial(deps Dependencies) mcp.ToolHandlerFor[AssignStockSerialIn
 			if serial == "" || len(serial) > maxStockSerialLength {
 				return stockClarification(out, "What nonblank serial number (up to 100 characters) should be assigned?", "serial", "serial must be nonblank and fit the InvenTree 100-character limit", "serial", map[string]any{"stock_item_id": input.StockItemID})
 			}
-			if before.Serial != nil {
+			if stockItemHasSerial(before) {
 				return stockClarification(out, "How should the existing serial number be changed instead?", "serial", "the selected stock item already has a serial number; use set_stock_serial to replace or clear it", "stock_item_id", map[string]any{"stock_item_id": input.StockItemID, "serial": *before.Serial})
 			}
 			if before.Quantity != 1 {
@@ -90,7 +90,7 @@ func setStockSerial(deps Dependencies) mcp.ToolHandlerFor[SetStockSerialInput, S
 			if !input.ClearSerial && len(serial) > maxStockSerialLength {
 				return stockClarification(out, "What replacement serial number (up to 100 characters) should be assigned?", "serial", "serial must fit the InvenTree 100-character limit", "serial", map[string]any{"stock_item_id": input.StockItemID})
 			}
-			if before.Serial == nil {
+			if !stockItemHasSerial(before) {
 				return stockClarification(out, "How should this unserialized stock item receive its first serial number instead?", "serial", "the selected stock item has no serial number yet; use assign_stock_serial instead", "stock_item_id", map[string]any{"stock_item_id": input.StockItemID})
 			}
 			if !input.ClearSerial && serial == *before.Serial {
@@ -180,7 +180,7 @@ func firstSerialConflict(items []inventree.StockItem, excludeStockItemID int) in
 		if item.PK == excludeStockItemID {
 			continue
 		}
-		if item.Serial != nil && *item.Serial != "" {
+		if stockItemHasSerial(item) {
 			return item.PK
 		}
 	}
