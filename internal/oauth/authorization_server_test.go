@@ -668,6 +668,7 @@ type fakeCredentialBroker struct {
 	validateCalls int
 	createCalls   int
 	validateFunc  func(context.Context, Credential) (string, error)
+	createFunc    func(context.Context, Credential, string) (Credential, error)
 	tokenNames    []string
 }
 
@@ -679,9 +680,12 @@ func (b *fakeCredentialBroker) ValidateCredential(ctx context.Context, credentia
 	return b.subject, b.validateErr
 }
 
-func (b *fakeCredentialBroker) CreateDedicatedCredential(_ context.Context, _ Credential, tokenName string) (Credential, error) {
+func (b *fakeCredentialBroker) CreateDedicatedCredential(ctx context.Context, credential Credential, tokenName string) (Credential, error) {
 	b.createCalls++
 	b.tokenNames = append(b.tokenNames, tokenName)
+	if b.createFunc != nil {
+		return b.createFunc(ctx, credential, tokenName)
+	}
 	return b.dedicated, b.createErr
 }
 

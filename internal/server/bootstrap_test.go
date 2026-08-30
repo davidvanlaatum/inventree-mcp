@@ -1,0 +1,149 @@
+package server
+
+import (
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"strconv"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/davidvanlaatum/dvgoutils/logging/testhandler"
+	"github.com/davidvanlaatum/inventree-mcp/internal/config"
+	"github.com/davidvanlaatum/inventree-mcp/internal/oauth"
+	"github.com/davidvanlaatum/inventree-mcp/internal/tools"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+)
+
+func fakeBootstrapInvenTreeServer(t *testing.T) *httptest.Server {
+	t.Helper()
+	var tokenCounter int
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch req.URL.Path {
+		case "/api/user/me/":
+			if req.Header.Get("Authorization") == "" {
+				w.WriteHeader(http.StatusUnauthorized)
+				return
+			}
+			_, _ = w.Write([]byte(`{"pk":1,"username":"operator","email":"operator@example.test"}`))
+		case "/api/user/me/token/":
+			tokenCounter++
+			name := req.URL.Query().Get("name")
+			_, _ = w.Write([]byte(`{"token":"dedicated-secret-` + strconv.Itoa(tokenCounter) + `","name":"` + name + `","expiry":null}`))
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+}
+
+func bootstrapTestConfig(t *testing.T, inventreeURL string) config.Config {
+	t.Helper()
+	return config.Config{
+		Transport:                 config.TransportHTTP,
+		Environment:               config.EnvironmentProduction,
+		Path:                      "/mcp",
+		InvenTreeURL:              inventreeURL,
+		InvenTreeTimeout:          5 * time.Second,
+		OAuthIssuerURL:            "https://auth.example.test",
+		OAuthResourceURL:          "https://mcp.example.test/mcp",
+		OAuthClientIDs:            []string{"https://chatgpt.com/client-metadata"},
+		OAuthKeyring:              oauth.KeyringConfig{Keys: []oauth.KeyConfig{{ID: "current", MaterialBase64: "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY", State: oauth.KeyStateActive}}},
+		BootstrapEnabled:          true,
+		BootstrapEnvelopeLifetime: 24 * time.Hour,
+	}
+}
+
+func TestHTTPMuxRegistersBootstrapRouteOnlyWhenEnabled(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	inventreeServer := fakeBootstrapInvenTreeServer(t)
+	defer inventreeServer.Close()
+
+	enabledCfg := bootstrapTestConfig(t, inventreeServer.URL)
+	handler, err := HTTPMux(ctx, enabledCfg, New(tools.Dependencies{}))
+	r.NoError(err)
+	req := httptest.NewRequest(http.MethodPost, "/mcp/auth/bootstrap", nil)
+	req.Header.Set("Authorization", "Token supplied-token")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	r.Equal(http.StatusOK, rec.Code)
+
+	disabledCfg := enabledCfg
+	disabledCfg.BootstrapEnabled = false
+	disabledHandler, err := HTTPMux(ctx, disabledCfg, New(tools.Dependencies{}))
+	r.NoError(err)
+	disabledReq := httptest.NewRequest(http.MethodPost, "/mcp/auth/bootstrap", nil)
+	disabledReq.Header.Set("Authorization", "Token supplied-token")
+	disabledRec := httptest.NewRecorder()
+	disabledHandler.ServeHTTP(disabledRec, disabledReq)
+	r.Equal(http.StatusNotFound, disabledRec.Code)
+}
+
+func TestBootstrapEndToEndThroughMuxMintsUsableEnvelope(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	inventreeServer := fakeBootstrapInvenTreeServer(t)
+	defer inventreeServer.Close()
+
+	cfg := bootstrapTestConfig(t, inventreeServer.URL)
+	deps := tools.Dependencies{
+		EnableWriteTools:    true,
+		AuthorizationMode:   tools.AuthorizationModeOAuth,
+		ResourceMetadataURL: cfg.OAuthProtectedResourceMetadataURL(),
+		ClientFromContext:   OAuthClientFromContext(inventreeServer.URL, inventreeServer.Client()),
+	}
+	handler, err := HTTPMux(ctx, cfg, New(deps))
+	r.NoError(err)
+
+	bootstrapReq := httptest.NewRequest(http.MethodPost, "/mcp/auth/bootstrap", nil)
+	bootstrapReq.Header.Set("Authorization", "Token supplied-token")
+	bootstrapRec := httptest.NewRecorder()
+	handler.ServeHTTP(bootstrapRec, bootstrapReq)
+	r.Equal(http.StatusOK, bootstrapRec.Code)
+
+	var bootstrapBody map[string]any
+	r.NoError(json.NewDecoder(bootstrapRec.Body).Decode(&bootstrapBody))
+	mcpToken, ok := bootstrapBody["mcp_token"].(string)
+	r.True(ok)
+	a.NotEmpty(mcpToken)
+
+	listRecorder := postMCPWithBearer(t, handler, mcpToken, `{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}`)
+	r.Equal(http.StatusOK, listRecorder.Code)
+	listedTools := decodeListedTools(t, listRecorder.Body.Bytes())
+	a.NotNil(listedTools[tools.CreatePartToolName])
+
+	rawUpstream := postMCPWithBearer(t, handler, "supplied-token", `{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}`)
+	r.Equal(http.StatusUnauthorized, rawUpstream.Code)
+	a.NotContains(rawUpstream.Body.String(), tools.CreatePartToolName)
+}
+
+func TestBootstrapRejectsInvalidCredentialThroughMux(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	inventreeServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+	}))
+	defer inventreeServer.Close()
+
+	cfg := bootstrapTestConfig(t, inventreeServer.URL)
+	handler, err := HTTPMux(ctx, cfg, New(tools.Dependencies{}))
+	r.NoError(err)
+
+	req := httptest.NewRequest(http.MethodPost, "/mcp/auth/bootstrap", nil)
+	req.Header.Set("Authorization", "Token bad-token")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	r.Equal(http.StatusUnauthorized, rec.Code)
+	r.False(strings.Contains(rec.Body.String(), "bad-token"))
+}

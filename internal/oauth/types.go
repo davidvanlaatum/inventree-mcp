@@ -14,10 +14,11 @@ const (
 	TokenTypeCode            = "authorization_code"
 	TokenTypeBootstrapAccess = "bootstrap_access"
 
-	DefaultAccessTokenLifetime  = 15 * time.Minute
-	DefaultRefreshTokenLifetime = 30 * 24 * time.Hour
-	DefaultSessionLifetime      = 90 * 24 * time.Hour
-	DefaultCodeLifetime         = 5 * time.Minute
+	DefaultAccessTokenLifetime       = 15 * time.Minute
+	DefaultRefreshTokenLifetime      = 30 * 24 * time.Hour
+	DefaultSessionLifetime           = 90 * 24 * time.Hour
+	DefaultCodeLifetime              = 5 * time.Minute
+	DefaultBootstrapEnvelopeLifetime = 30 * 24 * time.Hour
 
 	CredentialSourceDedicated = "dedicated_token"
 	CredentialSourceSupplied  = "supplied_token"
