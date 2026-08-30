@@ -37,6 +37,20 @@ func TestPackagedServiceUsesConfigFile(t *testing.T) {
 	a.NotContains(text, "EnvironmentFile=")
 }
 
+func TestPackagedServiceRoutesApplicationLogsToJournal(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+
+	unit, err := os.ReadFile("inventree-mcp.service")
+	r.NoError(err)
+	text := string(unit)
+
+	a.Contains(text, "StandardOutput=journal\n")
+	a.Contains(text, "StandardError=journal\n")
+	a.Contains(text, "SyslogIdentifier=inventree-mcp\n")
+}
+
 func TestPackagedServiceRunsAsNonRootIdentity(t *testing.T) {
 	t.Parallel()
 	r := require.New(t)

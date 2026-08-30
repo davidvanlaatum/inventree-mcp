@@ -6,7 +6,7 @@ Direct GitHub archive installations use a separate explicit adoption marker adja
 
 ## Packaged Configuration
 
-The `deb`, `rpm`, and `apk` packages install a commented YAML configuration template at `/etc/inventree-mcp/config.yml` (mode `0600`, `noreplace`, owned by the `inventree-mcp` system user/group), and the packaged systemd unit runs `inventree-mcp serve --config /etc/inventree-mcp/config.yml` as that non-root `inventree-mcp` user. `postinstall.sh` restarts an already-enabled/active service unconditionally on upgrade; if `config.yml` is still the placeholder template at that point, startup validation fails closed and the service stays down until the operator finishes configuring it.
+The `deb`, `rpm`, and `apk` packages install a commented YAML configuration template at `/etc/inventree-mcp/config.yml` (mode `0600`, `noreplace`, owned by the `inventree-mcp` system user/group), and the packaged systemd unit runs `inventree-mcp serve --config /etc/inventree-mcp/config.yml` as that non-root `inventree-mcp` user. The unit routes both output streams explicitly to journald with the `inventree-mcp` identifier, so startup failures are visible in `systemctl status` and `journalctl -u inventree-mcp.service`. `postinstall.sh` restarts an already-enabled/active service unconditionally on upgrade; if `config.yml` is still the placeholder template at that point, startup validation fails closed and the service stays down until the operator finishes configuring it.
 
 ## Non-Root Service Identity
 
