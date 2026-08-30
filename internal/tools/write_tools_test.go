@@ -2340,7 +2340,7 @@ func TestSetPartParametersUpdatesExistingAndCreatesMissing(t *testing.T) {
 	r.NoError(err)
 	a.Equal(StatusOK, output.Status)
 	r.Len(output.Record, 2)
-	a.Equal(inventree.CategoryParameterTemplateQuery{CategoryID: categoryID}, fake.lastSearchCategoryParameterTemplatesQuery)
+	a.Equal(inventree.CategoryParameterTemplateQuery{CategoryID: categoryID, FetchParent: dvgoutils.Ptr(true), Limit: 100}, fake.lastSearchCategoryParameterTemplatesQuery)
 	a.Equal(inventree.PartParameterQuery{PartID: 10}, fake.lastSearchPartParametersQuery)
 	a.Equal(inventree.PatchFields{"data": inventree.Set("0")}, fake.lastUpdatePartParameterFields)
 	a.Equal(inventree.NewPartParameter(10, 71, ""), fake.lastCreatePartParameter)
@@ -2407,6 +2407,111 @@ func TestSetPartParametersAsksForAmbiguousTemplate(t *testing.T) {
 	a.Equal(true, output.Clarification.Candidates[0].Fields["category_linked"])
 	a.Equal(80, output.Clarification.Candidates[0].Fields["category_link_id"])
 	a.Equal("old", output.Clarification.Candidates[0].Fields["existing_value"])
+	a.False(fake.createdPartParameter)
+	a.Nil(fake.lastUpdatePartParameterFields)
+}
+
+func TestSetPartParametersAcceptsTemplateInheritedFromParentCategory(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	parentCategoryID := 100
+	childCategoryID := 101
+	templateID := 200
+	fake := &fakeMilestoneLookupClient{
+		part: inventree.Part{PK: 1001, Category: &childCategoryID},
+		parameters: []inventree.Parameter{
+			{PK: 900, Template: templateID, ModelType: "part.part", ModelID: 1001, Data: ""},
+		},
+		parameterTemplates: []inventree.ParameterTemplate{
+			{PK: templateID, Name: "Type", Enabled: true},
+		},
+		categoryParameterTemplates: []inventree.CategoryParameterTemplate{
+			{PK: 300, Category: parentCategoryID, Template: templateID},
+		},
+		inheritedCategoryIDs: []int{parentCategoryID},
+	}
+
+	_, output, err := setPartParameters(depsForFake(fake))(ctx, &mcp.CallToolRequest{}, SetPartParametersInput{
+		PartID:     1001,
+		Parameters: []ParameterSetInput{{TemplateID: &templateID, Value: dvgoutils.Ptr("3.5mm TRRS female audio jack")}},
+	})
+
+	r.NoError(err)
+	a.Equal(StatusOK, output.Status)
+	r.Len(output.Record, 1)
+	a.Equal(900, output.Record[0].PK)
+	a.False(fake.createdPartParameter)
+	a.Equal(inventree.PatchFields{"data": inventree.Set("3.5mm TRRS female audio jack")}, fake.lastUpdatePartParameterFields)
+}
+
+func TestSetPartParametersPrefersExactCategoryLinkOverAncestorLink(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	parentCategoryID := 100
+	childCategoryID := 101
+	fake := &fakeMilestoneLookupClient{
+		part: inventree.Part{PK: 10, Category: &childCategoryID},
+		parameterTemplates: []inventree.ParameterTemplate{
+			{PK: 70, Name: "Type", Enabled: true},
+			{PK: 71, Name: "Type", Enabled: true},
+		},
+		categoryParameterTemplates: []inventree.CategoryParameterTemplate{
+			// Template 70 is linked at both the ancestor (lower PK, would sort first
+			// without preferExactCategoryLinks) and the part's own category.
+			{PK: 40, Category: parentCategoryID, Template: 70, DefaultValue: "parent"},
+			{PK: 81, Category: childCategoryID, Template: 70, DefaultValue: "child"},
+			{PK: 82, Category: childCategoryID, Template: 71},
+		},
+		inheritedCategoryIDs: []int{parentCategoryID},
+	}
+
+	_, output, err := setPartParameters(depsForFake(fake))(ctx, &mcp.CallToolRequest{}, SetPartParametersInput{
+		PartID:     10,
+		Parameters: []ParameterSetInput{{Name: "Type", Value: dvgoutils.Ptr("x")}},
+	})
+
+	r.NoError(err)
+	a.Equal(StatusClarificationRequired, output.Status)
+	r.NotNil(output.Clarification)
+	r.Len(output.Clarification.Candidates, 2)
+	var template70 *ClarificationCandidate
+	for i, candidate := range output.Clarification.Candidates {
+		if candidate.ID == "70" {
+			template70 = &output.Clarification.Candidates[i]
+		}
+	}
+	r.NotNil(template70, "expected a candidate for template 70")
+	a.Equal(81, template70.Fields["category_link_id"])
+	a.Equal(childCategoryID, template70.Fields["category_id"])
+	a.Equal("child", template70.Fields["default_value"])
+}
+
+func TestSetPartParametersAsksForNarrowerCategoryWhenScanLimitExceeded(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	categoryID := 20
+	templateID := 70
+	fake := &fakeMilestoneLookupClient{
+		part:                               inventree.Part{PK: 10, Category: &categoryID},
+		categoryParameterScanLimitExceeded: true,
+	}
+
+	_, output, err := setPartParameters(depsForFake(fake))(ctx, &mcp.CallToolRequest{}, SetPartParametersInput{
+		PartID:     10,
+		Parameters: []ParameterSetInput{{TemplateID: &templateID, Value: dvgoutils.Ptr("x")}},
+	})
+
+	r.NoError(err)
+	a.Equal(StatusClarificationRequired, output.Status)
+	r.NotNil(output.Clarification)
+	a.Equal("category_id", output.Clarification.Field)
+	a.True(output.Clarification.HardError)
 	a.False(fake.createdPartParameter)
 	a.Nil(fake.lastUpdatePartParameterFields)
 }

@@ -294,26 +294,6 @@ func (c *Client) GetParameterTemplate(ctx context.Context, id int) (ParameterTem
 	return out, err
 }
 
-func (c *Client) SearchCategoryParameterTemplates(ctx context.Context, query CategoryParameterTemplateQuery) ([]CategoryParameterTemplate, error) {
-	nextQuery := query.values()
-	var categoryFilter string
-	if nextQuery != nil {
-		categoryFilter = nextQuery.Get("category")
-		nextQuery.Del("category")
-	}
-	records, err := listAll[CategoryParameterTemplate](ctx, c, "/api/part/category/parameters/", nextQuery)
-	if err != nil || categoryFilter == "" {
-		return records, err
-	}
-	filtered := records[:0]
-	for _, record := range records {
-		if fmt.Sprint(record.Category) == categoryFilter {
-			filtered = append(filtered, record)
-		}
-	}
-	return filtered, nil
-}
-
 func (c *Client) SearchCategoryParameterTemplatesPage(ctx context.Context, query CategoryParameterTemplateQuery) (Page[CategoryParameterTemplate], error) {
 	return listPage[CategoryParameterTemplate](ctx, c, "/api/part/category/parameters/", query.values())
 }

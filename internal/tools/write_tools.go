@@ -6,9 +6,11 @@ import (
 	"fmt"
 	"math"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 
+	"github.com/davidvanlaatum/dvgoutils"
 	"github.com/davidvanlaatum/inventree-mcp/internal/inventree"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -57,10 +59,12 @@ type ParameterWriteClient interface {
 	SearchPartParameters(context.Context, inventree.PartParameterQuery) ([]inventree.Parameter, error)
 	SearchParameterTemplates(context.Context, inventree.SearchQuery) ([]inventree.ParameterTemplate, error)
 	GetParameterTemplate(context.Context, int) (inventree.ParameterTemplate, error)
-	SearchCategoryParameterTemplates(context.Context, inventree.CategoryParameterTemplateQuery) ([]inventree.CategoryParameterTemplate, error)
+	SearchCategoryParameterTemplatesPage(context.Context, inventree.CategoryParameterTemplateQuery) (inventree.Page[inventree.CategoryParameterTemplate], error)
 	CreatePartParameter(context.Context, inventree.ParameterCreate) (inventree.Parameter, error)
 	UpdatePartParameter(context.Context, int, inventree.PatchFields) (inventree.Parameter, error)
 }
+
+var _ ParameterWriteClient = (*inventree.Client)(nil)
 
 type PartUpsertWorkflowClient interface {
 	SearchParts(context.Context, inventree.SearchQuery) ([]inventree.Part, error)
@@ -504,10 +508,14 @@ func setPartParameters(deps Dependencies) mcp.ToolHandlerFor[SetPartParametersIn
 			if part.Category == nil || *part.Category <= 0 {
 				return hardClarification[[]inventree.Parameter]("Which category parameter link should authorize these parameters?", "category_id", "part has no category for category parameter link validation", "category_id", map[string]any{"part_id": input.PartID})
 			}
-			links, err := client.SearchCategoryParameterTemplates(ctx, inventree.CategoryParameterTemplateQuery{CategoryID: *part.Category})
+			links, err := scanCategoryParameterLinks(ctx, client, inventree.CategoryParameterTemplateQuery{CategoryID: *part.Category, FetchParent: dvgoutils.Ptr(true)}, newParameterScanBudget())
 			if err != nil {
+				if errors.Is(err, errParameterAuditScanLimit) {
+					return hardClarification[[]inventree.Parameter]("Which narrower category should be used to authorize these parameters?", "category_id", "category-link preflight exceeds the shared 1,000 request-and-record safety budget", "category_id", map[string]any{"part_id": input.PartID})
+				}
 				return nil, WriteRecordOutput[[]inventree.Parameter]{}, err
 			}
+			preferExactCategoryLinks(links, *part.Category)
 			existing, err := client.SearchPartParameters(ctx, inventree.PartParameterQuery{PartID: input.PartID})
 			if err != nil {
 				return nil, WriteRecordOutput[[]inventree.Parameter]{}, err
@@ -1496,7 +1504,7 @@ func resolveParameterTemplate(ctx context.Context, client ParameterWriteClient, 
 			return 0, TextResult(StatusClarificationRequired), WriteRecordOutput[[]inventree.Parameter]{Status: StatusClarificationRequired, Clarification: &clarification}, false, nil
 		}
 		if !categoryLinksTemplate(links, *input.TemplateID) {
-			clarification := NewClarification("Which existing category-linked template should be used?", "template_id", "template is not linked to the part category and new category links are out of scope", "template_id", true, nil, retryParameterValues(0, input))
+			clarification := NewClarification("Which existing category-linked template should be used?", "template_id", "template is not linked to the part category or any ancestor category, and new category links are out of scope", "template_id", true, nil, retryParameterValues(0, input))
 			return 0, TextResult(StatusClarificationRequired), WriteRecordOutput[[]inventree.Parameter]{Status: StatusClarificationRequired, Clarification: &clarification}, false, nil
 		}
 		return *input.TemplateID, nil, WriteRecordOutput[[]inventree.Parameter]{}, true, nil
@@ -1522,7 +1530,7 @@ func resolveParameterTemplate(ctx context.Context, client ParameterWriteClient, 
 		clarification := NewClarification("Which enabled parameter template should be used?", "template", "matching category-linked templates are disabled", "template_id", true, templateCandidates(disabled, links, existing), retryParameterValues(0, input))
 		return 0, TextResult(StatusClarificationRequired), WriteRecordOutput[[]inventree.Parameter]{Status: StatusClarificationRequired, Clarification: &clarification}, false, nil
 	}
-	clarification := NewClarification("Which existing category-linked template should be used?", "template", fmt.Sprintf("no enabled template named %q is linked to category %d; creating templates or category links is out of scope", input.Name, categoryID), "template_id", true, templateCandidates(templates, links, existing), retryParameterValues(0, input))
+	clarification := NewClarification("Which existing category-linked template should be used?", "template", fmt.Sprintf("no enabled template named %q is linked to category %d or any ancestor category; creating templates or category links is out of scope", input.Name, categoryID), "template_id", true, templateCandidates(templates, links, existing), retryParameterValues(0, input))
 	return 0, TextResult(StatusClarificationRequired), WriteRecordOutput[[]inventree.Parameter]{Status: StatusClarificationRequired, Clarification: &clarification}, false, nil
 }
 
@@ -1576,6 +1584,24 @@ func matchingDisabledTemplates(name string, templates []inventree.ParameterTempl
 
 func templateNameMatches(got string, want string) bool {
 	return strings.EqualFold(strings.TrimSpace(got), strings.TrimSpace(want))
+}
+
+// preferExactCategoryLinks stable-sorts links so a link on the part's own category is
+// found before any inherited ancestor link when both link the same template, instead of
+// an arbitrary PK order. It only distinguishes exact-category from ancestor; InvenTree's
+// fetch_parent response carries no ancestor distance, so it cannot rank multiple ancestor
+// links against each other by how near they are to the part's category.
+func preferExactCategoryLinks(links []inventree.CategoryParameterTemplate, categoryID int) {
+	slices.SortStableFunc(links, func(a, b inventree.CategoryParameterTemplate) int {
+		aExact, bExact := a.Category == categoryID, b.Category == categoryID
+		if aExact == bExact {
+			return 0
+		}
+		if aExact {
+			return -1
+		}
+		return 1
+	})
 }
 
 func categoryLinksTemplate(links []inventree.CategoryParameterTemplate, templateID int) bool {
