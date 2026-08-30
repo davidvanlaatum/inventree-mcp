@@ -11,6 +11,9 @@ Restart=on-failure
 RestartSec=5s
 User=inventree-mcp
 Group=inventree-mcp
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=inventree-mcp
 ExecStart=/usr/bin/inventree-mcp serve --config /etc/inventree-mcp/config.yml
 TimeoutSec=60
 
