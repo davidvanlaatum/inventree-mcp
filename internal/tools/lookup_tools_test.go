@@ -674,63 +674,65 @@ func depsForFake(fake *fakeMilestoneLookupClient) Dependencies {
 }
 
 type fakeMilestoneLookupClient struct {
-	parts                       []inventree.Part
-	categories                  []inventree.Category
-	companies                   []inventree.Company
-	suppliers                   []inventree.Company
-	manufacturers               []inventree.Company
-	manufacturerSearchResults   [][]inventree.Company
-	manufacturerSearchCalls     int
-	stockLocations              []inventree.StockLocation
-	stockItems                  []inventree.StockItem
-	parameters                  []inventree.Parameter
-	parameterTemplates          []inventree.ParameterTemplate
-	categoryParameterTemplates  []inventree.CategoryParameterTemplate
-	attachments                 []inventree.Attachment
-	supplierParts               []inventree.SupplierPart
-	manufacturerParts           []inventree.ManufacturerPart
-	supplierPart                inventree.SupplierPart
-	attachment                  inventree.Attachment
-	downloadedAttachment        inventree.DownloadedAttachment
-	downloadedPartImage         inventree.DownloadedPartImage
-	downloadPartImageErr        error
-	getPartErr                  error
-	getPartDetailErr            error
-	getPartDetailAfterFirstErr  error
-	partDetailAfterFirst        *inventree.PartDetail
-	getPartDetailCalls          int
-	getCompanyErr               error
-	companyDetail               *inventree.CompanyDetail
-	companyDetailErr            error
-	supplierPartDetail          *inventree.SupplierPartDetail
-	supplierPartDetailErr       error
-	manufacturerPartDetail      *inventree.ManufacturerPartDetail
-	manufacturerPartDetailErr   error
-	part                        inventree.Part
-	partDetail                  inventree.PartDetail
-	partCategory                inventree.Category
-	partCategoryErr             error
-	createdPart                 bool
-	createdPartParameter        bool
-	createPartParameterCount    int
-	createdCompany              bool
-	createdSupplierPart         bool
-	createdManufacturerPart     bool
-	createCompanyCalls          int
-	createSupplierPartCalls     int
-	createManufacturerPartCalls int
-	createdStockItem            bool
-	uploadedAttachment          bool
-	createdLinkAttachment       bool
-	deletedAttachment           bool
-	setPartPrimaryImage         bool
-	createPartErr               error
-	createPartResult            *inventree.Part
-	updatePartErr               error
-	createCompanyErr            error
-	searchManufacturersErr      error
-	createSupplierPartErr       error
-	createManufacturerPartErr   error
+	parts                              []inventree.Part
+	categories                         []inventree.Category
+	companies                          []inventree.Company
+	suppliers                          []inventree.Company
+	manufacturers                      []inventree.Company
+	manufacturerSearchResults          [][]inventree.Company
+	manufacturerSearchCalls            int
+	stockLocations                     []inventree.StockLocation
+	stockItems                         []inventree.StockItem
+	parameters                         []inventree.Parameter
+	parameterTemplates                 []inventree.ParameterTemplate
+	categoryParameterTemplates         []inventree.CategoryParameterTemplate
+	inheritedCategoryIDs               []int
+	categoryParameterScanLimitExceeded bool
+	attachments                        []inventree.Attachment
+	supplierParts                      []inventree.SupplierPart
+	manufacturerParts                  []inventree.ManufacturerPart
+	supplierPart                       inventree.SupplierPart
+	attachment                         inventree.Attachment
+	downloadedAttachment               inventree.DownloadedAttachment
+	downloadedPartImage                inventree.DownloadedPartImage
+	downloadPartImageErr               error
+	getPartErr                         error
+	getPartDetailErr                   error
+	getPartDetailAfterFirstErr         error
+	partDetailAfterFirst               *inventree.PartDetail
+	getPartDetailCalls                 int
+	getCompanyErr                      error
+	companyDetail                      *inventree.CompanyDetail
+	companyDetailErr                   error
+	supplierPartDetail                 *inventree.SupplierPartDetail
+	supplierPartDetailErr              error
+	manufacturerPartDetail             *inventree.ManufacturerPartDetail
+	manufacturerPartDetailErr          error
+	part                               inventree.Part
+	partDetail                         inventree.PartDetail
+	partCategory                       inventree.Category
+	partCategoryErr                    error
+	createdPart                        bool
+	createdPartParameter               bool
+	createPartParameterCount           int
+	createdCompany                     bool
+	createdSupplierPart                bool
+	createdManufacturerPart            bool
+	createCompanyCalls                 int
+	createSupplierPartCalls            int
+	createManufacturerPartCalls        int
+	createdStockItem                   bool
+	uploadedAttachment                 bool
+	createdLinkAttachment              bool
+	deletedAttachment                  bool
+	setPartPrimaryImage                bool
+	createPartErr                      error
+	createPartResult                   *inventree.Part
+	updatePartErr                      error
+	createCompanyErr                   error
+	searchManufacturersErr             error
+	createSupplierPartErr              error
+	createManufacturerPartErr          error
 
 	lastSearchPartsQuery                      inventree.SearchQuery
 	lastSearchPartCategoriesQuery             inventree.SearchQuery
@@ -865,9 +867,29 @@ func (f *fakeMilestoneLookupClient) GetParameterTemplate(_ context.Context, id i
 	return inventree.ParameterTemplate{PK: id, Name: "template", Enabled: true}, nil
 }
 
-func (f *fakeMilestoneLookupClient) SearchCategoryParameterTemplates(_ context.Context, query inventree.CategoryParameterTemplateQuery) ([]inventree.CategoryParameterTemplate, error) {
+func (f *fakeMilestoneLookupClient) SearchCategoryParameterTemplatesPage(_ context.Context, query inventree.CategoryParameterTemplateQuery) (inventree.Page[inventree.CategoryParameterTemplate], error) {
 	f.lastSearchCategoryParameterTemplatesQuery = query
-	return f.categoryParameterTemplates, nil
+	if f.categoryParameterScanLimitExceeded {
+		next := "next"
+		return inventree.Page[inventree.CategoryParameterTemplate]{Next: &next}, nil
+	}
+	records := make([]inventree.CategoryParameterTemplate, 0, len(f.categoryParameterTemplates))
+	for _, link := range f.categoryParameterTemplates {
+		if link.Category == query.CategoryID {
+			records = append(records, link)
+			continue
+		}
+		if query.FetchParent == nil || !*query.FetchParent {
+			continue
+		}
+		for _, ancestorID := range f.inheritedCategoryIDs {
+			if link.Category == ancestorID {
+				records = append(records, link)
+				break
+			}
+		}
+	}
+	return pageSlice(records, query.Offset, query.Limit), nil
 }
 
 func (f *fakeMilestoneLookupClient) SearchCompanies(_ context.Context, query inventree.SearchQuery) ([]inventree.Company, error) {

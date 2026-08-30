@@ -990,12 +990,12 @@ func TestClientMethodsAgainstInvenTree(t *testing.T) {
 		r.Equal(template.PK, gotTemplate.PK)
 		r.True(gotTemplate.Enabled)
 
-		categoryTemplates, err := fixture.client.SearchCategoryParameterTemplates(ctx, inventree.CategoryParameterTemplateQuery{CategoryID: category.ID})
+		categoryTemplatePage, err := fixture.client.SearchCategoryParameterTemplatesPage(ctx, inventree.CategoryParameterTemplateQuery{CategoryID: category.ID, FetchParent: dvgoutils.Ptr(false), Limit: 100})
 		r.NoError(err)
-		r.NotEmpty(categoryTemplates)
-		r.Equal(categoryTemplate.PK, categoryTemplates[0].PK)
-		r.Equal(category.ID, categoryTemplates[0].Category)
-		r.Equal(template.PK, categoryTemplates[0].Template)
+		r.NotEmpty(categoryTemplatePage.Results)
+		r.Equal(categoryTemplate.PK, categoryTemplatePage.Results[0].PK)
+		r.Equal(category.ID, categoryTemplatePage.Results[0].Category)
+		r.Equal(template.PK, categoryTemplatePage.Results[0].Template)
 
 		r.NoError(fixture.client.DeletePartParameter(ctx, parameter.PK))
 		_, err = fixture.client.GetPartParameter(ctx, parameter.PK)
