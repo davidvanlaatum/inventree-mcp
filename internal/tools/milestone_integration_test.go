@@ -2913,6 +2913,63 @@ func TestMilestoneHappyPathToolsAgainstInvenTree(t *testing.T) {
 		a.True(parentDeleted.Verified)
 	})
 
+	t.Run("set_part_parameters_accepts_ancestor_category_template", func(t *testing.T) {
+		r := require.New(t)
+		a := assert.New(t)
+		ctx, _, _ := testhandler.SetupTestHandler(t)
+		fixture := newMilestoneToolFixture(t, shared)
+		parent := fixture.ensure(t, testenv.FixtureCategory)
+		childName, err := fixture.run.Name("set-part-parameters-child")
+		r.NoError(err)
+		var child inventree.Category
+		r.NoError(fixture.client.Post(ctx, "/api/part/category/", map[string]any{"name": childName, "description": "set_part_parameters inheritance child", "structural": false, "parent": parent.ID}, &child))
+		r.NotZero(child.PK)
+		templateName, err := fixture.run.Name("set-part-parameters-tool")
+		r.NoError(err)
+		template, err := fixture.client.CreateParameterTemplate(ctx, inventree.ParameterTemplateCreate{Name: templateName, Units: "", Description: "set_part_parameters ancestor inheritance", ModelType: "part.part", Checkbox: false, Choices: "", Enabled: true})
+		r.NoError(err)
+		_, err = fixture.client.CreateCategoryParameterTemplate(ctx, inventree.CategoryParameterTemplateCreate{Category: parent.ID, Template: template.PK})
+		r.NoError(err)
+
+		partName, err := fixture.run.Name("set-part-parameters-part")
+		r.NoError(err)
+		part, err := fixture.client.CreatePart(ctx, inventree.PartCreate{Name: partName, Category: &child.PK})
+		r.NoError(err)
+		existingRows, err := fixture.client.SearchPartParameters(ctx, inventree.PartParameterQuery{PartID: part.PK, TemplateID: template.PK})
+		r.NoError(err)
+		r.Len(existingRows, 1, "InvenTree auto-populates the inherited category-default parameter row on part creation")
+		existing := existingRows[0]
+
+		_, output, err := setPartParameters(fixture.deps())(ctx, &mcp.CallToolRequest{}, SetPartParametersInput{
+			PartID:     part.PK,
+			Parameters: []ParameterSetInput{{TemplateID: &template.PK, Value: dvgoutils.Ptr("3.5mm TRRS female audio jack")}},
+		})
+		r.NoError(err)
+		a.Equal(StatusOK, output.Status)
+		r.Len(output.Record, 1)
+		a.Equal(existing.PK, output.Record[0].PK)
+		a.Equal("3.5mm TRRS female audio jack", output.Record[0].Data)
+
+		readback, err := fixture.client.GetPartParameter(ctx, existing.PK)
+		r.NoError(err)
+		a.Equal("3.5mm TRRS female audio jack", readback.Data)
+
+		r.NoError(fixture.client.DeletePartParameter(ctx, existing.PK))
+		_, createOutput, err := setPartParameters(fixture.deps())(ctx, &mcp.CallToolRequest{}, SetPartParametersInput{
+			PartID:     part.PK,
+			Parameters: []ParameterSetInput{{TemplateID: &template.PK, Value: dvgoutils.Ptr("6.35mm TS mono jack")}},
+		})
+		r.NoError(err)
+		a.Equal(StatusOK, createOutput.Status)
+		r.Len(createOutput.Record, 1)
+		a.NotEqual(existing.PK, createOutput.Record[0].PK, "an ancestor-inherited template with no existing row must be created fresh, not matched to the deleted row")
+		a.Equal("6.35mm TS mono jack", createOutput.Record[0].Data)
+
+		createdReadback, err := fixture.client.GetPartParameter(ctx, createOutput.Record[0].PK)
+		r.NoError(err)
+		a.Equal("6.35mm TS mono jack", createdReadback.Data)
+	})
+
 	t.Run("object_parameter_and_template_uniqueness", func(t *testing.T) {
 		r := require.New(t)
 		a := assert.New(t)

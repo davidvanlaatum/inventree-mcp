@@ -484,16 +484,6 @@ func TestReadMethodsUseExpectedEndpoints(t *testing.T) {
 			response: `{"pk":70,"name":"Resistance","units":"ohm","choices":"10k,22k","enabled":true}`,
 		},
 		{
-			name: "search category parameter templates",
-			call: func(ctx context.Context, client *Client) error {
-				_, err := client.SearchCategoryParameterTemplates(ctx, CategoryParameterTemplateQuery{CategoryID: 20})
-				return err
-			},
-			wantPath:  "/api/part/category/parameters/",
-			wantQuery: nil,
-			response:  `{"count":2,"next":null,"previous":null,"results":[{"pk":80,"category":20,"template":70},{"pk":81,"category":21,"template":70}]}`,
-		},
-		{
 			name: "list attachments",
 			call: func(ctx context.Context, client *Client) error {
 				_, err := client.ListAttachments(ctx, AttachmentQuery{ModelType: "part", ModelID: 10, Search: "datasheet", Limit: 10, Offset: 6})
