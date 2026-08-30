@@ -3381,11 +3381,13 @@ Tasks:
 - Out of scope: unauthenticated LAN mode; a shared static bearer token; passing raw InvenTree credentials through `/mcp`; username/password storage; a token-mapping database; automatic client token rotation; or replacing OAuth for clients that support the MCP OAuth flow.
 - Open decisions: none currently. Implementation details delegated to the design task are request-form precedence when both credentials are supplied and configuration names; they must preserve the decisions above and are not product blockers.
 - Tasks:
-  - [ ] Spike the official MCP Go SDK auth/OAuth helpers and existing `internal/oauth` envelope/broker code, then define the non-OAuth mode boundary.
-  - [ ] Define the Basic-auth request/response contract, canonical endpoint path, expiry, scopes, rate limits, and key-rotation/revocation behavior.
-  - [ ] Extend the upstream credential representation/request construction to support Basic username/password alongside Token/Bearer, with redaction and focused tests.
-  - [ ] Implement the stateless bootstrap and request authentication flow without a token mapping store.
-  - [ ] Add focused security/error/log-redaction tests and live validation of dedicated InvenTree token creation.
-  - [ ] Update configuration, deployment, client setup, and operator documentation.
+  - [x] Spike the official MCP Go SDK auth/OAuth helpers and existing `internal/oauth` envelope/broker code, then define the non-OAuth mode boundary.
+  - [x] Define the Basic-auth request/response contract, canonical endpoint path, expiry, scopes, rate limits, and key-rotation/revocation behavior. Contract: the bootstrap request carries its credential only as the request's own `Authorization` header (`Basic`, `Token`, or `Bearer`), never a body field; canonical path is `<INVENTREE_MCP_PATH>/auth/bootstrap`; default envelope lifetime is 720h (30 days, operator-configurable via `INVENTREE_MCP_BOOTSTRAP_ENVELOPE_LIFETIME`); scopes are the full `supportedOAuthScopes()` set; rate limiting reuses the existing `RequestRateLimiter` default; key rotation/revocation reuse the existing OAuth envelope keyring unchanged.
+  - [x] Extend the upstream credential representation/request construction to support Basic username/password alongside Token/Bearer, with redaction and focused tests. `inventree.AuthSchemeBasic` is transient-only; `oauth.Credential.ValidateForEnvelope` rejects it from ever being sealed into a long-lived envelope.
+  - [x] Implement the stateless bootstrap and request authentication flow without a token mapping store.
+  - [x] Add focused security/error/log-redaction tests and live validation of dedicated InvenTree token creation.
+  - [x] Update configuration, deployment, client setup, and operator documentation.
   - [ ] Run the applicable full validation and auth/security reviewer panel; record residual risk before marking the story Done.
-- Residual risk: stateless envelopes intentionally trade individual immediate revocation for no server-side mapping and compatibility with clients that only support a static bearer token. The remaining request-form precedence and configuration-name choices are implementation details to settle during the design spike.
+- Validation: `go build ./...`; `go vet ./...`; `golangci-lint run` (oauth, config, server, inventree, testenv packages); `go test -race ./...` (full suite, including the new default-on Testcontainers live bootstrap integration test for both Basic and Token credential forms).
+- Review: pending — full Go/QA/Product/Infosec reviewer panel not yet run.
+- Residual risk: stateless envelopes intentionally trade individual immediate revocation for no server-side mapping and compatibility with clients that only support a static bearer token. The remaining request-form precedence and configuration-name choices are implementation details settled during implementation: request-form dispatch is by `Authorization` header scheme (no dual-credential body), and the dedicated-token name prefix is `inventree-mcp-static-<random>`.
