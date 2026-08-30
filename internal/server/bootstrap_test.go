@@ -5,7 +5,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strconv"
-	"strings"
 	"testing"
 	"time"
 
@@ -145,5 +144,78 @@ func TestBootstrapRejectsInvalidCredentialThroughMux(t *testing.T) {
 	handler.ServeHTTP(rec, req)
 
 	r.Equal(http.StatusUnauthorized, rec.Code)
-	r.False(strings.Contains(rec.Body.String(), "bad-token"))
+	r.NotContains(rec.Body.String(), "bad-token")
+}
+
+func TestBootstrapMuxRateLimitsByTrustedResolvedSourceIP(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	inventreeServer := fakeBootstrapInvenTreeServer(t)
+	defer inventreeServer.Close()
+
+	cfg := bootstrapTestConfig(t, inventreeServer.URL)
+	cfg.TrustedProxyCIDRs = []string{"10.0.0.0/8"}
+	fixedNow := time.Date(2026, 8, 2, 5, 0, 0, 0, time.UTC)
+	handler, err := httpMuxWithOptions(ctx, cfg, New(tools.Dependencies{}), nil, httpMuxOptions{
+		now:                func() time.Time { return fixedNow },
+		bootstrapRateLimit: 1,
+	})
+	r.NoError(err)
+
+	request := func(remoteAddress string, forwardedFor string) int {
+		req := httptest.NewRequest(http.MethodPost, "/mcp/auth/bootstrap", nil)
+		req.Header.Set("Authorization", "Token supplied-token")
+		req.RemoteAddr = remoteAddress
+		if forwardedFor != "" {
+			req.Header.Set("X-Forwarded-For", forwardedFor)
+		}
+		recorder := httptest.NewRecorder()
+		handler.ServeHTTP(recorder, req)
+		return recorder.Code
+	}
+
+	// Both requests resolve to the same trusted-proxy-forwarded source IP
+	// (requestctx.SourceIP), so the second is rate-limited even though the
+	// immediate peer address differs from the forwarded client address.
+	r.Equal(http.StatusOK, request("10.0.0.10:1234", "203.0.113.10"))
+	r.Equal(http.StatusTooManyRequests, request("10.0.0.10:1234", "203.0.113.10"))
+}
+
+// TestBootstrapEnvelopeGrantsWriteScope proves the operator-confirmed "full
+// scope set" decision actually reaches enforcement: a bootstrap envelope
+// must authorize a write-scoped tool call, not just read-only ones (scope
+// enforcement happens at call time, not at tools/list time).
+func TestBootstrapEnvelopeGrantsWriteScope(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	inventreeServer := fakeBootstrapInvenTreeServer(t)
+	defer inventreeServer.Close()
+
+	cfg := bootstrapTestConfig(t, inventreeServer.URL)
+	deps := tools.Dependencies{
+		EnableWriteTools:    true,
+		AuthorizationMode:   tools.AuthorizationModeOAuth,
+		ResourceMetadataURL: cfg.OAuthProtectedResourceMetadataURL(),
+		ClientFromContext:   OAuthClientFromContext(inventreeServer.URL, inventreeServer.Client()),
+	}
+	handler, err := HTTPMux(ctx, cfg, New(deps))
+	r.NoError(err)
+
+	bootstrapReq := httptest.NewRequest(http.MethodPost, "/mcp/auth/bootstrap", nil)
+	bootstrapReq.Header.Set("Authorization", "Token supplied-token")
+	bootstrapRec := httptest.NewRecorder()
+	handler.ServeHTTP(bootstrapRec, bootstrapReq)
+	r.Equal(http.StatusOK, bootstrapRec.Code)
+	var bootstrapBody map[string]any
+	r.NoError(json.NewDecoder(bootstrapRec.Body).Decode(&bootstrapBody))
+	mcpToken, ok := bootstrapBody["mcp_token"].(string)
+	r.True(ok)
+
+	callRecorder := postMCPWithBearer(t, handler, mcpToken, `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"create_part","arguments":{"name":"10k resistor","category_id":20}}}`)
+	r.Equal(http.StatusOK, callRecorder.Code)
+	r.NotContains(callRecorder.Body.String(), "insufficient_scope")
 }

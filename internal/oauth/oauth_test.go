@@ -498,6 +498,51 @@ func TestAccessTokenVerifierAcceptsBootstrapEnvelopeWhenEnabled(t *testing.T) {
 	r.ErrorIs(err, auth.ErrInvalidToken)
 }
 
+func TestAccessTokenVerifierRejectsExpiredBootstrapEnvelope(t *testing.T) {
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	r := require.New(t)
+
+	now := time.Date(2026, 7, 8, 10, 0, 0, 0, time.UTC)
+	codec := testCodec(t)
+	issuer := "https://mcp.example.test"
+	audience := "https://mcp.example.test/mcp"
+	expiredToken, err := codec.Seal(ctx, AssociatedData{Issuer: issuer, Audience: audience, ClientID: "", Type: TokenTypeBootstrapAccess}, TokenClaims{
+		Type: TokenTypeBootstrapAccess, Issuer: issuer, Audience: audience, Subject: "operator-1", ClientID: "",
+		IssuedAt: now.Add(-48 * time.Hour), ExpiresAt: now.Add(-time.Hour), SessionExpiresAt: now.Add(-time.Hour),
+		Credential: Credential{Scheme: inventree.AuthSchemeToken, Token: "dedicated-token"},
+	})
+	r.NoError(err)
+
+	verifier := AccessTokenVerifier(codec, issuer, audience, []string{"https://chatgpt.com/client-metadata"}, fakeClock{now: now}, true)
+	_, err = verifier(ctx, expiredToken, httptest.NewRequest(http.MethodPost, "/mcp", nil))
+	r.ErrorIs(err, auth.ErrInvalidToken)
+}
+
+func TestAccessTokenVerifierRejectsBootstrapEnvelopeCarryingBasicCredential(t *testing.T) {
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	r := require.New(t)
+
+	now := time.Date(2026, 7, 8, 10, 0, 0, 0, time.UTC)
+	codec := testCodec(t)
+	issuer := "https://mcp.example.test"
+	audience := "https://mcp.example.test/mcp"
+
+	// Seal directly through the codec, bypassing BootstrapServer's own
+	// ValidateForEnvelope guard, to prove the open-time rejection in
+	// TokenClaims.validateForUse is an independent, structural backstop —
+	// not something that only holds because the handler happens to behave.
+	basicToken, err := codec.Seal(ctx, AssociatedData{Issuer: issuer, Audience: audience, ClientID: "", Type: TokenTypeBootstrapAccess}, TokenClaims{
+		Type: TokenTypeBootstrapAccess, Issuer: issuer, Audience: audience, Subject: "operator-1", ClientID: "",
+		IssuedAt: now.Add(-time.Minute), ExpiresAt: now.Add(time.Hour), SessionExpiresAt: now.Add(time.Hour),
+		Credential: Credential{Scheme: inventree.AuthSchemeBasic, Token: "dXNlcjpwYXNz"},
+	})
+	r.NoError(err)
+
+	verifier := AccessTokenVerifier(codec, issuer, audience, []string{"https://chatgpt.com/client-metadata"}, fakeClock{now: now}, true)
+	_, err = verifier(ctx, basicToken, httptest.NewRequest(http.MethodPost, "/mcp", nil))
+	r.ErrorIs(err, auth.ErrInvalidToken)
+}
+
 func TestAccessTokenVerifierRejectsCrossTypeReplayBetweenOAuthAndBootstrap(t *testing.T) {
 	ctx, _, _ := testhandler.SetupTestHandler(t)
 	r := require.New(t)
@@ -522,12 +567,16 @@ func TestAccessTokenVerifierRejectsCrossTypeReplayBetweenOAuthAndBootstrap(t *te
 
 	verifier := AccessTokenVerifier(codec, issuer, audience, []string{clientID}, fakeClock{now: now}, true)
 
-	// A bootstrap-typed envelope must not be accepted as a normal OAuth access token, and
-	// vice versa: AES-GCM authenticates the AAD (including Type), so wrong-family tokens
-	// fail to even decrypt, independent of claims validation.
+	// The bootstrap-typed envelope is still accepted by the verifier — but
+	// only through its own bootstrap branch (clientID "" matches its own
+	// AAD), never by falling through to the OAuth per-client-ID branch.
 	_, err = verifier(ctx, bootstrapToken, httptest.NewRequest(http.MethodPost, "/mcp", nil))
-	r.NoError(err) // accepted as bootstrap, since clientID "" matches its own AAD
+	r.NoError(err)
 
+	// The cross-type rejection itself is an AES-GCM AAD failure, not a
+	// claims-level check: AAD includes Type, so opening a bootstrap-typed
+	// envelope with an OAuth-shaped AAD (and vice versa) fails to even
+	// decrypt, independent of any claims validation.
 	var reopenedAsOAuth TokenClaims
 	r.ErrorIs(codec.Open(bootstrapToken, AssociatedData{Issuer: issuer, Audience: audience, ClientID: clientID, Type: TokenTypeAccess}, &reopenedAsOAuth), ErrInvalidToken)
 	var reopenedAsBootstrap TokenClaims

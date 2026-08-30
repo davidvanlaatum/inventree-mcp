@@ -15,6 +15,7 @@ import (
 	"github.com/davidvanlaatum/dvgoutils/logging/testhandler"
 	"github.com/davidvanlaatum/inventree-mcp/internal/config"
 	"github.com/davidvanlaatum/inventree-mcp/internal/inventree"
+	"github.com/davidvanlaatum/inventree-mcp/internal/oauth"
 	"github.com/davidvanlaatum/inventree-mcp/internal/testenv"
 	"github.com/davidvanlaatum/inventree-mcp/internal/tools"
 	"github.com/stretchr/testify/assert"
@@ -45,9 +46,11 @@ func TestHTTPBootstrapFlowAgainstInvenTreeContainer(t *testing.T) {
 		return shared.Close(context.WithoutCancel(ctx))
 	}))
 
-	_, keyringConfig := testOAuthCodec(t)
+	codec, keyringConfig := testOAuthCodec(t)
 	mcpPath := "/mcp"
 	bootstrapPath := mcpPath + "/auth/bootstrap"
+	issuer := "https://mcp.example.test"
+	audience := issuer + mcpPath
 	httpConfig := config.Config{
 		Transport:                 config.TransportHTTP,
 		Environment:               config.EnvironmentProduction,
@@ -55,8 +58,8 @@ func TestHTTPBootstrapFlowAgainstInvenTreeContainer(t *testing.T) {
 		InvenTreeURL:              shared.Environment().BaseURL,
 		InvenTreeTimeout:          30 * time.Second,
 		MCPMaxRequestBodyBytes:    config.DefaultMCPMaxRequestBodyBytes,
-		OAuthIssuerURL:            "https://mcp.example.test",
-		OAuthResourceURL:          "https://mcp.example.test" + mcpPath,
+		OAuthIssuerURL:            issuer,
+		OAuthResourceURL:          audience,
 		OAuthKeyring:              keyringConfig,
 		BootstrapEnabled:          true,
 		BootstrapEnvelopeLifetime: 24 * time.Hour,
@@ -71,18 +74,27 @@ func TestHTTPBootstrapFlowAgainstInvenTreeContainer(t *testing.T) {
 
 	t.Run("token credential", func(t *testing.T) {
 		t.Parallel()
+		subtestCtx, _, _ := testhandler.SetupTestHandler(t)
 		r := require.New(t)
 		a := assert.New(t)
 		run, err := shared.NewRun(t)
 		r.NoError(err)
-		account, err := shared.Account(ctx, run, testenv.AccountAdmin)
+		account, err := shared.Account(subtestCtx, run, testenv.AccountAdmin)
 		r.NoError(err)
-		part, err := shared.EnsureFixture(ctx, account, run, testenv.FixturePart)
+		part, err := shared.EnsureFixture(subtestCtx, account, run, testenv.FixturePart)
 		r.NoError(err)
 
 		bootstrapRec := bootstrapIntegrationPost(protected, bootstrapPath, "Token "+account.Token)
 		r.Equal(http.StatusOK, bootstrapRec.Code)
 		mcpToken := bootstrapIntegrationMCPToken(t, bootstrapRec)
+
+		// Prove the dedicated token is genuinely new, not the supplied
+		// credential sealed as-is: open the envelope and compare.
+		var claims oauth.TokenClaims
+		r.NoError(codec.Open(mcpToken, oauth.AssociatedData{Issuer: issuer, Audience: audience, ClientID: "", Type: oauth.TokenTypeBootstrapAccess}, &claims))
+		a.Equal(oauth.CredentialSourceDedicated, claims.CredentialSource)
+		a.Equal(inventree.AuthSchemeToken, claims.Credential.Scheme)
+		a.NotEqual(account.Token, claims.Credential.Token)
 
 		toolRec := oauthIntegrationPostMCP(protected, mcpPath, mcpToken, `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"search_parts","arguments":{"search":"`+part.Name+`"}}}`)
 		r.Equal(http.StatusOK, toolRec.Code)
@@ -90,27 +102,37 @@ func TestHTTPBootstrapFlowAgainstInvenTreeContainer(t *testing.T) {
 
 		client, err := shared.Client(account)
 		r.NoError(err)
-		user, err := client.GetCurrentUser(ctx)
+		user, err := client.GetCurrentUser(subtestCtx)
 		r.NoError(err)
 		a.Equal(account.Username, user.Username)
 	})
 
 	t.Run("basic credential", func(t *testing.T) {
 		t.Parallel()
+		subtestCtx, _, _ := testhandler.SetupTestHandler(t)
 		r := require.New(t)
 		a := assert.New(t)
 		run, err := shared.NewRun(t)
 		r.NoError(err)
-		account, err := shared.Account(ctx, run, testenv.AccountAdmin)
+		account, err := shared.Account(subtestCtx, run, testenv.AccountAdmin)
 		r.NoError(err)
 		r.NotEmpty(account.Password)
-		part, err := shared.EnsureFixture(ctx, account, run, testenv.FixturePart)
+		part, err := shared.EnsureFixture(subtestCtx, account, run, testenv.FixturePart)
 		r.NoError(err)
 
 		encoded := base64.StdEncoding.EncodeToString([]byte(account.Username + ":" + account.Password))
 		bootstrapRec := bootstrapIntegrationPost(protected, bootstrapPath, "Basic "+encoded)
 		r.Equal(http.StatusOK, bootstrapRec.Code)
 		mcpToken := bootstrapIntegrationMCPToken(t, bootstrapRec)
+
+		// Prove the dedicated token is genuinely new: the sealed credential
+		// must be a Token-scheme dedicated credential, never the Basic
+		// credential the caller supplied.
+		var claims oauth.TokenClaims
+		r.NoError(codec.Open(mcpToken, oauth.AssociatedData{Issuer: issuer, Audience: audience, ClientID: "", Type: oauth.TokenTypeBootstrapAccess}, &claims))
+		a.Equal(oauth.CredentialSourceDedicated, claims.CredentialSource)
+		a.Equal(inventree.AuthSchemeToken, claims.Credential.Scheme)
+		a.NotEqual(encoded, claims.Credential.Token)
 
 		toolRec := oauthIntegrationPostMCP(protected, mcpPath, mcpToken, `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"search_parts","arguments":{"search":"`+part.Name+`"}}}`)
 		r.Equal(http.StatusOK, toolRec.Code)
@@ -121,7 +143,7 @@ func TestHTTPBootstrapFlowAgainstInvenTreeContainer(t *testing.T) {
 			Credential: inventree.Credential{Scheme: inventree.AuthSchemeBasic, Token: encoded},
 		})
 		r.NoError(err)
-		user, err := basicClient.GetCurrentUser(ctx)
+		user, err := basicClient.GetCurrentUser(subtestCtx)
 		r.NoError(err)
 		a.Equal(account.Username, user.Username)
 	})

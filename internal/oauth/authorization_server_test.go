@@ -450,6 +450,40 @@ func TestAuthorizationServerRequiresExplicitSuppliedCredentialFallback(t *testin
 	r.NotContains(invalid.Body.String(), "must-not-echo")
 }
 
+// TestAuthorizationServerRejectsBasicCredentialScheme proves that widening
+// inventree.Credential.Validate() to support Basic (for the separate F-S93
+// bootstrap flow) did not also widen the OAuth setup page's own
+// credential_scheme form field beyond the Token/Bearer options its <select>
+// actually offers. A tampered submission of credential_scheme=Basic must be
+// rejected before the credential ever reaches the broker/InvenTree, and
+// never sealed into an OAuth token envelope.
+func TestAuthorizationServerRejectsBasicCredentialScheme(t *testing.T) {
+	r := require.New(t)
+	redirectURI := "https://chatgpt.com/connector/oauth/callback_123"
+	var clientID string
+	clientServer := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		_ = json.NewEncoder(w).Encode(ClientMetadata{ClientID: clientID, RedirectURIs: []string{redirectURI}, TokenEndpointAuthMethodsSupported: []string{"private_key_jwt"}, JWKSURI: clientServerURL(req) + "/jwks"})
+	}))
+	defer clientServer.Close()
+	clientID = clientServer.URL + "/client"
+	broker := &fakeCredentialBroker{subject: "inventree-user:7:operator", dedicated: Credential{Scheme: inventree.AuthSchemeToken, Token: "dedicated-secret"}}
+	service := Service{Codec: testCodec(t), MetadataFetcher: ClientMetadataFetcher{HTTPClient: clientServer.Client(), AllowedOrigins: []string{clientServer.URL}, AllowedClientIDs: []string{clientID}}, CodeStore: NewCodeStore(8, time.Now)}
+	authServer := &AuthorizationServer{Issuer: "https://mcp.example.test", Resource: "https://mcp.example.test/mcp", Scopes: []string{"inventree.read"}, Service: service, MetadataFetcher: service.MetadataFetcher, CredentialBroker: broker}
+	mux := http.NewServeMux()
+	r.NoError(authServer.Register(mux))
+	challenge := PKCEChallengeS256("verifier-with-at-least-forty-three-characters-1234")
+	begin := httptest.NewRecorder()
+	mux.ServeHTTP(begin, httptest.NewRequest(http.MethodGet, "/authorize?"+url.Values{"response_type": {"code"}, "client_id": {clientID}, "redirect_uri": {redirectURI}, "state": {"state"}, "resource": {authServer.Resource}, "scope": {"inventree.read"}, "code_challenge": {challenge}, "code_challenge_method": {"S256"}}.Encode(), nil))
+	r.Equal(http.StatusOK, begin.Code)
+
+	tampered := submitSetupWithScheme(mux, begin, clientID, "Basic", "dXNlcjpwYXNz", false)
+	r.Equal(http.StatusOK, tampered.Code)
+	r.Contains(tampered.Body.String(), "could not be validated")
+	r.NotContains(tampered.Body.String(), "dXNlcjpwYXNz")
+	r.Equal(0, broker.validateCalls, "credential must never reach the broker with a scheme the setup form doesn't offer")
+	r.Equal(0, broker.createCalls)
+}
+
 func TestAuthorizationServerCancellationReturnsAccessDeniedWithoutUsingCredential(t *testing.T) {
 	r := require.New(t)
 	redirectURI := "https://chatgpt.com/connector/oauth/callback_123"
@@ -737,9 +771,13 @@ func hiddenValue(t *testing.T, body string, name string) string {
 }
 
 func submitSetup(handler http.Handler, page *httptest.ResponseRecorder, clientID string, credential string, fallback bool) *httptest.ResponseRecorder {
+	return submitSetupWithScheme(handler, page, clientID, "Token", credential, fallback)
+}
+
+func submitSetupWithScheme(handler http.Handler, page *httptest.ResponseRecorder, clientID string, scheme string, credential string, fallback bool) *httptest.ResponseRecorder {
 	form := url.Values{
 		"setup_state": {hiddenValueFromBody(page.Body.String(), "setup_state")}, "client_id": {clientID}, "csrf": {hiddenValueFromBody(page.Body.String(), "csrf")},
-		"credential_scheme": {"Token"}, "credential": {credential},
+		"credential_scheme": {scheme}, "credential": {credential},
 	}
 	if fallback {
 		form.Set("use_supplied_credential", "true")
