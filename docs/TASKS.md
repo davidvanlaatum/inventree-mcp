@@ -3379,7 +3379,7 @@ Tasks:
   - Update `docs/PLAN.md`, `docs/operator-recipes.md`, README configuration guidance, packaged examples, and relevant auth/config reference docs with the configured-prefix routes, unchanged OAuth metadata locations, client setup, reverse-proxy rules, and security model.
   - Add unit/HTTP tests for bootstrap success and failures, envelope validation, per-user upstream credential use, expiry/key rotation, and no-mapping operation. Add default-on live InvenTree integration coverage for both Basic username/password and existing API-token bootstrap, including dedicated-token creation and subsequent use of the generated credential.
 - Out of scope: unauthenticated LAN mode; a shared static bearer token; passing raw InvenTree credentials through `/mcp`; username/password storage; a token-mapping database; automatic client token rotation; or replacing OAuth for clients that support the MCP OAuth flow.
-- Open decisions: none currently. The implementation must define request-form precedence when both credentials are supplied and choose configuration names while preserving the decisions above; these are implementation details, not product blockers.
+- Open decisions: none currently. Implementation details delegated to the design task are request-form precedence when both credentials are supplied and configuration names; they must preserve the decisions above and are not product blockers.
 - Tasks:
   - [ ] Spike the official MCP Go SDK auth/OAuth helpers and existing `internal/oauth` envelope/broker code, then define the non-OAuth mode boundary.
   - [ ] Define the Basic-auth request/response contract, canonical endpoint path, expiry, scopes, rate limits, and key-rotation/revocation behavior.
