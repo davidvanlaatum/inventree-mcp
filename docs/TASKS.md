@@ -3377,14 +3377,15 @@ Tasks:
   - Define the lifecycle trade-offs for statically configured client tokens: expiry requires re-bootstrap and client reconfiguration; individual immediate revocation is unavailable without server-side state; global key rotation remains the emergency revocation mechanism. Document these limits and the HTTPS/LAN trust assumptions.
   - Add rate limiting, bounded input handling, redacted request-scoped logging, and tests proving failed bootstrap attempts do not disclose Basic credentials, upstream tokens, or returned envelope contents.
   - Update `docs/PLAN.md`, `docs/operator-recipes.md`, README configuration guidance, packaged examples, and relevant auth/config reference docs with the configured-prefix routes, unchanged OAuth metadata locations, client setup, reverse-proxy rules, and security model.
-  - Add unit/HTTP tests for bootstrap success and failures, envelope validation, per-user upstream credential use, expiry/key rotation, and no-mapping operation; retain or extend live InvenTree coverage for the dedicated-token creation path as needed.
+  - Add unit/HTTP tests for bootstrap success and failures, envelope validation, per-user upstream credential use, expiry/key rotation, and no-mapping operation. Add default-on live InvenTree integration coverage for both Basic username/password and existing API-token bootstrap, including dedicated-token creation and subsequent use of the generated credential.
 - Out of scope: unauthenticated LAN mode; a shared static bearer token; passing raw InvenTree credentials through `/mcp`; username/password storage; a token-mapping database; automatic client token rotation; or replacing OAuth for clients that support the MCP OAuth flow.
-- Open decisions: none currently. The implementation must still define request-form precedence when both credentials are supplied and configuration names while preserving the decisions above.
+- Open decisions: none currently. The implementation must define request-form precedence when both credentials are supplied and choose configuration names while preserving the decisions above; these are implementation details, not product blockers.
 - Tasks:
   - [ ] Spike the official MCP Go SDK auth/OAuth helpers and existing `internal/oauth` envelope/broker code, then define the non-OAuth mode boundary.
   - [ ] Define the Basic-auth request/response contract, canonical endpoint path, expiry, scopes, rate limits, and key-rotation/revocation behavior.
+  - [ ] Extend the upstream credential representation/request construction to support Basic username/password alongside Token/Bearer, with redaction and focused tests.
   - [ ] Implement the stateless bootstrap and request authentication flow without a token mapping store.
   - [ ] Add focused security/error/log-redaction tests and live validation of dedicated InvenTree token creation.
   - [ ] Update configuration, deployment, client setup, and operator documentation.
   - [ ] Run the applicable full validation and auth/security reviewer panel; record residual risk before marking the story Done.
-- Residual risk: until the credential convention and coexistence decision are resolved, this story is not ready for implementation. Stateless envelopes intentionally trade individual immediate revocation for no server-side mapping and compatibility with clients that only support a static bearer token.
+- Residual risk: stateless envelopes intentionally trade individual immediate revocation for no server-side mapping and compatibility with clients that only support a static bearer token. The remaining request-form precedence and configuration-name choices are implementation details to settle during the design spike.
