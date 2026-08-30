@@ -205,7 +205,8 @@ func httpMuxWithOptions(ctx context.Context, cfg config.Config, srv *mcp.Server,
 		if err != nil {
 			return nil, err
 		}
-		verifier := oauth.AccessTokenVerifier(oauth.EnvelopeCodec{Keyring: keyring}, cfg.OAuthIssuerURL, cfg.OAuthResourceURL, cfg.OAuthClientIDs, nil)
+		// TODO(F-S93): pass cfg.BootstrapEnabled once the bootstrap config surface lands.
+		verifier := oauth.AccessTokenVerifier(oauth.EnvelopeCodec{Keyring: keyring}, cfg.OAuthIssuerURL, cfg.OAuthResourceURL, cfg.OAuthClientIDs, nil, false)
 		if traffic != nil {
 			handler = traffic.middleware(string(config.TransportHTTP), cfg.MCPMaxRequestBodyBytes, handler)
 		}

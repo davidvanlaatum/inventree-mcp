@@ -342,7 +342,7 @@ func TestAccessTokenVerifierValidatesEnvelopeClaimsAndCredential(t *testing.T) {
 	accessToken, err := codec.Seal(ctx, AssociatedData{Issuer: issuer, Audience: audience, ClientID: clientID, Type: TokenTypeAccess}, claims)
 	r.NoError(err)
 
-	verifier := AccessTokenVerifier(codec, issuer, audience, []string{"https://other.example.test/client", clientID}, fakeClock{now: now})
+	verifier := AccessTokenVerifier(codec, issuer, audience, []string{"https://other.example.test/client", clientID}, fakeClock{now: now}, false)
 	tokenInfo, err := verifier(ctx, accessToken, httptest.NewRequest(http.MethodPost, "/mcp", nil))
 	r.NoError(err)
 	a.Equal("operator-1", tokenInfo.UserID)
@@ -447,8 +447,119 @@ func TestAccessTokenVerifierValidatesEnvelopeClaimsAndCredential(t *testing.T) {
 	r.ErrorIs(err, auth.ErrInvalidToken)
 	_, err = verifier(ctx, accessToken[:len(accessToken)-1]+"x", httptest.NewRequest(http.MethodPost, "/mcp", nil))
 	r.ErrorIs(err, auth.ErrInvalidToken)
-	_, err = AccessTokenVerifier(codec, issuer, audience, []string{"https://other.example.test/client"}, fakeClock{now: now})(ctx, accessToken, nil)
+	_, err = AccessTokenVerifier(codec, issuer, audience, []string{"https://other.example.test/client"}, fakeClock{now: now}, false)(ctx, accessToken, nil)
 	r.ErrorIs(err, auth.ErrInvalidToken)
+}
+
+func TestCredentialValidateForEnvelopeRejectsBasicScheme(t *testing.T) {
+	t.Parallel()
+	a := assert.New(t)
+
+	a.NoError(Credential{Scheme: inventree.AuthSchemeToken, Token: "abc"}.ValidateForEnvelope())
+	a.NoError(Credential{Scheme: inventree.AuthSchemeBearer, Token: "abc"}.ValidateForEnvelope())
+	err := Credential{Scheme: inventree.AuthSchemeBasic, Token: "dXNlcjpwYXNz"}.ValidateForEnvelope()
+	a.Error(err)
+}
+
+func TestAccessTokenVerifierAcceptsBootstrapEnvelopeWhenEnabled(t *testing.T) {
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	r := require.New(t)
+	a := assert.New(t)
+
+	now := time.Date(2026, 7, 8, 10, 0, 0, 0, time.UTC)
+	codec := testCodec(t)
+	issuer := "https://mcp.example.test"
+	audience := "https://mcp.example.test/mcp"
+	claims := TokenClaims{
+		Type:             TokenTypeBootstrapAccess,
+		Issuer:           issuer,
+		Audience:         audience,
+		Subject:          "operator-1",
+		ClientID:         "",
+		Scopes:           []string{"inventree.read"},
+		IssuedAt:         now.Add(-time.Minute),
+		ExpiresAt:        now.Add(time.Hour),
+		SessionExpiresAt: now.Add(time.Hour),
+		Credential:       Credential{Scheme: inventree.AuthSchemeToken, Token: "dedicated-token"},
+	}
+	bootstrapToken, err := codec.Seal(ctx, AssociatedData{Issuer: issuer, Audience: audience, ClientID: "", Type: TokenTypeBootstrapAccess}, claims)
+	r.NoError(err)
+
+	enabledVerifier := AccessTokenVerifier(codec, issuer, audience, []string{"https://chatgpt.com/client-metadata"}, fakeClock{now: now}, true)
+	tokenInfo, err := enabledVerifier(ctx, bootstrapToken, httptest.NewRequest(http.MethodPost, "/mcp", nil))
+	r.NoError(err)
+	a.Equal("operator-1", tokenInfo.UserID)
+	credential, err := CredentialFromTokenInfo(tokenInfo)
+	r.NoError(err)
+	a.Equal("dedicated-token", credential.Token)
+
+	disabledVerifier := AccessTokenVerifier(codec, issuer, audience, []string{"https://chatgpt.com/client-metadata"}, fakeClock{now: now}, false)
+	_, err = disabledVerifier(ctx, bootstrapToken, httptest.NewRequest(http.MethodPost, "/mcp", nil))
+	r.ErrorIs(err, auth.ErrInvalidToken)
+}
+
+func TestAccessTokenVerifierRejectsCrossTypeReplayBetweenOAuthAndBootstrap(t *testing.T) {
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	r := require.New(t)
+
+	now := time.Date(2026, 7, 8, 10, 0, 0, 0, time.UTC)
+	codec := testCodec(t)
+	issuer := "https://mcp.example.test"
+	audience := "https://mcp.example.test/mcp"
+	clientID := "https://chatgpt.com/client-metadata"
+	credential := Credential{Scheme: inventree.AuthSchemeToken, Token: "upstream-token"}
+
+	oauthToken, err := codec.Seal(ctx, AssociatedData{Issuer: issuer, Audience: audience, ClientID: clientID, Type: TokenTypeAccess}, TokenClaims{
+		Type: TokenTypeAccess, Issuer: issuer, Audience: audience, Subject: "operator-1", ClientID: clientID,
+		IssuedAt: now.Add(-time.Minute), ExpiresAt: now.Add(time.Hour), SessionExpiresAt: now.Add(time.Hour), Credential: credential,
+	})
+	r.NoError(err)
+	bootstrapToken, err := codec.Seal(ctx, AssociatedData{Issuer: issuer, Audience: audience, ClientID: "", Type: TokenTypeBootstrapAccess}, TokenClaims{
+		Type: TokenTypeBootstrapAccess, Issuer: issuer, Audience: audience, Subject: "operator-1", ClientID: "",
+		IssuedAt: now.Add(-time.Minute), ExpiresAt: now.Add(time.Hour), SessionExpiresAt: now.Add(time.Hour), Credential: credential,
+	})
+	r.NoError(err)
+
+	verifier := AccessTokenVerifier(codec, issuer, audience, []string{clientID}, fakeClock{now: now}, true)
+
+	// A bootstrap-typed envelope must not be accepted as a normal OAuth access token, and
+	// vice versa: AES-GCM authenticates the AAD (including Type), so wrong-family tokens
+	// fail to even decrypt, independent of claims validation.
+	_, err = verifier(ctx, bootstrapToken, httptest.NewRequest(http.MethodPost, "/mcp", nil))
+	r.NoError(err) // accepted as bootstrap, since clientID "" matches its own AAD
+
+	var reopenedAsOAuth TokenClaims
+	r.ErrorIs(codec.Open(bootstrapToken, AssociatedData{Issuer: issuer, Audience: audience, ClientID: clientID, Type: TokenTypeAccess}, &reopenedAsOAuth), ErrInvalidToken)
+	var reopenedAsBootstrap TokenClaims
+	r.ErrorIs(codec.Open(oauthToken, AssociatedData{Issuer: issuer, Audience: audience, ClientID: "", Type: TokenTypeBootstrapAccess}, &reopenedAsBootstrap), ErrInvalidToken)
+}
+
+func TestEnvelopeCodecKeyRotationAppliesToBootstrapEnvelopes(t *testing.T) {
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	r := require.New(t)
+	a := assert.New(t)
+
+	oldKey := Key{ID: "old", Material: bytesOf('o', 32), State: KeyStateActive}
+	oldKeyring, err := NewKeyring([]Key{oldKey})
+	r.NoError(err)
+	aad := AssociatedData{Issuer: "https://mcp.example.com", Audience: "https://mcp.example.com/mcp", ClientID: "", Type: TokenTypeBootstrapAccess}
+	oldToken, err := (EnvelopeCodec{Keyring: oldKeyring, Random: counterRandom{}}).Seal(ctx, aad, TokenClaims{
+		Type: TokenTypeBootstrapAccess, Issuer: aad.Issuer, Audience: aad.Audience, Subject: "user-1", ClientID: aad.ClientID,
+		IssuedAt: time.Now(), ExpiresAt: time.Now().Add(time.Minute), SessionExpiresAt: time.Now().Add(time.Minute),
+		Credential: Credential{Scheme: inventree.AuthSchemeToken, Token: "dedicated-token"},
+	})
+	r.NoError(err)
+	rotatedKeyring, err := NewKeyring([]Key{
+		{ID: "old", Material: oldKey.Material, State: KeyStateDecryptOnly},
+		{ID: "new", Material: bytesOf('n', 32), State: KeyStateActive},
+	})
+	r.NoError(err)
+	rotatedCodec := EnvelopeCodec{Keyring: rotatedKeyring, Random: counterRandom{}}
+	var opened TokenClaims
+	r.NoError(rotatedCodec.Open(oldToken, aad, &opened))
+	newToken, err := rotatedCodec.Seal(ctx, aad, opened)
+	r.NoError(err)
+	a.True(strings.HasPrefix(newToken, "mcp1.new."))
 }
 
 func TestKeyringConfigDecodesBase64Material(t *testing.T) {
