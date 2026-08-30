@@ -50,6 +50,29 @@ jobs:
             ${{ runner.os }}-${{ runner.arch }}-${{ steps.go-cache-paths.outputs.version }}-test-go-${{ hashFiles('go.mod', 'go.sum') }}-
             ${{ runner.os }}-${{ runner.arch }}-${{ steps.go-cache-paths.outputs.version }}-test-go-
 
+      - name: Pre-pull integration test images
+        shell: bash
+        run: |
+          set -u
+          images=(
+            "inventree/inventree:1.5.2"
+            "postgres:17"
+            "redis:7-alpine"
+          )
+          pids=()
+          for image in "${images[@]}"; do
+            docker pull "$image" &
+            pids+=("$!")
+          done
+
+          status=0
+          for pid in "${pids[@]}"; do
+            if ! wait "$pid"; then
+              status=1
+            fi
+          done
+          exit "$status"
+
       - uses: gwatts/go-coverage-action@v2
         id: coverage
         with:
