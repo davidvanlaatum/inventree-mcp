@@ -512,7 +512,7 @@ func canonicalRequiredURLPath(parsed *url.URL) bool {
 // path: a literal sibling of Path, so a reverse proxy that preserves the
 // configured MCP path prefix also routes bootstrap requests correctly.
 func (c Config) BootstrapPath() string {
-	return c.Path + "/auth/bootstrap"
+	return path.Join(c.Path, "auth", "bootstrap")
 }
 
 func (c Config) OAuthProtectedResourceMetadataURL() string {

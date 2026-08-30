@@ -2,13 +2,17 @@ package oauth
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/base64"
 	"errors"
 	"io"
+	"log/slog"
 	"net"
 	"net/http"
 	"strings"
 	"time"
 
+	"github.com/davidvanlaatum/dvgoutils/logging"
 	"github.com/davidvanlaatum/inventree-mcp/internal/inventree"
 	"github.com/davidvanlaatum/inventree-mcp/internal/platform"
 	"github.com/davidvanlaatum/inventree-mcp/internal/requestctx"
@@ -79,15 +83,35 @@ func (s *BootstrapServer) handleBootstrap(w http.ResponseWriter, req *http.Reque
 
 	ctx, cancel := context.WithTimeout(req.Context(), defaultDuration(s.RequestTimeout, defaultBootstrapTimeout))
 	defer cancel()
+	logger := logging.FromContext(ctx)
+
+	// Rate-limit by IP first (bounds a single source), then by a hash of the
+	// submitted credential (bounds distributed brute-forcing of one InvenTree
+	// account regardless of source IP). Neither key retains the credential.
+	if !s.allowCredential(credential) {
+		w.Header().Set("Retry-After", "60")
+		http.Error(w, "Too many bootstrap attempts", http.StatusTooManyRequests)
+		return
+	}
 
 	subject, err := s.CredentialBroker.ValidateCredential(ctx, credential)
 	if err != nil {
+		logger.WarnContext(ctx, "bootstrap credential validation failed")
 		http.Error(w, "InvenTree credential could not be validated", http.StatusUnauthorized)
 		return
 	}
 
 	dedicated, err := s.createDedicatedCredential(ctx, credential)
 	if err != nil {
+		logger.WarnContext(ctx, "bootstrap dedicated token creation failed", slog.String("subject", subject))
+		http.Error(w, "Dedicated InvenTree token unavailable", http.StatusBadGateway)
+		return
+	}
+	if err := dedicated.ValidateForEnvelope(); err != nil {
+		// Defense in depth: the broker contract always returns a Token-scheme
+		// credential, but never seal anything that doesn't independently pass
+		// the same guard every other envelope-bound credential passes.
+		logger.WarnContext(ctx, "bootstrap dedicated credential failed envelope validation", slog.String("subject", subject))
 		http.Error(w, "Dedicated InvenTree token unavailable", http.StatusBadGateway)
 		return
 	}
@@ -109,10 +133,12 @@ func (s *BootstrapServer) handleBootstrap(w http.ResponseWriter, req *http.Reque
 	}
 	token, err := s.Codec.Seal(ctx, AssociatedData{Issuer: s.Issuer, Audience: s.Resource, ClientID: "", Type: TokenTypeBootstrapAccess}, claims)
 	if err != nil {
+		logger.WarnContext(ctx, "bootstrap envelope seal failed", slog.String("subject", subject))
 		http.Error(w, "Bootstrap unavailable", http.StatusInternalServerError)
 		return
 	}
 
+	logger.InfoContext(ctx, "bootstrap issued MCP bearer envelope", slog.String("subject", subject))
 	writeJSON(w, http.StatusOK, map[string]any{
 		"mcp_token":  token,
 		"token_type": "Bearer",
@@ -120,10 +146,30 @@ func (s *BootstrapServer) handleBootstrap(w http.ResponseWriter, req *http.Reque
 	})
 }
 
+// allowCredential rate-limits by a hash of the submitted credential, so a
+// distributed attacker cannot bypass the per-IP limit by spreading guesses
+// against one InvenTree account across many source addresses. The hash is
+// never stored beyond the limiter's bounded sliding-window entries.
+func (s *BootstrapServer) allowCredential(credential Credential) bool {
+	if s.RateLimiter == nil {
+		return true
+	}
+	hash := sha256.Sum256([]byte(string(credential.Scheme) + "\x00" + credential.Token))
+	return s.RateLimiter.Allow("credential:" + base64.RawURLEncoding.EncodeToString(hash[:]))
+}
+
 // createDedicatedCredential mints a fresh, uniquely named dedicated
 // InvenTree API token. It never returns the caller-supplied credential: on
-// exhaustion of the bounded retry budget (InvenTree may reject a colliding
-// token name), it returns an error and nothing is sealed into an envelope.
+// exhaustion of the bounded retry budget, it returns an error and nothing is
+// sealed into an envelope.
+//
+// InvenTree's token-issuance endpoint does not actually error on a colliding
+// name — it deletes and recreates a same-named token, per
+// docs/api-schema.yaml. The random 128-bit name (bootstrapTokenNameBytes)
+// carries the "don't rotate an existing token" guarantee on its own; the
+// bounded retry here only helps a transient upstream failure (a timeout or a
+// momentary InvenTree error), and stops immediately once the request's
+// context is done rather than burning the remaining attempts.
 func (s *BootstrapServer) createDedicatedCredential(ctx context.Context, credential Credential) (Credential, error) {
 	idGenerator := s.IDGenerator
 	if idGenerator == nil {
@@ -131,6 +177,9 @@ func (s *BootstrapServer) createDedicatedCredential(ctx context.Context, credent
 	}
 	var lastErr error
 	for attempt := 0; attempt < maxDedicatedTokenAttempts; attempt++ {
+		if ctx.Err() != nil {
+			return Credential{}, ctx.Err()
+		}
 		name, err := idGenerator.NewID(ctx)
 		if err != nil {
 			return Credential{}, err
@@ -174,23 +223,29 @@ func dedicatedBootstrapTokenName(random string) string {
 // parseBootstrapAuthorization dispatches the bootstrap request's single
 // Authorization header into a Credential by its scheme prefix. There is no
 // separate JSON credential-form body: exactly one header, so there is no
-// dual-credential precedence to resolve.
+// dual-credential precedence to resolve. The scheme token is matched
+// case-insensitively per RFC 7235; the credential value is not (InvenTree
+// tokens and Basic's base64 payload are both case-sensitive).
 func parseBootstrapAuthorization(header string) (Credential, error) {
 	header = strings.TrimSpace(header)
 	if header == "" || len(header) > maxBootstrapAuthHeaderBytes {
 		return Credential{}, errInvalidBootstrapAuthorization
 	}
+	// TrimSpace above already strips any trailing whitespace, so a matched
+	// Cut can never leave an empty (whitespace-only) value: the header would
+	// have ended in whitespace, and that whitespace would already be gone.
 	scheme, value, ok := strings.Cut(header, " ")
 	if !ok {
 		return Credential{}, errInvalidBootstrapAuthorization
 	}
 	value = strings.TrimSpace(value)
-	if value == "" {
-		return Credential{}, errInvalidBootstrapAuthorization
-	}
-	switch inventree.AuthScheme(scheme) {
-	case inventree.AuthSchemeBasic, inventree.AuthSchemeToken, inventree.AuthSchemeBearer:
-		return Credential{Scheme: inventree.AuthScheme(scheme), Token: value}, nil
+	switch {
+	case strings.EqualFold(scheme, string(inventree.AuthSchemeBasic)):
+		return Credential{Scheme: inventree.AuthSchemeBasic, Token: value}, nil
+	case strings.EqualFold(scheme, string(inventree.AuthSchemeToken)):
+		return Credential{Scheme: inventree.AuthSchemeToken, Token: value}, nil
+	case strings.EqualFold(scheme, string(inventree.AuthSchemeBearer)):
+		return Credential{Scheme: inventree.AuthSchemeBearer, Token: value}, nil
 	default:
 		return Credential{}, errInvalidBootstrapAuthorization
 	}

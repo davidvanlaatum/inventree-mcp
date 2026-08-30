@@ -53,7 +53,7 @@ func CredentialFromTokenInfo(tokenInfo *auth.TokenInfo) (Credential, error) {
 	if !ok {
 		return Credential{}, ErrCredentialUnavailable
 	}
-	if err := carrier.credential.Validate(); err != nil {
+	if err := carrier.credential.ValidateForEnvelope(); err != nil {
 		return Credential{}, ErrCredentialUnavailable
 	}
 	return carrier.credential, nil
