@@ -303,7 +303,8 @@ func TestAuthorizationServerPrivateKeyJWTSetupCodeAndRefreshFlow(t *testing.T) {
 		}),
 	}
 	authServer := &AuthorizationServer{
-		Issuer: issuer, Resource: resource, Scopes: []string{"inventree.read", "inventree.write"}, Service: service,
+		Issuer: issuer, Resource: resource, AuthorizePath: "/authorize", TokenPath: "/token",
+		Scopes: []string{"inventree.read", "inventree.write"}, Service: service,
 		MetadataFetcher: service.MetadataFetcher, CredentialBroker: broker,
 		AssertionVerifier: PrivateKeyJWTVerifier{HTTPClient: clientServer.Client(), ReplayStore: NewAssertionReplayStore(16, time.Now)},
 		RateLimiter:       NewRequestRateLimiter(20, time.Minute, time.Now),
@@ -420,7 +421,7 @@ func TestAuthorizationServerRequiresExplicitSuppliedCredentialFallback(t *testin
 	clientID = clientServer.URL + "/client"
 	broker := &fakeCredentialBroker{subject: "inventree-user:7:operator", createErr: ErrDedicatedTokenUnavailable}
 	service := Service{Codec: testCodec(t), MetadataFetcher: ClientMetadataFetcher{HTTPClient: clientServer.Client(), AllowedOrigins: []string{clientServer.URL}, AllowedClientIDs: []string{clientID}}, CodeStore: NewCodeStore(8, time.Now)}
-	authServer := &AuthorizationServer{Issuer: "https://mcp.example.test", Resource: "https://mcp.example.test/mcp", Scopes: []string{"inventree.read"}, Service: service, MetadataFetcher: service.MetadataFetcher, CredentialBroker: broker}
+	authServer := &AuthorizationServer{Issuer: "https://mcp.example.test", Resource: "https://mcp.example.test/mcp", AuthorizePath: "/authorize", TokenPath: "/token", Scopes: []string{"inventree.read"}, Service: service, MetadataFetcher: service.MetadataFetcher, CredentialBroker: broker}
 	mux := http.NewServeMux()
 	r.NoError(authServer.Register(mux))
 	challenge := PKCEChallengeS256("verifier-with-at-least-forty-three-characters-1234")
@@ -468,7 +469,7 @@ func TestAuthorizationServerRejectsBasicCredentialScheme(t *testing.T) {
 	clientID = clientServer.URL + "/client"
 	broker := &fakeCredentialBroker{subject: "inventree-user:7:operator", dedicated: Credential{Scheme: inventree.AuthSchemeToken, Token: "dedicated-secret"}}
 	service := Service{Codec: testCodec(t), MetadataFetcher: ClientMetadataFetcher{HTTPClient: clientServer.Client(), AllowedOrigins: []string{clientServer.URL}, AllowedClientIDs: []string{clientID}}, CodeStore: NewCodeStore(8, time.Now)}
-	authServer := &AuthorizationServer{Issuer: "https://mcp.example.test", Resource: "https://mcp.example.test/mcp", Scopes: []string{"inventree.read"}, Service: service, MetadataFetcher: service.MetadataFetcher, CredentialBroker: broker}
+	authServer := &AuthorizationServer{Issuer: "https://mcp.example.test", Resource: "https://mcp.example.test/mcp", AuthorizePath: "/authorize", TokenPath: "/token", Scopes: []string{"inventree.read"}, Service: service, MetadataFetcher: service.MetadataFetcher, CredentialBroker: broker}
 	mux := http.NewServeMux()
 	r.NoError(authServer.Register(mux))
 	challenge := PKCEChallengeS256("verifier-with-at-least-forty-three-characters-1234")
@@ -498,7 +499,7 @@ func TestAuthorizationServerCancellationReturnsAccessDeniedWithoutUsingCredentia
 	clientID = clientServer.URL + "/client"
 	broker := &fakeCredentialBroker{}
 	service := Service{Codec: testCodec(t), MetadataFetcher: ClientMetadataFetcher{HTTPClient: clientServer.Client(), AllowedOrigins: []string{clientServer.URL}, AllowedClientIDs: []string{clientID}}, CodeStore: NewCodeStore(8, time.Now)}
-	authServer := &AuthorizationServer{Issuer: "https://mcp.example.test", Resource: "https://mcp.example.test/mcp", Scopes: []string{"inventree.read"}, Service: service, MetadataFetcher: service.MetadataFetcher, CredentialBroker: broker}
+	authServer := &AuthorizationServer{Issuer: "https://mcp.example.test", Resource: "https://mcp.example.test/mcp", AuthorizePath: "/authorize", TokenPath: "/token", Scopes: []string{"inventree.read"}, Service: service, MetadataFetcher: service.MetadataFetcher, CredentialBroker: broker}
 	mux := http.NewServeMux()
 	r.NoError(authServer.Register(mux))
 	challenge := PKCEChallengeS256("verifier-with-at-least-forty-three-characters-1234")
@@ -546,7 +547,8 @@ func TestAuthorizationServerEnforcesSetupRequestSecurityExpiryTimeoutAndRateLimi
 	broker := &fakeCredentialBroker{subject: "inventree-user:7:operator", dedicated: Credential{Scheme: inventree.AuthSchemeToken, Token: "dedicated"}}
 	service := Service{Codec: testCodec(t), Clock: clock, MetadataFetcher: ClientMetadataFetcher{HTTPClient: clientServer.Client(), AllowedOrigins: []string{clientServer.URL}, AllowedClientIDs: []string{clientID}}, CodeStore: NewCodeStore(8, clock.Now)}
 	authServer := &AuthorizationServer{
-		Issuer: "https://mcp.example.test", Resource: "https://mcp.example.test/mcp", Scopes: []string{"inventree.read"},
+		Issuer: "https://mcp.example.test", Resource: "https://mcp.example.test/mcp", AuthorizePath: "/authorize", TokenPath: "/token",
+		Scopes:  []string{"inventree.read"},
 		Service: service, MetadataFetcher: service.MetadataFetcher, CredentialBroker: broker, Clock: clock, SetupTimeout: time.Millisecond,
 	}
 	mux := http.NewServeMux()
@@ -646,6 +648,61 @@ func TestRequestRateLimiterBoundsAttemptsAndWindow(t *testing.T) {
 	a.False(bounded.Allow("at-capacity"))
 	now = now.Add(time.Minute)
 	a.True(bounded.Allow("after-expiry"))
+}
+
+func TestAuthorizationServerUsesConfiguredPathsNotIssuerPath(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+
+	broker := &fakeCredentialBroker{}
+	service := Service{Codec: testCodec(t), MetadataFetcher: ClientMetadataFetcher{}, CodeStore: NewCodeStore(8, time.Now)}
+	authServer := &AuthorizationServer{
+		// The issuer URL carries its own path ("/other-issuer-path"), distinct
+		// from the configured MCP prefix ("/mcp"), to prove the registered and
+		// advertised endpoints come from AuthorizePath/TokenPath rather than
+		// from the issuer URL's own path.
+		Issuer: "https://mcp.example.test/other-issuer-path", Resource: "https://mcp.example.test/mcp",
+		AuthorizePath: "/mcp/oauth/authorize", TokenPath: "/mcp/oauth/token",
+		Scopes: []string{"inventree.read"}, Service: service, MetadataFetcher: service.MetadataFetcher, CredentialBroker: broker,
+	}
+	mux := http.NewServeMux()
+	r.NoError(authServer.Register(mux))
+
+	metadataRecorder := httptest.NewRecorder()
+	mux.ServeHTTP(metadataRecorder, httptest.NewRequest(http.MethodGet, "/.well-known/oauth-authorization-server/other-issuer-path", nil))
+	r.Equal(http.StatusOK, metadataRecorder.Code)
+	var metadata map[string]any
+	r.NoError(json.Unmarshal(metadataRecorder.Body.Bytes(), &metadata))
+	a.Equal("https://mcp.example.test/mcp/oauth/authorize", metadata["authorization_endpoint"])
+	a.Equal("https://mcp.example.test/mcp/oauth/token", metadata["token_endpoint"])
+
+	prefixed := httptest.NewRecorder()
+	mux.ServeHTTP(prefixed, httptest.NewRequest(http.MethodPost, "/mcp/oauth/token", strings.NewReader("")))
+	r.NotEqual(http.StatusNotFound, prefixed.Code)
+
+	for _, oldPath := range []string{"/authorize", "/token", "/other-issuer-path/authorize", "/other-issuer-path/token"} {
+		notFound := httptest.NewRecorder()
+		mux.ServeHTTP(notFound, httptest.NewRequest(http.MethodGet, oldPath, nil))
+		a.Equal(http.StatusNotFound, notFound.Code, "issuer-path-derived path %q must not be routed", oldPath)
+	}
+}
+
+func TestAuthorizationServerRegisterRequiresAuthorizeAndTokenPaths(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+
+	base := AuthorizationServer{
+		Issuer: "https://mcp.example.test", Resource: "https://mcp.example.test/mcp", CredentialBroker: &fakeCredentialBroker{},
+	}
+
+	missingAuthorizePath := base
+	missingAuthorizePath.TokenPath = "/mcp/oauth/token"
+	r.ErrorContains(missingAuthorizePath.Register(http.NewServeMux()), "OAuth authorization server configuration is incomplete")
+
+	missingTokenPath := base
+	missingTokenPath.AuthorizePath = "/mcp/oauth/authorize"
+	r.ErrorContains(missingTokenPath.Register(http.NewServeMux()), "OAuth authorization server configuration is incomplete")
 }
 
 func TestAuthorizationServerRateLimitsByResolvedSourceIP(t *testing.T) {

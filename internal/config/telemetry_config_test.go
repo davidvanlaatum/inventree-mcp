@@ -150,7 +150,7 @@ func TestValidateProductionMetricsRejectsRouteCollisions(t *testing.T) {
 		OAuthResourceURL: "https://mcp.example.test/mcp",
 		Telemetry:        telemetryConfigForTest(),
 	}
-	for _, path := range []string{"/mcp", "/.well-known/oauth-protected-resource/mcp", "/.well-known/oauth-authorization-server", "/authorize", "/token"} {
+	for _, path := range []string{"/mcp", "/.well-known/oauth-protected-resource/mcp", "/.well-known/oauth-authorization-server", "/mcp/oauth/authorize", "/mcp/oauth/token"} {
 		t.Run(path, func(t *testing.T) {
 			cfg.Telemetry.MetricsPath = path
 			require.ErrorContains(t, cfg.ValidateProductionRoutePaths(), "canonical paths collide")

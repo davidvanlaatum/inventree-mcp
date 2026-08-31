@@ -521,16 +521,81 @@ func TestParseServeRejectsCanonicalRouteCollision(t *testing.T) {
 
 	_, err := ParseServeWithEnv([]string{
 		"--transport", "http",
-		"--path", "/authorize",
+		"--path", "/mcp",
 		"--inventree-url", "https://inventory.example.test",
 		"--oauth-issuer-url", "https://mcp.example.test",
-		"--oauth-resource-url", "https://mcp.example.test/authorize",
+		"--oauth-resource-url", "https://mcp.example.test/mcp",
 		"--oauth-client-id", "https://chatgpt.com/client-metadata",
 		"--trusted-proxy-cidr", "192.0.2.0/24",
+		"--otel-metrics-enabled",
+		"--otel-metrics-path", "/mcp/oauth/authorize",
 	}, mapEnv(map[string]string{
 		EnvOAuthKeys: "current:active:MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY",
 	}), nil)
-	r.ErrorContains(err, `production HTTP canonical paths collide at "/authorize"`)
+	r.ErrorContains(err, `production HTTP canonical paths collide at "/mcp/oauth/authorize"`)
+}
+
+func TestParseServeRejectsRootHTTPPath(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+
+	_, err := ParseServeWithEnv([]string{
+		"--transport", "http",
+		"--path", "/",
+		"--inventree-url", "https://inventory.example.test",
+	}, mapEnv(map[string]string{
+		EnvOAuthKeys: "current:active:MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY",
+	}), nil)
+	r.ErrorContains(err, "HTTP path must not be the root path")
+}
+
+func TestConfigOAuthAuthorizeAndTokenPathsAreNestedUnderPath(t *testing.T) {
+	t.Parallel()
+	a := assert.New(t)
+
+	cfg := Config{Path: "/connectors/inventree/mcp"}
+	a.Equal("/connectors/inventree/mcp/oauth/authorize", cfg.OAuthAuthorizePath())
+	a.Equal("/connectors/inventree/mcp/oauth/token", cfg.OAuthTokenPath())
+}
+
+func TestParseServeRejectsHTTPPathServeMuxWildcardCharacters(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []string{"/mcp/{id}", "/mcp/{id...}", "/mcp*", "/{$}"} {
+		t.Run(tc, func(t *testing.T) {
+			t.Parallel()
+			r := require.New(t)
+
+			_, err := ParseServeWithEnv([]string{
+				"--transport", "http",
+				"--path", tc,
+				"--inventree-url", "https://inventory.example.test",
+			}, mapEnv(map[string]string{
+				EnvOAuthKeys: "current:active:MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY",
+			}), nil)
+			r.ErrorContains(err, `HTTP path must not contain "{", "}", or "*"`)
+		})
+	}
+}
+
+func TestParseServeRejectsNonCanonicalHTTPPath(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []string{"/mcp/", "/mcp/../mcp", "/mcp//sub"} {
+		t.Run(tc, func(t *testing.T) {
+			t.Parallel()
+			r := require.New(t)
+
+			_, err := ParseServeWithEnv([]string{
+				"--transport", "http",
+				"--path", tc,
+				"--inventree-url", "https://inventory.example.test",
+			}, mapEnv(map[string]string{
+				EnvOAuthKeys: "current:active:MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY",
+			}), nil)
+			r.ErrorContains(err, "HTTP path must be a canonical path without a trailing slash")
+		})
+	}
 }
 
 func TestParseServeRejectsBootstrapRouteCollision(t *testing.T) {

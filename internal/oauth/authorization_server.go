@@ -33,8 +33,16 @@ const (
 )
 
 type AuthorizationServer struct {
-	Issuer            string
-	Resource          string
+	Issuer   string
+	Resource string
+	// AuthorizePath and TokenPath are the exact HTTP paths the
+	// authorization and token endpoints are registered and advertised at.
+	// Callers derive these from the configured MCP path prefix (see
+	// config.Config.OAuthAuthorizePath/OAuthTokenPath) rather than from the
+	// OAuth issuer URL's own path, so they cannot collide with InvenTree
+	// routes served at the issuer origin.
+	AuthorizePath     string
+	TokenPath         string
 	Scopes            []string
 	Service           Service
 	MetadataFetcher   ClientMetadataFetcher
@@ -97,7 +105,7 @@ var setupPageTemplate = template.Must(template.New("setup").Parse(`<!doctype htm
 <button type="submit" name="cancel" value="true" formnovalidate>Cancel</button></form></main></body></html>`))
 
 func (s *AuthorizationServer) Register(mux *http.ServeMux) error {
-	if mux == nil || s.Issuer == "" || s.Resource == "" || s.CredentialBroker == nil {
+	if mux == nil || s.Issuer == "" || s.Resource == "" || s.AuthorizePath == "" || s.TokenPath == "" || s.CredentialBroker == nil {
 		return errors.New("OAuth authorization server configuration is incomplete")
 	}
 	metadataPath, authorizePath, tokenPath, err := s.paths()
@@ -371,7 +379,7 @@ func (s *AuthorizationServer) paths() (string, string, string, error) {
 	}
 	base := strings.TrimSuffix(issuer.Path, "/")
 	metadata := "/.well-known/oauth-authorization-server" + base
-	return metadata, base + "/authorize", base + "/token", nil
+	return metadata, s.AuthorizePath, s.TokenPath, nil
 }
 
 func (s *AuthorizationServer) allow(req *http.Request) bool {

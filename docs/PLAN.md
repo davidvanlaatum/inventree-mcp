@@ -833,6 +833,16 @@ The MCP server must never pass raw inbound InvenTree `Authorization` headers thr
 
 The OAuth layer should treat access and refresh tokens as separate envelope types. Access envelopes can authorize `/mcp` requests. Refresh envelopes can only be used at the token endpoint with the refresh grant.
 
+## OAuth Endpoint Path Prefix Design (F-S94)
+
+The OAuth authorization and token endpoints are exposed at `<path>/oauth/authorize` and `<path>/oauth/token`, nested under the configured MCP path (`config.Config.OAuthAuthorizePath`/`OAuthTokenPath`, mirroring `BootstrapPath`), not at the OAuth issuer URL's own path. With the default `/mcp` prefix this is `/mcp/oauth/authorize` and `/mcp/oauth/token`. This keeps every MCP-owned operational route (`/mcp`, `/mcp/auth/bootstrap`, `/mcp/oauth/*`) under one reverse-proxy-routable prefix that cannot collide with current or future InvenTree paths served at the issuer origin.
+
+The configured OAuth issuer URL remains the canonical origin used for metadata (`issuer`) and token validation; only the advertised `authorization_endpoint`/`token_endpoint` URLs substitute the prefixed path for the issuer URL's own path. Well-known metadata locations are unchanged and stay derived from the issuer/resource paths: `/.well-known/oauth-protected-resource<resource-path>` and `/.well-known/oauth-authorization-server<issuer-path>`.
+
+The configured MCP path itself must not be empty or root (`/`); production startup validation rejects a path that collides with the derived OAuth paths, the protected-resource/authorization-server well-known paths, the bootstrap path, or the metrics path. The canonical MCP root accepts both `/prefix` and `/prefix/` as exact matches (registered via the Go 1.22+ `{$}` end-of-path wildcard, not a subtree pattern), so a path-preserving proxy that appends a trailing slash still reaches the MCP handler without turning the prefix into a subtree that would swallow unrelated paths beneath it. OAuth, bootstrap, and other prefixed endpoint paths remain exact matches only; any trailing-slash variant, and the old unprefixed root-level `/authorize` and `/token` paths, return 404 with no compatibility alias and no redirect.
+
+This is an intentional one-time breaking cutover, not a compatibility-preserving change: deployments must update their reverse-proxy route set together with the server and have existing OAuth clients rediscover metadata (or be reconfigured) rather than relying on a dual-route transition period.
+
 ## HTTP Stateless Bearer Bootstrap Design (F-S93)
 
 Some remote HTTP MCP clients only support a single statically configured bearer token and cannot perform the OAuth authorization-code flow above. The bootstrap endpoint (`<path>/auth/bootstrap`, disabled by default) gives those clients a second, coexisting authenticated mode without adding a server-side token-mapping database:
