@@ -243,6 +243,37 @@ For SDK `v1.7.0`, `TokenVerifier` has the shape `func(context.Context, string, *
 
 ## Releases And Packages
 
+### Release Number Policy
+
+Release tags use `vMAJOR.MINOR.PATCH`. Choose the increment from the externally
+observable `inventree-mcp` contract, not from the size of the diff or the
+upstream InvenTree version number.
+
+- **Patch** (`X.Y.Z+1`): backward-compatible bug fixes, security fixes,
+  documentation-only changes, dependency/toolchain updates, packaging fixes,
+  and internal implementation changes. An InvenTree patch-pin update also
+  belongs here when the checked API/schema and MCP behavior remain unchanged.
+- **Minor** (`X.Y+1.0`): backward-compatible capabilities such as new tools,
+  resources, prompts, optional inputs, optional output fields, CLI/configuration
+  options, or supported compatibility additions. Before `1.0.0`, a breaking
+  change must also use the minor component (`0.Y.0`); the `0.0.Z` line remains
+  patch-only. An InvenTree minor/API/schema baseline change normally uses a
+  minor release, even when the existing MCP surface remains compatible.
+- **Major** (`X+1.0.0`): breaking changes after `1.0.0`, including removing or
+  renaming a public tool/field/CLI option, changing required inputs or output
+  meanings, changing authentication or safety requirements incompatibly,
+  dropping a documented compatibility target, or changing a stable wire
+  contract. `1.0.0` is the first stable release and may itself establish the
+  stable contract without requiring a prior `0.x` major release.
+
+Deprecations should be introduced in a minor release and remain documented for
+at least one subsequent minor release before removal, unless a security or
+upstream emergency requires otherwise. A release may contain several categories
+of change; use the highest applicable increment. Pre-release and build metadata
+tags are not part of the current publishing policy. Update the README
+compatibility table whenever the blocking InvenTree pin changes, but do not
+choose the MCP release number from that table alone.
+
 Releases are tag-driven through GitHub Actions and GoReleaser. Pushing a `vX.X.X` tag runs `.github/workflows/release.yml`, executes `GOFLAGS=-trimpath go test -v -race ./...`, and publishes a GitHub release with checksums, Linux/macOS/Windows binary archives for `amd64` and `arm64`, Linux `deb`, `rpm`, and `apk` packages, and a multi-architecture `ghcr.io/davidvanlaatum/inventree-mcp` image tagged with the release and `latest`. The image reuses GoReleaser's prebuilt Linux binaries, runs as a non-root user, and defaults to HTTP on port `28686` at `/mcp`; production deployment still requires the documented OAuth and InvenTree configuration.
 
 The Linux packages install the `inventree-mcp` binary to `/usr/bin`, install `packaging/systemd/inventree-mcp.service` as `inventree-mcp.service`, and install `/etc/inventree-mcp/config.yml` as a noreplace YAML configuration file (F-S86), which the packaged unit loads with `inventree-mcp serve --config /etc/inventree-mcp/config.yml`. The unit routes stdout and stderr explicitly to journald with a stable `inventree-mcp` syslog identifier so startup failures are visible from both `systemctl status` and `journalctl -u inventree-mcp.service`. Package maintainer scripts reload systemd and restart the service only when it is already enabled or active, including on upgrade, which fails closed (leaving the service down rather than starting insecurely) if `config.yml` still holds the packaged placeholder values. The `apk` package carries the same files for artifact parity; Alpine/OpenRC service management is not implemented in the first release package.

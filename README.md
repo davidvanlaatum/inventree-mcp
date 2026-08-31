@@ -120,6 +120,8 @@ Package installations must be upgraded with their package manager. `inventree-mc
 
 ## Maintainer Release Flow
 
+Choose the tag version according to the [release number policy](docs/PLAN.md#release-number-policy): patch releases are backward-compatible fixes, minor releases add compatible capabilities (and carry pre-`1.0.0` breaking changes), and major releases break the stable contract after `1.0.0`.
+
 From an up-to-date `main` commit:
 
 ```sh
