@@ -72,6 +72,12 @@ func TestHTTPMuxRegistersBootstrapRouteOnlyWhenEnabled(t *testing.T) {
 	handler.ServeHTTP(rec, req)
 	r.Equal(http.StatusOK, rec.Code)
 
+	trailingSlashReq := httptest.NewRequest(http.MethodPost, "/mcp/auth/bootstrap/", nil)
+	trailingSlashReq.Header.Set("Authorization", "Token supplied-token")
+	trailingSlashRec := httptest.NewRecorder()
+	handler.ServeHTTP(trailingSlashRec, trailingSlashReq)
+	r.Equal(http.StatusNotFound, trailingSlashRec.Code, "the bootstrap path is an exact match; a trailing-slash variant must not be routed")
+
 	disabledCfg := enabledCfg
 	disabledCfg.BootstrapEnabled = false
 	disabledHandler, err := HTTPMux(ctx, disabledCfg, New(tools.Dependencies{}))

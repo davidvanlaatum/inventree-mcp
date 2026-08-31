@@ -264,6 +264,8 @@ func httpMuxWithOptions(ctx context.Context, cfg config.Config, srv *mcp.Server,
 		authorizationServer := &oauth.AuthorizationServer{
 			Issuer:           cfg.OAuthIssuerURL,
 			Resource:         cfg.OAuthResourceURL,
+			AuthorizePath:    cfg.OAuthAuthorizePath(),
+			TokenPath:        cfg.OAuthTokenPath(),
 			Scopes:           supportedOAuthScopes(),
 			Service:          oauthService,
 			MetadataFetcher:  metadataFetcher,
@@ -294,7 +296,12 @@ func httpMuxWithOptions(ctx context.Context, cfg config.Config, srv *mcp.Server,
 	} else if traffic != nil {
 		handler = traffic.middleware(string(config.TransportHTTP), cfg.MCPMaxRequestBodyBytes, handler)
 	}
+	// Register both the bare prefix and its trailing-slash form as exact
+	// matches (via {$}) so a path-preserving reverse proxy that appends a
+	// trailing slash still reaches the MCP handler, without turning the
+	// prefix into a subtree that would swallow unrelated paths beneath it.
 	mux.Handle(cfg.Path, handler)
+	mux.Handle(cfg.Path+"/{$}", handler)
 	return telemetry.HTTPHandler(sourceIPMiddleware(logging.FromContext(ctx), sourceResolver, mux)), nil
 }
 

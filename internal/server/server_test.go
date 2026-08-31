@@ -1060,8 +1060,8 @@ func TestProductionHTTPMuxProtectsMCPAndPublishesResourceMetadata(t *testing.T) 
 	var authorizationMetadata map[string]any
 	r.NoError(json.Unmarshal(authorizationMetadataRecorder.Body.Bytes(), &authorizationMetadata))
 	a.Equal(cfg.OAuthIssuerURL, authorizationMetadata["issuer"])
-	a.Equal(cfg.OAuthIssuerURL+"/authorize", authorizationMetadata["authorization_endpoint"])
-	a.Equal(cfg.OAuthIssuerURL+"/token", authorizationMetadata["token_endpoint"])
+	a.Equal(cfg.OAuthIssuerURL+cfg.OAuthAuthorizePath(), authorizationMetadata["authorization_endpoint"])
+	a.Equal(cfg.OAuthIssuerURL+cfg.OAuthTokenPath(), authorizationMetadata["token_endpoint"])
 	a.Equal([]any{"private_key_jwt"}, authorizationMetadata["token_endpoint_auth_methods_supported"])
 	a.Equal("no-store", authorizationMetadataRecorder.Header().Get("Cache-Control"))
 
@@ -1171,8 +1171,8 @@ func TestProductionHTTPMuxPreservesCanonicalPrefixAndIgnoresForwardedURLHeaders(
 
 	authorizationMetadata := request("/.well-known/oauth-authorization-server/connectors/inventree")
 	r.Equal(http.StatusOK, authorizationMetadata.Code)
-	a.Contains(authorizationMetadata.Body.String(), `"authorization_endpoint":"https://public.example.test/connectors/inventree/authorize"`)
-	a.Contains(authorizationMetadata.Body.String(), `"token_endpoint":"https://public.example.test/connectors/inventree/token"`)
+	a.Contains(authorizationMetadata.Body.String(), `"authorization_endpoint":"https://public.example.test/connectors/inventree/mcp/oauth/authorize"`)
+	a.Contains(authorizationMetadata.Body.String(), `"token_endpoint":"https://public.example.test/connectors/inventree/mcp/oauth/token"`)
 	a.NotContains(authorizationMetadata.Body.String(), "internal.service")
 	a.NotContains(authorizationMetadata.Body.String(), "attacker")
 
@@ -1182,10 +1182,31 @@ func TestProductionHTTPMuxPreservesCanonicalPrefixAndIgnoresForwardedURLHeaders(
 	a.NotContains(protected.Header().Get("WWW-Authenticate"), "internal.service")
 	a.NotContains(protected.Header().Get("WWW-Authenticate"), "attacker")
 
+	protectedTrailingSlash := request(cfg.Path + "/")
+	r.Equal(http.StatusUnauthorized, protectedTrailingSlash.Code)
+
 	unprefixed := request("/mcp")
 	r.Equal(http.StatusNotFound, unprefixed.Code)
 
-	authorizePath := "/connectors/inventree/authorize"
+	unrelatedSubpath := request(cfg.Path + "/extra")
+	r.Equal(http.StatusNotFound, unrelatedSubpath.Code)
+
+	nearMiss := request(cfg.Path + "foo")
+	r.Equal(http.StatusNotFound, nearMiss.Code, "a path that merely starts with the prefix string must not match")
+
+	unrelatedWellKnown := request("/.well-known/openid-configuration")
+	r.Equal(http.StatusNotFound, unrelatedWellKnown.Code, "an unrelated well-known path must not be routed to MCP or InvenTree")
+
+	for _, oldRootPath := range []string{"/authorize", "/token", "/connectors/inventree/authorize", "/connectors/inventree/token"} {
+		oldRoot := request(oldRootPath)
+		r.Equal(http.StatusNotFound, oldRoot.Code, "old root-level OAuth path %q must not be routed", oldRootPath)
+	}
+	for _, trailingSlashVariant := range []string{cfg.OAuthAuthorizePath() + "/", cfg.OAuthTokenPath() + "/"} {
+		notFound := request(trailingSlashVariant)
+		r.Equal(http.StatusNotFound, notFound.Code, "trailing-slash variant %q must not be routed", trailingSlashVariant)
+	}
+
+	authorizePath := cfg.OAuthAuthorizePath()
 	authorizeQuery := url.Values{
 		"response_type":         {"code"},
 		"client_id":             {clientID},
@@ -1198,7 +1219,7 @@ func TestProductionHTTPMuxPreservesCanonicalPrefixAndIgnoresForwardedURLHeaders(
 	}
 	setup := request(authorizePath + "?" + authorizeQuery.Encode())
 	r.Equal(http.StatusOK, setup.Code)
-	a.Contains(setup.Body.String(), `action="/connectors/inventree/authorize"`)
+	a.Contains(setup.Body.String(), `action="`+authorizePath+`"`)
 	a.NotContains(setup.Body.String(), "internal.service")
 	a.NotContains(setup.Body.String(), "attacker")
 	r.Len(setup.Result().Cookies(), 1)
@@ -1237,7 +1258,7 @@ func TestProductionHTTPMuxPreservesCanonicalPrefixAndIgnoresForwardedURLHeaders(
 	a.NotContains(location.String(), "internal.service")
 	a.NotContains(location.String(), "attacker")
 
-	tokenErrorReq := httptest.NewRequest(http.MethodPost, "/connectors/inventree/token", strings.NewReader(url.Values{
+	tokenErrorReq := httptest.NewRequest(http.MethodPost, cfg.OAuthTokenPath(), strings.NewReader(url.Values{
 		"grant_type": {"authorization_code"}, "client_id": {clientID}, "resource": {cfg.OAuthResourceURL},
 	}.Encode()))
 	tokenErrorReq.RemoteAddr = "198.51.100.10:1234"
@@ -1283,9 +1304,10 @@ func TestProductionHTTPMuxRejectsCanonicalRouteCollision(t *testing.T) {
 	cfg := config.Config{
 		Transport:        config.TransportHTTP,
 		Environment:      config.EnvironmentProduction,
-		Path:             "/authorize",
+		Path:             "/mcp",
 		OAuthIssuerURL:   "https://public.example.test",
-		OAuthResourceURL: "https://public.example.test/authorize",
+		OAuthResourceURL: "https://public.example.test/mcp",
+		Telemetry:        telemetry.Config{MetricsEnabled: true, MetricsPath: "/mcp/oauth/authorize", ServiceName: "inventree-mcp"},
 		OAuthKeyring: oauth.KeyringConfig{Keys: []oauth.KeyConfig{{
 			ID:             "current",
 			MaterialBase64: "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY",
@@ -1294,7 +1316,7 @@ func TestProductionHTTPMuxRejectsCanonicalRouteCollision(t *testing.T) {
 	}
 
 	_, err := HTTPMux(ctx, cfg, New(tools.Dependencies{}))
-	r.ErrorContains(err, `production HTTP canonical paths collide at "/authorize"`)
+	r.ErrorContains(err, `production HTTP canonical paths collide at "/mcp/oauth/authorize"`)
 }
 
 func TestProductionHTTPMuxRateLimitsByTrustedResolvedSourceIP(t *testing.T) {
@@ -1326,7 +1348,7 @@ func TestProductionHTTPMuxRateLimitsByTrustedResolvedSourceIP(t *testing.T) {
 	})
 	r.NoError(err)
 	request := func(remoteAddress string, forwardedFor string) int {
-		req := httptest.NewRequest(http.MethodGet, "/authorize", nil)
+		req := httptest.NewRequest(http.MethodGet, cfg.OAuthAuthorizePath(), nil)
 		req.RemoteAddr = remoteAddress
 		if forwardedFor != "" {
 			req.Header.Set("X-Forwarded-For", forwardedFor)

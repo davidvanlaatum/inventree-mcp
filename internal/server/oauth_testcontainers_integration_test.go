@@ -60,8 +60,8 @@ func TestHTTPOAuthFlowAgainstInvenTreeContainer(t *testing.T) {
 	issuer := "https://mcp.example.test/connectors/inventree"
 	audience := issuer + "/mcp"
 	mcpPath := "/connectors/inventree/mcp"
-	authorizeEndpointPath := "/connectors/inventree/authorize"
-	tokenEndpointPath := "/connectors/inventree/token"
+	authorizeEndpointPath := mcpPath + "/oauth/authorize"
+	tokenEndpointPath := mcpPath + "/oauth/token"
 	redirectURI := "https://chatgpt.com/connector/oauth/callback_123"
 	clientKey, err := rsa.GenerateKey(rand.Reader, 2048)
 	r.NoError(err)
@@ -143,7 +143,9 @@ func TestHTTPOAuthFlowAgainstInvenTreeContainer(t *testing.T) {
 	code := callback.Query().Get("code")
 	r.NotEmpty(code)
 
-	tokenEndpoint := issuer + "/token"
+	issuerOrigin, err := url.Parse(issuer)
+	r.NoError(err)
+	tokenEndpoint := issuerOrigin.Scheme + "://" + issuerOrigin.Host + tokenEndpointPath
 	wrongTarget := oauthIntegrationPostForm(protected, tokenEndpointPath, url.Values{
 		"grant_type": {"authorization_code"}, "client_id": {metadataURL}, "client_assertion_type": {oauth.ClientAssertionTypeJWTBearer},
 		"client_assertion": {oauthIntegrationAssertion(t, clientKey, metadataURL, tokenEndpoint, "integration-wrong-target")},
