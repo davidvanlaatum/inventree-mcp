@@ -1439,7 +1439,7 @@ Tasks:
 
 ### F-S17: Native MCP Elicitation For Structured Clarifications
 
-- Status: `Ready`
+- Status: `Planned`
 - Issue: [#45](https://github.com/davidvanlaatum/inventree-mcp/issues/45)
 - Depends on: F-S16, product review, QA review, and live ChatGPT connector capability verification
 - Scope: use MCP multi-round-trip requests and structured elicitation for missing or ambiguous operator input while preserving the existing `clarification_required` result contract as a compatibility fallback for clients that cannot complete elicitation.
@@ -3420,7 +3420,7 @@ Tasks:
 
 ### F-S95: Structured Tool Logging And Packaged OTEL Samples
 
-- Status: `Planned`
+- Status: `Ready`
 - Issue: [#261](https://github.com/davidvanlaatum/inventree-mcp/issues/261)
 - Depends on: F-S84, F-S86.
 - Progress: identified during live packaged HTTP use after OTEL traces were confirmed working. Current tool logs are DEBUG-only and carry the noisy `source_ip_forwarded` provenance flag; the packaged YAML template includes Prometheus metric examples but omits the equivalent OTEL tracing sample. A configuration audit also found missing HTTP-template examples for `inventree_timeout`, `inventree_tls_skip_verify`, `mcp_max_request_body_bytes`, `debug_traffic_log`, `bulk_max_items`, and `bulk_concurrency`; `inventree_auth_scheme` must be documented as HTTP-inapplicable rather than presented as a usable HTTP option. The audit will classify each setting as valid for production HTTP, documented but rejected outside development, or transport-specific and omitted; the upstream token and STDIO upload-root settings are intentionally transport-specific omissions for the HTTP template and must be documented as such rather than copied blindly.
