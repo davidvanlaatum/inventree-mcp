@@ -524,7 +524,22 @@ func TestInvenTreeHTTPClientUsesConfiguredTimeout(t *testing.T) {
 	client := inventreeHTTPClient(config.Config{InvenTreeTimeout: 7 * time.Second})
 
 	a.Equal(7*time.Second, client.Timeout)
-	a.IsType(&http.Transport{}, client.Transport)
+	a.IsType(&http.Transport{}, unwrapTransport(t, client.Transport), "every layer (outbound-request-logging, and telemetry when enabled) must expose Unwrap so the real transport stays reachable")
+}
+
+// unwrapTransport walks every layer implementing the standard unwrap
+// convention (Unwrap() http.RoundTripper) and returns the innermost
+// transport. It doesn't assume a fixed number of layers, since telemetry
+// only adds its own wrapping layer when tracing or metrics is enabled.
+func unwrapTransport(t *testing.T, transport http.RoundTripper) http.RoundTripper {
+	t.Helper()
+	for {
+		unwrapper, ok := transport.(interface{ Unwrap() http.RoundTripper })
+		if !ok {
+			return transport
+		}
+		transport = unwrapper.Unwrap()
+	}
 }
 
 func TestRunServeReportsInvalidLogLevel(t *testing.T) {

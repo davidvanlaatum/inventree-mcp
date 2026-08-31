@@ -72,6 +72,7 @@ func InvocationLoggingMiddleware(generateRequestID func(context.Context) (string
 
 			ctx = logging.WithLogger(ctx, logger)
 			ctx = WithOutcomeRecorder(ctx)
+			ctx = requestctx.WithCorrelation(ctx)
 			logger.InfoContext(ctx, logEventToolInvocation)
 
 			started := time.Now()
