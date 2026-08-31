@@ -55,6 +55,29 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Pre-pull integration test images
+        shell: bash
+        run: |
+          set -u
+          images=(
+            "inventree/inventree:1.5.2"
+            "postgres:17"
+            "redis:7-alpine"
+          )
+          pids=()
+          for image in "${images[@]}"; do
+            docker pull "$image" &
+            pids+=("$!")
+          done
+
+          status=0
+          for pid in "${pids[@]}"; do
+            if ! wait "$pid"; then
+              status=1
+            fi
+          done
+          exit "$status"
+
       - name: Run tests
         run: go test -v -race ./...
 
