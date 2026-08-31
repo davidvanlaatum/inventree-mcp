@@ -179,6 +179,7 @@ type httpMuxOptions struct {
 	metadataClient         *http.Client
 	now                    func() time.Time
 	authorizationRateLimit int
+	bootstrapRateLimit     int
 }
 
 func httpMuxWithOptions(ctx context.Context, cfg config.Config, srv *mcp.Server, traffic *trafficLog, options httpMuxOptions) (http.Handler, error) {
@@ -205,7 +206,7 @@ func httpMuxWithOptions(ctx context.Context, cfg config.Config, srv *mcp.Server,
 		if err != nil {
 			return nil, err
 		}
-		verifier := oauth.AccessTokenVerifier(oauth.EnvelopeCodec{Keyring: keyring}, cfg.OAuthIssuerURL, cfg.OAuthResourceURL, cfg.OAuthClientIDs, nil)
+		verifier := oauth.AccessTokenVerifier(oauth.EnvelopeCodec{Keyring: keyring}, cfg.OAuthIssuerURL, cfg.OAuthResourceURL, cfg.OAuthClientIDs, nil, cfg.BootstrapEnabled)
 		if traffic != nil {
 			handler = traffic.middleware(string(config.TransportHTTP), cfg.MCPMaxRequestBodyBytes, handler)
 		}
@@ -271,6 +272,20 @@ func httpMuxWithOptions(ctx context.Context, cfg config.Config, srv *mcp.Server,
 		}
 		if err := authorizationServer.Register(mux); err != nil {
 			return nil, err
+		}
+		if cfg.BootstrapEnabled {
+			bootstrapServer := &oauth.BootstrapServer{
+				Issuer:           cfg.OAuthIssuerURL,
+				Resource:         cfg.OAuthResourceURL,
+				Codec:            oauth.EnvelopeCodec{Keyring: keyring},
+				CredentialBroker: broker,
+				RateLimiter:      oauth.NewRequestRateLimiter(options.bootstrapRateLimit, time.Minute, now),
+				Scopes:           supportedOAuthScopes(),
+				EnvelopeLifetime: cfg.BootstrapEnvelopeLifetime,
+			}
+			if err := bootstrapServer.Register(mux, cfg.BootstrapPath()); err != nil {
+				return nil, err
+			}
 		}
 	} else if traffic != nil {
 		handler = traffic.middleware(string(config.TransportHTTP), cfg.MCPMaxRequestBodyBytes, handler)

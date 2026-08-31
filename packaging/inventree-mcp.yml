@@ -42,6 +42,15 @@ inventree_url: https://inventory.example.test
 #   - 127.0.0.1/32
 #   - ::1/128
 
+# Stateless per-user bearer bootstrap lets a user exchange InvenTree Basic
+# (username/password) or an existing InvenTree Token/Bearer credential for an
+# opaque MCP bearer envelope, for clients that only support a static bearer
+# token and cannot perform the MCP OAuth flow above. Disabled by default; OAuth
+# and bootstrap may coexist. See the operator recipe for the request/response
+# shape and lifecycle trade-offs.
+# bootstrap_enabled: false
+# bootstrap_envelope_lifetime: 720h
+
 # Development-only HTTP smoke-test settings. Do not enable the packaged
 # service for a live connector until setup and deployment validation are
 # complete.

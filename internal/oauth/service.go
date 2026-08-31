@@ -59,7 +59,7 @@ func (s Service) IssueAuthorizationCode(ctx context.Context, req AuthorizationRe
 	if req.Issuer == "" || req.Audience == "" || req.Subject == "" || req.PKCEChallenge == "" {
 		return "", errors.New("authorization request is incomplete")
 	}
-	if err := req.Credential.Validate(); err != nil {
+	if err := req.Credential.ValidateForEnvelope(); err != nil {
 		return "", err
 	}
 	if _, err := s.MetadataFetcher.FetchAndValidate(ctx, req.ClientID, req.RedirectURI); err != nil {
@@ -169,7 +169,7 @@ func (s Service) Refresh(ctx context.Context, refreshToken string, aad Associate
 	}, claims.SessionExpiresAt)
 }
 
-func AccessTokenVerifier(codec EnvelopeCodec, issuer string, audience string, clientIDs []string, clock platform.Clock) auth.TokenVerifier {
+func AccessTokenVerifier(codec EnvelopeCodec, issuer string, audience string, clientIDs []string, clock platform.Clock, bootstrapEnabled bool) auth.TokenVerifier {
 	return func(_ context.Context, token string, _ *http.Request) (*auth.TokenInfo, error) {
 		now := time.Now()
 		if clock != nil {
@@ -194,6 +194,24 @@ func AccessTokenVerifier(codec EnvelopeCodec, issuer string, audience string, cl
 				Expiration: claims.ExpiresAt,
 				UserID:     claims.Subject,
 			}, claims.Credential), nil
+		}
+		if bootstrapEnabled {
+			var claims TokenClaims
+			aad := AssociatedData{
+				Issuer:   issuer,
+				Audience: audience,
+				ClientID: "",
+				Type:     TokenTypeBootstrapAccess,
+			}
+			if err := codec.Open(token, aad, &claims); err == nil {
+				if err := claims.validateForUse(now, TokenTypeBootstrapAccess, aad); err == nil {
+					return TokenInfoWithCredential(&auth.TokenInfo{
+						Scopes:     append([]string(nil), claims.Scopes...),
+						Expiration: claims.ExpiresAt,
+						UserID:     claims.Subject,
+					}, claims.Credential), nil
+				}
+			}
 		}
 		return nil, auth.ErrInvalidToken
 	}

@@ -65,3 +65,12 @@ dev_incomplete_oauth: false
 oauth_access_lifetime: 15m
 oauth_refresh_lifetime: 720h
 oauth_session_lifetime: 2160h
+
+# Stateless per-user bearer bootstrap lets a user exchange InvenTree Basic
+# (username/password) or an existing InvenTree Token/Bearer credential for an
+# opaque MCP bearer envelope, for clients that only support a static bearer
+# token and cannot perform the MCP OAuth flow above. Disabled by default; OAuth
+# and bootstrap may coexist. See the operator recipe for the request/response
+# shape and lifecycle trade-offs.
+# bootstrap_enabled: false
+# bootstrap_envelope_lifetime: 720h

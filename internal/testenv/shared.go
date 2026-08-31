@@ -34,6 +34,7 @@ const AccountAdmin AccountRole = "admin"
 
 type Account struct {
 	Username string
+	Password string
 	Token    string
 	Role     AccountRole
 	run      *Run
@@ -351,6 +352,7 @@ func (e *Environment) createTestAccount(ctx context.Context, run *Run, role Acco
 	}
 	return &Account{
 		Username: username,
+		Password: password,
 		Token:    token,
 		Role:     role,
 		run:      run,

@@ -84,6 +84,41 @@ otel_export_timeout: 7s
 	assert.Equal(t, 7*time.Second, cfg.Telemetry.ExportTimeout)
 }
 
+func TestParseServeLoadsBootstrapSettingsFromConfigFile(t *testing.T) {
+	t.Parallel()
+	fs := afero.NewMemMapFs()
+	require.NoError(t, afero.WriteFile(fs, "/config.yml", []byte(`
+inventree_url: https://yaml.example.test
+inventree_token: yaml-token
+bootstrap_enabled: true
+bootstrap_envelope_lifetime: 48h
+`), 0o600))
+
+	cfg, err := parseServeWithDeps([]string{"--config", "/config.yml"}, mapEnv(nil), nil, fs, func() (string, error) { return "/user-config", nil })
+	require.NoError(t, err)
+	assert.True(t, cfg.BootstrapEnabled)
+	assert.Equal(t, 48*time.Hour, cfg.BootstrapEnvelopeLifetime)
+}
+
+func TestParseServeBootstrapEnvOverridesConfigFile(t *testing.T) {
+	t.Parallel()
+	fs := afero.NewMemMapFs()
+	require.NoError(t, afero.WriteFile(fs, "/config.yml", []byte(`
+inventree_url: https://yaml.example.test
+inventree_token: yaml-token
+bootstrap_enabled: true
+bootstrap_envelope_lifetime: 48h
+`), 0o600))
+
+	cfg, err := parseServeWithDeps([]string{"--config", "/config.yml"}, mapEnv(map[string]string{
+		EnvBootstrapEnabled:          "false",
+		EnvBootstrapEnvelopeLifetime: "72h",
+	}), nil, fs, func() (string, error) { return "/user-config", nil })
+	require.NoError(t, err)
+	assert.False(t, cfg.BootstrapEnabled)
+	assert.Equal(t, 72*time.Hour, cfg.BootstrapEnvelopeLifetime)
+}
+
 func TestDiscoverConfigPathUsesFirstExistingFile(t *testing.T) {
 	t.Parallel()
 	fs := afero.NewMemMapFs()

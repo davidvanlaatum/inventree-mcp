@@ -234,7 +234,7 @@ func TestNewClientRejectsInvalidConfig(t *testing.T) {
 	_, err := NewClient(Config{
 		BaseURL: "ftp://inventory.example.test",
 		Credential: Credential{
-			Scheme: AuthScheme("Basic"),
+			Scheme: AuthScheme("Digest"),
 		},
 	})
 	r.Error(err)

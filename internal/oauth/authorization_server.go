@@ -216,6 +216,13 @@ func (s *AuthorizationServer) completeAuthorization(w http.ResponseWriter, req *
 		return
 	}
 	credential := Credential{Scheme: inventree.AuthScheme(req.PostForm.Get("credential_scheme")), Token: strings.TrimSpace(req.PostForm.Get("credential"))}
+	if err := credential.ValidateForEnvelope(); err != nil {
+		// The setup page's own <select> only offers Token/Bearer; this also
+		// rejects Basic, which is valid only for the separate bootstrap flow
+		// and must never be sealed into an OAuth token envelope.
+		s.renderSetup(w, req, state, "The InvenTree credential could not be validated.")
+		return
+	}
 	ctx, cancel := context.WithTimeout(req.Context(), defaultDuration(s.SetupTimeout, defaultSetupTimeout))
 	defer cancel()
 	subject, err := s.CredentialBroker.ValidateCredential(ctx, credential)

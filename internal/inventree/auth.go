@@ -11,6 +11,11 @@ type AuthScheme string
 const (
 	AuthSchemeToken  AuthScheme = "Token"
 	AuthSchemeBearer AuthScheme = "Bearer"
+	// AuthSchemeBasic is for transient outbound calls that validate a
+	// user-supplied credential (e.g. bearer bootstrap). Token must already
+	// be the base64-encoded "user:pass" value; Apply does not encode it.
+	// Never seal a Basic credential into a long-lived MCP token envelope.
+	AuthSchemeBasic AuthScheme = "Basic"
 )
 
 type Credential struct {
@@ -20,9 +25,9 @@ type Credential struct {
 
 func (c Credential) Validate() error {
 	switch c.Scheme {
-	case AuthSchemeToken, AuthSchemeBearer:
+	case AuthSchemeToken, AuthSchemeBearer, AuthSchemeBasic:
 	default:
-		return fmt.Errorf("InvenTree auth scheme must be %q or %q", AuthSchemeToken, AuthSchemeBearer)
+		return fmt.Errorf("InvenTree auth scheme must be %q, %q, or %q", AuthSchemeToken, AuthSchemeBearer, AuthSchemeBasic)
 	}
 	if c.Token == "" {
 		return errors.New("InvenTree token is required")

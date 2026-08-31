@@ -22,43 +22,45 @@ import (
 )
 
 const (
-	EnvTransport              = "INVENTREE_MCP_TRANSPORT"
-	EnvEnvironment            = "INVENTREE_MCP_ENVIRONMENT"
-	EnvListen                 = "INVENTREE_MCP_LISTEN"
-	EnvPath                   = "INVENTREE_MCP_PATH"
-	EnvInvenTreeURL           = "INVENTREE_URL"
-	EnvInvenTreeWebURL        = "INVENTREE_WEB_URL"
-	EnvInvenTreeToken         = "INVENTREE_TOKEN"
-	EnvInvenTreeAuthScheme    = "INVENTREE_AUTH_SCHEME"
-	EnvInvenTreeTimeout       = "INVENTREE_TIMEOUT"
-	EnvInvenTreeTLSSkipVerify = "INVENTREE_TLS_SKIP_VERIFY"
-	EnvUploadAllowRoots       = "INVENTREE_UPLOAD_ALLOW_ROOTS"
-	EnvUploadMaxBytes         = "INVENTREE_UPLOAD_MAX_BYTES"
-	EnvMCPMaxRequestBodyBytes = "INVENTREE_MCP_MAX_REQUEST_BODY_BYTES"
-	EnvLogLevel               = "INVENTREE_MCP_LOG_LEVEL"
-	EnvDebugTrafficLog        = "INVENTREE_MCP_DEBUG_TRAFFIC_LOG"
-	EnvDevIncompleteOAuth     = "INVENTREE_MCP_DEV_INCOMPLETE_OAUTH"
-	EnvOAuthIssuerURL         = "INVENTREE_MCP_OAUTH_ISSUER_URL"
-	EnvOAuthResourceURL       = "INVENTREE_MCP_OAUTH_RESOURCE_URL"
-	EnvOAuthKeys              = "INVENTREE_MCP_OAUTH_KEYS"
-	EnvOAuthClientIDs         = "INVENTREE_MCP_OAUTH_CLIENT_IDS"
-	EnvTrustedProxyCIDRs      = "INVENTREE_MCP_TRUSTED_PROXY_CIDRS"
-	EnvOAuthAccessLifetime    = "INVENTREE_MCP_OAUTH_ACCESS_LIFETIME"
-	EnvOAuthRefreshLifetime   = "INVENTREE_MCP_OAUTH_REFRESH_LIFETIME"
-	EnvOAuthSessionLifetime   = "INVENTREE_MCP_OAUTH_SESSION_LIFETIME"
-	EnvBulkMaxItems           = "INVENTREE_MCP_BULK_MAX_ITEMS"
-	EnvBulkConcurrency        = "INVENTREE_MCP_BULK_CONCURRENCY"
-	EnvOTelEnabled            = "INVENTREE_MCP_OTEL_ENABLED"
-	EnvOTelServiceName        = "INVENTREE_MCP_OTEL_SERVICE_NAME"
-	EnvOTelExporter           = "INVENTREE_MCP_OTEL_EXPORTER"
-	EnvOTelEndpoint           = "INVENTREE_MCP_OTEL_ENDPOINT"
-	EnvOTelInsecure           = "INVENTREE_MCP_OTEL_INSECURE"
-	EnvOTelHeaders            = "INVENTREE_MCP_OTEL_HEADERS"
-	EnvOTelSampleRatio        = "INVENTREE_MCP_OTEL_SAMPLE_RATIO"
-	EnvOTelBatchTimeout       = "INVENTREE_MCP_OTEL_BATCH_TIMEOUT"
-	EnvOTelExportTimeout      = "INVENTREE_MCP_OTEL_EXPORT_TIMEOUT"
-	EnvOTelMetricsEnabled     = "INVENTREE_MCP_OTEL_METRICS_ENABLED"
-	EnvOTelMetricsPath        = "INVENTREE_MCP_OTEL_METRICS_PATH"
+	EnvTransport                 = "INVENTREE_MCP_TRANSPORT"
+	EnvEnvironment               = "INVENTREE_MCP_ENVIRONMENT"
+	EnvListen                    = "INVENTREE_MCP_LISTEN"
+	EnvPath                      = "INVENTREE_MCP_PATH"
+	EnvInvenTreeURL              = "INVENTREE_URL"
+	EnvInvenTreeWebURL           = "INVENTREE_WEB_URL"
+	EnvInvenTreeToken            = "INVENTREE_TOKEN"
+	EnvInvenTreeAuthScheme       = "INVENTREE_AUTH_SCHEME"
+	EnvInvenTreeTimeout          = "INVENTREE_TIMEOUT"
+	EnvInvenTreeTLSSkipVerify    = "INVENTREE_TLS_SKIP_VERIFY"
+	EnvUploadAllowRoots          = "INVENTREE_UPLOAD_ALLOW_ROOTS"
+	EnvUploadMaxBytes            = "INVENTREE_UPLOAD_MAX_BYTES"
+	EnvMCPMaxRequestBodyBytes    = "INVENTREE_MCP_MAX_REQUEST_BODY_BYTES"
+	EnvLogLevel                  = "INVENTREE_MCP_LOG_LEVEL"
+	EnvDebugTrafficLog           = "INVENTREE_MCP_DEBUG_TRAFFIC_LOG"
+	EnvDevIncompleteOAuth        = "INVENTREE_MCP_DEV_INCOMPLETE_OAUTH"
+	EnvOAuthIssuerURL            = "INVENTREE_MCP_OAUTH_ISSUER_URL"
+	EnvOAuthResourceURL          = "INVENTREE_MCP_OAUTH_RESOURCE_URL"
+	EnvOAuthKeys                 = "INVENTREE_MCP_OAUTH_KEYS"
+	EnvOAuthClientIDs            = "INVENTREE_MCP_OAUTH_CLIENT_IDS"
+	EnvTrustedProxyCIDRs         = "INVENTREE_MCP_TRUSTED_PROXY_CIDRS"
+	EnvOAuthAccessLifetime       = "INVENTREE_MCP_OAUTH_ACCESS_LIFETIME"
+	EnvOAuthRefreshLifetime      = "INVENTREE_MCP_OAUTH_REFRESH_LIFETIME"
+	EnvOAuthSessionLifetime      = "INVENTREE_MCP_OAUTH_SESSION_LIFETIME"
+	EnvBootstrapEnabled          = "INVENTREE_MCP_BOOTSTRAP_ENABLED"
+	EnvBootstrapEnvelopeLifetime = "INVENTREE_MCP_BOOTSTRAP_ENVELOPE_LIFETIME"
+	EnvBulkMaxItems              = "INVENTREE_MCP_BULK_MAX_ITEMS"
+	EnvBulkConcurrency           = "INVENTREE_MCP_BULK_CONCURRENCY"
+	EnvOTelEnabled               = "INVENTREE_MCP_OTEL_ENABLED"
+	EnvOTelServiceName           = "INVENTREE_MCP_OTEL_SERVICE_NAME"
+	EnvOTelExporter              = "INVENTREE_MCP_OTEL_EXPORTER"
+	EnvOTelEndpoint              = "INVENTREE_MCP_OTEL_ENDPOINT"
+	EnvOTelInsecure              = "INVENTREE_MCP_OTEL_INSECURE"
+	EnvOTelHeaders               = "INVENTREE_MCP_OTEL_HEADERS"
+	EnvOTelSampleRatio           = "INVENTREE_MCP_OTEL_SAMPLE_RATIO"
+	EnvOTelBatchTimeout          = "INVENTREE_MCP_OTEL_BATCH_TIMEOUT"
+	EnvOTelExportTimeout         = "INVENTREE_MCP_OTEL_EXPORT_TIMEOUT"
+	EnvOTelMetricsEnabled        = "INVENTREE_MCP_OTEL_METRICS_ENABLED"
+	EnvOTelMetricsPath           = "INVENTREE_MCP_OTEL_METRICS_PATH"
 
 	invalidDuration               = time.Duration(-1)
 	DefaultListen                 = "127.0.0.1:28686"
@@ -92,33 +94,35 @@ const (
 )
 
 type Config struct {
-	Transport              Transport
-	Environment            Environment
-	Listen                 string
-	Path                   string
-	InvenTreeURL           string
-	InvenTreeWebURL        string
-	InvenTreeToken         string
-	InvenTreeAuthScheme    AuthScheme
-	InvenTreeTimeout       time.Duration
-	InvenTreeTLSSkipVerify bool
-	UploadAllowRoots       []string
-	UploadMaxBytes         int64
-	MCPMaxRequestBodyBytes int64
-	LogLevel               string
-	DebugTrafficLog        string
-	DevIncompleteOAuth     bool
-	OAuthIssuerURL         string
-	OAuthResourceURL       string
-	OAuthKeyring           oauth.KeyringConfig
-	OAuthClientIDs         []string
-	TrustedProxyCIDRs      []string
-	OAuthAccessLifetime    time.Duration
-	OAuthRefreshLifetime   time.Duration
-	OAuthSessionLifetime   time.Duration
-	Telemetry              telemetry.Config
-	BulkMaxItems           int
-	BulkConcurrency        int
+	Transport                 Transport
+	Environment               Environment
+	Listen                    string
+	Path                      string
+	InvenTreeURL              string
+	InvenTreeWebURL           string
+	InvenTreeToken            string
+	InvenTreeAuthScheme       AuthScheme
+	InvenTreeTimeout          time.Duration
+	InvenTreeTLSSkipVerify    bool
+	UploadAllowRoots          []string
+	UploadMaxBytes            int64
+	MCPMaxRequestBodyBytes    int64
+	LogLevel                  string
+	DebugTrafficLog           string
+	DevIncompleteOAuth        bool
+	OAuthIssuerURL            string
+	OAuthResourceURL          string
+	OAuthKeyring              oauth.KeyringConfig
+	OAuthClientIDs            []string
+	TrustedProxyCIDRs         []string
+	OAuthAccessLifetime       time.Duration
+	OAuthRefreshLifetime      time.Duration
+	OAuthSessionLifetime      time.Duration
+	BootstrapEnabled          bool
+	BootstrapEnvelopeLifetime time.Duration
+	Telemetry                 telemetry.Config
+	BulkMaxItems              int
+	BulkConcurrency           int
 }
 
 type Env func(string) string
@@ -216,6 +220,8 @@ func parseServeWithDeps(args []string, getenv Env, output io.Writer, filesystem 
 	fs.DurationVar(&cfg.OAuthAccessLifetime, "oauth-access-lifetime", cfg.OAuthAccessLifetime, flagHelp("OAuth access token lifetime", EnvOAuthAccessLifetime))
 	fs.DurationVar(&cfg.OAuthRefreshLifetime, "oauth-refresh-lifetime", cfg.OAuthRefreshLifetime, flagHelp("OAuth refresh token lifetime", EnvOAuthRefreshLifetime))
 	fs.DurationVar(&cfg.OAuthSessionLifetime, "oauth-session-lifetime", cfg.OAuthSessionLifetime, flagHelp("OAuth maximum connector session lifetime", EnvOAuthSessionLifetime))
+	fs.BoolVar(&cfg.BootstrapEnabled, "bootstrap-enabled", cfg.BootstrapEnabled, flagHelp("enable stateless per-user bearer bootstrap for static-bearer HTTP clients", EnvBootstrapEnabled))
+	fs.DurationVar(&cfg.BootstrapEnvelopeLifetime, "bootstrap-envelope-lifetime", cfg.BootstrapEnvelopeLifetime, flagHelp("bootstrap-issued MCP bearer envelope lifetime", EnvBootstrapEnvelopeLifetime))
 	fs.IntVar(&cfg.BulkMaxItems, "bulk-max-items", cfg.BulkMaxItems, flagHelp("maximum items accepted per bulk mutation call", EnvBulkMaxItems))
 	fs.IntVar(&cfg.BulkConcurrency, "bulk-concurrency", cfg.BulkConcurrency, flagHelp("maximum concurrent workers per bulk mutation call", EnvBulkConcurrency))
 	fs.BoolVar(&cfg.Telemetry.Enabled, "otel-enabled", cfg.Telemetry.Enabled, flagHelp("enable OpenTelemetry trace export", EnvOTelEnabled))
@@ -449,6 +455,9 @@ func (c Config) validateProductionHTTP() []error {
 	if c.OAuthRefreshLifetime > 0 && c.OAuthSessionLifetime > 0 && c.OAuthRefreshLifetime > c.OAuthSessionLifetime {
 		validationErrors = append(validationErrors, errors.New("OAuth refresh token lifetime must not exceed session lifetime"))
 	}
+	if c.BootstrapEnabled && c.BootstrapEnvelopeLifetime <= 0 {
+		validationErrors = append(validationErrors, errors.New("bootstrap envelope lifetime must be greater than zero"))
+	}
 	return validationErrors
 }
 
@@ -468,6 +477,9 @@ func (c Config) validateProductionRoutePaths() []error {
 	}
 	if c.Telemetry.MetricsEnabled {
 		routes = append(routes, c.Telemetry.MetricsPath)
+	}
+	if c.BootstrapEnabled {
+		routes = append(routes, c.BootstrapPath())
 	}
 	seen := make(map[string]struct{}, len(routes))
 	for _, route := range routes {
@@ -494,6 +506,13 @@ func canonicalOptionalURLPath(parsed *url.URL) bool {
 
 func canonicalRequiredURLPath(parsed *url.URL) bool {
 	return parsed.RawPath == "" && parsed.Path != "" && parsed.Path != "/" && path.Clean(parsed.Path) == parsed.Path && !strings.HasSuffix(parsed.Path, "/")
+}
+
+// BootstrapPath returns the stateless bearer bootstrap endpoint's HTTP
+// path: a literal sibling of Path, so a reverse proxy that preserves the
+// configured MCP path prefix also routes bootstrap requests correctly.
+func (c Config) BootstrapPath() string {
+	return path.Join(c.Path, "auth", "bootstrap")
 }
 
 func (c Config) OAuthProtectedResourceMetadataURL() string {

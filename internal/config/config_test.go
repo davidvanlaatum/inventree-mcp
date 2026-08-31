@@ -533,6 +533,89 @@ func TestParseServeRejectsCanonicalRouteCollision(t *testing.T) {
 	r.ErrorContains(err, `production HTTP canonical paths collide at "/authorize"`)
 }
 
+func TestParseServeRejectsBootstrapRouteCollision(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+
+	_, err := ParseServeWithEnv([]string{
+		"--transport", "http",
+		"--inventree-url", "https://inventory.example.test",
+		"--oauth-issuer-url", "https://mcp.example.test",
+		"--oauth-resource-url", "https://mcp.example.test/mcp",
+		"--oauth-client-id", "https://chatgpt.com/client-metadata",
+		"--trusted-proxy-cidr", "192.0.2.0/24",
+		"--bootstrap-enabled",
+		"--otel-metrics-enabled",
+		"--otel-metrics-path", "/mcp/auth/bootstrap",
+	}, mapEnv(map[string]string{
+		EnvOAuthKeys: "current:active:MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY",
+	}), nil)
+	r.ErrorContains(err, `production HTTP canonical paths collide at "/mcp/auth/bootstrap"`)
+}
+
+func TestParseServeBootstrapEnabledAtDefaultRoute(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+
+	cfg, err := ParseServeWithEnv([]string{
+		"--transport", "http",
+		"--inventree-url", "https://inventory.example.test",
+		"--oauth-issuer-url", "https://mcp.example.test",
+		"--oauth-resource-url", "https://mcp.example.test/mcp",
+		"--oauth-client-id", "https://chatgpt.com/client-metadata",
+		"--trusted-proxy-cidr", "192.0.2.0/24",
+		"--bootstrap-enabled",
+		"--bootstrap-envelope-lifetime", "48h",
+	}, mapEnv(map[string]string{
+		EnvOAuthKeys: "current:active:MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY",
+	}), nil)
+	r.NoError(err)
+	a.True(cfg.BootstrapEnabled)
+	a.Equal(48*time.Hour, cfg.BootstrapEnvelopeLifetime)
+	a.Equal("/mcp/auth/bootstrap", cfg.BootstrapPath())
+}
+
+func TestParseServeBootstrapDisabledByDefaultAndLeavesRoutesUnchanged(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+
+	cfg, err := ParseServeWithEnv([]string{
+		"--transport", "http",
+		"--inventree-url", "https://inventory.example.test",
+		"--oauth-issuer-url", "https://mcp.example.test",
+		"--oauth-resource-url", "https://mcp.example.test/mcp",
+		"--oauth-client-id", "https://chatgpt.com/client-metadata",
+		"--trusted-proxy-cidr", "192.0.2.0/24",
+		"--otel-metrics-enabled",
+		"--otel-metrics-path", "/mcp/auth/bootstrap",
+	}, mapEnv(map[string]string{
+		EnvOAuthKeys: "current:active:MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY",
+	}), nil)
+	r.NoError(err)
+	a.False(cfg.BootstrapEnabled)
+}
+
+func TestParseServeRejectsZeroBootstrapEnvelopeLifetimeWhenEnabled(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+
+	_, err := ParseServeWithEnv([]string{
+		"--transport", "http",
+		"--inventree-url", "https://inventory.example.test",
+		"--oauth-issuer-url", "https://mcp.example.test",
+		"--oauth-resource-url", "https://mcp.example.test/mcp",
+		"--oauth-client-id", "https://chatgpt.com/client-metadata",
+		"--trusted-proxy-cidr", "192.0.2.0/24",
+		"--bootstrap-enabled",
+		"--bootstrap-envelope-lifetime", "0s",
+	}, mapEnv(map[string]string{
+		EnvOAuthKeys: "current:active:MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY",
+	}), nil)
+	r.ErrorContains(err, "bootstrap envelope lifetime must be greater than zero")
+}
+
 func TestParseServeRejectsTrustAllProxyCIDRs(t *testing.T) {
 	t.Parallel()
 	r := require.New(t)
