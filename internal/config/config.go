@@ -357,8 +357,17 @@ func (c Config) Validate() error {
 		}
 		if c.Path == "" || !strings.HasPrefix(c.Path, "/") {
 			validationErrors = append(validationErrors, errors.New("HTTP path must start with /"))
-		} else if path.Clean(c.Path) != c.Path || (c.Path != "/" && strings.HasSuffix(c.Path, "/")) {
+		} else if c.Path == "/" {
+			validationErrors = append(validationErrors, errors.New("HTTP path must not be the root path"))
+		} else if path.Clean(c.Path) != c.Path || strings.HasSuffix(c.Path, "/") {
 			validationErrors = append(validationErrors, errors.New("HTTP path must be a canonical path without a trailing slash"))
+		} else if strings.ContainsAny(c.Path, "{}*") {
+			// net/http.ServeMux (Go 1.22+) treats "{", "}", and a trailing "*"
+			// segment as wildcard pattern syntax. Rejecting them keeps every
+			// path derived from c.Path (the MCP root and its "/{$}" form, the
+			// OAuth and bootstrap endpoints) an exact literal match instead of
+			// an operator-configured wildcard registration.
+			validationErrors = append(validationErrors, errors.New("HTTP path must not contain \"{\", \"}\", or \"*\""))
 		}
 		if c.Listen == "" {
 			validationErrors = append(validationErrors, errors.New("HTTP listen address is required"))
@@ -472,8 +481,8 @@ func (c Config) validateProductionRoutePaths() []error {
 		c.Path,
 		resourceMetadata.Path,
 		"/.well-known/oauth-authorization-server" + issuerBase,
-		issuerBase + "/authorize",
-		issuerBase + "/token",
+		c.OAuthAuthorizePath(),
+		c.OAuthTokenPath(),
 	}
 	if c.Telemetry.MetricsEnabled {
 		routes = append(routes, c.Telemetry.MetricsPath)
@@ -513,6 +522,22 @@ func canonicalRequiredURLPath(parsed *url.URL) bool {
 // configured MCP path prefix also routes bootstrap requests correctly.
 func (c Config) BootstrapPath() string {
 	return path.Join(c.Path, "auth", "bootstrap")
+}
+
+// OAuthAuthorizePath returns the OAuth authorization endpoint's HTTP path:
+// nested under Path (like BootstrapPath), so a reverse proxy that preserves
+// the configured MCP path prefix also routes the OAuth authorization
+// request correctly. The path is derived from the configured MCP path
+// prefix, not the OAuth issuer URL's own path, so it cannot collide with
+// InvenTree routes served at the issuer origin.
+func (c Config) OAuthAuthorizePath() string {
+	return path.Join(c.Path, "oauth", "authorize")
+}
+
+// OAuthTokenPath returns the OAuth token endpoint's HTTP path, derived the
+// same way as OAuthAuthorizePath.
+func (c Config) OAuthTokenPath() string {
+	return path.Join(c.Path, "oauth", "token")
 }
 
 func (c Config) OAuthProtectedResourceMetadataURL() string {
