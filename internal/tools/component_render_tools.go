@@ -5,10 +5,8 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
-	"log/slog"
 	"reflect"
 
-	"github.com/davidvanlaatum/dvgoutils/logging"
 	"github.com/davidvanlaatum/inventree-mcp/internal/render"
 	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -173,10 +171,6 @@ func registerComponentRenderTool(server *mcp.Server, deps Dependencies) {
 }
 
 func renderComponentImage(ctx context.Context, _ *mcp.CallToolRequest, input RenderComponentImageInput) (*mcp.CallToolResult, RenderComponentImageOutput, error) {
-	logger := logging.FromContext(ctx).With(slog.String("tool", RenderComponentImageToolName))
-	ctx = logging.WithLogger(ctx, logger)
-	logger.DebugContext(ctx, "tool called", slog.String("family", string(input.Family)))
-
 	canvas, err := resolveRenderCanvas(input)
 	if err != nil {
 		return nil, RenderComponentImageOutput{}, err

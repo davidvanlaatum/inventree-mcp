@@ -3,9 +3,7 @@ package tools
 import (
 	"context"
 	"errors"
-	"log/slog"
 
-	"github.com/davidvanlaatum/dvgoutils/logging"
 	"github.com/davidvanlaatum/inventree-mcp/internal/upload"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -41,9 +39,6 @@ func registerLocalUploadPolicyTool(server *mcp.Server, deps Dependencies) {
 
 func getLocalUploadPolicy(deps Dependencies) mcp.ToolHandlerFor[LocalUploadPolicyInput, LocalUploadPolicyOutput] {
 	return func(ctx context.Context, _ *mcp.CallToolRequest, _ LocalUploadPolicyInput) (*mcp.CallToolResult, LocalUploadPolicyOutput, error) {
-		logger := logging.FromContext(ctx).With(slog.String("tool", GetLocalUploadPolicyToolName))
-		ctx = logging.WithLogger(ctx, logger)
-		logger.DebugContext(ctx, "tool called")
 		roots, err := upload.CanonicalAllowRoots(deps.UploadFS, deps.UploadAllowRoots)
 		if err != nil {
 			return nil, LocalUploadPolicyOutput{}, err

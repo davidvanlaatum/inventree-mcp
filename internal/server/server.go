@@ -38,7 +38,11 @@ func New(deps tools.Dependencies) *mcp.Server {
 		Version: buildinfo.Version,
 		Icons:   []mcp.Icon{tools.InvenTreeIcon()},
 	}, &mcp.ServerOptions{Instructions: serverInstructions})
-	srv.AddReceivingMiddleware(telemetry.MCPMiddleware)
+	// telemetry.MCPMiddleware must run first (create the MCP-level span, when
+	// tracing is enabled) so tools.InvocationLoggingMiddleware can read trace
+	// correlation from an already-active span. AddReceivingMiddleware applies
+	// its arguments left to right, so the first argument executes first.
+	srv.AddReceivingMiddleware(telemetry.MCPMiddleware, tools.InvocationLoggingMiddleware(nil))
 	tools.Register(srv, deps)
 	telemetry.SetToolAllowlist(tools.RegisteredToolNames(deps.EnableWriteTools))
 	return srv

@@ -81,6 +81,14 @@ Some remote HTTP MCP clients only accept a single statically configured bearer t
 - Clarify when: auth scheme is neither `Token` nor `Bearer`, URL is missing, upload allowlisted roots are not trusted, or TLS skip verify is requested outside local/test use.
 - Expected output: STDIO MCP server ready for local clients.
 
+### Structured Tool Invocation Logging
+
+- Every tool call emits INFO-level `tool_invocation` and `tool_completion` log records at `log_level: info` or lower, independently of whether OTEL tracing or metrics are enabled (F-S95). No configuration is required to see them.
+- Each record carries a server-generated 32-character lowercase hex `request_id` correlating the invocation with its completion, `tool`, `transport` (`stdio` or `http`), `source_ip` when resolved (HTTP only), and `trace_id`/`span_id` only when an OTEL span is currently active. The request ID is a correlation value, not an identity or authentication token.
+- `tool_completion` adds `outcome` (one of `success`, `validation_failure`, `authorization_failure`, `upstream_failure`, `cancellation`, `internal_failure`), `duration`, and a bounded `result_count` when the tool's output exposes one.
+- Only an explicit, centralized allowlist of per-tool fields is logged — for example `id` for get-by-id tools, bounded `limit`/`offset` for search tools, and `item_count`/`dry_run`/`confirm` for bulk tools. Raw search text, arbitrary tool arguments, uploaded content, and full records are never logged.
+- If server-side request-ID generation fails, the invocation is refused before it reaches the tool handler and only a separate, request-ID-less error record is emitted; this is a fail-closed safety behavior, not a tool-facing error condition to work around.
+
 ### OpenTelemetry Tracing
 
 - Tracing is disabled by default. Enable it only when a trusted collector is configured: set `INVENTREE_MCP_OTEL_ENABLED=true` and provide `INVENTREE_MCP_OTEL_ENDPOINT` plus `INVENTREE_MCP_OTEL_EXPORTER=otlpgrpc` or `otlphttp`.

@@ -16,7 +16,8 @@ import (
 func TestSafeToolErrorIncludesOnlyCanonicalAllowlistedValidationDetails(t *testing.T) {
 	t.Parallel()
 	a := assert.New(t)
-	err := safeToolError(&inventree.APIError{
+	ctx := WithOutcomeRecorder(t.Context())
+	err := safeToolError(ctx, &inventree.APIError{
 		StatusCode: http.StatusBadRequest,
 		Kind:       inventree.ErrorKindValidation,
 		Detail:     "secret raw response body",
@@ -33,19 +34,49 @@ func TestSafeToolErrorIncludesOnlyCanonicalAllowlistedValidationDetails(t *testi
 	a.NotContains(err.Error(), "password")
 	a.NotContains(err.Error(), "tax")
 	a.NotContains(err.Error(), "token")
+	outcome, ok := OutcomeFromContext(ctx)
+	a.True(ok)
+	a.Equal(OutcomeValidationFailure, outcome)
 }
 
 func TestSafeToolErrorSuppressesNonValidationResponseDetails(t *testing.T) {
 	t.Parallel()
 	a := assert.New(t)
-	err := safeToolError(&inventree.APIError{StatusCode: http.StatusInternalServerError, Kind: inventree.ErrorKindServer, Detail: "private upstream body"})
+	ctx := WithOutcomeRecorder(t.Context())
+	err := safeToolError(ctx, &inventree.APIError{StatusCode: http.StatusInternalServerError, Kind: inventree.ErrorKindServer, Detail: "private upstream body"})
 	a.Equal("InvenTree request failed with status 500", err.Error())
+	outcome, ok := OutcomeFromContext(ctx)
+	a.True(ok)
+	a.Equal(OutcomeUpstreamFailure, outcome)
+}
+
+func TestSafeToolErrorClassifiesAuthenticationAndPermissionAsAuthorizationFailure(t *testing.T) {
+	t.Parallel()
+	a := assert.New(t)
+	for _, kind := range []inventree.ErrorKind{inventree.ErrorKindAuthentication, inventree.ErrorKindPermission} {
+		ctx := WithOutcomeRecorder(t.Context())
+		_ = safeToolError(ctx, &inventree.APIError{StatusCode: http.StatusForbidden, Kind: kind})
+		outcome, ok := OutcomeFromContext(ctx)
+		a.True(ok)
+		a.Equal(OutcomeAuthorizationFailure, outcome)
+	}
+}
+
+func TestSafeToolErrorClassifiesUnrecognizedErrorAsInternalFailure(t *testing.T) {
+	t.Parallel()
+	a := assert.New(t)
+	ctx := WithOutcomeRecorder(t.Context())
+	_ = safeToolError(ctx, errors.New("unexpected local failure"))
+	outcome, ok := OutcomeFromContext(ctx)
+	a.True(ok)
+	a.Equal(OutcomeInternalFailure, outcome)
 }
 
 func TestSafeToolErrorSuppressesTransportURL(t *testing.T) {
 	t.Parallel()
 	a := assert.New(t)
-	err := safeToolError(fmt.Errorf("search failed: %w", &url.Error{
+	ctx := WithOutcomeRecorder(t.Context())
+	err := safeToolError(ctx, fmt.Errorf("search failed: %w", &url.Error{
 		Op:  http.MethodGet,
 		URL: "https://operator:password@example.test/api/part/?token=secret&search=private",
 		Err: errors.New("connection refused"),
@@ -55,19 +86,27 @@ func TestSafeToolErrorSuppressesTransportURL(t *testing.T) {
 	a.NotContains(err.Error(), "secret")
 	a.NotContains(err.Error(), "private")
 	a.NotContains(err.Error(), "password")
+	outcome, ok := OutcomeFromContext(ctx)
+	a.True(ok)
+	a.Equal(OutcomeUpstreamFailure, outcome)
 }
 
 func TestSafeToolErrorPreservesWrappedContextSentinels(t *testing.T) {
 	t.Parallel()
 	r := require.New(t)
+	a := assert.New(t)
 	for _, sentinel := range []error{context.Canceled, context.DeadlineExceeded} {
-		err := safeToolError(&url.Error{
+		ctx := WithOutcomeRecorder(t.Context())
+		err := safeToolError(ctx, &url.Error{
 			Op:  http.MethodGet,
 			URL: "https://operator:password@example.test/api/part/?token=secret",
 			Err: sentinel,
 		})
 		r.ErrorIs(err, sentinel)
 		r.Equal(sentinel.Error(), err.Error())
+		outcome, ok := OutcomeFromContext(ctx)
+		a.True(ok)
+		a.Equal(OutcomeCancellation, outcome)
 	}
 }
 

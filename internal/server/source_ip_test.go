@@ -88,7 +88,7 @@ func TestSourceIPMiddlewareAttachesNormalizedLogContext(t *testing.T) {
 	})
 	r.NotNil(record)
 	a.Equal("203.0.113.20", record["source_ip"])
-	a.Equal(true, record["source_ip_forwarded"])
+	a.NotContains(record, "source_ip_forwarded")
 	a.NotContains(record, "x_forwarded_for")
 	a.NotContains(record, "X-Forwarded-For")
 }

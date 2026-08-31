@@ -93,10 +93,7 @@ func sourceIPMiddleware(baseLogger *slog.Logger, resolver sourceIPResolver, next
 		logger := baseLogger
 		if resolved.address.IsValid() {
 			requestCtx = requestctx.WithSourceIP(requestCtx, resolved.address)
-			logger = logger.With(
-				slog.String("source_ip", resolved.address.String()),
-				slog.Bool("source_ip_forwarded", resolved.forwarded),
-			)
+			logger = logger.With(slog.String("source_ip", resolved.address.String()))
 		}
 		requestCtx = logging.WithLogger(requestCtx, logger)
 		next.ServeHTTP(w, req.WithContext(requestCtx))

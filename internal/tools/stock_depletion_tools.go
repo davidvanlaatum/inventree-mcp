@@ -26,7 +26,7 @@ func depleteStockItem(deps Dependencies) mcp.ToolHandlerFor[DepleteStockItemInpu
 					out.Status = StatusNotFound
 					return TextResult(StatusNotFound), out, nil
 				}
-				return nil, out, safeToolError(err)
+				return nil, out, safeToolError(ctx, err)
 			}
 			if before.PK != input.StockItemID {
 				return nil, out, errors.New("InvenTree returned a mismatched stock-item identity")
@@ -145,7 +145,7 @@ func executeStockDepletion(ctx context.Context, store *stockPlanStore, client St
 	if mutationErr != nil {
 		var apiErr *inventree.APIError
 		if errors.As(mutationErr, &apiErr) && definiteMutationRejection(apiErr.StatusCode) {
-			return nil, out, safeToolError(mutationErr)
+			return nil, out, safeToolError(ctx, mutationErr)
 		}
 		return verifyStockDepletion(ctx, client, out, true)
 	}

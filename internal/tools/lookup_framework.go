@@ -3,9 +3,7 @@ package tools
 import (
 	"context"
 	"fmt"
-	"log/slog"
 
-	"github.com/davidvanlaatum/dvgoutils/logging"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -65,13 +63,10 @@ type LookupHandlerFunc[Client, In, Out any] func(context.Context, *mcp.CallToolR
 
 func LookupHandler[Client, In, Out any](deps Dependencies, toolName string, handler LookupHandlerFunc[Client, In, Out]) mcp.ToolHandlerFor[In, Out] {
 	return func(ctx context.Context, req *mcp.CallToolRequest, input In) (*mcp.CallToolResult, Out, error) {
-		ctx = logging.WithLogger(ctx, logging.FromContext(ctx).With(slog.String("tool", toolName)))
-		logging.FromContext(ctx).DebugContext(ctx, "tool called")
-
 		rawClient, err := deps.Client(ctx)
 		if err != nil {
 			var zero Out
-			return nil, zero, safeToolError(err)
+			return nil, zero, safeToolError(ctx, err)
 		}
 		client, ok := rawClient.(Client)
 		if !ok {
@@ -80,7 +75,7 @@ func LookupHandler[Client, In, Out any](deps Dependencies, toolName string, hand
 		}
 		result, output, err := handler(ctx, req, client, input)
 		if err != nil {
-			return result, output, safeToolError(err)
+			return result, output, safeToolError(ctx, err)
 		}
 		projectWebLinks(deps.WebLinks, toolName, &output)
 		return result, output, nil

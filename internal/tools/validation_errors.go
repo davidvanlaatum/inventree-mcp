@@ -145,22 +145,33 @@ func safeValidationMessages(raw []string) []string {
 	return messages
 }
 
-func safeToolError(err error) error {
+// safeToolError converts err into caller-safe text and classifies how the
+// invocation completed onto ctx's outcome recorder (see RecordOutcome). It is
+// reached, directly or through LookupHandler, by nearly every tool error
+// path, making it the central chokepoint for the closed completion-outcome
+// vocabulary rather than requiring every call site to classify its own
+// errors.
+func safeToolError(ctx context.Context, err error) error {
 	if errors.Is(err, context.Canceled) {
+		RecordOutcome(ctx, OutcomeCancellation)
 		return context.Canceled
 	}
 	if errors.Is(err, context.DeadlineExceeded) {
+		RecordOutcome(ctx, OutcomeCancellation)
 		return context.DeadlineExceeded
 	}
 	var urlErr *url.Error
 	if errors.As(err, &urlErr) {
+		RecordOutcome(ctx, OutcomeUpstreamFailure)
 		return errors.New("upstream request failed")
 	}
 	var apiErr *inventree.APIError
 	if !errors.As(err, &apiErr) {
+		RecordOutcome(ctx, OutcomeInternalFailure)
 		return err
 	}
 	if validation, ok := safeValidationFailure(err); ok {
+		RecordOutcome(ctx, OutcomeValidationFailure)
 		parts := make([]string, 0, len(validation.Fields))
 		for _, field := range validation.Fields {
 			parts = append(parts, field.Field+": "+strings.Join(field.Messages, " "))
@@ -169,6 +180,12 @@ func safeToolError(err error) error {
 			return fmt.Errorf("InvenTree validation failed with status %d: %s", validation.StatusCode, strings.Join(parts, "; "))
 		}
 		return fmt.Errorf("InvenTree validation failed with status %d", validation.StatusCode)
+	}
+	switch apiErr.Kind {
+	case inventree.ErrorKindAuthentication, inventree.ErrorKindPermission:
+		RecordOutcome(ctx, OutcomeAuthorizationFailure)
+	default:
+		RecordOutcome(ctx, OutcomeUpstreamFailure)
 	}
 	return fmt.Errorf("InvenTree request failed with status %d", apiErr.StatusCode)
 }

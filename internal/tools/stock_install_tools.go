@@ -65,7 +65,7 @@ func installStockItem(deps Dependencies) mcp.ToolHandlerFor[InstallStockItemInpu
 					out.Status = StatusNotFound
 					return TextResult(StatusNotFound), out, nil
 				}
-				return nil, out, safeToolError(err)
+				return nil, out, safeToolError(ctx, err)
 			}
 			if child.PK != input.ChildStockItemID {
 				return nil, out, errors.New("InvenTree returned a mismatched child stock-item identity")
@@ -89,7 +89,7 @@ func installStockItem(deps Dependencies) mcp.ToolHandlerFor[InstallStockItemInpu
 				if isNotFound(err) {
 					return stockInstallClarification(out, "Which existing stock item should receive the installed child?", "parent_stock_item", "parent_stock_item_id was not found", "parent_stock_item_id", map[string]any{"parent_stock_item_id": input.ParentStockItemID})
 				}
-				return nil, out, safeToolError(err)
+				return nil, out, safeToolError(ctx, err)
 			}
 			if parent.PK != input.ParentStockItemID {
 				return nil, out, errors.New("InvenTree returned a mismatched parent stock-item identity")
@@ -104,7 +104,7 @@ func installStockItem(deps Dependencies) mcp.ToolHandlerFor[InstallStockItemInpu
 
 			bomItems, err := client.SearchBomItems(ctx, inventree.BomItemQuery{Uses: child.Part, Limit: DefaultLookupLimit})
 			if err != nil {
-				return nil, out, safeToolError(err)
+				return nil, out, safeToolError(ctx, err)
 			}
 			if !bomIncludesAssembly(bomItems, parent.Part) {
 				return stockInstallClarification(out, "Which BOM-eligible child part should be installed?", "child_stock_item", "the child part is not in the parent part's Bill of Materials", "child_stock_item_id", map[string]any{"parent_stock_item_id": input.ParentStockItemID, "parent_part_id": parent.Part, "child_stock_item_id": input.ChildStockItemID, "child_part_id": child.Part})
@@ -148,7 +148,7 @@ func uninstallStockItem(deps Dependencies) mcp.ToolHandlerFor[UninstallStockItem
 					out.Status = StatusNotFound
 					return TextResult(StatusNotFound), out, nil
 				}
-				return nil, out, safeToolError(err)
+				return nil, out, safeToolError(ctx, err)
 			}
 			if item.PK != input.StockItemID {
 				return nil, out, errors.New("InvenTree returned a mismatched stock-item identity")
@@ -166,7 +166,7 @@ func uninstallStockItem(deps Dependencies) mcp.ToolHandlerFor[UninstallStockItem
 				if isNotFound(err) {
 					return stockInstallClarification(out, "Which existing stock location should receive the item?", "destination_location", "destination_location_id was not found", "destination_location_id", map[string]any{"stock_item_id": input.StockItemID, "destination_location_id": input.DestinationLocationID})
 				}
-				return nil, out, safeToolError(err)
+				return nil, out, safeToolError(ctx, err)
 			}
 			if destination.PK != input.DestinationLocationID {
 				return nil, out, errors.New("InvenTree returned a mismatched destination-location identity")
@@ -339,7 +339,7 @@ func executeStockInstall(ctx context.Context, store *stockPlanStore, client Stoc
 	if mutationErr != nil {
 		var apiErr *inventree.APIError
 		if errors.As(mutationErr, &apiErr) && definiteMutationRejection(apiErr.StatusCode) {
-			return nil, out, safeToolError(mutationErr)
+			return nil, out, safeToolError(ctx, mutationErr)
 		}
 		return verifyStockInstall(ctx, client, out, true)
 	}
@@ -365,7 +365,7 @@ func executeStockUninstall(ctx context.Context, store *stockPlanStore, client St
 	if mutationErr != nil {
 		var apiErr *inventree.APIError
 		if errors.As(mutationErr, &apiErr) && definiteMutationRejection(apiErr.StatusCode) {
-			return nil, out, safeToolError(mutationErr)
+			return nil, out, safeToolError(ctx, mutationErr)
 		}
 		return verifyStockUninstall(ctx, client, out, true)
 	}
