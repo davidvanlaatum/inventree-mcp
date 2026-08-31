@@ -71,6 +71,7 @@ func GuardTool[In, Out any](deps Dependencies, toolName string, handler mcp.Tool
 func authorizeTool(ctx context.Context, resourceMetadataURL string, toolName string) (*mcp.CallToolResult, bool) {
 	authz, ok := ToolAuthorizations[toolName]
 	if !ok {
+		RecordOutcome(ctx, OutcomeInternalFailure)
 		return authChallengeResult(resourceMetadataURL, nil, "tool authorization metadata is missing"), true
 	}
 	if len(authz.Scopes) == 0 {
@@ -78,10 +79,12 @@ func authorizeTool(ctx context.Context, resourceMetadataURL string, toolName str
 	}
 	tokenInfo := auth.TokenInfoFromContext(ctx)
 	if tokenInfo == nil {
+		RecordOutcome(ctx, OutcomeAuthorizationFailure)
 		return authChallengeResult(resourceMetadataURL, authz.Scopes, "OAuth bearer token is required for this tool"), true
 	}
 	for _, required := range authz.Scopes {
 		if !hasScope(tokenInfo.Scopes, required) {
+			RecordOutcome(ctx, OutcomeAuthorizationFailure)
 			return authChallengeResult(resourceMetadataURL, authz.Scopes, fmt.Sprintf("OAuth bearer token is missing required scope %q", required)), true
 		}
 	}

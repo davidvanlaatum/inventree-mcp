@@ -52,7 +52,7 @@ func assignStockSerial(deps Dependencies) mcp.ToolHandlerFor[AssignStockSerialIn
 			}
 			part, err := client.GetPart(ctx, before.Part)
 			if err != nil {
-				return nil, out, safeToolError(err)
+				return nil, out, safeToolError(ctx, err)
 			}
 			if part.PK != before.Part {
 				return nil, out, errors.New("InvenTree returned a mismatched part identity")
@@ -132,7 +132,7 @@ func setStockSerial(deps Dependencies) mcp.ToolHandlerFor[SetStockSerialInput, S
 func stockSerialCollision(ctx context.Context, client StockAdjustmentClient, out StockAdjustmentOutput, partID int, serial string, excludeStockItemID int) (*mcp.CallToolResult, StockAdjustmentOutput, error) {
 	partMatches, err := client.SearchStockItems(ctx, inventree.StockItemQuery{PartID: partID, Serial: serial, Limit: DefaultLookupLimit})
 	if err != nil {
-		return nil, out, safeToolError(err)
+		return nil, out, safeToolError(ctx, err)
 	}
 	if conflict := firstSerialConflict(partMatches, excludeStockItemID); conflict != 0 {
 		result, clarified, _ := stockClarification(out, "Which different serial number should be assigned?", "serial", "an existing stock item for this part already uses this serial number", "serial", map[string]any{"part_id": partID, "serial": serial, "conflicting_stock_item_id": conflict})
@@ -140,14 +140,14 @@ func stockSerialCollision(ctx context.Context, client StockAdjustmentClient, out
 	}
 	globalUnique, err := stockSerialGloballyUnique(ctx, client)
 	if err != nil {
-		return nil, out, safeToolError(err)
+		return nil, out, safeToolError(ctx, err)
 	}
 	if !globalUnique {
 		return nil, out, nil
 	}
 	globalMatches, err := client.SearchStockItems(ctx, inventree.StockItemQuery{Serial: serial, Limit: DefaultLookupLimit})
 	if err != nil {
-		return nil, out, safeToolError(err)
+		return nil, out, safeToolError(ctx, err)
 	}
 	if conflict := firstSerialConflict(globalMatches, excludeStockItemID); conflict != 0 {
 		result, clarified, _ := stockClarification(out, "Which different serial number should be assigned?", "serial", "an existing stock item for a different part already uses this serial number and SERIAL_NUMBER_GLOBALLY_UNIQUE is enabled", "serial", map[string]any{"serial": serial, "conflicting_stock_item_id": conflict})

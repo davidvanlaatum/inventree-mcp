@@ -2,10 +2,8 @@ package tools
 
 import (
 	"context"
-	"log/slog"
 	"time"
 
-	"github.com/davidvanlaatum/dvgoutils/logging"
 	"github.com/davidvanlaatum/inventree-mcp/internal/buildinfo"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -55,11 +53,7 @@ func registerHealthVersion(server *mcp.Server, _ Dependencies) {
 	mcp.AddTool(server, ToolDescriptor(HealthVersionToolName, "Health and version", "Returns server health and build version metadata."), healthVersion)
 }
 
-func healthVersion(ctx context.Context, _ *mcp.CallToolRequest, _ map[string]any) (*mcp.CallToolResult, HealthVersionOutput, error) {
-	logger := logging.FromContext(ctx).With(slog.String("tool", HealthVersionToolName))
-	ctx = logging.WithLogger(ctx, logger)
-	logger.DebugContext(ctx, "tool called")
-
+func healthVersion(_ context.Context, _ *mcp.CallToolRequest, _ map[string]any) (*mcp.CallToolResult, HealthVersionOutput, error) {
 	out := HealthVersionOutput{
 		Status:  "ok",
 		Version: buildinfo.Version,

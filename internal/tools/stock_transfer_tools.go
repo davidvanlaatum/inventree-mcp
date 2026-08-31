@@ -39,7 +39,7 @@ func transferStockItem(deps Dependencies) mcp.ToolHandlerFor[TransferStockItemIn
 					out.Status = StatusNotFound
 					return TextResult(StatusNotFound), out, nil
 				}
-				return nil, out, safeToolError(err)
+				return nil, out, safeToolError(ctx, err)
 			}
 			if before.PK != input.StockItemID {
 				return nil, out, errors.New("InvenTree returned a mismatched stock-item identity")
@@ -58,7 +58,7 @@ func transferStockItem(deps Dependencies) mcp.ToolHandlerFor[TransferStockItemIn
 				if isNotFound(err) {
 					return stockTransferClarification(out, "Which existing stock location should receive the item?", "destination_location", "destination_location_id was not found", "destination_location_id", map[string]any{"stock_item_id": input.StockItemID, "destination_location_id": input.DestinationLocationID})
 				}
-				return nil, out, safeToolError(err)
+				return nil, out, safeToolError(ctx, err)
 			}
 			if destination.PK != input.DestinationLocationID {
 				return nil, out, errors.New("InvenTree returned a mismatched destination-location identity")
@@ -69,7 +69,7 @@ func transferStockItem(deps Dependencies) mcp.ToolHandlerFor[TransferStockItemIn
 
 			source, err := client.GetStockLocation(ctx, *before.Location)
 			if err != nil {
-				return nil, out, safeToolError(err)
+				return nil, out, safeToolError(ctx, err)
 			}
 			if source.PK != *before.Location {
 				return nil, out, errors.New("InvenTree returned a mismatched source-location identity")
@@ -230,7 +230,7 @@ func executeStockTransfer(ctx context.Context, store *stockPlanStore, client Sto
 	if mutationErr != nil {
 		var apiErr *inventree.APIError
 		if errors.As(mutationErr, &apiErr) && definiteMutationRejection(apiErr.StatusCode) {
-			return nil, out, safeToolError(mutationErr)
+			return nil, out, safeToolError(ctx, mutationErr)
 		}
 		return verifyStockTransfer(ctx, client, out, true)
 	}

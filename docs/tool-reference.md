@@ -49,6 +49,12 @@ Every `bulk_update_*`/`bulk_set_stock_status` tool's item-count limit and worker
 
 SDK `v1.7.0` serializes `readOnlyHint` and `idempotentHint` even when false. The registered annotation booleans in this document therefore match the JSON wire representation as well as the checked manifest.
 
+### Structured Tool Logging
+
+`tools.InvocationLoggingMiddleware` wraps every `tools/call` dispatch (registered alongside `telemetry.MCPMiddleware`, which must run first so an MCP-level span already exists when trace fields are read) and emits INFO-level `tool_invocation` and `tool_completion` structured log records, independently of whether OTEL tracing or metrics are enabled (F-S95). Each record carries a server-generated 32-character lowercase hex `request_id`, `tool`, inherited `transport`, `source_ip` when resolved, and `trace_id`/`span_id` only for a currently valid span. `tool_completion` adds a closed-vocabulary `outcome` (`success`, `validation_failure`, `authorization_failure`, `upstream_failure`, `cancellation`, `internal_failure`), `duration`, and a bounded `result_count` when available.
+
+Argument-derived fields are opt-in per tool through `toolInvocationFieldExtractors` in `internal/tools/invocation_fields.go` — a deny-by-default map from tool name to a bounded field extractor. A tool without an entry logs only the base fields above; this currently covers the `IDInput`/`SearchInput`/`ObjectLookupInput`/items-batch bulk tool families plus `render_component_image`. The high-risk stock-mutation tools (transfer, install/uninstall, deplete, serial assignment) are not yet mapped and log base fields only in this PR — extending coverage to them is follow-up work, not a redaction gap. `safeToolError` (reached directly or through `LookupHandler` by nearly every tool error path) and `GuardTool`'s scope check classify the completion `outcome` by calling `RecordOutcome` on the invocation's context-carried outcome recorder; a tool handler that bypasses both chokepoints falls back to a safe `IsError`-derived `success`/`internal_failure` default. If the injected `RequestIDGenerator` fails, the invocation is refused before dispatch with a safe internal error, and only a separate request-ID-less error record is emitted.
+
 ## Lookup Tool Framework
 
 Read-only lookup handlers use a context-resolved InvenTree client supplied through the tool dependency struct. Handlers depend on the lookup client interface instead of constructing a concrete HTTP client, so STDIO credentials and future HTTP OAuth credentials stay in the server layer.

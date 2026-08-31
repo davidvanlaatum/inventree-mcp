@@ -698,7 +698,7 @@ func TestHTTPToolsExposeSecuritySchemesAndEnforcePerToolScopes(t *testing.T) {
 	r := require.New(t)
 	a := assert.New(t)
 
-	ctx, _, _ := testhandler.SetupTestHandler(t)
+	ctx, handler, _ := testhandler.SetupTestHandler(t)
 	var clientCalls atomic.Int32
 	deps := tools.Dependencies{
 		EnableWriteTools:    true,
@@ -739,6 +739,9 @@ func TestHTTPToolsExposeSecuritySchemesAndEnforcePerToolScopes(t *testing.T) {
 	a.Contains(deniedRecorder.Body.String(), `error_description=`)
 	a.NotContains(deniedRecorder.Body.String(), "secret-inventree-token")
 	a.Equal(int32(0), clientCalls.Load())
+	deniedCompletion := handler.FirstMatchingLogForAssert(matchesToolCompletion("create_part"))
+	r.NotNil(deniedCompletion)
+	a.Equal("authorization_failure", deniedCompletion["outcome"])
 
 	for _, tt := range []struct {
 		name       string
@@ -788,6 +791,28 @@ func TestHTTPToolsExposeSecuritySchemesAndEnforcePerToolScopes(t *testing.T) {
 	r.Equal(http.StatusOK, allowedRecorder.Code)
 	a.Contains(allowedRecorder.Body.String(), `"status":"ok"`)
 	a.Contains(allowedRecorder.Body.String(), "10k resistor")
+	allowedCompletion := handler.FirstMatchingLogForAssert(matchesToolCompletion("search_parts"))
+	r.NotNil(allowedCompletion)
+	a.Equal("success", allowedCompletion["outcome"])
+	a.NotEmpty(allowedCompletion["request_id"])
+}
+
+// matchesToolCompletion returns a testhandler predicate matching the
+// tool_completion record for the given tool name. Server-level tests share
+// one handler across many tool calls, so completion records must be
+// disambiguated by their "tool" attribute, not just by message.
+func matchesToolCompletion(toolName string) func(testhandler.LogRecord) bool {
+	return func(record testhandler.LogRecord) bool {
+		if record.Msg != "tool_completion" {
+			return false
+		}
+		for _, attr := range record.Attrs {
+			if attr.Key == "tool" && attr.Value.String() == toolName {
+				return true
+			}
+		}
+		return false
+	}
 }
 
 func TestHTTPOAuthCredentialPropagationIsRequestScoped(t *testing.T) {
