@@ -178,6 +178,7 @@ Before assigning a new story ID, inspect `git worktree list --porcelain`, search
 | [F-S93](#f-s93-stateless-per-user-bearer-bootstrap-for-http-clients) | Add a stateless, per-user bearer bootstrap flow for HTTP MCP clients that cannot perform OAuth, without storing a server-side token mapping. | Done |
 | [F-S94](#f-s94-prefix-oauth-endpoints-under-the-configured-mcp-path) | Move OAuth authorization and token endpoints under the configured MCP path so they cannot collide with future InvenTree routes. | Done |
 | [F-S95](#f-s95-structured-tool-logging-and-packaged-otel-samples) | Improve structured tool invocation/completion logging with safe context and trace correlation, and add packaged OTEL tracing samples. | Done |
+| [F-S97](#f-s97-improve-jaeger-trace-list-data) | Make exported trace operation names identify MCP tools and HTTP routes clearly in tracing UIs. | Done |
 
 ## Milestone 0: Repository And Planning
 
@@ -3452,3 +3453,24 @@ Tasks:
   - [x] Audit and complete the packaged HTTP configuration examples, add the OTEL tracing sample, and validate the template against the real YAML config loader plus an explicit expected-field inventory that can detect missing commented examples.
   - [x] Run the named default/race/vet/lint/package/snapshot/coverage validation and the applicable reviewer panel; record residual risk before marking the story Done.
 - Residual risk: richer logs can become high-cardinality or disclose operator data if new tools bypass the allowlist; keep extraction centralized and protect representative tool categories with redaction tests. PR 1 residual risk (accepted, non-blocking): `boundedShortString` truncates by byte index rather than rune, which could split a multi-byte UTF-8 character if a future extractor logged a less-constrained closed-vocabulary field than today's ASCII `model_type`/`family` values; `tool_name` log-injection protection currently relies on `slog.NewTextHandler`'s attribute quoting rather than explicit sanitization, so a future switch to a different log handler would need to re-verify that guarantee; `safeToolError`'s non-`APIError` fallback branch still returns the raw underlying error text to the MCP client (unchanged by this PR, pre-existing). PR 2 residual risk (accepted, non-blocking; the injectable-clock item was closed in PR 3): `attempt`/its eight-attempt cap are scaffolded but unenforced, since no retry policy exists anywhere in this codebase to exercise them; `caller=system.<name>` is scaffolded via `requestctx.WithSystemOperation` but has no current call site, since every InvenTree API call in this codebase today originates from either a tool invocation or the excluded OAuth/bootstrap path; `resolveRoute` cannot disambiguate GET searches that share one list endpoint's path and differ only by query filter (documented in `TestClientMethodRoutesDocumentsQueryDisambiguatedGroups`), so the logged `operation` for those is one of a small set of real candidates rather than the precise one; because that lookup ranges over a Go map, the picked candidate can vary between two calls to the same endpoint within one process, not just across processes — the enclosing `tool_invocation`/`tool_completion` record still carries the precise `tool` name regardless, so this only affects the outbound call's own `operation` label.
+### F-S97: Improve Jaeger Trace List Data
+
+- Status: `Done`
+- Depends on: F-S84.
+- Progress: the Jaeger result list currently derives its trace title from a generic inbound `HTTP POST` root span, while the actual MCP tool name is only present on a child span attribute. This story makes the root and MCP spans use bounded, tool-aware names and gives inbound HTTP spans route-aware initial names.
+- Scope: update `internal/telemetry` span naming and tests, plus tracing documentation and task evidence. Tool names used in span names are normalized against the registered-tool allowlist; unknown names become `other` to avoid unbounded cardinality. No request arguments, payloads, credentials, or exporter behavior changes.
+- Acceptance:
+  - HTTP root spans initially identify the HTTP method and bounded route template rather than only the method.
+  - MCP tool spans identify the MCP method and normalized registered tool name.
+  - When an MCP call runs beneath an HTTP span, the HTTP root span is renamed to the same bounded MCP operation name so trace list views identify the tool without opening the trace.
+  - Unknown tool names use the bounded `other` operation name.
+  - Tests verify the HTTP and MCP span names and existing trace correlation/redaction behavior remains intact.
+  - Relevant tracing documentation describes the operation-name behavior.
+- Out of scope: changing Jaeger, OTLP exporter/protocol behavior, metrics, sampling, or adding high-cardinality span attributes.
+- Tasks:
+  - [x] Update inbound HTTP and MCP span naming.
+  - [x] Add focused tests for HTTP-root and MCP operation names.
+  - [x] Run full validation and the Senior Go Developer, Senior QA / Test Architect, and Senior Product Manager review panel.
+- Validation: `GOFLAGS=-trimpath go test -race ./...` (pass, including Docker-backed integration packages); `go vet ./...` (0 issues); `golangci-lint run ./...` (0 issues); `git diff --check` (clean). The initial unisolated test attempt was blocked by the macOS Go build-cache permission; the isolated-cache run passed. A sandbox-only localhost listener restriction was bypassed through the approved local-test escalation.
+- Review: final read-only Senior Go Developer, Senior QA / Test Architect, and Senior Product Manager panel rerun after all follow-up changes. No unresolved findings. Earlier findings on raw route cardinality, configurable MCP paths, incomplete protocol method normalization, and missing unknown/STDIO coverage were fixed and rerun review returned no findings.
+- Residual risk: the root operation is intentionally reduced to `other` for unregistered tool names; this preserves bounded trace cardinality at the cost of less detail for malformed or unknown calls.

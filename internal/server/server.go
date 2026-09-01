@@ -302,7 +302,7 @@ func httpMuxWithOptions(ctx context.Context, cfg config.Config, srv *mcp.Server,
 	// prefix into a subtree that would swallow unrelated paths beneath it.
 	mux.Handle(cfg.Path, handler)
 	mux.Handle(cfg.Path+"/{$}", handler)
-	return telemetry.HTTPHandler(sourceIPMiddleware(logging.FromContext(ctx), sourceResolver, mux)), nil
+	return telemetry.HTTPHandlerWithRoute(sourceIPMiddleware(logging.FromContext(ctx), sourceResolver, mux), cfg.Path), nil
 }
 
 func HTTPHandler(ctx context.Context, srv *mcp.Server, maxRequestBodyBytes int64) http.Handler {
