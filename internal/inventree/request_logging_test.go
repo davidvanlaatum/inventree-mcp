@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/davidvanlaatum/dvgoutils/logging"
 	"github.com/davidvanlaatum/dvgoutils/logging/testhandler"
@@ -85,6 +86,35 @@ func TestWrapRequestLoggingEmitsStartedAndCompletedForAMatchedRequest(t *testing
 	a.Equal("2xx", completed["status_class"])
 	a.Contains(completed, "duration")
 	a.NotContains(completed, "error_kind")
+}
+
+func TestWrapRequestLoggingLogsAnExactDurationFromAnInjectableClock(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+	ctx, handler, _ := testhandler.SetupTestHandler(t)
+	ctx = requestctx.WithCorrelation(ctx)
+
+	next := roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+		return fakeResponse(req, http.StatusOK), nil
+	})
+	start := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	elapsed := 750 * time.Millisecond
+	ticks := []time.Time{start, start.Add(elapsed)}
+	rt := requestLoggingRoundTripper{next: next, now: func() time.Time {
+		tick := ticks[0]
+		ticks = ticks[1:]
+		return tick
+	}}
+
+	_, err := rt.RoundTrip(newTestRequest(t, ctx, http.MethodGet, "/api/part/42/", ""))
+	r.NoError(err)
+
+	completed := handler.FirstMatchingLogForAssert(func(record testhandler.LogRecord) bool {
+		return record.Msg == logEventRequestCompleted
+	})
+	r.NotNil(completed)
+	a.Equal(elapsed.String(), completed["duration"])
 }
 
 func TestWrapRequestLoggingLogsErrorKindOnFailureStatus(t *testing.T) {
