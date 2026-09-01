@@ -41,11 +41,16 @@ func WrapRequestLogging(transport http.RoundTripper) http.RoundTripper {
 	if transport == nil {
 		transport = http.DefaultTransport
 	}
-	return requestLoggingRoundTripper{next: transport}
+	return requestLoggingRoundTripper{next: transport, now: time.Now}
 }
 
 type requestLoggingRoundTripper struct {
 	next http.RoundTripper
+	// now is injectable so tests can assert an exact logged duration
+	// instead of only that the field is present. WrapRequestLogging always
+	// sets it to time.Now; only white-box tests in this package construct a
+	// requestLoggingRoundTripper directly with a fake clock.
+	now func() time.Time
 }
 
 // Unwrap exposes the wrapped transport, following the standard library's
@@ -81,9 +86,9 @@ func (rt requestLoggingRoundTripper) RoundTrip(req *http.Request) (*http.Respons
 	}
 	logger.InfoContext(ctx, logEventRequestStarted, fields...)
 
-	started := time.Now()
+	started := rt.now()
 	resp, err := rt.next.RoundTrip(req)
-	duration := time.Since(started)
+	duration := rt.now().Sub(started)
 
 	completedFields := append(append([]any{}, fields...), slog.Duration("duration", duration))
 	switch {

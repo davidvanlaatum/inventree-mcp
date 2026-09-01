@@ -8,6 +8,14 @@
 # Packaged installs create it with mode 0600; keep it owner-only. Configuration
 # precedence is: defaults < this YAML file < environment variables < CLI
 # flags. See docs/examples/inventree-mcp.yml for the full annotated field set.
+#
+# HTTP mode does not use a locally configured InvenTree auth scheme or a
+# static InvenTree token: every request carries an MCP-issued OAuth bearer
+# token, and the server recovers the caller's own InvenTree credential from
+# its encrypted envelope per request. Setting either one here would have no
+# effect, so both are intentionally omitted from this template. STDIO-only
+# local-path upload staging is also intentionally omitted; HTTP mode accepts
+# inline bytes or fetched URLs instead of local paths for uploads.
 
 transport: http
 listen: 127.0.0.1:28686
@@ -15,16 +23,48 @@ path: /mcp
 environment: production
 log_level: info
 
+inventree_url: https://inventory.example.test
+# Optional exact canonical frontend mount for returned object links. When
+# omitted, the validated inventree_url site base gains the stock /web mount.
+# inventree_web_url: https://inventory.example.test/web
+# inventree_timeout: 30s
+# inventree_tls_skip_verify: false
+
+# Inline and URL-sourced upload size limit, and the maximum HTTP request body
+# (tool arguments/results after base64 expansion) the listener accepts.
+# upload_max_bytes: 5242880
+# mcp_max_request_body_bytes: 8388608
+
+# The JSON Lines debug traffic log captures full MCP request and response
+# payloads, including sensitive URIs, request/response bodies, tool
+# arguments, and any credentials or other sensitive data a client sends.
+# Enable it only while diagnosing client behavior, never for routine
+# production use. The file is created owner-only (0600); delete or rotate it
+# promptly once diagnosis is complete, and keep its retention bounded.
+# debug_traffic_log: /secure/path/mcp-traffic.jsonl
+
+# Every bulk_update_*/bulk_set_stock_status tool's item-count limit and
+# worker concurrency.
+# bulk_max_items: 25
+# bulk_concurrency: 4
+
+# OpenTelemetry tracing is disabled by default. When enabled, use a trusted
+# OTLP collector and protect any exporter headers as secrets.
+# otel_enabled: false
+# otel_service_name: inventree-mcp
+# otel_exporter: otlpgrpc
+# otel_endpoint: collector.example.test:4317
+# otel_insecure: false
+# otel_headers:
+#   - authorization=Bearer REPLACE_WITH_COLLECTOR_CREDENTIAL
+# otel_sample_ratio: 1.0
+# otel_batch_timeout: 5s
+# otel_export_timeout: 30s
 # Prometheus metrics are disabled by default. Enable only when the packaged
 # service listens on a trusted/private address; the scrape endpoint is not
 # protected by MCP OAuth.
 # otel_metrics_enabled: false
 # otel_metrics_path: /metrics
-
-inventree_url: https://inventory.example.test
-# Optional exact canonical frontend mount for returned object links. When
-# omitted, the validated inventree_url site base gains the stock /web mount.
-# inventree_web_url: https://inventory.example.test/web
 
 # Generate 32-byte key material with a cryptographically secure generator such
 # as `openssl rand -base64 32`. Keep exactly one active key. See the operator
@@ -35,6 +75,9 @@ inventree_url: https://inventory.example.test
 #   - current:active:REPLACE_WITH_BASE64_32_BYTE_KEY
 # oauth_client_ids:
 #   - https://chatgpt.com/client-metadata/REPLACE_ME
+# oauth_access_lifetime: 15m
+# oauth_refresh_lifetime: 720h
+# oauth_session_lifetime: 2160h
 # Same-host reverse proxy example. Use only the narrow CIDRs of proxies that
 # can connect to the configured listen address; do not copy private-network
 # supernets.
