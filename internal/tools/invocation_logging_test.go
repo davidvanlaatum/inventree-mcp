@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/davidvanlaatum/dvgoutils/logging"
 	"github.com/davidvanlaatum/dvgoutils/logging/testhandler"
 	"github.com/davidvanlaatum/inventree-mcp/internal/requestctx"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -156,12 +157,13 @@ func TestInvocationLoggingMiddlewareIgnoresNonToolCallMethods(t *testing.T) {
 	a.Nil(invocation)
 }
 
-func TestInvocationLoggingMiddlewareIncludesSourceIPWhenPresent(t *testing.T) {
+func TestInvocationLoggingMiddlewarePreservesSourceIPFromHTTPBoundary(t *testing.T) {
 	t.Parallel()
 	r := require.New(t)
 	a := assert.New(t)
 	ctx, handler, _ := testhandler.SetupTestHandler(t)
 	ctx = requestctx.WithSourceIP(ctx, netip.MustParseAddr("203.0.113.5"))
+	ctx = logging.WithLogger(ctx, logging.FromContext(ctx).With(slog.String("source_ip", "203.0.113.5")))
 
 	middleware := InvocationLoggingMiddleware(fixedRequestIDGenerator(fixedHexID('c')))
 	next := middleware(func(context.Context, string, mcp.Request) (mcp.Result, error) {
