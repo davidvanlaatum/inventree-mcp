@@ -310,7 +310,7 @@ func WrapRoundTripper(transport http.RoundTripper) http.RoundTripper {
 	if transport == nil || (!processEnabled.Load() && getMetrics() == nil) {
 		return transport
 	}
-	return instrumentedRoundTripper(func(req *http.Request) (*http.Response, error) {
+	return instrumentedRoundTripper{next: transport, fn: func(req *http.Request) (*http.Response, error) {
 		started := time.Now()
 		apiOperation := normalizeInvenTreeOperation(req)
 		current := getMetrics()
@@ -333,12 +333,23 @@ func WrapRoundTripper(transport http.RoundTripper) http.RoundTripper {
 		}
 		span.End()
 		return response, err
-	})
+	}}
 }
 
-type instrumentedRoundTripper func(*http.Request) (*http.Response, error)
+// instrumentedRoundTripper wraps next with tracing/metrics instrumentation.
+// Unwrap exposes next so layered wrapping (such as
+// inventree.WrapRequestLogging composed around this) can still reach the
+// underlying transport, following the standard library's unwrap convention.
+type instrumentedRoundTripper struct {
+	next http.RoundTripper
+	fn   func(*http.Request) (*http.Response, error)
+}
 
-func (f instrumentedRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) { return f(req) }
+func (rt instrumentedRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
+	return rt.fn(req)
+}
+
+func (rt instrumentedRoundTripper) Unwrap() http.RoundTripper { return rt.next }
 
 type metrics struct {
 	mcpRequests    metricapi.Int64Counter

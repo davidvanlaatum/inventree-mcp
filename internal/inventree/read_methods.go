@@ -10,6 +10,8 @@ import (
 	"path"
 	"strings"
 	"time"
+
+	"github.com/davidvanlaatum/inventree-mcp/internal/requestctx"
 )
 
 type AttachmentContentMode string
@@ -336,6 +338,7 @@ func (c *Client) DownloadAttachment(ctx context.Context, id int, mode Attachment
 
 	downloadCtx, cancel := boundedDownloadContext(ctx, c.httpClient)
 	defer cancel()
+	downloadCtx = requestctx.WithExplicitRoute(downloadCtx, clientMethodRoutes["DownloadAttachment"].ManifestID, string(clientMethodRoutes["DownloadAttachment"].Family))
 	req, err := http.NewRequestWithContext(downloadCtx, http.MethodGet, sourceURL.String(), nil)
 	if err != nil {
 		return DownloadedAttachment{}, err
@@ -388,6 +391,7 @@ func (c *Client) DownloadPartImage(ctx context.Context, id int, mode AttachmentC
 
 	downloadCtx, cancel := boundedDownloadContext(ctx, c.httpClient)
 	defer cancel()
+	downloadCtx = requestctx.WithExplicitRoute(downloadCtx, clientMethodRoutes["DownloadPartImage"].ManifestID, string(clientMethodRoutes["DownloadPartImage"].Family))
 	req, err := http.NewRequestWithContext(downloadCtx, http.MethodGet, sourceURL.String(), nil)
 	if err != nil {
 		return DownloadedPartImage{}, err
@@ -443,6 +447,7 @@ func (c *Client) DownloadCompanyImage(ctx context.Context, id int, maxBytes int6
 
 	downloadCtx, cancel := boundedDownloadContext(ctx, c.httpClient)
 	defer cancel()
+	downloadCtx = requestctx.WithExplicitRoute(downloadCtx, clientMethodRoutes["DownloadCompanyImage"].ManifestID, string(clientMethodRoutes["DownloadCompanyImage"].Family))
 	req, err := http.NewRequestWithContext(downloadCtx, http.MethodGet, sourceURL.String(), nil)
 	if err != nil {
 		return DownloadedCompanyImage{}, err
@@ -706,6 +711,7 @@ func (c *Client) DownloadDataOutput(ctx context.Context, outputURL string, maxBy
 	}
 	downloadCtx, cancel := boundedDownloadContext(ctx, c.httpClient)
 	defer cancel()
+	downloadCtx = requestctx.WithExplicitRoute(downloadCtx, clientMethodRoutes["DownloadDataOutput"].ManifestID, string(clientMethodRoutes["DownloadDataOutput"].Family))
 	req, err := http.NewRequestWithContext(downloadCtx, http.MethodGet, sourceURL.String(), nil)
 	if err != nil {
 		return DownloadedDataOutput{}, err

@@ -278,10 +278,12 @@ func inventreeHTTPClient(cfg config.Config) *http.Client {
 	if cfg.InvenTreeTLSSkipVerify {
 		transport.TLSClientConfig = &tls.Config{InsecureSkipVerify: true} //nolint:gosec // Config validation rejects this in production.
 	}
-	return telemetry.WrapHTTPClient(&http.Client{
+	client := telemetry.WrapHTTPClient(&http.Client{
 		Timeout:   cfg.InvenTreeTimeout,
 		Transport: transport,
 	})
+	client.Transport = inventree.WrapRequestLogging(client.Transport)
+	return client
 }
 
 func writeLine(w io.Writer, format string, args ...any) {

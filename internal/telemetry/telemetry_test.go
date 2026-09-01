@@ -161,7 +161,20 @@ func TestWrapHTTPClientClonesDefaultTransport(t *testing.T) {
 	withRecordingProvider(t)
 
 	client := WrapHTTPClient(&http.Client{})
-	assert.IsType(t, instrumentedRoundTripper(nil), client.Transport)
+	assert.IsType(t, instrumentedRoundTripper{}, client.Transport)
+}
+
+func TestInstrumentedRoundTripperUnwrapExposesTheWrappedTransport(t *testing.T) {
+	withRecordingProvider(t)
+
+	inner := roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+		return &http.Response{StatusCode: http.StatusNoContent, Body: io.NopCloser(http.NoBody), Header: make(http.Header), Request: req}, nil
+	})
+	wrapped := WrapRoundTripper(inner)
+
+	unwrapper, ok := wrapped.(interface{ Unwrap() http.RoundTripper })
+	require.True(t, ok, "instrumentedRoundTripper must implement Unwrap so layered wrapping can reach the real transport")
+	assert.Equal(t, fmt.Sprintf("%p", inner), fmt.Sprintf("%p", unwrapper.Unwrap()))
 }
 
 func TestHTTPHandlerCorrelatesInboundAndOutboundSpans(t *testing.T) {

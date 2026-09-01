@@ -5,6 +5,8 @@ schema:
   api_version: "530"
 
 coverage_areas:
+  - tags
+  - owners
   - parts
   - categories
   - companies
@@ -83,6 +85,12 @@ endpoints:
     method: DELETE
     operation_id: part_destroy
     response_status: "204"
+  - id: get_part_serial_numbers
+    area: parts
+    path: /api/part/{id}/serial-numbers/
+    method: GET
+    operation_id: part_serial_numbers_retrieve
+    response_schema: '#/components/schemas/PartSerialNumber'
   - id: search_part_relations
     area: parts
     path: /api/part/related/
@@ -139,6 +147,12 @@ endpoints:
     method: GET
     operation_id: order_so_line_list
     response_schema: '#/components/schemas/PaginatedSalesOrderLineItemList'
+  - id: search_sales_orders
+    area: sales_orders
+    path: /api/order/so/
+    method: GET
+    operation_id: order_so_list
+    response_schema: '#/components/schemas/PaginatedSalesOrderList'
   - id: search_part_categories
     area: categories
     path: /api/part/category/
@@ -261,6 +275,18 @@ endpoints:
     method: GET
     operation_id: company_address_retrieve
     response_schema: '#/components/schemas/Address'
+  - id: search_owners
+    area: owners
+    path: /api/user/owner/
+    method: GET
+    operation_id: user_owner_list
+    response_schema: '#/components/schemas/PaginatedOwnerList'
+  - id: get_owner
+    area: owners
+    path: /api/user/owner/{id}/
+    method: GET
+    operation_id: user_owner_retrieve
+    response_schema: '#/components/schemas/Owner'
   - id: search_project_codes
     area: project_codes
     path: /api/project-code/
@@ -273,6 +299,12 @@ endpoints:
     method: GET
     operation_id: project_code_retrieve
     response_schema: '#/components/schemas/ProjectCode'
+  - id: search_tags
+    area: tags
+    path: /api/tag/
+    method: GET
+    operation_id: tag_list
+    response_schema: '#/components/schemas/PaginatedTagList'
   - id: global_search
     area: search
     path: /api/search/
@@ -406,6 +438,34 @@ endpoints:
     request_schema: '#/components/schemas/StockChangeStatus'
     request_content_type: application/json
     response_schema: '#/components/schemas/StockChangeStatus'
+  - id: install_stock_item
+    area: stock
+    path: /api/stock/{id}/install/
+    method: POST
+    operation_id: stock_install_create
+    request_schema: '#/components/schemas/InstallStockItem'
+    request_content_type: application/json
+    response_schema: '#/components/schemas/InstallStockItem'
+  - id: uninstall_stock_item
+    area: stock
+    path: /api/stock/{id}/uninstall/
+    method: POST
+    operation_id: stock_uninstall_create
+    request_schema: '#/components/schemas/UninstallStockItem'
+    request_content_type: application/json
+    response_schema: '#/components/schemas/UninstallStockItem'
+  - id: search_stock_tracking
+    area: stock
+    path: /api/stock/track/
+    method: GET
+    operation_id: stock_track_list
+    response_schema: '#/components/schemas/PaginatedStockTrackingList'
+  - id: get_stock_tracking_entry
+    area: stock
+    path: /api/stock/track/{id}/
+    method: GET
+    operation_id: stock_track_retrieve
+    response_schema: '#/components/schemas/StockTracking'
   - id: generate_part_stocktake
     area: stocktake_generation
     path: /api/part/stocktake/generate/
@@ -421,6 +481,18 @@ endpoints:
     method: GET
     operation_id: data_output_retrieve
     response_schema: '#/components/schemas/DataOutput'
+  - id: search_part_stocktakes
+    area: stocktake_generation
+    path: /api/part/stocktake/
+    method: GET
+    operation_id: part_stocktake_list
+    response_schema: '#/components/schemas/PaginatedPartStocktakeList'
+  - id: get_part_stocktake
+    area: stocktake_generation
+    path: /api/part/stocktake/{id}/
+    method: GET
+    operation_id: part_stocktake_retrieve
+    response_schema: '#/components/schemas/PartStocktake'
   - id: search_stock_locations
     area: stock
     path: /api/stock/location/
@@ -767,6 +839,66 @@ endpoints:
     method: POST
     operation_id: order_po_issue_create
     response_status: 201
+  - id: complete_purchase_order
+    area: purchasing
+    path: /api/order/po/{id}/complete/
+    method: POST
+    operation_id: order_po_complete_create
+    request_schema: '#/components/schemas/PurchaseOrderComplete'
+    request_content_type: application/json
+    response_schema: '#/components/schemas/PurchaseOrderComplete'
+  - id: hold_purchase_order
+    area: purchasing
+    path: /api/order/po/{id}/hold/
+    method: POST
+    operation_id: order_po_hold_create
+    response_status: 201
+  - id: cancel_purchase_order
+    area: purchasing
+    path: /api/order/po/{id}/cancel/
+    method: POST
+    operation_id: order_po_cancel_create
+    response_status: 201
+  - id: delete_purchase_order_line
+    area: purchasing
+    path: /api/order/po-line/{id}/
+    method: DELETE
+    operation_id: order_po_line_destroy
+    response_status: "204"
+  - id: search_purchase_order_extra_lines
+    area: purchasing
+    path: /api/order/po-extra-line/
+    method: GET
+    operation_id: order_po_extra_line_list
+    response_schema: '#/components/schemas/PaginatedPurchaseOrderExtraLineList'
+  - id: get_purchase_order_extra_line
+    area: purchasing
+    path: /api/order/po-extra-line/{id}/
+    method: GET
+    operation_id: order_po_extra_line_retrieve
+    response_schema: '#/components/schemas/PurchaseOrderExtraLine'
+  - id: create_purchase_order_extra_line
+    area: purchasing
+    path: /api/order/po-extra-line/
+    method: POST
+    operation_id: order_po_extra_line_create
+    request_schema: '#/components/schemas/PurchaseOrderExtraLine'
+    request_content_type: application/json
+    response_schema: '#/components/schemas/PurchaseOrderExtraLine'
+  - id: update_purchase_order_extra_line
+    area: purchasing
+    path: /api/order/po-extra-line/{id}/
+    method: PATCH
+    operation_id: order_po_extra_line_partial_update
+    request_schema: '#/components/schemas/PatchedPurchaseOrderExtraLine'
+    request_content_type: application/json
+    response_schema: '#/components/schemas/PurchaseOrderExtraLine'
+  - id: delete_purchase_order_extra_line
+    area: purchasing
+    path: /api/order/po-extra-line/{id}/
+    method: DELETE
+    operation_id: order_po_extra_line_destroy
+    response_status: "204"
   - id: get_instance_server_info
     area: instance_info
     path: /api/

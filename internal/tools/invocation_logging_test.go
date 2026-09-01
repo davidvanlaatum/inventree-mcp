@@ -63,6 +63,46 @@ func TestInvocationLoggingMiddlewareEmitsInfoInvocationAndCompletionLogsWithoutT
 	a.Contains(completion, "duration")
 }
 
+func TestInvocationLoggingMiddlewareEstablishesFreshCallSequenceCorrelationPerInvocation(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+
+	middleware := InvocationLoggingMiddleware(fixedRequestIDGenerator(fixedHexID('c')))
+	var sawCorrelation bool
+	var firstSequence, secondSequence int
+	next := middleware(func(ctx context.Context, _ string, _ mcp.Request) (mcp.Result, error) {
+		sawCorrelation = requestctx.HasCorrelation(ctx)
+		var ok bool
+		firstSequence, ok = requestctx.NextCallSequence(ctx)
+		r.True(ok)
+		secondSequence, ok = requestctx.NextCallSequence(ctx)
+		r.True(ok)
+		return &mcp.CallToolResult{}, nil
+	})
+
+	_, err := next(ctx, "tools/call", callToolRequest(HealthVersionToolName, `{}`))
+	r.NoError(err)
+
+	a.True(sawCorrelation, "InvocationLoggingMiddleware must establish call-sequence correlation before dispatching to the handler")
+	a.Equal(1, firstSequence)
+	a.Equal(2, secondSequence, "sequence must increment across calls within one invocation")
+
+	// A second, independent invocation must not carry over the first
+	// invocation's sequence state.
+	var thirdInvocationFirstSequence int
+	next2 := middleware(func(ctx context.Context, _ string, _ mcp.Request) (mcp.Result, error) {
+		var ok bool
+		thirdInvocationFirstSequence, ok = requestctx.NextCallSequence(ctx)
+		r.True(ok)
+		return &mcp.CallToolResult{}, nil
+	})
+	_, err = next2(ctx, "tools/call", callToolRequest(HealthVersionToolName, `{}`))
+	r.NoError(err)
+	a.Equal(1, thirdInvocationFirstSequence, "a fresh invocation must start call-sequence numbering over at 1")
+}
+
 func TestInvocationLoggingMiddlewareFailsClosedWhenRequestIDGenerationFails(t *testing.T) {
 	t.Parallel()
 	r := require.New(t)
