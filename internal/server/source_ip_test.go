@@ -1,17 +1,78 @@
 package server
 
 import (
+	"context"
+	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/davidvanlaatum/dvgoutils/logging"
 	"github.com/davidvanlaatum/dvgoutils/logging/testhandler"
+	"github.com/davidvanlaatum/inventree-mcp/internal/inventree"
 	"github.com/davidvanlaatum/inventree-mcp/internal/requestctx"
+	"github.com/davidvanlaatum/inventree-mcp/internal/tools"
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+type capturedLogRecord struct {
+	message string
+	attrs   []slog.Attr
+}
+
+type capturingHandler struct {
+	root    *capturingHandler
+	mu      sync.Mutex
+	attrs   []slog.Attr
+	records []capturedLogRecord
+}
+
+func (h *capturingHandler) Enabled(context.Context, slog.Level) bool { return true }
+
+func (h *capturingHandler) Handle(_ context.Context, record slog.Record) error {
+	root := h
+	if root.root != nil {
+		root = root.root
+	}
+	attrs := append([]slog.Attr{}, h.attrs...)
+	record.Attrs(func(attr slog.Attr) bool {
+		attrs = append(attrs, attr)
+		return true
+	})
+	root.mu.Lock()
+	root.records = append(root.records, capturedLogRecord{message: record.Message, attrs: attrs})
+	root.mu.Unlock()
+	return nil
+}
+
+func (h *capturingHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
+	root := h
+	if root.root != nil {
+		root = root.root
+	}
+	return &capturingHandler{root: root, attrs: append(append([]slog.Attr{}, h.attrs...), attrs...)}
+}
+
+func (h *capturingHandler) WithGroup(string) slog.Handler { return h }
+
+func (h *capturingHandler) snapshot() []capturedLogRecord {
+	root := h
+	if root.root != nil {
+		root = root.root
+	}
+	root.mu.Lock()
+	defer root.mu.Unlock()
+	return append([]capturedLogRecord{}, root.records...)
+}
+
+type roundTripperFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripperFunc) RoundTrip(req *http.Request) (*http.Response, error) { return f(req) }
 
 func TestSourceIPResolverTrustBoundary(t *testing.T) {
 	t.Parallel()
@@ -91,6 +152,89 @@ func TestSourceIPMiddlewareAttachesNormalizedLogContext(t *testing.T) {
 	a.NotContains(record, "source_ip_forwarded")
 	a.NotContains(record, "x_forwarded_for")
 	a.NotContains(record, "X-Forwarded-For")
+}
+
+func TestSourceIPFlowsThroughToolAndOutboundLogsOnlyOnce(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name          string
+		stdio         bool
+		remoteAddress string
+		forwardedFor  string
+		wantSourceIP  string
+	}{
+		{name: "trusted proxy", remoteAddress: "10.0.0.10:1234", forwardedFor: "198.51.100.30, 203.0.113.20", wantSourceIP: "203.0.113.20"},
+		{name: "direct client", remoteAddress: "203.0.113.20:1234", wantSourceIP: "203.0.113.20"},
+		{name: "untrusted proxy", remoteAddress: "198.51.100.30:1234", forwardedFor: "203.0.113.20", wantSourceIP: "198.51.100.30"},
+		{name: "stdio", stdio: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			r := require.New(t)
+			a := assert.New(t)
+			capture := &capturingHandler{}
+			ctx := logging.WithLogger(context.Background(), slog.New(capture))
+			client, err := inventree.NewClient(inventree.Config{
+				BaseURL:    "https://inventory.example.test",
+				Credential: inventree.Credential{Scheme: inventree.AuthSchemeToken, Token: "test-token"},
+				HTTPClient: &http.Client{Transport: inventree.WrapRequestLogging(roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+					return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader("{}")), Request: req}, nil
+				}))},
+			})
+			r.NoError(err)
+
+			invoke := tools.InvocationLoggingMiddleware(func(context.Context) (string, error) {
+				return strings.Repeat("a", 32), nil
+			})(func(ctx context.Context, _ string, _ mcp.Request) (mcp.Result, error) {
+				req, err := client.NewRequest(ctx, http.MethodGet, "/api/part/42/", nil, nil)
+				if err != nil {
+					return nil, err
+				}
+				return &mcp.CallToolResult{}, client.DoJSON(req, nil)
+			})
+			run := func(runCtx context.Context) {
+				_, err := invoke(runCtx, "tools/call", &mcp.CallToolRequest{Params: &mcp.CallToolParamsRaw{Name: "get_part", Arguments: []byte(`{"id":42}`)}})
+				r.NoError(err)
+			}
+
+			if tt.stdio {
+				run(ctx)
+			} else {
+				resolver, err := newSourceIPResolver([]string{"10.0.0.0/8"})
+				r.NoError(err)
+				req := httptest.NewRequest(http.MethodPost, "/mcp", nil)
+				req.RemoteAddr = tt.remoteAddress
+				if tt.forwardedFor != "" {
+					req.Header.Set("X-Forwarded-For", tt.forwardedFor)
+				}
+				sourceIPMiddleware(logging.FromContext(ctx), resolver, http.HandlerFunc(func(_ http.ResponseWriter, request *http.Request) {
+					run(request.Context())
+				})).ServeHTTP(httptest.NewRecorder(), req.WithContext(ctx))
+			}
+
+			records := capture.snapshot()
+			r.GreaterOrEqual(len(records), 4)
+			for _, record := range records {
+				count := 0
+				value := ""
+				for _, attr := range record.attrs {
+					if attr.Key == "source_ip" {
+						count++
+						value = attr.Value.String()
+					}
+				}
+				a.LessOrEqual(count, 1, "message %q contains duplicate source_ip attributes", record.message)
+				if tt.wantSourceIP == "" {
+					a.Equal(0, count, "message %q must not contain source_ip", record.message)
+				} else {
+					a.Equal(1, count, "message %q must contain source_ip once", record.message)
+					a.Equal(tt.wantSourceIP, value)
+				}
+			}
+		})
+	}
 }
 
 func TestSourceIPResolverDoesNotAllocatePerAttackerControlledHop(t *testing.T) {

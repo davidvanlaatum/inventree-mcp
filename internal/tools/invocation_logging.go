@@ -58,9 +58,6 @@ func InvocationLoggingMiddleware(generateRequestID func(context.Context) (string
 				slog.String("request_id", requestID),
 				slog.String("tool", toolName),
 			)
-			if sourceIP, ok := requestctx.SourceIP(ctx); ok {
-				logger = logger.With(slog.String("source_ip", sourceIP.String()))
-			}
 			if spanContext := trace.SpanContextFromContext(ctx); spanContext.IsValid() {
 				logger = logger.With(
 					slog.String("trace_id", spanContext.TraceID().String()),

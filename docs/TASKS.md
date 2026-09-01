@@ -178,6 +178,7 @@ Before assigning a new story ID, inspect `git worktree list --porcelain`, search
 | [F-S93](#f-s93-stateless-per-user-bearer-bootstrap-for-http-clients) | Add a stateless, per-user bearer bootstrap flow for HTTP MCP clients that cannot perform OAuth, without storing a server-side token mapping. | Done |
 | [F-S94](#f-s94-prefix-oauth-endpoints-under-the-configured-mcp-path) | Move OAuth authorization and token endpoints under the configured MCP path so they cannot collide with future InvenTree routes. | Done |
 | [F-S95](#f-s95-structured-tool-logging-and-packaged-otel-samples) | Improve structured tool invocation/completion logging with safe context and trace correlation, and add packaged OTEL tracing samples. | Done |
+| [F-S96](#f-s96-avoid-duplicate-source_ip-in-outbound-request-logs) | Ensure each structured log record emits the normalized source IP only once. | Done |
 | [F-S97](#f-s97-improve-jaeger-trace-list-data) | Make exported trace operation names identify MCP tools and HTTP routes clearly in tracing UIs. | Done |
 
 ## Milestone 0: Repository And Planning
@@ -3453,6 +3454,24 @@ Tasks:
   - [x] Audit and complete the packaged HTTP configuration examples, add the OTEL tracing sample, and validate the template against the real YAML config loader plus an explicit expected-field inventory that can detect missing commented examples.
   - [x] Run the named default/race/vet/lint/package/snapshot/coverage validation and the applicable reviewer panel; record residual risk before marking the story Done.
 - Residual risk: richer logs can become high-cardinality or disclose operator data if new tools bypass the allowlist; keep extraction centralized and protect representative tool categories with redaction tests. PR 1 residual risk (accepted, non-blocking): `boundedShortString` truncates by byte index rather than rune, which could split a multi-byte UTF-8 character if a future extractor logged a less-constrained closed-vocabulary field than today's ASCII `model_type`/`family` values; `tool_name` log-injection protection currently relies on `slog.NewTextHandler`'s attribute quoting rather than explicit sanitization, so a future switch to a different log handler would need to re-verify that guarantee; `safeToolError`'s non-`APIError` fallback branch still returns the raw underlying error text to the MCP client (unchanged by this PR, pre-existing). PR 2 residual risk (accepted, non-blocking; the injectable-clock item was closed in PR 3): `attempt`/its eight-attempt cap are scaffolded but unenforced, since no retry policy exists anywhere in this codebase to exercise them; `caller=system.<name>` is scaffolded via `requestctx.WithSystemOperation` but has no current call site, since every InvenTree API call in this codebase today originates from either a tool invocation or the excluded OAuth/bootstrap path; `resolveRoute` cannot disambiguate GET searches that share one list endpoint's path and differ only by query filter (documented in `TestClientMethodRoutesDocumentsQueryDisambiguatedGroups`), so the logged `operation` for those is one of a small set of real candidates rather than the precise one; because that lookup ranges over a Go map, the picked candidate can vary between two calls to the same endpoint within one process, not just across processes — the enclosing `tool_invocation`/`tool_completion` record still carries the precise `tool` name regardless, so this only affects the outbound call's own `operation` label.
+### F-S96: Avoid Duplicate source_ip In Outbound Request Logs
+
+- Status: `Done`
+- Issue: [#268](https://github.com/davidvanlaatum/inventree-mcp/issues/268)
+- Depends on: F-S95.
+- Progress: identified during live HTTP use after F-S95 was released. The HTTP source-IP middleware already attaches normalized `source_ip` to the request-scoped logger, while the tool invocation middleware added the same attribute again before outbound InvenTree logging inherited it. The duplicate tool-layer enrichment is removed, and the composed regression test covers trusted-proxy, direct-client, untrusted-proxy, and STDIO paths while preserving ordered slog attributes so duplicate keys cannot be hidden by map-based capture.
+- Scope: remove the duplicate enrichment, preserve trusted-proxy source resolution, and add focused regression coverage.
+- Acceptance:
+  - Each structured log record contains at most one `source_ip` field.
+  - Normalized direct/trusted-proxy source-IP behavior is unchanged.
+  - Logging redaction and trace correlation behavior remain unchanged.
+- Tasks:
+  - [x] Remove the duplicate source-IP enrichment at the tool boundary.
+  - [x] Add regression coverage and run the applicable validation/review panel.
+- Validation: `GOFLAGS=-trimpath go test ./internal/tools ./internal/server` (pass); `GOFLAGS=-trimpath go test -race ./...` (pass); `go vet ./...` (clean); `golangci-lint run ./...` (0 issues); `git diff --check` (clean).
+- Review: Go, QA, Product, and Infosec subagent panel rerun after the follow-up test changes. No actionable findings remain; the panel confirmed the composed source-IP boundary, duplicate-attribute detection, direct/trusted/untrusted/STDIO coverage, and metadata alignment.
+- Residual risk: none known.
+
 ### F-S97: Improve Jaeger Trace List Data
 
 - Status: `Done`
