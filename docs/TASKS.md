@@ -3468,5 +3468,5 @@ Tasks:
   - [x] Remove the duplicate source-IP enrichment at the tool boundary.
   - [x] Add regression coverage and run the applicable validation/review panel.
 - Validation: `GOFLAGS=-trimpath go test ./internal/tools ./internal/server` (pass); `GOFLAGS=-trimpath go test -race ./...` (pass); `go vet ./...` (clean); `golangci-lint run ./...` (0 issues); `git diff --check` (clean).
-- Review: required subagent panel is pending because the current session does not expose subagent-review tools; the PR remains draft until the Go/QA/Product/Infosec panel is run.
+- Review: Go, QA, Product, and Infosec subagent panel rerun after the follow-up test changes. No actionable findings remain; the panel confirmed the composed source-IP boundary, duplicate-attribute detection, direct/trusted/untrusted/STDIO coverage, and metadata alignment.
 - Residual risk: none known.
