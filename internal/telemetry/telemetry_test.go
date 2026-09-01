@@ -208,6 +208,111 @@ func TestHTTPHandlerCorrelatesInboundAndOutboundSpans(t *testing.T) {
 	assert.Len(t, traceIDs, 1)
 }
 
+func TestHTTPHandlerNamesRootSpanWithMCPTool(t *testing.T) {
+	exporter := withRecordingProvider(t)
+	SetToolAllowlist([]string{"search_stock_locations"})
+	mcpHandler := MCPMiddleware(func(context.Context, string, mcp.Request) (mcp.Result, error) {
+		return nil, nil
+	})
+	handler := HTTPHandler(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		_, err := mcpHandler(req.Context(), "tools/call", &mcp.CallToolRequest{Params: &mcp.CallToolParamsRaw{
+			Name: "search_stock_locations",
+		}})
+		require.NoError(t, err)
+		w.WriteHeader(http.StatusNoContent)
+	}))
+
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, httptest.NewRequest(http.MethodPost, "http://mcp.example.test/mcp", nil))
+	require.Equal(t, http.StatusNoContent, response.Code)
+	require.Len(t, exporter.spans, 2)
+
+	var names []string
+	for _, span := range exporter.spans {
+		names = append(names, span.Name())
+	}
+	assert.Equal(t, []string{
+		"mcp.tools/call/search_stock_locations",
+		"mcp.tools/call/search_stock_locations",
+	}, names)
+}
+
+func TestHTTPHandlerUsesBoundedNamesForUnknownRoutesAndTools(t *testing.T) {
+	exporter := withRecordingProvider(t)
+	SetToolAllowlist([]string{"known_tool"})
+	mcpHandler := MCPMiddleware(func(context.Context, string, mcp.Request) (mcp.Result, error) {
+		return nil, nil
+	})
+	handler := HTTPHandler(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		_, err := mcpHandler(req.Context(), "future/method", &mcp.CallToolRequest{Params: &mcp.CallToolParamsRaw{
+			Name: "unknown_tool_123",
+		}})
+		require.NoError(t, err)
+		w.WriteHeader(http.StatusNoContent)
+	}))
+
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, httptest.NewRequest(http.MethodPost, "http://mcp.example.test/record/987654", nil))
+	require.Equal(t, http.StatusNoContent, response.Code)
+	require.Len(t, exporter.spans, 2)
+	for _, span := range exporter.spans {
+		assert.Equal(t, "mcp.other/other", span.Name())
+	}
+}
+
+func TestMCPMiddlewareNamesStdioToolSpanWithoutHTTPRoot(t *testing.T) {
+	exporter := withRecordingProvider(t)
+	SetToolAllowlist([]string{"get_part"})
+	next := MCPMiddleware(func(context.Context, string, mcp.Request) (mcp.Result, error) {
+		return nil, nil
+	})
+
+	_, err := next(context.Background(), "tools/call", &mcp.CallToolRequest{Params: &mcp.CallToolParamsRaw{
+		Name: "get_part",
+	}})
+	require.NoError(t, err)
+	require.Len(t, exporter.spans, 1)
+	assert.Equal(t, "mcp.tools/call/get_part", exporter.spans[0].Name())
+}
+
+func TestMCPMiddlewarePreservesKnownProtocolMethodNames(t *testing.T) {
+	exporter := withRecordingProvider(t)
+	next := MCPMiddleware(func(context.Context, string, mcp.Request) (mcp.Result, error) {
+		return nil, nil
+	})
+
+	_, err := next(context.Background(), "notifications/progress", nil)
+	require.NoError(t, err)
+	require.Len(t, exporter.spans, 1)
+	assert.Equal(t, "mcp.notifications/progress", exporter.spans[0].Name())
+}
+
+func TestHTTPHandlerUsesBoundedRouteNameBeforeMCPDispatch(t *testing.T) {
+	exporter := withRecordingProvider(t)
+	handler := HTTPHandler(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, httptest.NewRequest("CUSTOM", "http://mcp.example.test/mcp/random-id", nil))
+	require.Equal(t, http.StatusNoContent, response.Code)
+	require.Len(t, exporter.spans, 1)
+	assert.Equal(t, "other /other", exporter.spans[0].Name())
+}
+
+func TestHTTPHandlerWithRouteUsesConfiguredMCPPath(t *testing.T) {
+	exporter := withRecordingProvider(t)
+	handler := HTTPHandlerWithRoute(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}), "/custom-mcp")
+
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, httptest.NewRequest(http.MethodPost, "http://mcp.example.test/custom-mcp/", nil))
+	require.Equal(t, http.StatusNoContent, response.Code)
+	require.Len(t, exporter.spans, 1)
+	assert.Equal(t, "POST /custom-mcp", exporter.spans[0].Name())
+}
+
 func TestDisabledTelemetryDoesNotWrapHTTPClient(t *testing.T) {
 	runtime, err := New(context.Background(), DefaultConfig())
 	require.NoError(t, err)

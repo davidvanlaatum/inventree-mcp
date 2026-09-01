@@ -58,6 +58,8 @@ var toolAllowlist map[string]struct{}
 var runtimeMu sync.Mutex
 var activeRuntime *Runtime
 
+type rootSpanNameSetterKey struct{}
+
 // Config controls opt-in trace export. Headers may contain credentials and
 // must never be logged or included in diagnostic output.
 type Config struct {
@@ -404,7 +406,13 @@ func recordMCP(ctx context.Context, method string, err error) {
 
 func normalizeMCPMethod(method string) string {
 	switch method {
-	case "initialize", "notifications/initialized", "tools/list", "tools/call", "ping", "notifications/cancelled":
+	case "completion/complete", "elicitation/create", "initialize", "logging/setLevel",
+		"notifications/cancelled", "notifications/initialized", "notifications/message",
+		"notifications/progress", "ping", "prompts/changed", "prompts/get", "prompts/list",
+		"resources/changed", "resources/list", "resources/read", "resources/subscribe",
+		"resources/templates/list", "resources/unsubscribe", "roots/list",
+		"sampling/createMessage", "server/discover", "subscriptions/listen", "tools/call",
+		"tools/changed", "tools/list":
 		return method
 	default:
 		return "other"
@@ -486,7 +494,8 @@ func normalizeToolName(name string) string {
 }
 
 // SetToolAllowlist configures the fixed set of registered MCP tool names used
-// by per-tool metrics. Unknown names are exported as "other".
+// by per-tool metrics and span-name normalization. Unknown names are exported
+// as "other".
 func SetToolAllowlist(names []string) {
 	allowed := make(map[string]struct{}, len(names))
 	for _, name := range names {
@@ -532,13 +541,24 @@ func RecordBulkOperation(ctx context.Context, operation, outcome string) {
 
 // HTTPHandler instruments inbound HTTP requests, extracting W3C trace context.
 func HTTPHandler(next http.Handler) http.Handler {
+	return HTTPHandlerWithRoute(next, "/mcp")
+}
+
+// HTTPHandlerWithRoute instruments inbound HTTP requests and uses route as a
+// bounded route template for the initial server span name.
+func HTTPHandlerWithRoute(next http.Handler, route string) http.Handler {
 	if next == nil || !processEnabled.Load() {
 		return next
 	}
+	route = strings.TrimRight(route, "/")
+	if route == "" {
+		route = "/mcp"
+	}
 	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		ctx := otel.GetTextMapPropagator().Extract(req.Context(), propagation.HeaderCarrier(req.Header))
-		ctx, span := otel.Tracer("inventree-mcp").Start(ctx, "HTTP "+req.Method, apiTrace.WithSpanKind(apiTrace.SpanKindServer))
+		ctx, span := otel.Tracer("inventree-mcp").Start(ctx, httpServerSpanName(req, route), apiTrace.WithSpanKind(apiTrace.SpanKindServer))
 		setHTTPAttributes(span, req)
+		ctx = context.WithValue(ctx, rootSpanNameSetterKey{}, func(name string) { span.SetName(name) })
 		writer := &statusWriter{ResponseWriter: w}
 		defer func() {
 			if writer.status != 0 {
@@ -548,6 +568,14 @@ func HTTPHandler(next http.Handler) http.Handler {
 		}()
 		next.ServeHTTP(writer, req.WithContext(ctx))
 	})
+}
+
+func httpServerSpanName(req *http.Request, route string) string {
+	path := "/other"
+	if req.URL.Path == route || req.URL.Path == route+"/" {
+		path = route
+	}
+	return normalizeHTTPMethod(req.Method) + " " + path
 }
 
 func setHTTPAttributes(span apiTrace.Span, req *http.Request) {
@@ -638,13 +666,20 @@ func MCPMiddleware(next mcp.MethodHandler) mcp.MethodHandler {
 		}
 		span := apiTrace.Span(nil)
 		if processEnabled.Load() {
-			ctx, span = tracer.Start(ctx, "mcp."+method)
+			methodName := normalizeMCPMethod(method)
+			ctx, span = tracer.Start(ctx, "mcp."+methodName)
 			defer span.End()
 			span.SetAttributes(attribute.String("mcp.method", method))
 		}
 		if call, ok := req.(*mcp.CallToolRequest); ok && call.Params != nil {
 			if span != nil {
+				toolName := normalizeToolName(call.Params.Name)
+				operationName := "mcp." + normalizeMCPMethod(method) + "/" + toolName
+				span.SetName(operationName)
 				span.SetAttributes(attribute.String("mcp.tool.name", call.Params.Name))
+				if setRootName, ok := ctx.Value(rootSpanNameSetterKey{}).(func(string)); ok {
+					setRootName(operationName)
+				}
 				setNumericIdentifiers(span, call.Params.Arguments)
 			}
 		}

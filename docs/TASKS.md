@@ -179,6 +179,7 @@ Before assigning a new story ID, inspect `git worktree list --porcelain`, search
 | [F-S94](#f-s94-prefix-oauth-endpoints-under-the-configured-mcp-path) | Move OAuth authorization and token endpoints under the configured MCP path so they cannot collide with future InvenTree routes. | Done |
 | [F-S95](#f-s95-structured-tool-logging-and-packaged-otel-samples) | Improve structured tool invocation/completion logging with safe context and trace correlation, and add packaged OTEL tracing samples. | Done |
 | [F-S96](#f-s96-avoid-duplicate-source_ip-in-outbound-request-logs) | Ensure each structured log record emits the normalized source IP only once. | Done |
+| [F-S97](#f-s97-improve-jaeger-trace-list-data) | Make exported trace operation names identify MCP tools and HTTP routes clearly in tracing UIs. | Done |
 
 ## Milestone 0: Repository And Planning
 
@@ -3470,3 +3471,25 @@ Tasks:
 - Validation: `GOFLAGS=-trimpath go test ./internal/tools ./internal/server` (pass); `GOFLAGS=-trimpath go test -race ./...` (pass); `go vet ./...` (clean); `golangci-lint run ./...` (0 issues); `git diff --check` (clean).
 - Review: Go, QA, Product, and Infosec subagent panel rerun after the follow-up test changes. No actionable findings remain; the panel confirmed the composed source-IP boundary, duplicate-attribute detection, direct/trusted/untrusted/STDIO coverage, and metadata alignment.
 - Residual risk: none known.
+
+### F-S97: Improve Jaeger Trace List Data
+
+- Status: `Done`
+- Depends on: F-S84.
+- Progress: the Jaeger result list currently derives its trace title from a generic inbound `HTTP POST` root span, while the actual MCP tool name is only present on a child span attribute. This story makes the root and MCP spans use bounded, tool-aware names and gives inbound HTTP spans route-aware initial names.
+- Scope: update `internal/telemetry` span naming and tests, plus tracing documentation and task evidence. Tool names used in span names are normalized against the registered-tool allowlist; unknown names become `other` to avoid unbounded cardinality. No request arguments, payloads, credentials, or exporter behavior changes.
+- Acceptance:
+  - HTTP root spans initially identify the HTTP method and bounded route template rather than only the method.
+  - MCP tool spans identify the MCP method and normalized registered tool name.
+  - When an MCP call runs beneath an HTTP span, the HTTP root span is renamed to the same bounded MCP operation name so trace list views identify the tool without opening the trace.
+  - Unknown tool names use the bounded `other` operation name.
+  - Tests verify the HTTP and MCP span names and existing trace correlation/redaction behavior remains intact.
+  - Relevant tracing documentation describes the operation-name behavior.
+- Out of scope: changing Jaeger, OTLP exporter/protocol behavior, metrics, sampling, or adding high-cardinality span attributes.
+- Tasks:
+  - [x] Update inbound HTTP and MCP span naming.
+  - [x] Add focused tests for HTTP-root and MCP operation names.
+  - [x] Run full validation and the Senior Go Developer, Senior QA / Test Architect, and Senior Product Manager review panel.
+- Validation: `GOFLAGS=-trimpath go test -race ./...` (pass, including Docker-backed integration packages); `go vet ./...` (0 issues); `golangci-lint run ./...` (0 issues); `git diff --check` (clean). The initial unisolated test attempt was blocked by the macOS Go build-cache permission; the isolated-cache run passed. A sandbox-only localhost listener restriction was bypassed through the approved local-test escalation.
+- Review: final read-only Senior Go Developer, Senior QA / Test Architect, and Senior Product Manager panel rerun after all follow-up changes. No unresolved findings. Earlier findings on raw route cardinality, configurable MCP paths, incomplete protocol method normalization, and missing unknown/STDIO coverage were fixed and rerun review returned no findings.
+- Residual risk: the root operation is intentionally reduced to `other` for unregistered tool names; this preserves bounded trace cardinality at the cost of less detail for malformed or unknown calls.
