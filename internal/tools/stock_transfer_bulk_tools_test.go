@@ -393,3 +393,172 @@ func TestStockTransferBulkAdapterPreflightDetectsDrift(t *testing.T) {
 	a.Error(err)
 	a.Equal(bulkReasonDrifted, reason)
 }
+
+func TestStockTransferBulkAdapterPreflightRejectsUnreadableItem(t *testing.T) {
+	t.Parallel()
+	a := assert.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	client := newBulkFakeStockTransfer()
+	adapter := &stockTransferBulkAdapter{client: client, destinationLocationID: 20, reason: "consolidate"}
+	item := stockTransferBulkPlanItem{
+		bulkPlanItemBase: bulkPlanItemBase{ID: 1},
+		Before:           availableStockItem(1, 10, 5),
+		Quantity:         "5",
+	}
+
+	skip, reason, err := adapter.Preflight(ctx, item)
+	a.False(skip)
+	a.Error(err)
+	a.Equal(bulkReasonReadFailed, reason)
+}
+
+func TestStockTransferBulkAdapterVerifyDetectsMismatches(t *testing.T) {
+	t.Parallel()
+
+	baseline := func() (stockTransferBulkPlanItem, *bulkFakeStockTransfer) {
+		client := newBulkFakeStockTransfer()
+		before := availableStockItem(1, 10, 5)
+		client.items[1] = availableStockItem(1, 20, 5) // already moved to destination 20
+		return stockTransferBulkPlanItem{bulkPlanItemBase: bulkPlanItemBase{ID: 1}, Before: before, Quantity: "5"}, client
+	}
+
+	t.Run("read_error", func(t *testing.T) {
+		t.Parallel()
+		a := assert.New(t)
+		ctx, _, _ := testhandler.SetupTestHandler(t)
+		item, client := baseline()
+		delete(client.items, 1)
+		adapter := &stockTransferBulkAdapter{client: client, destinationLocationID: 20, reason: "consolidate"}
+
+		a.Error(adapter.Verify(ctx, item))
+	})
+
+	t.Run("wrong_location", func(t *testing.T) {
+		t.Parallel()
+		a := assert.New(t)
+		ctx, _, _ := testhandler.SetupTestHandler(t)
+		item, client := baseline()
+		client.items[1] = availableStockItem(1, 10, 5) // never actually moved
+		adapter := &stockTransferBulkAdapter{client: client, destinationLocationID: 20, reason: "consolidate"}
+
+		a.Error(adapter.Verify(ctx, item))
+	})
+
+	t.Run("quantity_drift", func(t *testing.T) {
+		t.Parallel()
+		a := assert.New(t)
+		ctx, _, _ := testhandler.SetupTestHandler(t)
+		item, client := baseline()
+		client.items[1] = availableStockItem(1, 20, 3) // moved, but quantity does not match the reviewed plan
+		adapter := &stockTransferBulkAdapter{client: client, destinationLocationID: 20, reason: "consolidate"}
+
+		a.Error(adapter.Verify(ctx, item))
+	})
+
+	t.Run("provenance_mismatch", func(t *testing.T) {
+		t.Parallel()
+		a := assert.New(t)
+		ctx, _, _ := testhandler.SetupTestHandler(t)
+		item, client := baseline()
+		moved := availableStockItem(1, 20, 5)
+		moved.Batch = stringPointer("someone-else-changed-it") // provenance drifted concurrently
+		client.items[1] = moved
+		adapter := &stockTransferBulkAdapter{client: client, destinationLocationID: 20, reason: "consolidate"}
+
+		a.Error(adapter.Verify(ctx, item))
+	})
+
+	t.Run("success", func(t *testing.T) {
+		t.Parallel()
+		a := assert.New(t)
+		ctx, _, _ := testhandler.SetupTestHandler(t)
+		item, client := baseline()
+		adapter := &stockTransferBulkAdapter{client: client, destinationLocationID: 20, reason: "consolidate"}
+
+		a.NoError(adapter.Verify(ctx, item))
+		view, ok := adapter.get(1)
+		a.True(ok)
+		a.Equal(1, view.PK)
+	})
+}
+
+func TestStockTransferBulkAdapterMutateReturnsOriginalErrorWhenRecoveryReadDoesNotConfirm(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	client := newBulkFakeStockTransfer()
+	client.items[1] = availableStockItem(1, 10, 5)
+	// A 5xx response is ambiguous, so Mutate attempts a self-heal read-back;
+	// here the item genuinely never moved (transferApplyBeforeErr unset), so
+	// the read-back cannot confirm the write and the original error must be
+	// returned rather than silently swallowed.
+	client.transferErr[1] = &inventree.APIError{StatusCode: http.StatusInternalServerError}
+	adapter := &stockTransferBulkAdapter{client: client, destinationLocationID: 20, reason: "consolidate"}
+	item := stockTransferBulkPlanItem{bulkPlanItemBase: bulkPlanItemBase{ID: 1}, Before: availableStockItem(1, 10, 5), Quantity: "5"}
+
+	err := adapter.Mutate(ctx, item)
+	r.Error(err)
+	var apiErr *inventree.APIError
+	a.ErrorAs(err, &apiErr)
+	if apiErr != nil {
+		a.Equal(http.StatusInternalServerError, apiErr.StatusCode)
+	}
+}
+
+func TestBuildStockTransferBulkPlanItemRejectsNonPositiveID(t *testing.T) {
+	t.Parallel()
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	client := newBulkFakeStockTransfer()
+
+	item := buildStockTransferBulkPlanItem(ctx, client, BulkTransferStockItem{ID: 0}, 20)
+	assert.Equal(t, "id must be positive", item.FailReason)
+}
+
+func TestBuildStockTransferBulkPlanItemRejectsInvalidQuantity(t *testing.T) {
+	t.Parallel()
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	client := newBulkFakeStockTransfer()
+	client.items[1] = availableStockItem(1, 10, -3) // negative quantity is never schema-valid
+
+	item := buildStockTransferBulkPlanItem(ctx, client, BulkTransferStockItem{ID: 1}, 20)
+	assert.Equal(t, "current stock quantity is not schema-valid", item.FailReason)
+}
+
+// TestBulkTransferStockItemsRejectsDuplicateIDEndToEnd drives the full
+// dry_run/confirm handler with a duplicate id, rather than calling
+// buildStockTransferBulkPlan directly, to prove the duplicate-rejection
+// acceptance criterion holds at the tool boundary: the dry-run preview
+// reports the duplicate as failed and confirm never calls TransferStock for
+// it.
+func TestBulkTransferStockItemsRejectsDuplicateIDEndToEnd(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	client := newBulkFakeStockTransfer()
+	client.items[1] = availableStockItem(1, 10, 5)
+	client.locations[20] = inventree.StockLocation{PK: 20, Name: "Destination"}
+	deps := testStockTransferBulkDeps(client)
+	handler := bulkTransferStockItems(deps)
+
+	items := []BulkTransferStockItem{{ID: 1}, {ID: 1}}
+	_, dryOut, err := handler(ctx, &mcp.CallToolRequest{}, BulkTransferStockItemsInput{Items: items, DestinationLocationID: 20, Reason: "consolidate", DryRun: true})
+	r.NoError(err)
+	a.Equal(StatusOK, dryOut.Status)
+	r.Len(dryOut.Items, 2)
+	a.Equal(bulkOutcomeFailed, dryOut.Items[0].Outcome)
+	a.Equal(bulkReasonDuplicateID, dryOut.Items[0].Message)
+	a.Equal(bulkOutcomeFailed, dryOut.Items[1].Outcome)
+	a.Equal(bulkReasonDuplicateID, dryOut.Items[1].Message)
+
+	_, confirmOut, err := handler(ctx, &mcp.CallToolRequest{}, BulkTransferStockItemsInput{Items: items, DestinationLocationID: 20, Reason: "consolidate", Confirm: true, PlanHash: dryOut.PlanHash})
+	r.NoError(err)
+	a.Equal(StatusPartialFailure, confirmOut.Status)
+	r.Len(confirmOut.Items, 2)
+	for _, result := range confirmOut.Items {
+		a.Equal(string(batch.OutcomeFailed), result.Outcome)
+		a.Equal(bulkReasonDuplicateID, result.Message)
+	}
+	a.Equal(0, client.transferCalls, "a duplicate id must never reach TransferStock")
+}

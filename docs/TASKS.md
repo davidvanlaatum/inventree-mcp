@@ -111,7 +111,7 @@ Before assigning a new story ID, inspect `git worktree list --porcelain`, search
 | [F-S26](#f-s26-mcp-functionality-gap-guidance) | Guide consuming agents to surface untracked MCP functionality gaps for operator-approved issue creation. | Done |
 | [F-S27](#f-s27-guarded-full-stock-item-transfer) | Move one complete safe stock item to an explicit valid destination. | Done |
 | [F-S28](#f-s28-partial-stock-item-transfer-and-split-recovery) | Add partial transfers after split identity and recovery semantics are approved. | Done |
-| [F-S29](#f-s29-reviewed-multi-item-stock-transfer-batches) | Add reviewed transfer batches after atomicity and failure semantics are verified. | Active |
+| [F-S29](#f-s29-reviewed-multi-item-stock-transfer-batches) | Add reviewed transfer batches after atomicity and failure semantics are verified. | Done |
 | [F-S30](#f-s30-clarify-endpoint-specific-model-type-contracts) | Distinguish attachment and parameter endpoint `model_type` vocabularies without changing behavior. | Done |
 | [F-S31](#f-s31-guarded-company-primary-images) | Add guarded upload, replacement, verification, and supported removal of company primary images. | Done |
 | [F-S32](#f-s32-guarded-purchase-order-line-deletion) | Add guarded deletion of one unreceived ordinary purchase-order line, distinct from extra-line deletion. | Done |
@@ -1809,7 +1809,7 @@ Tasks:
 
 ### F-S29: Reviewed Multi-Item Stock-Transfer Batches
 
-- Status: `Active`
+- Status: `Done`
 - Issue: [#98](https://github.com/davidvanlaatum/inventree-mcp/issues/98)
 - Depends on: F-S27; F-S28 partial quantities are explicitly out of scope for this story (see decisions below)
 - Scope: add a bounded reviewed multi-item transfer tool that moves several stable stock items to one shared destination location under a single reviewed plan. Preserve F-S27 as the simple single-item workflow. Do not add transfer-order workflows or implicit default-location resolution.
@@ -1831,12 +1831,12 @@ Tasks:
 
 - [x] Verify and document pinned InvenTree batch atomicity and failure behavior.
 - [x] Resolve complete-only/partial, duplicate, size, ordering, and recovery decisions.
-- [ ] Implement only the approved bounded batch surface.
-- [ ] Validate, review, and align public contracts.
+- [x] Implement only the approved bounded batch surface.
+- [x] Validate, review, and align public contracts.
 
-- Validation: pending implementation.
-- Review: pending implementation.
-- Residual risk: none identified yet beyond the accepted native-quantity-validation gap addressed by client-side validation above.
+- Validation: `go build ./...`; `go vet ./...`; `golangci-lint run ./...` (0 issues); `go test ./... -short -race` (all packages pass); `go test ./internal/tools/... -run 'TestMilestoneHappyPathToolsAgainstInvenTree/bulk_stock_updates/transfer' -v` (pinned live Testcontainers pass against InvenTree 1.5.2, exercising applied/skipped/failed-unknown/failed-unsafe-serialized/stale-plan/response-loss-recovery); unit/MCP-layer suite in `internal/tools/stock_transfer_bulk_tools_test.go` covers plan-build rejection (unknown ID, non-positive ID, invalid quantity, duplicate ID including end-to-end through the handler), dry-run/confirm, stale-plan rejection, mixed independent outcomes, response-loss recovery (both the recovered and the genuinely-unrecovered-error case), plan capacity, and the `stockTransferBulkAdapter`'s `Preflight`/`Verify` branches (drift, unreadable item, and all four `Verify` mismatch cases: read error, wrong location, quantity drift, provenance drift).
+- Review: full Go/QA/product/infosec panel run per `docs/reviewers.md` (required for a new mutating tool). No blocking findings. Go: refactor of the shared `unsafeStockTransfer`/`unsafeStockTransferReason` gate confirmed behavior-preserving and race-free; requested a doc comment on the already-at-destination skip-before-safety-recheck path (added). QA: found several untested `stockTransferBulkAdapter` branches (`Verify` failure cases, the genuinely-unrecovered `Mutate` error path, end-to-end duplicate-ID rejection, invalid-ID/quantity guards) — closed with new targeted tests; also flagged this section's checkboxes/Validation/Review as stale, now resolved by this update. Product: scope tradeoffs (complete-quantity-only, one shared destination, no per-item destination) confirmed defensible and consistently documented; flagged the same TASKS.md staleness. Infosec: confirmed OAuth scope parity with `transfer_stock_item`, correct principal-bound single-use `plan_hash` digest binding (including `destination_location_id` and `reason`), and no relationship-safety check dropped by the shared-gate refactor; suggested documenting the `plan_hash` digest binding explicitly in `docs/tool-reference.md` (added).
+- Residual risk: `stockTransferBulkAdapter.Preflight`'s `bulkReasonIdentityMismatch` branch (a `GetStockItem` response whose `PK` does not match the requested ID) has no dedicated unit test, since the in-package fake client cannot produce a mismatched identity without a bespoke override; every other Preflight/Verify branch is covered. The Go reviewer's note about concurrent same-destination `Mutate` calls under bulk concurrency was not separately live-verified beyond the existing `ambiguousAdminMutation` recovery path, which already handles ambiguous upstream responses generically.
 
 ### F-S30: Clarify Endpoint-Specific Model-Type Contracts
 

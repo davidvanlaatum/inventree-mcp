@@ -125,6 +125,13 @@ func (a *stockTransferBulkAdapter) Preflight(ctx context.Context, item stockTran
 	if current.PK != item.ID {
 		return false, bulkReasonIdentityMismatch, errors.New("stock item identity verification failed")
 	}
+	// An item already at the destination is reported as skipped without
+	// re-running unsafeStockTransferReason, matching stockStatusBulkPlanItem's
+	// equivalent no-op handling: since no write is attempted, a relationship
+	// state that would otherwise block a transfer is not itself a reason to
+	// fail an item that requires no transfer at all. This can make confirm's
+	// outcome differ from the dry-run preview for an item that both reached
+	// its destination and turned unsafe between the two calls.
 	if current.Location != nil && *current.Location == a.destinationLocationID {
 		return true, "already at target location", nil
 	}
