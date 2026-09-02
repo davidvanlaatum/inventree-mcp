@@ -3493,6 +3493,94 @@ func TestMilestoneHappyPathToolsAgainstInvenTree(t *testing.T) {
 			r.NotNil(lostConfirm.Items[0].Record)
 			a.Equal(stockStatusReturned, lostConfirm.Items[0].Record.Status)
 		})
+
+		t.Run("transfer", func(t *testing.T) {
+			r := require.New(t)
+			a := assert.New(t)
+			ctx, _, _ := testhandler.SetupTestHandler(t)
+			fixture := newMilestoneToolFixture(t, shared)
+			part := fixture.createPart(t, "bulk-stock-transfer-base")
+			location := fixture.ensure(t, testenv.FixtureLocation)
+			destinationName, err := fixture.run.Name("bulk-stock-transfer-destination")
+			r.NoError(err)
+			destination, err := fixture.client.CreateStockLocation(ctx, inventree.StockLocationCreate{Name: destinationName, Parent: &location.ID})
+			r.NoError(err)
+			applies := fixture.createStockItem(t, part.PK, location.ID)
+			skips := fixture.createStockItem(t, part.PK, location.ID)
+			r.NoError(fixture.client.TransferStock(ctx, inventree.StockTransfer{Items: []inventree.StockAdjustmentItem{{PK: skips.PK, Quantity: "3"}}, Notes: "already at destination", Location: destination.PK}))
+			// A serialized item is refused by unsafeStockTransferReason
+			// (transfer_stock_item's own relationship-safety gate), giving a
+			// realistic unsafe-item case without fabricating an unwritable field.
+			category := fixture.ensure(t, testenv.FixtureCategory)
+			serializedPartName, err := fixture.run.Name("bulk-stock-transfer-serialized-part")
+			r.NoError(err)
+			serializedPart, err := fixture.client.CreatePart(ctx, inventree.PartCreate{Name: serializedPartName, Category: dvgoutils.Ptr(category.ID), Active: dvgoutils.Ptr(true), Component: dvgoutils.Ptr(true), Trackable: dvgoutils.Ptr(true)})
+			r.NoError(err)
+			var serializedItems []inventree.StockItem
+			r.NoError(fixture.client.Post(ctx, "/api/stock/", map[string]any{"part": serializedPart.PK, "location": location.ID, "quantity": 1, "serial_numbers": "1"}, &serializedItems))
+			r.Len(serializedItems, 1)
+			unsafe := serializedItems[0]
+
+			items := []BulkTransferStockItem{{ID: applies.PK}, {ID: skips.PK}, {ID: unknownID}, {ID: unsafe.PK}}
+			_, dryRun, err := bulkTransferStockItems(fixture.deps())(ctx, &mcp.CallToolRequest{}, BulkTransferStockItemsInput{Items: items, DestinationLocationID: destination.PK, Reason: "bulk stock transfer integration", DryRun: true})
+			r.NoError(err)
+			a.Equal(StatusOK, dryRun.Status)
+			r.NotEmpty(dryRun.PlanHash)
+
+			_, confirmed, err := bulkTransferStockItems(fixture.deps())(ctx, &mcp.CallToolRequest{}, BulkTransferStockItemsInput{Items: items, DestinationLocationID: destination.PK, Reason: "bulk stock transfer integration", Confirm: true, PlanHash: dryRun.PlanHash})
+			r.NoError(err)
+			a.Equal(StatusPartialFailure, confirmed.Status)
+			byID := bulkResultsByID(confirmed.Items)
+			r.NotNil(byID[applies.PK].Record)
+			r.NotNil(byID[applies.PK].Record.Location)
+			a.Equal(destination.PK, *byID[applies.PK].Record.Location)
+			a.Equal(string(batch.OutcomeApplied), byID[applies.PK].Outcome)
+			a.Equal(string(batch.OutcomeSkipped), byID[skips.PK].Outcome)
+			a.Equal(string(batch.OutcomeFailed), byID[unknownID].Outcome)
+			a.Equal(string(batch.OutcomeFailed), byID[unsafe.PK].Outcome)
+
+			refreshed, err := fixture.client.GetStockItem(ctx, applies.PK)
+			r.NoError(err)
+			r.NotNil(refreshed.Location)
+			a.Equal(destination.PK, *refreshed.Location)
+			unchanged, err := fixture.client.GetStockItem(ctx, unsafe.PK)
+			r.NoError(err)
+			r.NotNil(unchanged.Location)
+			a.Equal(location.ID, *unchanged.Location)
+
+			// Stale plan: state drifts after the dry run but before confirm.
+			secondName, err := fixture.run.Name("bulk-stock-transfer-second-destination")
+			r.NoError(err)
+			second, err := fixture.client.CreateStockLocation(ctx, inventree.StockLocationCreate{Name: secondName, Parent: &location.ID})
+			r.NoError(err)
+			staleItems := []BulkTransferStockItem{{ID: applies.PK}}
+			_, staleDryRun, err := bulkTransferStockItems(fixture.deps())(ctx, &mcp.CallToolRequest{}, BulkTransferStockItemsInput{Items: staleItems, DestinationLocationID: second.PK, Reason: "stale check", DryRun: true})
+			r.NoError(err)
+			r.NotEmpty(staleDryRun.PlanHash)
+			r.NoError(fixture.client.TransferStock(ctx, inventree.StockTransfer{Items: []inventree.StockAdjustmentItem{{PK: applies.PK, Quantity: "3"}}, Notes: "drift", Location: location.ID}))
+			_, staleConfirm, err := bulkTransferStockItems(fixture.deps())(ctx, &mcp.CallToolRequest{}, BulkTransferStockItemsInput{Items: staleItems, DestinationLocationID: second.PK, Reason: "stale check", Confirm: true, PlanHash: staleDryRun.PlanHash})
+			r.NoError(err)
+			a.Equal(StatusClarificationRequired, staleConfirm.Status)
+
+			// Response-loss recovery: the live transfer call lands upstream but
+			// the response is dropped, so Mutate must recover by reading back
+			// current state rather than reporting a bare ambiguous failure.
+			lostItems := []BulkTransferStockItem{{ID: applies.PK}}
+			_, lostDryRun, err := bulkTransferStockItems(fixture.deps())(ctx, &mcp.CallToolRequest{}, BulkTransferStockItemsInput{Items: lostItems, DestinationLocationID: second.PK, Reason: "recovered", DryRun: true})
+			r.NoError(err)
+			r.NotEmpty(lostDryRun.PlanHash)
+			lostClient, err := shared.ClientWithHTTPClient(fixture.account, &http.Client{Transport: &loseMutationResponseTransport{base: http.DefaultTransport, method: http.MethodPost, path: "/api/stock/transfer/"}})
+			r.NoError(err)
+			lostFixture := fixture
+			lostFixture.client = lostClient
+			_, lostConfirm, err := bulkTransferStockItems(lostFixture.deps())(ctx, &mcp.CallToolRequest{}, BulkTransferStockItemsInput{Items: lostItems, DestinationLocationID: second.PK, Reason: "recovered", Confirm: true, PlanHash: lostDryRun.PlanHash})
+			r.NoError(err)
+			r.Len(lostConfirm.Items, 1)
+			a.Equal(string(batch.OutcomeApplied), lostConfirm.Items[0].Outcome)
+			r.NotNil(lostConfirm.Items[0].Record)
+			r.NotNil(lostConfirm.Items[0].Record.Location)
+			a.Equal(second.PK, *lostConfirm.Items[0].Record.Location)
+		})
 	})
 
 	t.Run("bulk_purchase_order_updates", func(t *testing.T) {
@@ -3958,6 +4046,7 @@ type milestoneToolFixture struct {
 	manufacturerPartBulkPlanStore        *batch.Store[manufacturerPartBulkPlan]
 	stockMetadataBulkPlanStore           *batch.Store[stockMetadataBulkPlan]
 	stockStatusBulkPlanStore             *batch.Store[stockStatusBulkPlan]
+	stockTransferBulkPlanStore           *batch.Store[stockTransferBulkPlan]
 	purchaseOrderBulkPlanStore           *batch.Store[purchaseOrderBulkPlan]
 	purchaseOrderLineBulkPlanStore       *batch.Store[purchaseOrderLineBulkPlan]
 	purchaseOrderExtraLineBulkPlanStore  *batch.Store[purchaseOrderExtraLineBulkPlan]
@@ -4053,6 +4142,10 @@ func newMilestoneToolFixture(t *testing.T, shared *testenv.SharedInvenTree) mile
 			IDGenerator: platform.RandomIDGenerator{}, Principal: stockPlanPrincipal,
 			SupersedeKey: func(p stockStatusBulkPlan) string { return bulkSupersedeKey(p.ids()) },
 		}),
+		stockTransferBulkPlanStore: mustBulkStore(batch.Options[stockTransferBulkPlan]{
+			IDGenerator: platform.RandomIDGenerator{}, Principal: stockPlanPrincipal,
+			SupersedeKey: func(p stockTransferBulkPlan) string { return bulkSupersedeKey(p.ids()) },
+		}),
 		purchaseOrderBulkPlanStore: mustBulkStore(batch.Options[purchaseOrderBulkPlan]{
 			IDGenerator: platform.RandomIDGenerator{}, Principal: stockPlanPrincipal,
 			SupersedeKey: func(p purchaseOrderBulkPlan) string { return bulkSupersedeKey(p.ids()) },
@@ -4105,6 +4198,7 @@ func (f milestoneToolFixture) deps() Dependencies {
 		manufacturerPartBulkPlanStore:        f.manufacturerPartBulkPlanStore,
 		stockMetadataBulkPlanStore:           f.stockMetadataBulkPlanStore,
 		stockStatusBulkPlanStore:             f.stockStatusBulkPlanStore,
+		stockTransferBulkPlanStore:           f.stockTransferBulkPlanStore,
 		purchaseOrderBulkPlanStore:           f.purchaseOrderBulkPlanStore,
 		purchaseOrderLineBulkPlanStore:       f.purchaseOrderLineBulkPlanStore,
 		purchaseOrderExtraLineBulkPlanStore:  f.purchaseOrderExtraLineBulkPlanStore,

@@ -377,6 +377,7 @@ func registerWriteTools(server *mcp.Server, deps Dependencies) {
 	registerStocktakeGenerationTool(server, deps)
 	registerStockAdminTools(server, deps)
 	registerStockBulkWriteTools(server, deps)
+	registerStockTransferBulkWriteTools(server, deps)
 	registerStockLocationTypeAdminTools(server, deps)
 	registerStockLocationDeleteTool(server, deps)
 	registerAttachmentWriteTools(server, deps)

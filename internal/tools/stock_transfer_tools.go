@@ -139,58 +139,81 @@ func optionalFloat(enabled bool, value float64) *float64 {
 	return &value
 }
 
-func unsafeStockTransfer(out StockTransferOutput, item inventree.StockItem) (*mcp.CallToolResult, StockTransferOutput, bool) {
-	retry := map[string]any{"stock_item_id": item.PK, "dry_run": true}
-	clarify := func(question, subject, reason string) (*mcp.CallToolResult, StockTransferOutput, bool) {
-		result, clarified, _ := stockTransferClarification(out, question, subject, reason, "stock_item_id", retry)
-		return result, clarified, true
-	}
+// stockTransferUnsafeReason describes why a stock item is unsafe to transfer.
+// Question/Subject are surfaced to the single-item transfer_stock_item
+// clarification response; Extra carries the identifying field(s) merged into
+// that clarification's retry payload. Bulk callers use only Reason.
+type stockTransferUnsafeReason struct {
+	Question string
+	Subject  string
+	Reason   string
+	Extra    map[string]any
+}
+
+// stockTransferUnsafeCheck is the single relationship-safety gate shared by
+// transfer_stock_item and bulk_transfer_stock_items: it returns nil when item
+// is safe to transfer, or a reason describing the first blocking condition.
+func stockTransferUnsafeCheck(item inventree.StockItem) *stockTransferUnsafeReason {
 	switch {
 	case item.Location == nil:
-		return clarify("Which currently located stock item should be transferred?", "location", "the selected stock item has no current source location, so a complete source-to-destination plan cannot be prepared")
+		return &stockTransferUnsafeReason{Question: "Which currently located stock item should be transferred?", Subject: "location", Reason: "the selected stock item has no current source location, so a complete source-to-destination plan cannot be prepared"}
 	case stockItemHasSerial(item):
-		retry["serial"] = item.Serial
-		return clarify("How should the serialized stock item be moved?", "serial", "serialized stock is outside the complete ordinary-stock transfer contract")
+		return &stockTransferUnsafeReason{Question: "How should the serialized stock item be moved?", Subject: "serial", Reason: "serialized stock is outside the complete ordinary-stock transfer contract", Extra: map[string]any{"serial": item.Serial}}
 	case !item.InStock:
-		return clarify("Which available stock item should be transferred?", "in_stock", "the selected stock item is not currently in stock")
+		return &stockTransferUnsafeReason{Question: "Which available stock item should be transferred?", Subject: "in_stock", Reason: "the selected stock item is not currently in stock"}
 	case item.Allocated == nil:
-		return clarify("What is the current stock allocation state?", "allocated", "allocation context is unavailable, so a safe transfer cannot be proven")
+		return &stockTransferUnsafeReason{Question: "What is the current stock allocation state?", Subject: "allocated", Reason: "allocation context is unavailable, so a safe transfer cannot be proven"}
 	case *item.Allocated != 0:
-		retry["allocated"] = *item.Allocated
-		return clarify("How should the allocated stock be released first?", "allocated", "allocated stock cannot be transferred through this workflow")
+		return &stockTransferUnsafeReason{Question: "How should the allocated stock be released first?", Subject: "allocated", Reason: "allocated stock cannot be transferred through this workflow", Extra: map[string]any{"allocated": *item.Allocated}}
 	case item.IsBuilding:
-		return clarify("How should the in-production stock be completed or cancelled first?", "is_building", "stock currently being built cannot be transferred")
+		return &stockTransferUnsafeReason{Question: "How should the in-production stock be completed or cancelled first?", Subject: "is_building", Reason: "stock currently being built cannot be transferred"}
 	case item.Build != nil:
-		retry["build_id"] = *item.Build
-		return clarify("How should the build-linked stock be handled?", "build", "build-linked stock is outside the ordinary-stock transfer contract")
+		return &stockTransferUnsafeReason{Question: "How should the build-linked stock be handled?", Subject: "build", Reason: "build-linked stock is outside the ordinary-stock transfer contract", Extra: map[string]any{"build_id": *item.Build}}
 	case item.ConsumedBy != nil:
-		retry["consumed_by_id"] = *item.ConsumedBy
-		return clarify("How should the consumed stock history be handled?", "consumed_by", "stock consumed by a build cannot be transferred")
+		return &stockTransferUnsafeReason{Question: "How should the consumed stock history be handled?", Subject: "consumed_by", Reason: "stock consumed by a build cannot be transferred", Extra: map[string]any{"consumed_by_id": *item.ConsumedBy}}
 	case item.BelongsTo != nil:
-		retry["belongs_to_id"] = *item.BelongsTo
-		return clarify("How should the installed stock item be uninstalled first?", "belongs_to", "stock installed in another item cannot be transferred")
+		return &stockTransferUnsafeReason{Question: "How should the installed stock item be uninstalled first?", Subject: "belongs_to", Reason: "stock installed in another item cannot be transferred", Extra: map[string]any{"belongs_to_id": *item.BelongsTo}}
 	case item.Parent != nil:
-		retry["parent_id"] = *item.Parent
-		return clarify("How should the child stock relationship be removed first?", "parent", "a child stock item cannot be transferred")
+		return &stockTransferUnsafeReason{Question: "How should the child stock relationship be removed first?", Subject: "parent", Reason: "a child stock item cannot be transferred", Extra: map[string]any{"parent_id": *item.Parent}}
 	case item.InstalledItems == nil:
-		return clarify("What is the current installed-item state?", "installed_items", "installed-item context is unavailable, so a safe transfer cannot be proven")
+		return &stockTransferUnsafeReason{Question: "What is the current installed-item state?", Subject: "installed_items", Reason: "installed-item context is unavailable, so a safe transfer cannot be proven"}
 	case *item.InstalledItems != 0:
-		retry["installed_items"] = *item.InstalledItems
-		return clarify("How should installed child items be removed first?", "installed_items", "stock containing installed items cannot be transferred")
+		return &stockTransferUnsafeReason{Question: "How should installed child items be removed first?", Subject: "installed_items", Reason: "stock containing installed items cannot be transferred", Extra: map[string]any{"installed_items": *item.InstalledItems}}
 	case item.ChildItems == nil:
-		return clarify("What is the current child-item state?", "child_items", "child-item context is unavailable, so a safe transfer cannot be proven")
+		return &stockTransferUnsafeReason{Question: "What is the current child-item state?", Subject: "child_items", Reason: "child-item context is unavailable, so a safe transfer cannot be proven"}
 	case *item.ChildItems != 0:
-		retry["child_items"] = *item.ChildItems
-		return clarify("How should child stock items be separated first?", "child_items", "stock with child items cannot be transferred")
+		return &stockTransferUnsafeReason{Question: "How should child stock items be separated first?", Subject: "child_items", Reason: "stock with child items cannot be transferred", Extra: map[string]any{"child_items": *item.ChildItems}}
 	case item.Customer != nil:
-		retry["customer_id"] = *item.Customer
-		return clarify("How should the customer-assigned stock be released first?", "customer", "customer-assigned stock cannot be transferred")
+		return &stockTransferUnsafeReason{Question: "How should the customer-assigned stock be released first?", Subject: "customer", Reason: "customer-assigned stock cannot be transferred", Extra: map[string]any{"customer_id": *item.Customer}}
 	case item.SalesOrder != nil:
-		retry["sales_order_id"] = *item.SalesOrder
-		return clarify("How should the sales-order stock be released first?", "sales_order", "sales-order-linked stock cannot be transferred")
+		return &stockTransferUnsafeReason{Question: "How should the sales-order stock be released first?", Subject: "sales_order", Reason: "sales-order-linked stock cannot be transferred", Extra: map[string]any{"sales_order_id": *item.SalesOrder}}
 	default:
+		return nil
+	}
+}
+
+// unsafeStockTransferReason returns the empty string when item is safe to
+// transfer, or a caller-safe reason string otherwise. Used by
+// bulk_transfer_stock_items, which reports a plain reason per item rather
+// than transfer_stock_item's richer clarification response.
+func unsafeStockTransferReason(item inventree.StockItem) string {
+	if check := stockTransferUnsafeCheck(item); check != nil {
+		return check.Reason
+	}
+	return ""
+}
+
+func unsafeStockTransfer(out StockTransferOutput, item inventree.StockItem) (*mcp.CallToolResult, StockTransferOutput, bool) {
+	check := stockTransferUnsafeCheck(item)
+	if check == nil {
 		return nil, out, false
 	}
+	retry := map[string]any{"stock_item_id": item.PK, "dry_run": true}
+	for k, v := range check.Extra {
+		retry[k] = v
+	}
+	result, clarified, _ := stockTransferClarification(out, check.Question, check.Subject, check.Reason, "stock_item_id", retry)
+	return result, clarified, true
 }
 
 func executeStockTransfer(ctx context.Context, store *stockPlanStore, client StockTransferClient, input TransferStockItemInput, plan StockAdjustmentPlan, quantity string) (*mcp.CallToolResult, StockTransferOutput, error) {
