@@ -111,7 +111,7 @@ Before assigning a new story ID, inspect `git worktree list --porcelain`, search
 | [F-S26](#f-s26-mcp-functionality-gap-guidance) | Guide consuming agents to surface untracked MCP functionality gaps for operator-approved issue creation. | Done |
 | [F-S27](#f-s27-guarded-full-stock-item-transfer) | Move one complete safe stock item to an explicit valid destination. | Done |
 | [F-S28](#f-s28-partial-stock-item-transfer-and-split-recovery) | Add partial transfers after split identity and recovery semantics are approved. | Done |
-| [F-S29](#f-s29-reviewed-multi-item-stock-transfer-batches) | Add reviewed transfer batches after atomicity and failure semantics are verified. | Ready |
+| [F-S29](#f-s29-reviewed-multi-item-stock-transfer-batches) | Add reviewed transfer batches after atomicity and failure semantics are verified. | Active |
 | [F-S30](#f-s30-clarify-endpoint-specific-model-type-contracts) | Distinguish attachment and parameter endpoint `model_type` vocabularies without changing behavior. | Done |
 | [F-S31](#f-s31-guarded-company-primary-images) | Add guarded upload, replacement, verification, and supported removal of company primary images. | Done |
 | [F-S32](#f-s32-guarded-purchase-order-line-deletion) | Add guarded deletion of one unreceived ordinary purchase-order line, distinct from extra-line deletion. | Done |
@@ -1809,27 +1809,34 @@ Tasks:
 
 ### F-S29: Reviewed Multi-Item Stock-Transfer Batches
 
-- Status: `Ready`
+- Status: `Active`
 - Issue: [#98](https://github.com/davidvanlaatum/inventree-mcp/issues/98)
-- Depends on: F-S27; also F-S28 if partial quantities are approved for batches
-- Scope: add bounded reviewed multi-item transfers only after native atomicity, validation, response-loss, and partial-progress behavior are characterized. Preserve F-S27 as the simple single-item workflow and do not silently include F-S28 partial quantities. Do not add transfer-order workflows or implicit default-location resolution.
+- Depends on: F-S27; F-S28 partial quantities are explicitly out of scope for this story (see decisions below)
+- Scope: add a bounded reviewed multi-item transfer tool that moves several stable stock items to one shared destination location under a single reviewed plan. Preserve F-S27 as the simple single-item workflow. Do not add transfer-order workflows or implicit default-location resolution.
+- Spike findings (pinned InvenTree 1.5.2, live Testcontainers, `internal/inventree/client_methods_integration_test.go` `stock_transfer_batch_atomicity_spike`, spike code not retained -- see decisions below): a structurally invalid item PK in a multi-item `/api/stock/transfer/` request is rejected atomically (`400`, no item moves); a per-item `quantity` value that exceeds the item's current on-hand quantity is **not validated by InvenTree at all** -- the request succeeds (`201`) and the item is fully relocated regardless of the nonsensical requested quantity; duplicate source PKs in one request are accepted and applied sequentially/compounding rather than deduplicated or rejected; and several independent valid items in one request all move together in the single call. Because the native endpoint does not enforce quantity correctness, any implementation must keep quantity/relationship-safety validation entirely client-side (reusing F-S27's `unsafeStockTransfer` gate) rather than relying on the native endpoint to catch an invalid per-item quantity.
+- Product decisions (operator-approved, see issue #98 for the open-question list this resolves):
+  - Batch execution reuses the F-S76 shared batch-execution framework (`internal/batch`) with **one native `TransferStock` call per item**, not InvenTree's native multi-item payload in a single call. This reuses F-S27's existing per-item quantity/relationship-safety validation and per-item read-back verification, gives true per-item verified/failed/recovered/unknown outcomes (matching F-S76's `Adapter` model), and sidesteps the native quantity-validation gap found in the spike.
+  - Complete-quantity transfers only for this story; F-S28 partial (split) quantities remain out of scope and would be a separate follow-up story.
+  - Duplicate source stock-item IDs within one batch request are rejected at plan/dry-run time (fail closed), rather than mirroring InvenTree's native permissive sequential-compounding behavior.
+  - Maximum batch size and ordering reuse the existing F-S76 bulk-tool convention: default 25 items, operator-configurable via the existing `BulkMaxItems` setting, processed in caller-submitted order.
+  - The batch shares one destination location across all items in a request (e.g. "move these N items to location X"); it does not accept a distinct destination per item.
+  - Items may freely mix parts, source locations, and owners within one batch (no shared-part/source/owner restriction) -- each item is independently safety-checked via F-S27's existing relationship guard, consistent with the mixing behavior of the F-S76-based bulk tools (F-S77-F-S80).
+  - One principal-bound, single-use `plan_hash` token covers the whole reviewed batch, matching every other F-S76 consumer.
 - Acceptance:
-  - Product review explicitly selects complete-only versus partial-capable batches, duplicate-source handling, maximum size, ordering, and any source/provenance restrictions.
-  - Pinned-live tests establish native atomicity and mid-batch failure behavior before implementation becomes Active.
-  - One current-state-bound plan lists every stable item, quantity, source/destination path, provenance, split behavior, and deterministic action order.
+  - One current-state-bound plan lists every stable item, quantity, shared destination path, provenance, and deterministic (submitted) action order.
   - Results distinguish verified, recovered, failed, and unknown per-item outcomes without blind retry guidance and within bounded request/response sizes.
   - OAuth, annotations, public docs, generated manifests, and deterministic plus pinned-live coverage stay aligned without changing F-S27 or F-S28 contracts.
 
 Tasks:
 
-- [ ] Verify and document pinned InvenTree batch atomicity and failure behavior.
-- [ ] Resolve complete-only/partial, duplicate, size, ordering, and recovery decisions.
+- [x] Verify and document pinned InvenTree batch atomicity and failure behavior.
+- [x] Resolve complete-only/partial, duplicate, size, ordering, and recovery decisions.
 - [ ] Implement only the approved bounded batch surface.
 - [ ] Validate, review, and align public contracts.
 
-- Validation: pending implementation selection.
-- Review: pending implementation selection.
-- Residual risk: native batch atomicity and response-loss semantics are intentionally unresolved until pinned-live evidence exists.
+- Validation: pending implementation.
+- Review: pending implementation.
+- Residual risk: none identified yet beyond the accepted native-quantity-validation gap addressed by client-side validation above.
 
 ### F-S30: Clarify Endpoint-Specific Model-Type Contracts
 
