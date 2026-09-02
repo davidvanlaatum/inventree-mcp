@@ -49,6 +49,72 @@ func TestClientMethodsAgainstInvenTree(t *testing.T) {
 		return shared.Close(context.WithoutCancel(ctx))
 	}))
 
+	t.Run("testing_and_requirements_discovery", func(t *testing.T) {
+		r := require.New(t)
+		ctx, _, _ := testhandler.SetupTestHandler(t)
+		fixture := newClientMethodFixture(t, shared)
+		part := fixture.ensure(t, testenv.FixturePart)
+
+		getJSON := func(path string, query url.Values, out *map[string]any) {
+			req, err := fixture.client.NewRequest(ctx, http.MethodGet, path, query, nil)
+			r.NoError(err)
+			r.NoError(fixture.client.DoJSON(req, out))
+		}
+
+		var templates map[string]any
+		getJSON("/api/part/test-template/", url.Values{"limit": {"100"}}, &templates)
+		filterReq, err := fixture.client.NewRequest(ctx, http.MethodGet, "/api/part/test-template/", url.Values{"limit": {"100"}, "part": {strconv.Itoa(part.ID)}}, nil)
+		r.NoError(err)
+		filterErr := fixture.client.DoJSON(filterReq, &map[string]any{})
+		var filterAPIError *inventree.APIError
+		r.ErrorAs(filterErr, &filterAPIError)
+		if filterAPIError != nil {
+			r.Equal(http.StatusBadRequest, filterAPIError.StatusCode, "the documented part filter is rejected on the pinned API")
+		}
+		assertPaginated := func(page map[string]any, label string) {
+			results, ok := page["results"].([]any)
+			r.True(ok, "%s results should be an array", label)
+			count, ok := page["count"].(float64)
+			r.True(ok, "%s count should be numeric", label)
+			if ok {
+				r.GreaterOrEqual(count, float64(len(results)), "%s count should include the current page", label)
+				r.LessOrEqual(len(results), 100, "%s must respect the requested page size", label)
+			}
+		}
+		assertPaginated(templates, "part test templates")
+
+		var results map[string]any
+		getJSON("/api/stock/test/", url.Values{"limit": {"100"}}, &results)
+		assertPaginated(results, "stock test results")
+
+		var requirements map[string]any
+		getJSON("/api/part/"+strconv.Itoa(part.ID)+"/requirements/", nil, &requirements)
+		for _, key := range []string{
+			"total_stock", "unallocated_stock", "can_build", "ordering", "building",
+			"scheduled_to_build", "required_for_build_orders", "allocated_to_build_orders",
+			"required_for_sales_orders", "allocated_to_sales_orders",
+		} {
+			r.Contains(requirements, key, "requirements response missing %q", key)
+		}
+
+		var barcodeHistory map[string]any
+		getJSON("/api/barcode/history/", url.Values{"limit": {"100"}}, &barcodeHistory)
+		assertPaginated(barcodeHistory, "barcode history")
+		storageSetting, err := fixture.client.GetGlobalSetting(ctx, "BARCODE_STORE_RESULTS")
+		r.NoError(err)
+		r.Equal("BARCODE_STORE_RESULTS", storageSetting.Key)
+		r.Equal("false", strings.ToLower(storageSetting.Value))
+		barcodeResults, ok := barcodeHistory["results"].([]any)
+		r.True(ok)
+		barcodeCount, ok := barcodeHistory["count"].(float64)
+		r.True(ok)
+		if ok {
+			r.Zero(barcodeCount, "default-disabled barcode storage should expose no history")
+		}
+		r.Empty(barcodeResults, "default-disabled barcode storage should return an empty history page")
+		t.Logf("schema-backed read-only discovery: templates=%v results=%v requirements=%v", templates["count"], results["count"], requirements)
+	})
+
 	t.Run("current_user_and_connector_token", func(t *testing.T) {
 		r := require.New(t)
 		ctx, _, _ := testhandler.SetupTestHandler(t)
