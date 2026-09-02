@@ -305,6 +305,85 @@ func (c *Client) DeletePartRelation(ctx context.Context, id int) error {
 	return c.DoJSON(req, nil)
 }
 
+func (c *Client) CreatePartInternalPriceBreak(ctx context.Context, input PartInternalPriceBreakCreate) (PartInternalPriceBreak, error) {
+	var out PartInternalPriceBreak
+	err := c.Post(ctx, "/api/part/internal-price/", input, &out)
+	return out, err
+}
+
+func (c *Client) UpdatePartInternalPriceBreak(ctx context.Context, id int, fields PatchFields) (PartInternalPriceBreak, error) {
+	var out PartInternalPriceBreak
+	err := c.Patch(ctx, fmt.Sprintf("/api/part/internal-price/%d/", id), fields, &out)
+	return out, err
+}
+
+func (c *Client) DeletePartInternalPriceBreak(ctx context.Context, id int) error {
+	req, err := c.NewRequest(ctx, http.MethodDelete, fmt.Sprintf("/api/part/internal-price/%d/", id), nil, nil)
+	if err != nil {
+		return err
+	}
+	return c.DoJSON(req, nil)
+}
+
+func (c *Client) CreatePartSalePriceBreak(ctx context.Context, input PartSalePriceBreakCreate) (PartSalePriceBreak, error) {
+	var out PartSalePriceBreak
+	err := c.Post(ctx, "/api/part/sale-price/", input, &out)
+	return out, err
+}
+
+func (c *Client) UpdatePartSalePriceBreak(ctx context.Context, id int, fields PatchFields) (PartSalePriceBreak, error) {
+	var out PartSalePriceBreak
+	err := c.Patch(ctx, fmt.Sprintf("/api/part/sale-price/%d/", id), fields, &out)
+	return out, err
+}
+
+func (c *Client) DeletePartSalePriceBreak(ctx context.Context, id int) error {
+	req, err := c.NewRequest(ctx, http.MethodDelete, fmt.Sprintf("/api/part/sale-price/%d/", id), nil, nil)
+	if err != nil {
+		return err
+	}
+	return c.DoJSON(req, nil)
+}
+
+func (c *Client) CreateSupplierPriceBreak(ctx context.Context, input SupplierPriceBreakCreate) (SupplierPriceBreak, error) {
+	var out SupplierPriceBreak
+	err := c.Post(ctx, "/api/company/price-break/", input, &out)
+	return out, err
+}
+
+func (c *Client) UpdateSupplierPriceBreak(ctx context.Context, id int, fields PatchFields) (SupplierPriceBreak, error) {
+	var out SupplierPriceBreak
+	err := c.Patch(ctx, fmt.Sprintf("/api/company/price-break/%d/", id), fields, &out)
+	return out, err
+}
+
+func (c *Client) DeleteSupplierPriceBreak(ctx context.Context, id int) error {
+	req, err := c.NewRequest(ctx, http.MethodDelete, fmt.Sprintf("/api/company/price-break/%d/", id), nil, nil)
+	if err != nil {
+		return err
+	}
+	return c.DoJSON(req, nil)
+}
+
+// UpdatePartPricing patches only the override_min/override_max fields (and
+// their currencies) on a Part's computed pricing snapshot. It never sends
+// the write-only "update" trigger; use RefreshPartPricing for that.
+func (c *Client) UpdatePartPricing(ctx context.Context, partID int, fields PatchFields) (PartPricing, error) {
+	var out PartPricing
+	err := c.Patch(ctx, fmt.Sprintf("/api/part/%d/pricing/", partID), fields, &out)
+	return out, err
+}
+
+// RefreshPartPricing schedules recalculation of a Part's computed pricing
+// snapshot by sending the write-only "update" trigger. The immediate
+// response may still report scheduled_for_update:true; callers that need a
+// settled snapshot must poll GetPartPricing separately.
+func (c *Client) RefreshPartPricing(ctx context.Context, partID int) (PartPricing, error) {
+	var out PartPricing
+	err := c.Patch(ctx, fmt.Sprintf("/api/part/%d/pricing/", partID), PatchFields{"update": Set(true)}, &out)
+	return out, err
+}
+
 func (c *Client) CreatePartCategory(ctx context.Context, input CategoryCreate) (Category, error) {
 	var out Category
 	err := c.Post(ctx, "/api/part/category/", input, &out)

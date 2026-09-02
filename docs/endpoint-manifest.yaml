@@ -22,6 +22,7 @@ coverage_areas:
   - project_codes
   - stocktake_generation
   - search
+  - pricing
 
 forbidden_paths:
   - /api/notes-image-upload/
@@ -129,6 +130,129 @@ endpoints:
     method: DELETE
     operation_id: part_related_destroy
     response_status: "204"
+  - id: search_internal_price_breaks
+    area: pricing
+    path: /api/part/internal-price/
+    method: GET
+    operation_id: part_internal_price_list
+    required_query:
+      - part
+    response_schema: '#/components/schemas/PaginatedPartInternalPriceList'
+  - id: create_internal_price_break
+    area: pricing
+    path: /api/part/internal-price/
+    method: POST
+    operation_id: part_internal_price_create
+    request_schema: '#/components/schemas/PartInternalPrice'
+    request_content_type: application/json
+    response_schema: '#/components/schemas/PartInternalPrice'
+  - id: get_internal_price_break
+    area: pricing
+    path: /api/part/internal-price/{id}/
+    method: GET
+    operation_id: part_internal_price_retrieve
+    response_schema: '#/components/schemas/PartInternalPrice'
+  - id: update_internal_price_break
+    area: pricing
+    path: /api/part/internal-price/{id}/
+    method: PATCH
+    operation_id: part_internal_price_partial_update
+    request_schema: '#/components/schemas/PatchedPartInternalPrice'
+    request_content_type: application/json
+    response_schema: '#/components/schemas/PartInternalPrice'
+  - id: delete_internal_price_break
+    area: pricing
+    path: /api/part/internal-price/{id}/
+    method: DELETE
+    operation_id: part_internal_price_destroy
+    response_status: "204"
+  - id: search_sale_price_breaks
+    area: pricing
+    path: /api/part/sale-price/
+    method: GET
+    operation_id: part_sale_price_list
+    required_query:
+      - part
+    response_schema: '#/components/schemas/PaginatedPartSalePriceList'
+  - id: create_sale_price_break
+    area: pricing
+    path: /api/part/sale-price/
+    method: POST
+    operation_id: part_sale_price_create
+    request_schema: '#/components/schemas/PartSalePrice'
+    request_content_type: application/json
+    response_schema: '#/components/schemas/PartSalePrice'
+  - id: get_sale_price_break
+    area: pricing
+    path: /api/part/sale-price/{id}/
+    method: GET
+    operation_id: part_sale_price_retrieve
+    response_schema: '#/components/schemas/PartSalePrice'
+  - id: update_sale_price_break
+    area: pricing
+    path: /api/part/sale-price/{id}/
+    method: PATCH
+    operation_id: part_sale_price_partial_update
+    request_schema: '#/components/schemas/PatchedPartSalePrice'
+    request_content_type: application/json
+    response_schema: '#/components/schemas/PartSalePrice'
+  - id: delete_sale_price_break
+    area: pricing
+    path: /api/part/sale-price/{id}/
+    method: DELETE
+    operation_id: part_sale_price_destroy
+    response_status: "204"
+  - id: search_supplier_price_breaks
+    area: pricing
+    path: /api/company/price-break/
+    method: GET
+    operation_id: company_price_break_list
+    required_query:
+      - part
+      - supplier
+    response_schema: '#/components/schemas/PaginatedSupplierPriceBreakList'
+  - id: create_supplier_price_break
+    area: pricing
+    path: /api/company/price-break/
+    method: POST
+    operation_id: company_price_break_create
+    request_schema: '#/components/schemas/SupplierPriceBreak'
+    request_content_type: application/json
+    response_schema: '#/components/schemas/SupplierPriceBreak'
+  - id: get_supplier_price_break
+    area: pricing
+    path: /api/company/price-break/{id}/
+    method: GET
+    operation_id: company_price_break_retrieve
+    response_schema: '#/components/schemas/SupplierPriceBreak'
+  - id: update_supplier_price_break
+    area: pricing
+    path: /api/company/price-break/{id}/
+    method: PATCH
+    operation_id: company_price_break_partial_update
+    request_schema: '#/components/schemas/PatchedSupplierPriceBreak'
+    request_content_type: application/json
+    response_schema: '#/components/schemas/SupplierPriceBreak'
+  - id: delete_supplier_price_break
+    area: pricing
+    path: /api/company/price-break/{id}/
+    method: DELETE
+    operation_id: company_price_break_destroy
+    response_status: "204"
+  - id: get_part_pricing
+    area: pricing
+    path: /api/part/{id}/pricing/
+    method: GET
+    operation_id: part_pricing_retrieve
+    response_schema: '#/components/schemas/PartPricing'
+  - id: update_part_pricing
+    area: pricing
+    path: /api/part/{id}/pricing/
+    method: PATCH
+    operation_id: part_pricing_partial_update
+    request_schema: '#/components/schemas/PatchedPartPricing'
+    request_content_type: application/json
+    response_schema: '#/components/schemas/PartPricing'
   - id: search_bom_items
     area: bom
     path: /api/bom/

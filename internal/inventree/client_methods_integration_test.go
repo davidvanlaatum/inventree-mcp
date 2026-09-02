@@ -1616,6 +1616,114 @@ func TestClientMethodsAgainstInvenTree(t *testing.T) {
 		a.Equal(http.StatusNotFound, afterSupplierDeleteAPIErr.StatusCode)
 	})
 
+	t.Run("pricing_and_price_break_client_methods", func(t *testing.T) {
+		r := require.New(t)
+		a := assert.New(t)
+		ctx, _, _ := testhandler.SetupTestHandler(t)
+		fixture := newClientMethodFixture(t, shared)
+
+		part := fixture.ensure(t, testenv.FixturePart)
+		supplierPart := fixture.ensure(t, testenv.FixtureSupplierPart)
+
+		// PartInternalPriceBreak: create, search page, get, update, delete.
+		internalCreated, err := fixture.client.CreatePartInternalPriceBreak(ctx, inventree.PartInternalPriceBreakCreate{
+			Part: part.ID, Quantity: 1, Price: "10.00", PriceCurrency: "USD",
+		})
+		r.NoError(err)
+		r.Positive(internalCreated.PK)
+
+		internalPage, err := fixture.client.SearchPartInternalPriceBreaksPage(ctx, inventree.PartInternalPriceBreakQuery{Part: part.ID, Limit: 100})
+		r.NoError(err)
+		r.Len(internalPage.Results, 1)
+		a.Equal(internalCreated.PK, internalPage.Results[0].PK)
+
+		internalGot, err := fixture.client.GetPartInternalPriceBreak(ctx, internalCreated.PK)
+		r.NoError(err)
+		a.Equal(internalCreated.PK, internalGot.PK)
+
+		internalUpdated, err := fixture.client.UpdatePartInternalPriceBreak(ctx, internalCreated.PK, inventree.PatchFields{"price": inventree.Set("11.00")})
+		r.NoError(err)
+		requireDecimalEqual(t, "11.00", internalUpdated.Price)
+
+		r.NoError(fixture.client.DeletePartInternalPriceBreak(ctx, internalCreated.PK))
+		_, err = fixture.client.GetPartInternalPriceBreak(ctx, internalCreated.PK)
+		var internalDeletedErr *inventree.APIError
+		r.ErrorAs(err, &internalDeletedErr, "expected not-found after DeletePartInternalPriceBreak, got %v", err)
+		a.Equal(inventree.ErrorKindNotFound, internalDeletedErr.Kind)
+
+		// PartSalePriceBreak: the part must be salable first (mirrors the
+		// discovery subtest's live-confirmed requirement).
+		_, err = fixture.client.UpdatePart(ctx, part.ID, inventree.PatchFields{"salable": inventree.Set(true)})
+		r.NoError(err)
+		saleCreated, err := fixture.client.CreatePartSalePriceBreak(ctx, inventree.PartSalePriceBreakCreate{
+			Part: part.ID, Quantity: 1, Price: "20.00", PriceCurrency: "USD",
+		})
+		r.NoError(err)
+		r.Positive(saleCreated.PK)
+
+		salePage, err := fixture.client.SearchPartSalePriceBreaksPage(ctx, inventree.PartSalePriceBreakQuery{Part: part.ID, Limit: 100})
+		r.NoError(err)
+		r.Len(salePage.Results, 1)
+		a.Equal(saleCreated.PK, salePage.Results[0].PK)
+
+		saleGot, err := fixture.client.GetPartSalePriceBreak(ctx, saleCreated.PK)
+		r.NoError(err)
+		a.Equal(saleCreated.PK, saleGot.PK)
+
+		saleUpdated, err := fixture.client.UpdatePartSalePriceBreak(ctx, saleCreated.PK, inventree.PatchFields{"price": inventree.Set("21.00")})
+		r.NoError(err)
+		requireDecimalEqual(t, "21.00", saleUpdated.Price)
+
+		r.NoError(fixture.client.DeletePartSalePriceBreak(ctx, saleCreated.PK))
+		_, err = fixture.client.GetPartSalePriceBreak(ctx, saleCreated.PK)
+		var saleDeletedErr *inventree.APIError
+		r.ErrorAs(err, &saleDeletedErr, "expected not-found after DeletePartSalePriceBreak, got %v", err)
+		a.Equal(inventree.ErrorKindNotFound, saleDeletedErr.Kind)
+
+		// SupplierPriceBreak: created against the SupplierPart id.
+		supplierCreated, err := fixture.client.CreateSupplierPriceBreak(ctx, inventree.SupplierPriceBreakCreate{
+			SupplierPart: supplierPart.ID, Quantity: 1, Price: "9.50", PriceCurrency: "USD",
+		})
+		r.NoError(err)
+		r.Positive(supplierCreated.PK)
+
+		supplierPage, err := fixture.client.SearchSupplierPriceBreaksPage(ctx, inventree.SupplierPriceBreakQuery{SupplierPart: supplierPart.ID, Limit: 100})
+		r.NoError(err)
+		r.Len(supplierPage.Results, 1)
+		a.Equal(supplierCreated.PK, supplierPage.Results[0].PK)
+
+		supplierGot, err := fixture.client.GetSupplierPriceBreak(ctx, supplierCreated.PK)
+		r.NoError(err)
+		a.Equal(supplierCreated.PK, supplierGot.PK)
+
+		supplierUpdated, err := fixture.client.UpdateSupplierPriceBreak(ctx, supplierCreated.PK, inventree.PatchFields{"price": inventree.Set("9.75")})
+		r.NoError(err)
+		requireDecimalEqual(t, "9.75", supplierUpdated.Price)
+
+		r.NoError(fixture.client.DeleteSupplierPriceBreak(ctx, supplierCreated.PK))
+		_, err = fixture.client.GetSupplierPriceBreak(ctx, supplierCreated.PK)
+		var supplierDeletedErr *inventree.APIError
+		r.ErrorAs(err, &supplierDeletedErr, "expected not-found after DeleteSupplierPriceBreak, got %v", err)
+		a.Equal(inventree.ErrorKindNotFound, supplierDeletedErr.Kind)
+
+		// PartPricing: GetPartPricing, UpdatePartPricing (override fields
+		// only), RefreshPartPricing (the write-only update trigger).
+		baseline, err := fixture.client.GetPartPricing(ctx, part.ID)
+		r.NoError(err)
+		a.Equal("USD", baseline.Currency)
+
+		overridden, err := fixture.client.UpdatePartPricing(ctx, part.ID, inventree.PatchFields{
+			"override_min": inventree.Set("3.00"), "override_min_currency": inventree.Set("USD"),
+		})
+		r.NoError(err)
+		r.NotNil(overridden.OverrideMin)
+		requireDecimalEqual(t, "3.00", *overridden.OverrideMin)
+
+		refreshed, err := fixture.client.RefreshPartPricing(ctx, part.ID)
+		r.NoError(err)
+		t.Logf("part pricing immediately after RefreshPartPricing (scheduled_for_update=%t): overall_min=%v overall_max=%v", refreshed.ScheduledForUpdate, refreshed.OverallMin, refreshed.OverallMax)
+	})
+
 	t.Run("cross_object_tag_search_and_assignment", func(t *testing.T) {
 		r := require.New(t)
 		a := assert.New(t)

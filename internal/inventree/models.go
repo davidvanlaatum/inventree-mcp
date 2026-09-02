@@ -772,3 +772,89 @@ type PartRelationCreate struct {
 	Part2 int    `json:"part_2"`
 	Note  string `json:"note,omitempty"`
 }
+
+// PartInternalPriceBreak is one quantity/price row for a Part's internal
+// price. InvenTree enforces a unique (part, quantity) pair server-side.
+type PartInternalPriceBreak struct {
+	PK            int           `json:"pk"`
+	Part          int           `json:"part"`
+	Quantity      float64       `json:"quantity"`
+	Price         DecimalString `json:"price"`
+	PriceCurrency string        `json:"price_currency"`
+}
+
+type PartInternalPriceBreakCreate struct {
+	Part          int     `json:"part"`
+	Quantity      float64 `json:"quantity"`
+	Price         string  `json:"price"`
+	PriceCurrency string  `json:"price_currency"`
+}
+
+// PartSalePriceBreak is one quantity/price row for a Part's sale price.
+// InvenTree only accepts a "part" id that has salable=true and enforces a
+// unique (part, quantity) pair server-side.
+type PartSalePriceBreak struct {
+	PK            int           `json:"pk"`
+	Part          int           `json:"part"`
+	Quantity      float64       `json:"quantity"`
+	Price         DecimalString `json:"price"`
+	PriceCurrency string        `json:"price_currency"`
+}
+
+type PartSalePriceBreakCreate struct {
+	Part          int     `json:"part"`
+	Quantity      float64 `json:"quantity"`
+	Price         string  `json:"price"`
+	PriceCurrency string  `json:"price_currency"`
+}
+
+// SupplierPriceBreak is one quantity/price row for a SupplierPart. The
+// upstream field named "part" is a SupplierPart primary key, not a Part
+// primary key. Supplier and Updated are read-only, derived from the
+// SupplierPart's own supplier.
+type SupplierPriceBreak struct {
+	PK            int           `json:"pk"`
+	SupplierPart  int           `json:"part"`
+	Quantity      float64       `json:"quantity"`
+	Price         DecimalString `json:"price"`
+	PriceCurrency string        `json:"price_currency"`
+	Supplier      int           `json:"supplier"`
+	Updated       *string       `json:"updated"`
+}
+
+type SupplierPriceBreakCreate struct {
+	SupplierPart  int     `json:"part"`
+	Quantity      float64 `json:"quantity"`
+	Price         string  `json:"price"`
+	PriceCurrency string  `json:"price_currency"`
+}
+
+// PartPricing is a Part's computed pricing snapshot. Every *_min/*_max field
+// is read-only except OverrideMin/OverrideMax and their currencies. Update
+// is a write-only trigger that is never populated on a read and is applied
+// through RefreshPartPricing rather than through this struct.
+type PartPricing struct {
+	Currency            string         `json:"currency"`
+	Updated             *string        `json:"updated"`
+	ScheduledForUpdate  bool           `json:"scheduled_for_update"`
+	BOMCostMin          *DecimalString `json:"bom_cost_min"`
+	BOMCostMax          *DecimalString `json:"bom_cost_max"`
+	PurchaseCostMin     *DecimalString `json:"purchase_cost_min"`
+	PurchaseCostMax     *DecimalString `json:"purchase_cost_max"`
+	InternalCostMin     *DecimalString `json:"internal_cost_min"`
+	InternalCostMax     *DecimalString `json:"internal_cost_max"`
+	SupplierPriceMin    *DecimalString `json:"supplier_price_min"`
+	SupplierPriceMax    *DecimalString `json:"supplier_price_max"`
+	VariantCostMin      *DecimalString `json:"variant_cost_min"`
+	VariantCostMax      *DecimalString `json:"variant_cost_max"`
+	OverrideMin         *DecimalString `json:"override_min"`
+	OverrideMinCurrency string         `json:"override_min_currency"`
+	OverrideMax         *DecimalString `json:"override_max"`
+	OverrideMaxCurrency string         `json:"override_max_currency"`
+	OverallMin          *DecimalString `json:"overall_min"`
+	OverallMax          *DecimalString `json:"overall_max"`
+	SalePriceMin        *DecimalString `json:"sale_price_min"`
+	SalePriceMax        *DecimalString `json:"sale_price_max"`
+	SaleHistoryMin      *DecimalString `json:"sale_history_min"`
+	SaleHistoryMax      *DecimalString `json:"sale_history_max"`
+}
