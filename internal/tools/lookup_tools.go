@@ -123,6 +123,7 @@ const (
 	SetStockDeleteOnDepleteToolName           = "set_stock_delete_on_deplete"
 	DepleteStockItemToolName                  = "deplete_stock_item"
 	TransferStockItemToolName                 = "transfer_stock_item"
+	BulkTransferStockItemsToolName            = "bulk_transfer_stock_items"
 	SearchStockSerialsToolName                = "search_stock_serials"
 	GetPartNextSerialToolName                 = "get_part_next_serial"
 	AssignStockSerialToolName                 = "assign_stock_serial"
@@ -308,6 +309,7 @@ var writeToolNames = []string{
 	SetStockDeleteOnDepleteToolName,
 	DepleteStockItemToolName,
 	TransferStockItemToolName,
+	BulkTransferStockItemsToolName,
 	AssignStockSerialToolName,
 	SetStockSerialToolName,
 	InstallStockItemToolName,
@@ -397,7 +399,7 @@ func init() {
 		case CreateStockItemToolName, InitialStockWorkflowToolName:
 			scopes = []string{ScopeInventreeWrite, ScopeInventreeOperational}
 			mutationClass = "operational"
-		case AdjustStockQuantityToolName, SetStockStatusToolName, StocktakeAdjustmentToolName, GenerateStocktakeToolName, TransferStockItemToolName, RestructureStockLocationToolName, UpdateStockItemMetadataToolName, AssignStockSerialToolName, InstallStockItemToolName, UpdateParameterTemplateUniquenessToolName, HoldPurchaseOrderToolName, ResumePurchaseOrderToolName, BulkUpdatePartsToolName, BulkUpdateCompaniesToolName, BulkUpdatePartCategoriesToolName, BulkUpdateSupplierPartsToolName, BulkUpdateManufacturerPartsToolName, BulkUpdateStockItemMetadataToolName, BulkSetStockStatusToolName, BulkUpdatePurchaseOrdersToolName, BulkUpdatePurchaseOrderLinesToolName, BulkUpdatePurchaseOrderExtraLinesToolName, BulkUpdateObjectParametersToolName:
+		case AdjustStockQuantityToolName, SetStockStatusToolName, StocktakeAdjustmentToolName, GenerateStocktakeToolName, TransferStockItemToolName, BulkTransferStockItemsToolName, RestructureStockLocationToolName, UpdateStockItemMetadataToolName, AssignStockSerialToolName, InstallStockItemToolName, UpdateParameterTemplateUniquenessToolName, HoldPurchaseOrderToolName, ResumePurchaseOrderToolName, BulkUpdatePartsToolName, BulkUpdateCompaniesToolName, BulkUpdatePartCategoriesToolName, BulkUpdateSupplierPartsToolName, BulkUpdateManufacturerPartsToolName, BulkUpdateStockItemMetadataToolName, BulkSetStockStatusToolName, BulkUpdatePurchaseOrdersToolName, BulkUpdatePurchaseOrderLinesToolName, BulkUpdatePurchaseOrderExtraLinesToolName, BulkUpdateObjectParametersToolName:
 			scopes = []string{ScopeInventreeRead, ScopeInventreeWrite, ScopeInventreeOperational}
 			mutationClass = "operational"
 		case BulkUpdateAttachmentsToolName:
