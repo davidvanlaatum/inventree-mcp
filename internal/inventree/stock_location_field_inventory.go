@@ -15,7 +15,7 @@ const (
 )
 
 // StockLocationFieldInventory classifies every pinned Location serializer
-// field. barcode_hash stays excluded pending F-S55; parameters stays
+// field. barcode_hash stays excluded pending F-S99; parameters stays
 // deferred to F-S64. location_type_detail is exposed rather than a separate
 // lookup because InvenTree always embeds it in this serializer and the
 // existing get_stock_location/search_stock_locations projection already

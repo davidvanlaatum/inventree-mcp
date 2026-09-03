@@ -69,7 +69,7 @@ var CategoryDeleteReferenceInventory = []CategoryDeleteReferenceSurface{
 //   - CategoryParameterTemplate.category is a persisted reference: the
 //     category_parameter_template_links surface above.
 //   - PartStocktakeGenerate.category is a write-only, nullable scoping
-//     parameter on the (unimplemented, F-S60 "Future") stocktake-generation
+//     parameter on the implemented F-S74 stocktake-generation
 //     action endpoint, not a stored reference on any persisted record; there
 //     is nothing for delete_part_category to block on, since no
 //     PartStocktakeGenerate row is ever created or retained.
