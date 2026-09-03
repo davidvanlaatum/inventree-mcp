@@ -1308,6 +1308,335 @@ func TestClientMethodsAgainstInvenTree(t *testing.T) {
 		t.Logf("non-staff direct /api/tag/ create and delete both rejected with HTTP 403, unlike ordinary object PATCH tag assignment")
 	})
 
+	t.Run("barcode_workflow_discovery", func(t *testing.T) {
+		r := require.New(t)
+		a := assert.New(t)
+		ctx, _, _ := testhandler.SetupTestHandler(t)
+		fixture := newClientMethodFixture(t, shared)
+
+		part := fixture.ensure(t, testenv.FixturePart)
+		location := fixture.ensure(t, testenv.FixtureLocation)
+		supplier := fixture.ensure(t, testenv.FixtureSupplier)
+
+		stockItem, err := fixture.client.CreateStockItem(ctx, inventree.StockItemCreate{Part: part.ID, Location: location.ID, Quantity: 5})
+		r.NoError(err)
+		stockItemTwo, err := fixture.client.CreateStockItem(ctx, inventree.StockItemCreate{Part: part.ID, Location: location.ID, Quantity: 5})
+		r.NoError(err)
+		order, err := fixture.client.CreatePurchaseOrder(ctx, inventree.PurchaseOrderCreate{Supplier: supplier.ID})
+		r.NoError(err)
+
+		rawGet := func(path string) map[string]any {
+			t.Helper()
+			req, reqErr := fixture.client.NewRequest(ctx, http.MethodGet, path, nil, nil)
+			r.NoError(reqErr)
+			var out map[string]any
+			r.NoError(fixture.client.DoJSON(req, &out))
+			return out
+		}
+		barcodeScan := func(barcode string) (map[string]any, error) {
+			t.Helper()
+			req, reqErr := fixture.client.NewRequest(ctx, http.MethodPost, "/api/barcode/", nil, map[string]any{"barcode": barcode})
+			r.NoError(reqErr)
+			var out map[string]any
+			return out, fixture.client.DoJSON(req, &out)
+		}
+		barcodeGenerate := func(model string, pk int) (map[string]any, error) {
+			t.Helper()
+			req, reqErr := fixture.client.NewRequest(ctx, http.MethodPost, "/api/barcode/generate/", nil, map[string]any{"model": model, "pk": pk})
+			r.NoError(reqErr)
+			var out map[string]any
+			return out, fixture.client.DoJSON(req, &out)
+		}
+		barcodeLink := func(fields map[string]any) (map[string]any, error) {
+			t.Helper()
+			req, reqErr := fixture.client.NewRequest(ctx, http.MethodPost, "/api/barcode/link/", nil, fields)
+			r.NoError(reqErr)
+			var out map[string]any
+			return out, fixture.client.DoJSON(req, &out)
+		}
+		barcodeUnlink := func(fields map[string]any) (map[string]any, error) {
+			t.Helper()
+			req, reqErr := fixture.client.NewRequest(ctx, http.MethodPost, "/api/barcode/unlink/", nil, fields)
+			r.NoError(reqErr)
+			var out map[string]any
+			return out, fixture.client.DoJSON(req, &out)
+		}
+		barcodeHistory := func(query url.Values, asClient *inventree.Client) ([]map[string]any, error) {
+			t.Helper()
+			if query == nil {
+				query = url.Values{}
+			}
+			query.Set("limit", "100")
+			req, reqErr := asClient.NewRequest(ctx, http.MethodGet, "/api/barcode/history/", query, nil)
+			r.NoError(reqErr)
+			var out struct {
+				Results []map[string]any `json:"results"`
+			}
+			err := asClient.DoJSON(req, &out)
+			return out.Results, err
+		}
+
+		// Confirm barcode support and the active generation plugin on the
+		// pinned instance before relying on generate/scan behavior below.
+		enableSetting, err := fixture.client.GetGlobalSetting(ctx, "BARCODE_ENABLE")
+		r.NoError(err)
+		pluginSetting, err := fixture.client.GetGlobalSetting(ctx, "BARCODE_GENERATION_PLUGIN")
+		r.NoError(err)
+		t.Logf("BARCODE_ENABLE=%q BARCODE_GENERATION_PLUGIN=%q", enableSetting.Value, pluginSetting.Value)
+		a.Equal("true", enableSetting.Value, "pinned characterization: barcode support is enabled by default")
+
+		// Unlike tags, barcode_hash is present on a plain GET with no
+		// special query flag, and starts as an empty string rather than
+		// null or an omitted key.
+		partGet := rawGet(fmt.Sprintf("/api/part/%d/", part.ID))
+		a.Contains(partGet, "barcode_hash", "unlike tags, barcode_hash is expected on a plain GET with no query flag")
+		a.Equal("", partGet["barcode_hash"], "an unassigned part starts with an empty barcode_hash")
+		locationGet := rawGet(fmt.Sprintf("/api/stock/location/%d/", location.ID))
+		a.Equal("", locationGet["barcode_hash"])
+		stockItemGet := rawGet(fmt.Sprintf("/api/stock/%d/", stockItem.PK))
+		a.Equal("", stockItemGet["barcode_hash"])
+		companyGet := rawGet(fmt.Sprintf("/api/company/%d/", supplier.ID))
+		a.NotContains(companyGet, "barcode_hash", "the pinned schema declares no barcode_hash property on Company; it cannot carry a barcode")
+
+		// Generate a barcode for the stock item using the configured
+		// barcode-generation plugin. The pinned schema's BarcodeGenerate
+		// serializer does not document the expected "model" value format, so
+		// probe several candidate spellings and assert on the specific
+		// pinned result: the dotted app-label form used by tags'
+		// model_type ("stock.stockitem") is rejected, while the bare
+		// lowercase model name ("stockitem") is accepted.
+		const dottedModelCandidate = "stock.stockitem"
+		const bareModelCandidate = "stockitem"
+		var generatedBarcode, acceptedModel string
+		for _, model := range []string{dottedModelCandidate, bareModelCandidate, "StockItem", "stock.StockItem", "stock_stockitem"} {
+			generated, genErr := barcodeGenerate(model, stockItem.PK)
+			if genErr != nil {
+				var genAPIErr *inventree.APIError
+				if errors.As(genErr, &genAPIErr) {
+					t.Logf("barcode generate with model=%q rejected: status=%d detail=%q fields=%v", model, genAPIErr.StatusCode, genAPIErr.Detail, genAPIErr.FieldErrors)
+					if model == dottedModelCandidate {
+						a.Equal(http.StatusBadRequest, genAPIErr.StatusCode, "pinned characterization: the dotted app-label model form is rejected, not merely a different success shape")
+					}
+				} else {
+					t.Logf("barcode generate with model=%q failed: %v", model, genErr)
+				}
+				continue
+			}
+			generatedBarcode, _ = generated["barcode"].(string)
+			acceptedModel = model
+			t.Logf("barcode generate with model=%q succeeded: %v", model, generated)
+			break
+		}
+		a.Equal(bareModelCandidate, acceptedModel, "pinned characterization: only the bare lowercase model name is accepted by /api/barcode/generate/ for a stock item")
+		if generatedBarcode == "" {
+			t.Logf("no candidate \"model\" value was accepted by /api/barcode/generate/ for a stock item; falling back to a locally-constructed barcode string for the remaining scan/link/unlink checks")
+			generatedBarcode, err = fixture.run.Name("fs55-fallback-barcode")
+			r.NoError(err)
+		} else {
+			afterGenerate := rawGet(fmt.Sprintf("/api/stock/%d/", stockItem.PK))
+			a.Equal("", afterGenerate["barcode_hash"], "generation is expected to return text only, without assigning/linking it")
+		}
+
+		// Generic scan resolution: a matched barcode and an unmatched one.
+		scanResult, scanErr := barcodeScan(generatedBarcode)
+		r.NoError(scanErr, "scanning a value the generation plugin just produced is expected to resolve successfully")
+		t.Logf("generic scan resolution for generated barcode: result=%v", scanResult)
+		a.NotNil(scanResult["success"], "a matched scan is expected to report a success message")
+		scannedStockItem, _ := scanResult["stockitem"].(map[string]any)
+		r.NotNil(scannedStockItem, "a matched scan for a stock-item barcode is expected to include a \"stockitem\" match object")
+		a.Equal(float64(stockItem.PK), scannedStockItem["pk"], "the matched scan must resolve to the stock item the barcode was generated for")
+
+		unmatchedBarcode, err := fixture.run.Name("fs55-unmatched-barcode")
+		r.NoError(err)
+		_, unmatchedErr := barcodeScan(unmatchedBarcode)
+		r.Error(unmatchedErr, "scanning a barcode with no matching object is expected to be rejected rather than returning an empty 200 match")
+		var unmatchedAPIErr *inventree.APIError
+		r.ErrorAs(unmatchedErr, &unmatchedAPIErr)
+		a.Equal(http.StatusBadRequest, unmatchedAPIErr.StatusCode, "pinned characterization: an unmatched scan is HTTP 400, not 200-with-no-match or 404")
+		t.Logf("generic scan resolution for an unmatched barcode: status=%d detail=%q fields=%v", unmatchedAPIErr.StatusCode, unmatchedAPIErr.Detail, unmatchedAPIErr.FieldErrors)
+
+		orderGet := rawGet(fmt.Sprintf("/api/order/po/%d/", order.PK))
+		a.Equal("", orderGet["barcode_hash"], "an unassigned purchase order also starts with an empty barcode_hash")
+
+		// Explicitly link a custom barcode string to a second stock item.
+		customBarcode, err := fixture.run.Name("fs55-custom-barcode")
+		r.NoError(err)
+		linkResult, linkErr := barcodeLink(map[string]any{"barcode": customBarcode, "stockitem": stockItemTwo.PK})
+		r.NoError(linkErr)
+		t.Logf("link result: %v", linkResult)
+		afterLink := rawGet(fmt.Sprintf("/api/stock/%d/", stockItemTwo.PK))
+		linkedHash, _ := afterLink["barcode_hash"].(string)
+		a.NotEmpty(linkedHash, "linking a barcode must populate barcode_hash")
+		a.NotEqual(customBarcode, linkedHash, "barcode_hash must be a derived hash, not the raw assigned barcode text")
+
+		// Resolve the just-linked custom barcode through the same generic
+		// scan endpoint used above for the plugin-generated value, since a
+		// real resolve_barcode tool must primarily serve caller-assigned
+		// (e.g. printed/scanned) barcodes, not only the plugin's own native
+		// generated format.
+		linkedScanResult, linkedScanErr := barcodeScan(customBarcode)
+		r.NoError(linkedScanErr, "scanning a value that was just explicitly linked is expected to resolve successfully")
+		linkedScannedStockItem, _ := linkedScanResult["stockitem"].(map[string]any)
+		r.NotNil(linkedScannedStockItem)
+		a.Equal(float64(stockItemTwo.PK), linkedScannedStockItem["pk"], "scanning an explicitly-linked barcode must resolve to the object it was linked to")
+
+		// Duplicate assignment: the same raw barcode text must not be
+		// assignable to a second, different object while still linked.
+		_, dupErr := barcodeLink(map[string]any{"barcode": customBarcode, "purchaseorder": order.PK})
+		r.Error(dupErr, "assigning an already-linked barcode to a different object is expected to be rejected")
+		var dupAPIErr *inventree.APIError
+		r.ErrorAs(dupErr, &dupAPIErr)
+		a.Equal(http.StatusBadRequest, dupAPIErr.StatusCode)
+		t.Logf("duplicate-assignment rejection: status=%d detail=%q fields=%v", dupAPIErr.StatusCode, dupAPIErr.Detail, dupAPIErr.FieldErrors)
+		dupFieldErrors := fmt.Sprintf("%v", dupAPIErr.FieldErrors)
+		a.Contains(dupFieldErrors, "part_detail", "pinned characterization: the duplicate-assignment rejection embeds the existing owner's complete record (including nested part_detail), not just its identity")
+		a.Contains(dupFieldErrors, strconv.Itoa(stockItemTwo.PK), "the embedded owner record is expected to identify the actual conflicting stock item")
+
+		// Unsupported-object field: the pinned BarcodeAssign schema has no
+		// "company" property, so linking against one must be rejected
+		// rather than silently ignored.
+		unsupportedBarcode, err := fixture.run.Name("fs55-unsupported-object")
+		r.NoError(err)
+		_, unsupportedErr := barcodeLink(map[string]any{"barcode": unsupportedBarcode, "company": supplier.ID})
+		r.Error(unsupportedErr, "linking a barcode against an unsupported object field is expected to be rejected")
+		var unsupportedAPIErr *inventree.APIError
+		r.ErrorAs(unsupportedErr, &unsupportedAPIErr)
+		a.Equal(http.StatusBadRequest, unsupportedAPIErr.StatusCode)
+		t.Logf("unsupported-object rejection: status=%d detail=%q fields=%v", unsupportedAPIErr.StatusCode, unsupportedAPIErr.Detail, unsupportedAPIErr.FieldErrors)
+
+		// Unlink clears barcode_hash back to empty.
+		unlinkResult, unlinkErr := barcodeUnlink(map[string]any{"stockitem": stockItemTwo.PK})
+		r.NoError(unlinkErr)
+		t.Logf("unlink result: %v", unlinkResult)
+		afterUnlink := rawGet(fmt.Sprintf("/api/stock/%d/", stockItemTwo.PK))
+		a.Equal("", afterUnlink["barcode_hash"], "unlinking must clear barcode_hash back to empty")
+
+		// A released barcode text becomes assignable to a different object
+		// (and a different object type) once unlinked.
+		relinkResult, relinkErr := barcodeLink(map[string]any{"barcode": customBarcode, "purchaseorder": order.PK})
+		r.NoError(relinkErr, "a released barcode text is expected to be assignable to a different object type")
+		t.Logf("relink of released barcode to purchase order result: %v", relinkResult)
+
+		// Scan history retention and content.
+		history, histErr := barcodeHistory(nil, fixture.client)
+		r.NoError(histErr)
+		t.Logf("barcode scan history rows recorded so far: %d", len(history))
+		for _, row := range history {
+			t.Logf("history row: endpoint=%v result=%v data=%v", row["endpoint"], row["result"], row["data"])
+		}
+		// staffOnlyBarcode records the raw text of a scan performed only by
+		// the staff/admin fixture client, so the non-staff read-scoping
+		// check below can confirm whether a non-staff account's own history
+		// read includes rows it did not itself generate.
+		var staffOnlyBarcode string
+		if len(history) == 0 {
+			// Pinned characterization candidate: history stayed empty despite
+			// the generate/scan/link/unlink calls above. Probe whether a
+			// BARCODE_STORE_RESULTS-shaped setting gates recording.
+			storeResultsReq, err := fixture.client.NewRequest(ctx, http.MethodGet, "/api/settings/global/BARCODE_STORE_RESULTS/", nil, nil)
+			r.NoError(err)
+			var storeResultsOut map[string]any
+			storeResultsErr := fixture.client.DoJSON(storeResultsReq, &storeResultsOut)
+			if storeResultsErr != nil {
+				var settingAPIErr *inventree.APIError
+				if errors.As(storeResultsErr, &settingAPIErr) {
+					t.Logf("BARCODE_STORE_RESULTS setting lookup: status=%d detail=%q (no such setting on this pinned instance)", settingAPIErr.StatusCode, settingAPIErr.Detail)
+				}
+			} else {
+				t.Logf("BARCODE_STORE_RESULTS=%v; scan history may require this setting enabled to record rows", storeResultsOut["value"])
+				if storeResultsOut["value"] != "true" && storeResultsOut["value"] != true {
+					enableStoreReq, err := fixture.client.NewRequest(ctx, http.MethodPatch, "/api/settings/global/BARCODE_STORE_RESULTS/", nil, map[string]any{"value": "true"})
+					r.NoError(err)
+					r.NoError(fixture.client.DoJSON(enableStoreReq, nil))
+					t.Cleanup(func() {
+						cleanupCtx := context.WithoutCancel(ctx)
+						disableReq, err := fixture.client.NewRequest(cleanupCtx, http.MethodPatch, "/api/settings/global/BARCODE_STORE_RESULTS/", nil, map[string]any{"value": "false"})
+						if err == nil {
+							_ = fixture.client.DoJSON(disableReq, nil)
+						}
+					})
+
+					replayBarcode, replayErr := fixture.run.Name("fs55-store-results-scan")
+					r.NoError(replayErr)
+					staffOnlyBarcode = replayBarcode
+					replayResult, replayScanErr := barcodeScan(replayBarcode)
+					t.Logf("scan after enabling BARCODE_STORE_RESULTS: result=%v err=%v", replayResult, replayScanErr)
+
+					history, histErr = barcodeHistory(nil, fixture.client)
+					r.NoError(histErr)
+					t.Logf("barcode scan history rows after enabling BARCODE_STORE_RESULTS: %d", len(history))
+					for _, row := range history {
+						t.Logf("history row: endpoint=%v result=%v data=%v", row["endpoint"], row["result"], row["data"])
+					}
+					a.NotEmpty(history, "enabling BARCODE_STORE_RESULTS is expected to make the generic scan endpoint record history rows")
+				}
+			}
+		}
+
+		// Non-staff read/delete authorization boundary, matching the
+		// staff-only (a:staff) scope declared for barcode_history_destroy
+		// and barcode_history_bulk_destroy in the pinned schema.
+		nonStaffClient := newNonStaffClient(t, ctx, fixture, "fs55-nonstaff", "F-S55-live-characterization-password")
+		nonStaffScanBarcode, err := fixture.run.Name("fs55-nonstaff-scan")
+		r.NoError(err)
+		nonStaffScanReq, err := nonStaffClient.NewRequest(ctx, http.MethodPost, "/api/barcode/", nil, map[string]any{"barcode": nonStaffScanBarcode})
+		r.NoError(err)
+		var nonStaffScanOut map[string]any
+		nonStaffScanErr := nonStaffClient.DoJSON(nonStaffScanReq, &nonStaffScanOut)
+		t.Logf("non-staff generic scan result=%v err=%v", nonStaffScanOut, nonStaffScanErr)
+
+		nonStaffHistory, nonStaffHistErr := barcodeHistory(nil, nonStaffClient)
+		r.NoError(nonStaffHistErr, "pinned characterization: /api/barcode/history/ read access (g:read) is not staff-gated")
+		// Re-read as staff at the same point in time (rather than reusing the
+		// earlier "history" snapshot, which predates the non-staff scan just
+		// above) so the comparison below reflects current state, not a stale
+		// count from before the non-staff account made its own scan.
+		freshStaffHistory, freshErr := barcodeHistory(nil, fixture.client)
+		r.NoError(freshErr)
+		t.Logf("non-staff /api/barcode/history/ read: %d rows visible (staff sees %d)", len(nonStaffHistory), len(freshStaffHistory))
+		if staffOnlyBarcode == "" {
+			t.Logf("BARCODE_STORE_RESULTS was already enabled before this subtest ran (shared instance), so no staff-only row exists to test read-scoping against; skipping the row-level scoping assertion")
+		} else {
+			nonStaffSeesStaffRow := false
+			for _, row := range nonStaffHistory {
+				if data, _ := row["data"].(string); data == staffOnlyBarcode {
+					nonStaffSeesStaffRow = true
+					break
+				}
+			}
+			staffSeesStaffRow := false
+			for _, row := range freshStaffHistory {
+				if data, _ := row["data"].(string); data == staffOnlyBarcode {
+					staffSeesStaffRow = true
+					break
+				}
+			}
+			r.True(staffSeesStaffRow, "sanity check: the staff account itself must still see its own recorded scan")
+			// Pinned characterization: /api/barcode/history/ reads are
+			// scoped per requesting user (a non-staff account sees only
+			// scans it personally performed), not a shared global log
+			// visible to every authenticated user.
+			a.False(nonStaffSeesStaffRow, "pinned characterization: a non-staff account's own history read does not include a scan performed by a different (staff) account")
+		}
+		history = freshStaffHistory
+
+		if len(history) > 0 {
+			firstID, ok := history[0]["pk"].(float64)
+			r.True(ok)
+			nonStaffDeleteReq, err := nonStaffClient.NewRequest(ctx, http.MethodDelete, fmt.Sprintf("/api/barcode/history/%d/", int(firstID)), nil, nil)
+			r.NoError(err)
+			nonStaffDeleteErr := nonStaffClient.DoJSON(nonStaffDeleteReq, nil)
+			r.Error(nonStaffDeleteErr, "deleting scan history is declared staff-only (a:staff) in the pinned schema")
+			var deleteAPIErr *inventree.APIError
+			r.ErrorAs(nonStaffDeleteErr, &deleteAPIErr)
+			a.Equal(http.StatusForbidden, deleteAPIErr.StatusCode)
+
+			staffDeleteReq, err := fixture.client.NewRequest(ctx, http.MethodDelete, fmt.Sprintf("/api/barcode/history/%d/", int(firstID)), nil, nil)
+			r.NoError(err)
+			r.NoError(fixture.client.DoJSON(staffDeleteReq, nil), "a staff account is expected to be able to delete a scan history row")
+		}
+	})
+
 	t.Run("cross_object_tag_search_and_assignment", func(t *testing.T) {
 		r := require.New(t)
 		a := assert.New(t)
