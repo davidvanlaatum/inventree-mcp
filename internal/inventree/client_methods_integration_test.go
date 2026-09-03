@@ -1374,6 +1374,422 @@ func TestClientMethodsAgainstInvenTree(t *testing.T) {
 		t.Logf("non-staff direct /api/tag/ create and delete both rejected with HTTP 403, unlike ordinary object PATCH tag assignment")
 	})
 
+	t.Run("pricing_and_price_break_workflow_discovery", func(t *testing.T) {
+		r := require.New(t)
+		a := assert.New(t)
+		ctx, _, _ := testhandler.SetupTestHandler(t)
+		fixture := newClientMethodFixture(t, shared)
+
+		part := fixture.ensure(t, testenv.FixturePart)
+		supplierPart := fixture.ensure(t, testenv.FixtureSupplierPart)
+
+		getJSON := func(path string, query url.Values) map[string]any {
+			t.Helper()
+			req, reqErr := fixture.client.NewRequest(ctx, http.MethodGet, path, query, nil)
+			r.NoError(reqErr)
+			var out map[string]any
+			r.NoError(fixture.client.DoJSON(req, &out))
+			return out
+		}
+		postJSON := func(path string, body map[string]any) (map[string]any, error) {
+			t.Helper()
+			req, reqErr := fixture.client.NewRequest(ctx, http.MethodPost, path, nil, body)
+			r.NoError(reqErr)
+			var out map[string]any
+			doErr := fixture.client.DoJSON(req, &out)
+			return out, doErr
+		}
+		patchJSON := func(path string, body map[string]any) map[string]any {
+			t.Helper()
+			req, reqErr := fixture.client.NewRequest(ctx, http.MethodPatch, path, nil, body)
+			r.NoError(reqErr)
+			var out map[string]any
+			r.NoError(fixture.client.DoJSON(req, &out))
+			return out
+		}
+		listJSON := func(path string, query url.Values) []map[string]any {
+			t.Helper()
+			if query == nil {
+				query = url.Values{}
+			}
+			query.Set("limit", "100")
+			req, reqErr := fixture.client.NewRequest(ctx, http.MethodGet, path, query, nil)
+			r.NoError(reqErr)
+			var out struct {
+				Results []map[string]any `json:"results"`
+			}
+			r.NoError(fixture.client.DoJSON(req, &out))
+			return out.Results
+		}
+		deleteRow := func(path string) error {
+			t.Helper()
+			req, reqErr := fixture.client.NewRequest(ctx, http.MethodDelete, path, nil, nil)
+			r.NoError(reqErr)
+			return fixture.client.DoJSON(req, nil)
+		}
+		// decimal tolerates both encodings observed live for "format: decimal"
+		// fields across these endpoints: a JSON string on some rows/endpoints
+		// and a bare JSON number on others (matching this package's existing
+		// DecimalString.UnmarshalJSON, which was written to accept either).
+		decimal := func(v any) float64 {
+			t.Helper()
+			switch value := v.(type) {
+			case string:
+				f, parseErr := strconv.ParseFloat(value, 64)
+				r.NoError(parseErr)
+				return f
+			case float64:
+				return value
+			default:
+				r.Fail("unexpected decimal field encoding", "got %T (%v)", v, v)
+				return 0
+			}
+		}
+		describeErr := func(err error) string {
+			var apiErr *inventree.APIError
+			if errors.As(err, &apiErr) {
+				return fmt.Sprintf("status=%d detail=%q field_errors=%v", apiErr.StatusCode, apiErr.Detail, apiErr.FieldErrors)
+			}
+			return err.Error()
+		}
+		// requireRejected asserts err is a genuine inventree.APIError with the
+		// expected HTTP status, rather than merely non-nil, so a transport
+		// failure, decode error, or unexpected 5xx cannot be silently
+		// mislabeled as the business-rule rejection being characterized.
+		requireRejected := func(err error, wantStatus int) {
+			t.Helper()
+			var apiErr *inventree.APIError
+			r.ErrorAs(err, &apiErr, "expected an inventree.APIError, got: %v", err)
+			a.Equal(wantStatus, apiErr.StatusCode)
+		}
+		// pollUntilSettled bounded-polls part pricing until scheduled_for_update
+		// is false, mirroring F-S60's terminal-state poll pattern.
+		pollUntilSettled := func(timeout time.Duration) (map[string]any, bool) {
+			t.Helper()
+			deadline := time.Now().Add(timeout)
+			var latest map[string]any
+			for time.Now().Before(deadline) {
+				latest = getJSON(fmt.Sprintf("/api/part/%d/pricing/", part.ID), nil)
+				if scheduled, ok := latest["scheduled_for_update"].(bool); ok && !scheduled {
+					return latest, true
+				}
+				time.Sleep(500 * time.Millisecond)
+			}
+			return latest, false
+		}
+
+		// 1. Baseline computed pricing for a part with no price/BOM/purchase
+		// data at all: every computed min/max field is null. Creating the
+		// SupplierPart fixture above independently schedules a pricing
+		// recalculation, so scheduled_for_update is not asserted here.
+		baseline := getJSON(fmt.Sprintf("/api/part/%d/pricing/", part.ID), nil)
+		t.Logf("baseline part pricing (scheduled_for_update=%v): %v", baseline["scheduled_for_update"], baseline)
+		a.Nil(baseline["overall_min"])
+		a.Nil(baseline["overall_max"])
+		a.Nil(baseline["supplier_price_min"])
+		a.Nil(baseline["internal_cost_min"])
+		a.Nil(baseline["sale_price_min"])
+
+		// 2. PartInternalPriceBreak: ordinary create/list/filter/delete, plus
+		// live characterization of duplicate-quantity and non-positive-price
+		// acceptance (the schema's decimal pattern syntactically allows a
+		// leading "-", but does not say whether InvenTree's serializer
+		// enforces a business-level minimum).
+		internalOne, err := postJSON("/api/part/internal-price/", map[string]any{
+			"part": part.ID, "quantity": 1, "price": "10.00", "price_currency": "USD",
+		})
+		r.NoError(err)
+		t.Logf("created internal price break: %v", internalOne)
+		internalTwo, err := postJSON("/api/part/internal-price/", map[string]any{
+			"part": part.ID, "quantity": 5, "price": "8.00", "price_currency": "USD",
+		})
+		r.NoError(err)
+		internalTwoPK := internalTwo["pk"]
+
+		_, dupErr := postJSON("/api/part/internal-price/", map[string]any{
+			"part": part.ID, "quantity": 1, "price": "11.00", "price_currency": "USD",
+		})
+		requireRejected(dupErr, http.StatusBadRequest)
+		t.Logf("pinned characterization: a second PartInternalPriceBreak at the same (part, quantity) is REJECTED: %s", describeErr(dupErr))
+
+		zeroPriceOut, zeroPriceErr := postJSON("/api/part/internal-price/", map[string]any{
+			"part": part.ID, "quantity": 100, "price": "0.00", "price_currency": "USD",
+		})
+		r.NoError(zeroPriceErr, "a zero-price PartInternalPriceBreak is expected to be allowed")
+		t.Logf("pinned characterization: a zero-price PartInternalPriceBreak is ALLOWED: %v", zeroPriceOut)
+
+		_, negativePriceErr := postJSON("/api/part/internal-price/", map[string]any{
+			"part": part.ID, "quantity": 200, "price": "-1.00", "price_currency": "USD",
+		})
+		requireRejected(negativePriceErr, http.StatusBadRequest)
+		t.Logf("pinned characterization: a negative-price PartInternalPriceBreak is REJECTED: %s", describeErr(negativePriceErr))
+
+		internalRows := listJSON("/api/part/internal-price/", url.Values{"part": []string{strconv.Itoa(part.ID)}, "ordering": []string{"quantity"}})
+		t.Logf("internal price rows for part %d ordered by quantity: %v", part.ID, internalRows)
+		r.GreaterOrEqual(len(internalRows), 2)
+		a.InDelta(1, internalRows[0]["quantity"], 0.0001)
+		a.InDelta(5, internalRows[1]["quantity"], 0.0001)
+
+		r.NoError(deleteRow(fmt.Sprintf("/api/part/internal-price/%v/", internalTwoPK)))
+		afterDeleteReq, err := fixture.client.NewRequest(ctx, http.MethodGet, fmt.Sprintf("/api/part/internal-price/%v/", internalTwoPK), nil, nil)
+		r.NoError(err)
+		var afterDeleteOut map[string]any
+		afterDeleteErr := fixture.client.DoJSON(afterDeleteReq, &afterDeleteOut)
+		t.Logf("deleted internal price row read-back (expect not-found error): %v", afterDeleteErr)
+		var afterDeleteAPIErr *inventree.APIError
+		r.ErrorAs(afterDeleteErr, &afterDeleteAPIErr)
+		a.Equal(http.StatusNotFound, afterDeleteAPIErr.StatusCode)
+
+		// 3. PartSalePriceBreak: first confirm the fixture's non-salable part
+		// is fully rejected -- not merely a business-rule 400, but the FK's
+		// own validator queryset already excludes it ("Invalid pk ... object
+		// does not exist" on create, "not one of the available choices" on
+		// the list filter) -- then flip the part salable and retry to
+		// exercise the ordinary CRUD/list shape.
+		_, saleCreateOnNonSalableErr := postJSON("/api/part/sale-price/", map[string]any{
+			"part": part.ID, "quantity": 1, "price": "20.00", "price_currency": "USD",
+		})
+		r.Error(saleCreateOnNonSalableErr, "creating a PartSalePriceBreak against a non-salable part is expected to be rejected")
+		t.Logf("pinned characterization: creating a PartSalePriceBreak on a non-salable part is REJECTED: %s", describeErr(saleCreateOnNonSalableErr))
+
+		saleListReq, err := fixture.client.NewRequest(ctx, http.MethodGet, "/api/part/sale-price/", url.Values{"part": []string{strconv.Itoa(part.ID)}, "limit": []string{"100"}}, nil)
+		r.NoError(err)
+		saleListOnNonSalableErr := fixture.client.DoJSON(saleListReq, nil)
+		r.Error(saleListOnNonSalableErr, "the sale-price list part filter is expected to reject a non-salable part id the same way")
+		t.Logf("pinned characterization: GET /api/part/sale-price/?part=%d is REJECTED: %s", part.ID, describeErr(saleListOnNonSalableErr))
+
+		_, err = fixture.client.UpdatePart(ctx, part.ID, inventree.PatchFields{"salable": inventree.Set(true)})
+		r.NoError(err)
+		saleOne, err := postJSON("/api/part/sale-price/", map[string]any{
+			"part": part.ID, "quantity": 1, "price": "20.00", "price_currency": "USD",
+		})
+		r.NoError(err, "creating a PartSalePriceBreak against a salable part is expected to succeed")
+		t.Logf("created sale price break on a now-salable part: %v", saleOne)
+		saleRowsReq, err := fixture.client.NewRequest(ctx, http.MethodGet, "/api/part/sale-price/", url.Values{"part": []string{strconv.Itoa(part.ID)}, "limit": []string{"100"}}, nil)
+		r.NoError(err)
+		var saleRowsOut struct {
+			Results []map[string]any `json:"results"`
+		}
+		r.NoError(fixture.client.DoJSON(saleRowsReq, &saleRowsOut))
+		t.Logf("sale price rows for part %d after flipping salable=true: %v", part.ID, saleRowsOut.Results)
+		r.Len(saleRowsOut.Results, 1)
+
+		// 4. SupplierPriceBreak: created against the SupplierPart id (the
+		// schema names this field "part" but its FK target is SupplierPart,
+		// not Part -- confirm live) and characterize the read-only supplier
+		// field plus part_detail/supplier_detail expansion.
+		supplierBreak, err := postJSON("/api/company/price-break/", map[string]any{
+			"part": supplierPart.ID, "quantity": 1, "price": "9.50", "price_currency": "USD",
+		})
+		r.NoError(err)
+		t.Logf("created supplier price break: %v", supplierBreak)
+		supplierBreakPK := supplierBreak["pk"]
+		a.InDelta(9.50, decimal(supplierBreak["price"]), 0.0001)
+
+		expandedSupplierBreak := getJSON(fmt.Sprintf("/api/company/price-break/%v/", supplierBreakPK), url.Values{"part_detail": []string{"true"}, "supplier_detail": []string{"true"}})
+		t.Logf("expanded supplier price break: %v", expandedSupplierBreak)
+		expandedPartDetail, expandedPartDetailOK := expandedSupplierBreak["part_detail"].(map[string]any)
+		r.True(expandedPartDetailOK, "part_detail expansion is expected to describe the linked SupplierPart, not the base Part")
+		a.Equal(supplierPart.Name, expandedPartDetail["SKU"], "part_detail's SKU is expected to match the SupplierPart fixture, proving this expansion is the SupplierPart, not the base Part")
+		a.NotNil(expandedSupplierBreak["supplier_detail"])
+
+		_, supplierDupErr := postJSON("/api/company/price-break/", map[string]any{
+			"part": supplierPart.ID, "quantity": 1, "price": "9.75", "price_currency": "USD",
+		})
+		requireRejected(supplierDupErr, http.StatusBadRequest)
+		t.Logf("pinned characterization: a second SupplierPriceBreak at the same (supplier_part, quantity) is REJECTED: %s", describeErr(supplierDupErr))
+
+		// 5. Part pricing overrides and explicit recalculation. overall_min /
+		// overall_max are documented read-only computed fields; override_min
+		// / override_max / override_min_currency / override_max_currency are
+		// the only writable fields besides the write-only "update" trigger.
+		overridden := patchJSON(fmt.Sprintf("/api/part/%d/pricing/", part.ID), map[string]any{
+			"override_min": "3.00", "override_min_currency": "USD",
+			"override_max": "300.00", "override_max_currency": "USD",
+		})
+		t.Logf("part pricing immediately after setting overrides (before an explicit update trigger): %v", overridden)
+		a.InDelta(3.00, decimal(overridden["override_min"]), 0.0001)
+		a.InDelta(300.00, decimal(overridden["override_max"]), 0.0001)
+
+		triggered := patchJSON(fmt.Sprintf("/api/part/%d/pricing/", part.ID), map[string]any{"update": true})
+		t.Logf("part pricing immediately after PATCH update:true: %v", triggered)
+
+		final, reachedTerminal := pollUntilSettled(30 * time.Second)
+		t.Logf("final part pricing after bounded 30s poll for scheduled_for_update=false (reached=%t): %v", reachedTerminal, final)
+		a.True(reachedTerminal, "pinned InvenTree 1.5.x/API 530 characterization: background pricing recalculation is expected to complete within 30s against the shared worker")
+		// internal_cost_min/max unexpectedly stayed null above despite live
+		// PartInternalPriceBreak rows: dump every global setting whose key
+		// mentions pricing/internal to find the gating cause. Capture
+		// PART_INTERNAL_PRICE's original value so it can be restored below --
+		// this is an instance-wide (not run-scoped) setting shared with any
+		// other subtest in this file that reuses the same shared instance.
+		settingsRows := listJSON("/api/settings/global/", nil)
+		originalPartInternalPrice := "False"
+		for _, row := range settingsRows {
+			key, _ := row["key"].(string)
+			if key == "PART_INTERNAL_PRICE" {
+				if value, ok := row["value"].(string); ok {
+					originalPartInternalPrice = value
+				}
+			}
+			if strings.Contains(key, "PRIC") || strings.Contains(key, "INTERNAL") {
+				t.Logf("global setting %s = %v", key, row["value"])
+			}
+		}
+		t.Cleanup(func() {
+			cleanupCtx := context.WithoutCancel(ctx)
+			var restored map[string]any
+			r.NoError(fixture.client.Patch(cleanupCtx, "/api/settings/global/PART_INTERNAL_PRICE/", inventree.PatchFields{"value": inventree.Set(originalPartInternalPrice)}, &restored))
+		})
+		if reachedTerminal {
+			a.NotNil(final["overall_min"])
+			a.NotNil(final["overall_max"])
+			a.Nil(final["internal_cost_min"], "pinned characterization: PartInternalPriceBreak rows do not feed overall pricing while the PART_INTERNAL_PRICE global setting is disabled (the default)")
+			a.NotNil(final["supplier_price_min"], "supplier_price_min is expected to reflect the SupplierPriceBreak row created above")
+			a.NotEmpty(final["currency"], "computed pricing is expected to be normalized into a single instance currency")
+		}
+
+		// 6. Currency-conversion drift: add a second internal price break in a
+		// different currency, enable the PART_INTERNAL_PRICE global setting
+		// that gates internal price data (found disabled by default above),
+		// and re-trigger recalculation to see whether mixed-currency
+		// price-break inputs convert cleanly into the single computed
+		// currency or surface a conversion error/omission.
+		_, err = postJSON("/api/part/internal-price/", map[string]any{
+			"part": part.ID, "quantity": 10, "price": "6.00", "price_currency": "EUR",
+		})
+		r.NoError(err)
+		patchJSON("/api/settings/global/PART_INTERNAL_PRICE/", map[string]any{"value": "True"})
+		patchJSON(fmt.Sprintf("/api/part/%d/pricing/", part.ID), map[string]any{"update": true})
+		afterMixedCurrency, mixedReachedTerminal := pollUntilSettled(30 * time.Second)
+		t.Logf("part pricing after enabling PART_INTERNAL_PRICE, adding a EUR internal price break, and re-triggering update (reached=%t): %v", mixedReachedTerminal, afterMixedCurrency)
+		if mixedReachedTerminal {
+			t.Logf("internal_cost_min=%v internal_cost_max=%v currency=%v (remaining rows for part %d: USD 10.00@qty1, USD 0.00@qty100, EUR 6.00@qty10)", afterMixedCurrency["internal_cost_min"], afterMixedCurrency["internal_cost_max"], afterMixedCurrency["currency"], part.ID)
+			a.NotNil(afterMixedCurrency["internal_cost_min"], "internal_cost_min is expected to populate once PART_INTERNAL_PRICE is enabled")
+		}
+
+		// Clean up the supplier price break row via its delete endpoint as a
+		// stable-recovery-identity check (mirrors the internal-price delete
+		// above for a second endpoint family).
+		r.NoError(deleteRow(fmt.Sprintf("/api/company/price-break/%v/", supplierBreakPK)))
+		afterSupplierDeleteReq, err := fixture.client.NewRequest(ctx, http.MethodGet, fmt.Sprintf("/api/company/price-break/%v/", supplierBreakPK), nil, nil)
+		r.NoError(err)
+		var afterSupplierDeleteOut map[string]any
+		afterSupplierDeleteErr := fixture.client.DoJSON(afterSupplierDeleteReq, &afterSupplierDeleteOut)
+		t.Logf("deleted supplier price break read-back (expect not-found error): %v", afterSupplierDeleteErr)
+		var afterSupplierDeleteAPIErr *inventree.APIError
+		r.ErrorAs(afterSupplierDeleteErr, &afterSupplierDeleteAPIErr)
+		a.Equal(http.StatusNotFound, afterSupplierDeleteAPIErr.StatusCode)
+	})
+
+	t.Run("pricing_and_price_break_client_methods", func(t *testing.T) {
+		r := require.New(t)
+		a := assert.New(t)
+		ctx, _, _ := testhandler.SetupTestHandler(t)
+		fixture := newClientMethodFixture(t, shared)
+
+		part := fixture.ensure(t, testenv.FixturePart)
+		supplierPart := fixture.ensure(t, testenv.FixtureSupplierPart)
+
+		// PartInternalPriceBreak: create, search page, get, update, delete.
+		internalCreated, err := fixture.client.CreatePartInternalPriceBreak(ctx, inventree.PartInternalPriceBreakCreate{
+			Part: part.ID, Quantity: 1, Price: "10.00", PriceCurrency: "USD",
+		})
+		r.NoError(err)
+		r.Positive(internalCreated.PK)
+
+		internalPage, err := fixture.client.SearchPartInternalPriceBreaksPage(ctx, inventree.PartInternalPriceBreakQuery{Part: part.ID, Limit: 100})
+		r.NoError(err)
+		r.Len(internalPage.Results, 1)
+		a.Equal(internalCreated.PK, internalPage.Results[0].PK)
+
+		internalGot, err := fixture.client.GetPartInternalPriceBreak(ctx, internalCreated.PK)
+		r.NoError(err)
+		a.Equal(internalCreated.PK, internalGot.PK)
+
+		internalUpdated, err := fixture.client.UpdatePartInternalPriceBreak(ctx, internalCreated.PK, inventree.PatchFields{"price": inventree.Set("11.00")})
+		r.NoError(err)
+		requireDecimalEqual(t, "11.00", internalUpdated.Price)
+
+		r.NoError(fixture.client.DeletePartInternalPriceBreak(ctx, internalCreated.PK))
+		_, err = fixture.client.GetPartInternalPriceBreak(ctx, internalCreated.PK)
+		var internalDeletedErr *inventree.APIError
+		r.ErrorAs(err, &internalDeletedErr, "expected not-found after DeletePartInternalPriceBreak, got %v", err)
+		a.Equal(inventree.ErrorKindNotFound, internalDeletedErr.Kind)
+
+		// PartSalePriceBreak: the part must be salable first (mirrors the
+		// discovery subtest's live-confirmed requirement).
+		_, err = fixture.client.UpdatePart(ctx, part.ID, inventree.PatchFields{"salable": inventree.Set(true)})
+		r.NoError(err)
+		saleCreated, err := fixture.client.CreatePartSalePriceBreak(ctx, inventree.PartSalePriceBreakCreate{
+			Part: part.ID, Quantity: 1, Price: "20.00", PriceCurrency: "USD",
+		})
+		r.NoError(err)
+		r.Positive(saleCreated.PK)
+
+		salePage, err := fixture.client.SearchPartSalePriceBreaksPage(ctx, inventree.PartSalePriceBreakQuery{Part: part.ID, Limit: 100})
+		r.NoError(err)
+		r.Len(salePage.Results, 1)
+		a.Equal(saleCreated.PK, salePage.Results[0].PK)
+
+		saleGot, err := fixture.client.GetPartSalePriceBreak(ctx, saleCreated.PK)
+		r.NoError(err)
+		a.Equal(saleCreated.PK, saleGot.PK)
+
+		saleUpdated, err := fixture.client.UpdatePartSalePriceBreak(ctx, saleCreated.PK, inventree.PatchFields{"price": inventree.Set("21.00")})
+		r.NoError(err)
+		requireDecimalEqual(t, "21.00", saleUpdated.Price)
+
+		r.NoError(fixture.client.DeletePartSalePriceBreak(ctx, saleCreated.PK))
+		_, err = fixture.client.GetPartSalePriceBreak(ctx, saleCreated.PK)
+		var saleDeletedErr *inventree.APIError
+		r.ErrorAs(err, &saleDeletedErr, "expected not-found after DeletePartSalePriceBreak, got %v", err)
+		a.Equal(inventree.ErrorKindNotFound, saleDeletedErr.Kind)
+
+		// SupplierPriceBreak: created against the SupplierPart id.
+		supplierCreated, err := fixture.client.CreateSupplierPriceBreak(ctx, inventree.SupplierPriceBreakCreate{
+			SupplierPart: supplierPart.ID, Quantity: 1, Price: "9.50", PriceCurrency: "USD",
+		})
+		r.NoError(err)
+		r.Positive(supplierCreated.PK)
+
+		supplierPage, err := fixture.client.SearchSupplierPriceBreaksPage(ctx, inventree.SupplierPriceBreakQuery{SupplierPart: supplierPart.ID, Limit: 100})
+		r.NoError(err)
+		r.Len(supplierPage.Results, 1)
+		a.Equal(supplierCreated.PK, supplierPage.Results[0].PK)
+
+		supplierGot, err := fixture.client.GetSupplierPriceBreak(ctx, supplierCreated.PK)
+		r.NoError(err)
+		a.Equal(supplierCreated.PK, supplierGot.PK)
+
+		supplierUpdated, err := fixture.client.UpdateSupplierPriceBreak(ctx, supplierCreated.PK, inventree.PatchFields{"price": inventree.Set("9.75")})
+		r.NoError(err)
+		requireDecimalEqual(t, "9.75", supplierUpdated.Price)
+
+		r.NoError(fixture.client.DeleteSupplierPriceBreak(ctx, supplierCreated.PK))
+		_, err = fixture.client.GetSupplierPriceBreak(ctx, supplierCreated.PK)
+		var supplierDeletedErr *inventree.APIError
+		r.ErrorAs(err, &supplierDeletedErr, "expected not-found after DeleteSupplierPriceBreak, got %v", err)
+		a.Equal(inventree.ErrorKindNotFound, supplierDeletedErr.Kind)
+
+		// PartPricing: GetPartPricing, UpdatePartPricing (override fields
+		// only), RefreshPartPricing (the write-only update trigger).
+		baseline, err := fixture.client.GetPartPricing(ctx, part.ID)
+		r.NoError(err)
+		a.Equal("USD", baseline.Currency)
+
+		overridden, err := fixture.client.UpdatePartPricing(ctx, part.ID, inventree.PatchFields{
+			"override_min": inventree.Set("3.00"), "override_min_currency": inventree.Set("USD"),
+		})
+		r.NoError(err)
+		r.NotNil(overridden.OverrideMin)
+		requireDecimalEqual(t, "3.00", *overridden.OverrideMin)
+
+		refreshed, err := fixture.client.RefreshPartPricing(ctx, part.ID)
+		r.NoError(err)
+		t.Logf("part pricing immediately after RefreshPartPricing (scheduled_for_update=%t): overall_min=%v overall_max=%v", refreshed.ScheduledForUpdate, refreshed.OverallMin, refreshed.OverallMax)
+	})
+
 	t.Run("barcode_workflow_discovery", func(t *testing.T) {
 		r := require.New(t)
 		a := assert.New(t)

@@ -172,6 +172,21 @@ const (
 	AssignProjectCodeToolName                 = "assign_project_code"
 	GlobalSearchToolName                      = "global_search"
 	SearchTagsToolName                        = "search_tags"
+	SearchInternalPriceBreaksToolName         = "search_internal_price_breaks"
+	SearchSalePriceBreaksToolName             = "search_sale_price_breaks"
+	SearchSupplierPriceBreaksToolName         = "search_supplier_price_breaks"
+	GetPartPricingToolName                    = "get_part_pricing"
+	CreateInternalPriceBreakToolName          = "create_internal_price_break"
+	UpdateInternalPriceBreakToolName          = "update_internal_price_break"
+	DeleteInternalPriceBreakToolName          = "delete_internal_price_break"
+	CreateSalePriceBreakToolName              = "create_sale_price_break"
+	UpdateSalePriceBreakToolName              = "update_sale_price_break"
+	DeleteSalePriceBreakToolName              = "delete_sale_price_break"
+	CreateSupplierPriceBreakToolName          = "create_supplier_price_break"
+	UpdateSupplierPriceBreakToolName          = "update_supplier_price_break"
+	DeleteSupplierPriceBreakToolName          = "delete_supplier_price_break"
+	UpdatePartPricingOverrideToolName         = "update_part_pricing_override"
+	RefreshPartPricingToolName                = "refresh_part_pricing"
 
 	defaultDownloadMaxBytes int64 = 5 * 1024 * 1024
 	maxDownloadMaxBytes     int64 = 25 * 1024 * 1024
@@ -250,6 +265,10 @@ var lookupToolNames = []string{
 	GetProjectCodeToolName,
 	GlobalSearchToolName,
 	SearchTagsToolName,
+	SearchInternalPriceBreaksToolName,
+	SearchSalePriceBreaksToolName,
+	SearchSupplierPriceBreaksToolName,
+	GetPartPricingToolName,
 }
 
 var writeToolNames = []string{
@@ -347,6 +366,17 @@ var writeToolNames = []string{
 	AssignAddressToolName,
 	AssignProjectCodeToolName,
 	GenerateStocktakeToolName,
+	CreateInternalPriceBreakToolName,
+	UpdateInternalPriceBreakToolName,
+	DeleteInternalPriceBreakToolName,
+	CreateSalePriceBreakToolName,
+	UpdateSalePriceBreakToolName,
+	DeleteSalePriceBreakToolName,
+	CreateSupplierPriceBreakToolName,
+	UpdateSupplierPriceBreakToolName,
+	DeleteSupplierPriceBreakToolName,
+	UpdatePartPricingOverrideToolName,
+	RefreshPartPricingToolName,
 }
 
 var ToolAuthorizations = map[string]ToolAuthorization{
@@ -391,7 +421,7 @@ func init() {
 		scopes := []string{ScopeInventreeWrite}
 		mutationClass := "write"
 		switch name {
-		case CreatePartToolName, UpdatePartToolName, CreatePartRelationToolName, UpdatePartRelationToolName, CreateCompanyToolName, CreateSupplierPartToolName, CreateManufacturerPartToolName, UpsertPartWorkflowToolName, CreateParameterTemplateToolName, UpdateParameterTemplateToolName, CreateObjectParameterToolName, CreateCategoryParameterDefaultToolName, UpdateCategoryParameterDefaultToolName, CreatePartCategoryToolName, UpdatePartCategoryToolName, UpdateCompanyToolName, UpdateSupplierPartToolName, UpdateManufacturerPartToolName, CreateStockLocationToolName, UpdateStockLocationToolName, CreateStockLocationTypeToolName, UpdateStockLocationTypeToolName, CreatePurchaseOrderExtraLineToolName, UpdatePurchaseOrderExtraLineToolName, UpdatePurchaseOrderToolName, CreatePurchaseOrderWorkflowToolName, IssuePurchaseOrderToolName, CompletePurchaseOrderToolName:
+		case CreatePartToolName, UpdatePartToolName, CreatePartRelationToolName, UpdatePartRelationToolName, CreateCompanyToolName, CreateSupplierPartToolName, CreateManufacturerPartToolName, UpsertPartWorkflowToolName, CreateParameterTemplateToolName, UpdateParameterTemplateToolName, CreateObjectParameterToolName, CreateCategoryParameterDefaultToolName, UpdateCategoryParameterDefaultToolName, CreatePartCategoryToolName, UpdatePartCategoryToolName, UpdateCompanyToolName, UpdateSupplierPartToolName, UpdateManufacturerPartToolName, CreateStockLocationToolName, UpdateStockLocationToolName, CreateStockLocationTypeToolName, UpdateStockLocationTypeToolName, CreatePurchaseOrderExtraLineToolName, UpdatePurchaseOrderExtraLineToolName, UpdatePurchaseOrderToolName, CreatePurchaseOrderWorkflowToolName, IssuePurchaseOrderToolName, CompletePurchaseOrderToolName, CreateInternalPriceBreakToolName, UpdateInternalPriceBreakToolName, CreateSalePriceBreakToolName, UpdateSalePriceBreakToolName, CreateSupplierPriceBreakToolName, UpdateSupplierPriceBreakToolName, UpdatePartPricingOverrideToolName:
 			scopes = []string{ScopeInventreeRead, ScopeInventreeWrite}
 		case BulkPropagatePartParametersToolName:
 			scopes = []string{ScopeInventreeRead, ScopeInventreeWrite, ScopeInventreeDestructive}
@@ -399,7 +429,7 @@ func init() {
 		case CreateStockItemToolName, InitialStockWorkflowToolName:
 			scopes = []string{ScopeInventreeWrite, ScopeInventreeOperational}
 			mutationClass = "operational"
-		case AdjustStockQuantityToolName, SetStockStatusToolName, StocktakeAdjustmentToolName, GenerateStocktakeToolName, TransferStockItemToolName, BulkTransferStockItemsToolName, RestructureStockLocationToolName, UpdateStockItemMetadataToolName, AssignStockSerialToolName, InstallStockItemToolName, UpdateParameterTemplateUniquenessToolName, HoldPurchaseOrderToolName, ResumePurchaseOrderToolName, BulkUpdatePartsToolName, BulkUpdateCompaniesToolName, BulkUpdatePartCategoriesToolName, BulkUpdateSupplierPartsToolName, BulkUpdateManufacturerPartsToolName, BulkUpdateStockItemMetadataToolName, BulkSetStockStatusToolName, BulkUpdatePurchaseOrdersToolName, BulkUpdatePurchaseOrderLinesToolName, BulkUpdatePurchaseOrderExtraLinesToolName, BulkUpdateObjectParametersToolName:
+		case AdjustStockQuantityToolName, SetStockStatusToolName, StocktakeAdjustmentToolName, GenerateStocktakeToolName, TransferStockItemToolName, BulkTransferStockItemsToolName, RestructureStockLocationToolName, UpdateStockItemMetadataToolName, AssignStockSerialToolName, InstallStockItemToolName, UpdateParameterTemplateUniquenessToolName, HoldPurchaseOrderToolName, ResumePurchaseOrderToolName, BulkUpdatePartsToolName, BulkUpdateCompaniesToolName, BulkUpdatePartCategoriesToolName, BulkUpdateSupplierPartsToolName, BulkUpdateManufacturerPartsToolName, BulkUpdateStockItemMetadataToolName, BulkSetStockStatusToolName, BulkUpdatePurchaseOrdersToolName, BulkUpdatePurchaseOrderLinesToolName, BulkUpdatePurchaseOrderExtraLinesToolName, BulkUpdateObjectParametersToolName, RefreshPartPricingToolName:
 			scopes = []string{ScopeInventreeRead, ScopeInventreeWrite, ScopeInventreeOperational}
 			mutationClass = "operational"
 		case BulkUpdateAttachmentsToolName:
@@ -421,6 +451,17 @@ func init() {
 		case DeletePartParameterToolName, DeleteObjectParameterToolName, DeleteParameterTemplateToolName, MergeParameterTemplatesToolName, DeleteCategoryParameterDefaultToolName, DeletePurchaseOrderExtraLineToolName, DeletePurchaseOrderLineToolName, DeletePartToolName, DeletePartRelationToolName, DeleteStockLocationTypeToolName, DeletePartCategoryToolName:
 			scopes = []string{ScopeInventreeRead, ScopeInventreeWrite, ScopeInventreeDestructive}
 			mutationClass = "destructive"
+		// Price-break deletes are deliberately excluded from the usual
+		// destructive-scope default: per F-S98's operator-approved decision,
+		// these rows carry financial data but no inventory-loss risk (unlike
+		// e.g. deleting a part or stock location) and no computed state in
+		// this repo derives from a price-break row's existence (get_part_pricing's
+		// cached snapshot only changes via an explicit refresh_part_pricing
+		// call). This is a deliberate new scope category, not a match to an
+		// existing one -- every other delete_* tool in this repo, including
+		// parameter-value/template deletion, requires inventree.destructive.
+		case DeleteInternalPriceBreakToolName, DeleteSalePriceBreakToolName, DeleteSupplierPriceBreakToolName:
+			scopes = []string{ScopeInventreeRead, ScopeInventreeWrite}
 		case DeleteAttachmentToolName:
 			scopes = []string{ScopeInventreeWrite, ScopeInventreeUpload, ScopeInventreeDestructive}
 			mutationClass = "destructive"
@@ -457,6 +498,11 @@ func init() {
 		ToolAuthorizations[name] = auth
 	}
 	for _, name := range []string{UpdateStockLocationToolName, RestructureStockLocationToolName, UpdateStockLocationTypeToolName, UpdateStockItemMetadataToolName, BulkUpdateStockItemMetadataToolName} {
+		auth := ToolAuthorizations[name]
+		auth.Annotations.Idempotent = true
+		ToolAuthorizations[name] = auth
+	}
+	for _, name := range []string{UpdateInternalPriceBreakToolName, UpdateSalePriceBreakToolName, UpdateSupplierPriceBreakToolName, UpdatePartPricingOverrideToolName} {
 		auth := ToolAuthorizations[name]
 		auth.Annotations.Idempotent = true
 		ToolAuthorizations[name] = auth
@@ -717,6 +763,7 @@ func registerLookupTools(server *mcp.Server, deps Dependencies) {
 	registerProjectCodeLookupTools(server, deps)
 	registerGlobalSearchTool(server, deps)
 	addReadOnlyTool(server, deps, SearchTagsToolName, "Search tags", "Searches InvenTree's shared cross-object tag taxonomy, optionally scoped to one qualified app.model value.", searchTags(deps))
+	registerPricingLookupTools(server, deps)
 }
 
 func addReadOnlyTool[In, Out any](server *mcp.Server, deps Dependencies, name string, title string, description string, handler mcp.ToolHandlerFor[In, Out]) {

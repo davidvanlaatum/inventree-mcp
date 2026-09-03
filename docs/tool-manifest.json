@@ -674,6 +674,29 @@
       ]
     },
     {
+      "name": "create_internal_price_break",
+      "milestone_status": "milestone_1",
+      "mutation_class": "write",
+      "scopes": [
+        "inventree.read",
+        "inventree.write"
+      ],
+      "annotations": {
+        "read_only": false,
+        "destructive": false,
+        "idempotent": false,
+        "open_world": false
+      },
+      "upload_sources": null,
+      "http_registration": "registered_with_oauth_scope_guard",
+      "icons": [
+        {
+          "src": "https://docs.inventree.org/en/latest/assets/logo.png",
+          "mimeType": "image/png"
+        }
+      ]
+    },
+    {
       "name": "create_link_attachment",
       "milestone_status": "milestone_1",
       "mutation_class": "write",
@@ -905,6 +928,29 @@
       ]
     },
     {
+      "name": "create_sale_price_break",
+      "milestone_status": "milestone_1",
+      "mutation_class": "write",
+      "scopes": [
+        "inventree.read",
+        "inventree.write"
+      ],
+      "annotations": {
+        "read_only": false,
+        "destructive": false,
+        "idempotent": false,
+        "open_world": false
+      },
+      "upload_sources": null,
+      "http_registration": "registered_with_oauth_scope_guard",
+      "icons": [
+        {
+          "src": "https://docs.inventree.org/en/latest/assets/logo.png",
+          "mimeType": "image/png"
+        }
+      ]
+    },
+    {
       "name": "create_stock_item",
       "milestone_status": "milestone_1",
       "mutation_class": "operational",
@@ -997,6 +1043,29 @@
       ]
     },
     {
+      "name": "create_supplier_price_break",
+      "milestone_status": "milestone_1",
+      "mutation_class": "write",
+      "scopes": [
+        "inventree.read",
+        "inventree.write"
+      ],
+      "annotations": {
+        "read_only": false,
+        "destructive": false,
+        "idempotent": false,
+        "open_world": false
+      },
+      "upload_sources": null,
+      "http_registration": "registered_with_oauth_scope_guard",
+      "icons": [
+        {
+          "src": "https://docs.inventree.org/en/latest/assets/logo.png",
+          "mimeType": "image/png"
+        }
+      ]
+    },
+    {
       "name": "delete_attachment",
       "milestone_status": "milestone_1",
       "mutation_class": "destructive",
@@ -1032,6 +1101,29 @@
       "annotations": {
         "read_only": false,
         "destructive": true,
+        "idempotent": false,
+        "open_world": false
+      },
+      "upload_sources": null,
+      "http_registration": "registered_with_oauth_scope_guard",
+      "icons": [
+        {
+          "src": "https://docs.inventree.org/en/latest/assets/logo.png",
+          "mimeType": "image/png"
+        }
+      ]
+    },
+    {
+      "name": "delete_internal_price_break",
+      "milestone_status": "milestone_1",
+      "mutation_class": "write",
+      "scopes": [
+        "inventree.read",
+        "inventree.write"
+      ],
+      "annotations": {
+        "read_only": false,
+        "destructive": false,
         "idempotent": false,
         "open_world": false
       },
@@ -1237,6 +1329,29 @@
       ]
     },
     {
+      "name": "delete_sale_price_break",
+      "milestone_status": "milestone_1",
+      "mutation_class": "write",
+      "scopes": [
+        "inventree.read",
+        "inventree.write"
+      ],
+      "annotations": {
+        "read_only": false,
+        "destructive": false,
+        "idempotent": false,
+        "open_world": false
+      },
+      "upload_sources": null,
+      "http_registration": "registered_with_oauth_scope_guard",
+      "icons": [
+        {
+          "src": "https://docs.inventree.org/en/latest/assets/logo.png",
+          "mimeType": "image/png"
+        }
+      ]
+    },
+    {
       "name": "delete_stock_location",
       "milestone_status": "milestone_1",
       "mutation_class": "destructive",
@@ -1273,6 +1388,29 @@
       "annotations": {
         "read_only": false,
         "destructive": true,
+        "idempotent": false,
+        "open_world": false
+      },
+      "upload_sources": null,
+      "http_registration": "registered_with_oauth_scope_guard",
+      "icons": [
+        {
+          "src": "https://docs.inventree.org/en/latest/assets/logo.png",
+          "mimeType": "image/png"
+        }
+      ]
+    },
+    {
+      "name": "delete_supplier_price_break",
+      "milestone_status": "milestone_1",
+      "mutation_class": "write",
+      "scopes": [
+        "inventree.read",
+        "inventree.write"
+      ],
+      "annotations": {
+        "read_only": false,
+        "destructive": false,
         "idempotent": false,
         "open_world": false
       },
@@ -1620,6 +1758,28 @@
     },
     {
       "name": "get_part_parameters",
+      "milestone_status": "milestone_1",
+      "mutation_class": "read_only",
+      "scopes": [
+        "inventree.read"
+      ],
+      "annotations": {
+        "read_only": true,
+        "destructive": false,
+        "idempotent": true,
+        "open_world": false
+      },
+      "upload_sources": null,
+      "http_registration": "registered",
+      "icons": [
+        {
+          "src": "https://docs.inventree.org/en/latest/assets/logo.png",
+          "mimeType": "image/png"
+        }
+      ]
+    },
+    {
+      "name": "get_part_pricing",
       "milestone_status": "milestone_1",
       "mutation_class": "read_only",
       "scopes": [
@@ -2177,6 +2337,30 @@
       ]
     },
     {
+      "name": "refresh_part_pricing",
+      "milestone_status": "milestone_1",
+      "mutation_class": "operational",
+      "scopes": [
+        "inventree.read",
+        "inventree.write",
+        "inventree.operational"
+      ],
+      "annotations": {
+        "read_only": false,
+        "destructive": false,
+        "idempotent": false,
+        "open_world": false
+      },
+      "upload_sources": null,
+      "http_registration": "registered_with_oauth_scope_guard",
+      "icons": [
+        {
+          "src": "https://docs.inventree.org/en/latest/assets/logo.png",
+          "mimeType": "image/png"
+        }
+      ]
+    },
+    {
       "name": "remove_company_customer_role",
       "milestone_status": "milestone_1",
       "mutation_class": "destructive",
@@ -2338,6 +2522,28 @@
     },
     {
       "name": "search_contacts",
+      "milestone_status": "milestone_1",
+      "mutation_class": "read_only",
+      "scopes": [
+        "inventree.read"
+      ],
+      "annotations": {
+        "read_only": true,
+        "destructive": false,
+        "idempotent": true,
+        "open_world": false
+      },
+      "upload_sources": null,
+      "http_registration": "registered",
+      "icons": [
+        {
+          "src": "https://docs.inventree.org/en/latest/assets/logo.png",
+          "mimeType": "image/png"
+        }
+      ]
+    },
+    {
+      "name": "search_internal_price_breaks",
       "milestone_status": "milestone_1",
       "mutation_class": "read_only",
       "scopes": [
@@ -2623,6 +2829,28 @@
       ]
     },
     {
+      "name": "search_sale_price_breaks",
+      "milestone_status": "milestone_1",
+      "mutation_class": "read_only",
+      "scopes": [
+        "inventree.read"
+      ],
+      "annotations": {
+        "read_only": true,
+        "destructive": false,
+        "idempotent": true,
+        "open_world": false
+      },
+      "upload_sources": null,
+      "http_registration": "registered",
+      "icons": [
+        {
+          "src": "https://docs.inventree.org/en/latest/assets/logo.png",
+          "mimeType": "image/png"
+        }
+      ]
+    },
+    {
       "name": "search_stock_items",
       "milestone_status": "milestone_1",
       "mutation_class": "read_only",
@@ -2712,6 +2940,28 @@
     },
     {
       "name": "search_supplier_parts",
+      "milestone_status": "milestone_1",
+      "mutation_class": "read_only",
+      "scopes": [
+        "inventree.read"
+      ],
+      "annotations": {
+        "read_only": true,
+        "destructive": false,
+        "idempotent": true,
+        "open_world": false
+      },
+      "upload_sources": null,
+      "http_registration": "registered",
+      "icons": [
+        {
+          "src": "https://docs.inventree.org/en/latest/assets/logo.png",
+          "mimeType": "image/png"
+        }
+      ]
+    },
+    {
+      "name": "search_supplier_price_breaks",
       "milestone_status": "milestone_1",
       "mutation_class": "read_only",
       "scopes": [
@@ -3093,6 +3343,29 @@
       ]
     },
     {
+      "name": "update_internal_price_break",
+      "milestone_status": "milestone_1",
+      "mutation_class": "write",
+      "scopes": [
+        "inventree.read",
+        "inventree.write"
+      ],
+      "annotations": {
+        "read_only": false,
+        "destructive": false,
+        "idempotent": true,
+        "open_world": false
+      },
+      "upload_sources": null,
+      "http_registration": "registered_with_oauth_scope_guard",
+      "icons": [
+        {
+          "src": "https://docs.inventree.org/en/latest/assets/logo.png",
+          "mimeType": "image/png"
+        }
+      ]
+    },
+    {
       "name": "update_manufacturer_part",
       "milestone_status": "milestone_1",
       "mutation_class": "write",
@@ -3234,6 +3507,29 @@
       ]
     },
     {
+      "name": "update_part_pricing_override",
+      "milestone_status": "milestone_1",
+      "mutation_class": "write",
+      "scopes": [
+        "inventree.read",
+        "inventree.write"
+      ],
+      "annotations": {
+        "read_only": false,
+        "destructive": false,
+        "idempotent": true,
+        "open_world": false
+      },
+      "upload_sources": null,
+      "http_registration": "registered_with_oauth_scope_guard",
+      "icons": [
+        {
+          "src": "https://docs.inventree.org/en/latest/assets/logo.png",
+          "mimeType": "image/png"
+        }
+      ]
+    },
+    {
       "name": "update_part_relation",
       "milestone_status": "milestone_1",
       "mutation_class": "write",
@@ -3313,6 +3609,29 @@
         "read_only": false,
         "destructive": false,
         "idempotent": false,
+        "open_world": false
+      },
+      "upload_sources": null,
+      "http_registration": "registered_with_oauth_scope_guard",
+      "icons": [
+        {
+          "src": "https://docs.inventree.org/en/latest/assets/logo.png",
+          "mimeType": "image/png"
+        }
+      ]
+    },
+    {
+      "name": "update_sale_price_break",
+      "milestone_status": "milestone_1",
+      "mutation_class": "write",
+      "scopes": [
+        "inventree.read",
+        "inventree.write"
+      ],
+      "annotations": {
+        "read_only": false,
+        "destructive": false,
+        "idempotent": true,
         "open_world": false
       },
       "upload_sources": null,
@@ -3421,6 +3740,29 @@
     },
     {
       "name": "update_supplier_part",
+      "milestone_status": "milestone_1",
+      "mutation_class": "write",
+      "scopes": [
+        "inventree.read",
+        "inventree.write"
+      ],
+      "annotations": {
+        "read_only": false,
+        "destructive": false,
+        "idempotent": true,
+        "open_world": false
+      },
+      "upload_sources": null,
+      "http_registration": "registered_with_oauth_scope_guard",
+      "icons": [
+        {
+          "src": "https://docs.inventree.org/en/latest/assets/logo.png",
+          "mimeType": "image/png"
+        }
+      ]
+    },
+    {
+      "name": "update_supplier_price_break",
       "milestone_status": "milestone_1",
       "mutation_class": "write",
       "scopes": [

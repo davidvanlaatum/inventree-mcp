@@ -575,6 +575,60 @@ func (q PartRelationQuery) values() url.Values {
 	return values
 }
 
+type PartInternalPriceBreakQuery struct {
+	Part   int
+	Limit  int
+	Offset int
+}
+
+func (q PartInternalPriceBreakQuery) values() url.Values {
+	values := url.Values{}
+	if q.Part != 0 {
+		values.Set("part", strconv.Itoa(q.Part))
+	}
+	values.Set("ordering", "quantity")
+	setPagination(values, q.Limit, q.Offset)
+	return values
+}
+
+type PartSalePriceBreakQuery struct {
+	Part   int
+	Limit  int
+	Offset int
+}
+
+func (q PartSalePriceBreakQuery) values() url.Values {
+	values := url.Values{}
+	if q.Part != 0 {
+		values.Set("part", strconv.Itoa(q.Part))
+	}
+	values.Set("ordering", "quantity")
+	setPagination(values, q.Limit, q.Offset)
+	return values
+}
+
+// SupplierPriceBreakQuery.SupplierPart filters by the SupplierPart primary
+// key -- the upstream "part" query parameter, despite its name.
+type SupplierPriceBreakQuery struct {
+	SupplierPart int
+	Supplier     int
+	Limit        int
+	Offset       int
+}
+
+func (q SupplierPriceBreakQuery) values() url.Values {
+	values := url.Values{}
+	if q.SupplierPart != 0 {
+		values.Set("part", strconv.Itoa(q.SupplierPart))
+	}
+	if q.Supplier != 0 {
+		values.Set("supplier", strconv.Itoa(q.Supplier))
+	}
+	values.Set("ordering", "quantity")
+	setPagination(values, q.Limit, q.Offset)
+	return values
+}
+
 func (q OwnerQuery) values() url.Values {
 	values := url.Values{}
 	if q.Search != "" {

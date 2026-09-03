@@ -663,6 +663,63 @@ func (c *Client) GetPartRelation(ctx context.Context, id int) (PartRelation, err
 	return out, err
 }
 
+type PartInternalPriceBreakPage struct {
+	Count   int
+	Results []PartInternalPriceBreak
+	HasMore bool
+}
+
+func (c *Client) SearchPartInternalPriceBreaksPage(ctx context.Context, query PartInternalPriceBreakQuery) (PartInternalPriceBreakPage, error) {
+	page, err := listPage[PartInternalPriceBreak](ctx, c, "/api/part/internal-price/", query.values())
+	return PartInternalPriceBreakPage{Count: page.Count, Results: page.Results, HasMore: page.Next != nil && *page.Next != ""}, err
+}
+
+func (c *Client) GetPartInternalPriceBreak(ctx context.Context, id int) (PartInternalPriceBreak, error) {
+	var out PartInternalPriceBreak
+	err := c.get(ctx, fmt.Sprintf("/api/part/internal-price/%d/", id), &out)
+	return out, err
+}
+
+type PartSalePriceBreakPage struct {
+	Count   int
+	Results []PartSalePriceBreak
+	HasMore bool
+}
+
+func (c *Client) SearchPartSalePriceBreaksPage(ctx context.Context, query PartSalePriceBreakQuery) (PartSalePriceBreakPage, error) {
+	page, err := listPage[PartSalePriceBreak](ctx, c, "/api/part/sale-price/", query.values())
+	return PartSalePriceBreakPage{Count: page.Count, Results: page.Results, HasMore: page.Next != nil && *page.Next != ""}, err
+}
+
+func (c *Client) GetPartSalePriceBreak(ctx context.Context, id int) (PartSalePriceBreak, error) {
+	var out PartSalePriceBreak
+	err := c.get(ctx, fmt.Sprintf("/api/part/sale-price/%d/", id), &out)
+	return out, err
+}
+
+type SupplierPriceBreakPage struct {
+	Count   int
+	Results []SupplierPriceBreak
+	HasMore bool
+}
+
+func (c *Client) SearchSupplierPriceBreaksPage(ctx context.Context, query SupplierPriceBreakQuery) (SupplierPriceBreakPage, error) {
+	page, err := listPage[SupplierPriceBreak](ctx, c, "/api/company/price-break/", query.values())
+	return SupplierPriceBreakPage{Count: page.Count, Results: page.Results, HasMore: page.Next != nil && *page.Next != ""}, err
+}
+
+func (c *Client) GetSupplierPriceBreak(ctx context.Context, id int) (SupplierPriceBreak, error) {
+	var out SupplierPriceBreak
+	err := c.get(ctx, fmt.Sprintf("/api/company/price-break/%d/", id), &out)
+	return out, err
+}
+
+func (c *Client) GetPartPricing(ctx context.Context, partID int) (PartPricing, error) {
+	var out PartPricing
+	err := c.get(ctx, fmt.Sprintf("/api/part/%d/pricing/", partID), &out)
+	return out, err
+}
+
 func (c *Client) SearchStockTrackingPage(ctx context.Context, query StockTrackingQuery) (Page[StockTracking], error) {
 	return listPage[StockTracking](ctx, c, "/api/stock/track/", query.values())
 }

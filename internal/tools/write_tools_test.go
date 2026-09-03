@@ -586,7 +586,11 @@ func TestWriteToolAuthorizationsUseWriteScope(t *testing.T) {
 		auth, ok := ToolAuthorizations[name]
 		r.True(ok, "missing authorization for %s", name)
 		switch name {
-		case CreatePartToolName, UpdatePartToolName, CreatePartRelationToolName, UpdatePartRelationToolName, CreateCompanyToolName, CreateSupplierPartToolName, CreateManufacturerPartToolName, UpsertPartWorkflowToolName, CreateParameterTemplateToolName, UpdateParameterTemplateToolName, CreateObjectParameterToolName, CreateCategoryParameterDefaultToolName, UpdateCategoryParameterDefaultToolName, CreatePartCategoryToolName, CreateStockLocationToolName, CreateStockLocationTypeToolName, CreatePurchaseOrderExtraLineToolName, CreatePurchaseOrderWorkflowToolName, IssuePurchaseOrderToolName, CompletePurchaseOrderToolName:
+		case CreatePartToolName, UpdatePartToolName, CreatePartRelationToolName, UpdatePartRelationToolName, CreateCompanyToolName, CreateSupplierPartToolName, CreateManufacturerPartToolName, UpsertPartWorkflowToolName, CreateParameterTemplateToolName, UpdateParameterTemplateToolName, CreateObjectParameterToolName, CreateCategoryParameterDefaultToolName, UpdateCategoryParameterDefaultToolName, CreatePartCategoryToolName, CreateStockLocationToolName, CreateStockLocationTypeToolName, CreatePurchaseOrderExtraLineToolName, CreatePurchaseOrderWorkflowToolName, IssuePurchaseOrderToolName, CompletePurchaseOrderToolName, CreateInternalPriceBreakToolName, CreateSalePriceBreakToolName, CreateSupplierPriceBreakToolName:
+			a.Equal("write", auth.MutationClass)
+			a.Equal([]string{ScopeInventreeRead, ScopeInventreeWrite}, auth.Scopes)
+			a.Equal(WriteAnnotations, auth.Annotations)
+		case DeleteInternalPriceBreakToolName, DeleteSalePriceBreakToolName, DeleteSupplierPriceBreakToolName:
 			a.Equal("write", auth.MutationClass)
 			a.Equal([]string{ScopeInventreeRead, ScopeInventreeWrite}, auth.Scopes)
 			a.Equal(WriteAnnotations, auth.Annotations)
@@ -596,7 +600,7 @@ func TestWriteToolAuthorizationsUseWriteScope(t *testing.T) {
 			expected := WriteAnnotations
 			expected.Idempotent = true
 			a.Equal(expected, auth.Annotations)
-		case UpdateCompanyToolName, UpdateSupplierPartToolName, UpdateManufacturerPartToolName, UpdateStockLocationToolName, UpdateStockLocationTypeToolName, UpdatePurchaseOrderExtraLineToolName, UpdatePurchaseOrderToolName:
+		case UpdateCompanyToolName, UpdateSupplierPartToolName, UpdateManufacturerPartToolName, UpdateStockLocationToolName, UpdateStockLocationTypeToolName, UpdatePurchaseOrderExtraLineToolName, UpdatePurchaseOrderToolName, UpdateInternalPriceBreakToolName, UpdateSalePriceBreakToolName, UpdateSupplierPriceBreakToolName, UpdatePartPricingOverrideToolName:
 			a.Equal("write", auth.MutationClass)
 			a.Equal([]string{ScopeInventreeRead, ScopeInventreeWrite}, auth.Scopes)
 			expected := WriteAnnotations
@@ -613,7 +617,7 @@ func TestWriteToolAuthorizationsUseWriteScope(t *testing.T) {
 		case CreateStockItemToolName, InitialStockWorkflowToolName:
 			a.Equal("operational", auth.MutationClass)
 			a.Equal([]string{ScopeInventreeWrite, ScopeInventreeOperational}, auth.Scopes)
-		case AdjustStockQuantityToolName, SetStockStatusToolName, StocktakeAdjustmentToolName, TransferStockItemToolName, BulkTransferStockItemsToolName, ReceivePurchaseOrderToolName, RestructureStockLocationToolName, UpdateStockItemMetadataToolName, AssignStockSerialToolName, UpdateParameterTemplateUniquenessToolName, HoldPurchaseOrderToolName, ResumePurchaseOrderToolName, BulkUpdateStockItemMetadataToolName, BulkSetStockStatusToolName:
+		case AdjustStockQuantityToolName, SetStockStatusToolName, StocktakeAdjustmentToolName, TransferStockItemToolName, BulkTransferStockItemsToolName, ReceivePurchaseOrderToolName, RestructureStockLocationToolName, UpdateStockItemMetadataToolName, AssignStockSerialToolName, UpdateParameterTemplateUniquenessToolName, HoldPurchaseOrderToolName, ResumePurchaseOrderToolName, BulkUpdateStockItemMetadataToolName, BulkSetStockStatusToolName, RefreshPartPricingToolName:
 			a.Equal("operational", auth.MutationClass)
 			a.Equal([]string{ScopeInventreeRead, ScopeInventreeWrite, ScopeInventreeOperational}, auth.Scopes)
 			if name == RestructureStockLocationToolName || name == UpdateStockItemMetadataToolName || name == BulkUpdateStockItemMetadataToolName {
