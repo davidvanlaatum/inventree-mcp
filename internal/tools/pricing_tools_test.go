@@ -570,6 +570,71 @@ func TestCreateSupplierPriceBreakDetectsDuplicateQuantity(t *testing.T) {
 	a.Equal(StatusClarificationRequired, output.Status)
 }
 
+func TestCreateSupplierPriceBreakSucceeds(t *testing.T) {
+	t.Parallel()
+	a := assert.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	fake := newFakePricingClient()
+	handler := createSupplierPriceBreak(pricingDeps(fake))
+
+	_, output, err := handler(ctx, nil, CreateSupplierPriceBreakInput{SupplierPartID: 7, Quantity: 5, Price: "3.00", PriceCurrency: "USD"})
+	a.NoError(err)
+	a.Equal(StatusOK, output.Status)
+	require.NotNil(t, output.Record)
+	a.InDelta(5, output.Record.Quantity, 0.0001)
+	a.Equal("3.00", output.Record.Price)
+}
+
+func TestCreateSupplierPriceBreakMapsUpstreamValidationFailure(t *testing.T) {
+	t.Parallel()
+	a := assert.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	fake := newFakePricingClient()
+	fake.createErr = &inventree.APIError{StatusCode: http.StatusBadRequest, Kind: inventree.ErrorKindValidation, FieldErrors: map[string][]string{"price": {"Ensure this value is greater than or equal to 0."}}}
+	handler := createSupplierPriceBreak(pricingDeps(fake))
+
+	_, output, err := handler(ctx, nil, CreateSupplierPriceBreakInput{SupplierPartID: 7, Quantity: 5, Price: "-1.00", PriceCurrency: "USD"})
+	a.NoError(err)
+	a.Equal(StatusValidationFailed, output.Status)
+	require.NotNil(t, output.Validation)
+}
+
+func TestDeleteInternalPriceBreakMapsUpstreamRejection(t *testing.T) {
+	t.Parallel()
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	fake := newFakePricingClient()
+	fake.internal[1] = inventree.PartInternalPriceBreak{PK: 1, Part: 5, Quantity: 10, Price: "8.00", PriceCurrency: "USD"}
+	fake.deleteErr = &inventree.APIError{StatusCode: http.StatusForbidden, Kind: inventree.ErrorKindPermission}
+	handler := deleteInternalPriceBreak(pricingDeps(fake))
+
+	_, _, err := handler(ctx, nil, DeleteInternalPriceBreakInput{ID: 1, Confirm: true})
+	require.Error(t, err)
+}
+
+func TestDeleteSalePriceBreakMapsUpstreamRejection(t *testing.T) {
+	t.Parallel()
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	fake := newFakePricingClient()
+	fake.sale[1] = inventree.PartSalePriceBreak{PK: 1, Part: 5, Quantity: 10, Price: "18.00", PriceCurrency: "USD"}
+	fake.deleteErr = &inventree.APIError{StatusCode: http.StatusForbidden, Kind: inventree.ErrorKindPermission}
+	handler := deleteSalePriceBreak(pricingDeps(fake))
+
+	_, _, err := handler(ctx, nil, DeleteSalePriceBreakInput{ID: 1, Confirm: true})
+	require.Error(t, err)
+}
+
+func TestDeleteSupplierPriceBreakMapsUpstreamRejection(t *testing.T) {
+	t.Parallel()
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	fake := newFakePricingClient()
+	fake.supplier[1] = inventree.SupplierPriceBreak{PK: 1, SupplierPart: 7, Quantity: 5, Price: "3.00", PriceCurrency: "USD"}
+	fake.deleteErr = &inventree.APIError{StatusCode: http.StatusForbidden, Kind: inventree.ErrorKindPermission}
+	handler := deleteSupplierPriceBreak(pricingDeps(fake))
+
+	_, _, err := handler(ctx, nil, DeleteSupplierPriceBreakInput{ID: 1, Confirm: true})
+	require.Error(t, err)
+}
+
 func TestUpdateSupplierPriceBreakPatchesPrice(t *testing.T) {
 	t.Parallel()
 	a := assert.New(t)
