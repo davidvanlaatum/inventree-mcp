@@ -2119,6 +2119,257 @@ func TestClientMethodsAgainstInvenTree(t *testing.T) {
 		}
 	})
 
+	// barcode_presence_resolution_and_assignment exercises F-S99's actual
+	// production code paths (Client.GenerateBarcode/ResolveBarcode/
+	// LinkBarcode/UnlinkBarcode/SearchBarcodeScanHistoryPage and the
+	// has_barcode-deriving Get*Detail methods) against the same pinned
+	// InvenTree instance barcode_workflow_discovery (F-S55) already
+	// characterized at the raw-request level. It re-asserts the shapes this
+	// story's redaction/mapping logic depends on (the duplicate-conflict and
+	// no-match rejection shapes, the invalid-user-id 400) so a future
+	// upstream drift is caught here, not only inferred from F-S55's history.
+	t.Run("barcode_presence_resolution_and_assignment", func(t *testing.T) {
+		r := require.New(t)
+		a := assert.New(t)
+		ctx, _, _ := testhandler.SetupTestHandler(t)
+		fixture := newClientMethodFixture(t, shared)
+
+		part := fixture.ensure(t, testenv.FixturePart)
+		location := fixture.ensure(t, testenv.FixtureLocation)
+		supplier := fixture.ensure(t, testenv.FixtureSupplier)
+
+		stockItem, err := fixture.client.CreateStockItem(ctx, inventree.StockItemCreate{Part: part.ID, Location: location.ID, Quantity: 5})
+		r.NoError(err)
+		stockItemTwo, err := fixture.client.CreateStockItem(ctx, inventree.StockItemCreate{Part: part.ID, Location: location.ID, Quantity: 5})
+		r.NoError(err)
+		order, err := fixture.client.CreatePurchaseOrder(ctx, inventree.PurchaseOrderCreate{Supplier: supplier.ID})
+		r.NoError(err)
+
+		// has_barcode starts false for all four in-scope types, read through
+		// the actual production Get*Detail methods this story modified.
+		partDetail, err := fixture.client.GetPartDetail(ctx, part.ID)
+		r.NoError(err)
+		a.False(partDetail.HasBarcode)
+		locationDetail, err := fixture.client.GetStockLocation(ctx, location.ID)
+		r.NoError(err)
+		a.False(locationDetail.HasBarcode)
+		stockItemDetail, err := fixture.client.GetStockItemDetail(ctx, stockItem.PK)
+		r.NoError(err)
+		a.False(stockItemDetail.HasBarcode)
+		orderDetail, err := fixture.client.GetPurchaseOrderDetail(ctx, order.PK)
+		r.NoError(err)
+		a.False(orderDetail.HasBarcode)
+
+		// Company carries no barcode_hash property at all (confirmed live by
+		// F-S55); CompanyDetail must therefore still carry no has_barcode
+		// field either.
+		companyDetail, err := fixture.client.GetCompanyDetail(ctx, supplier.ID)
+		r.NoError(err)
+		encodedCompany, err := json.Marshal(companyDetail)
+		r.NoError(err)
+		a.NotContains(string(encodedCompany), "has_barcode", "Company must never gain a has_barcode field; it has no upstream barcode_hash to derive one from")
+
+		// Generate is text-only and never assigns/links it (barcode_hash
+		// stays empty). Pinned characterization (F-S99, correcting the
+		// original plan's assumption): InvenTree's default InvenTreeBarcode
+		// plugin returns a native format ("INV-SI<pk>") that ALREADY
+		// resolves back to the same object through the generic resolve
+		// endpoint without ever being linked -- resolution here does not go
+		// through barcode_hash at all, it decodes the native format
+		// directly. Explicitly LinkBarcode-ing that exact generated text
+		// back to the very object it was generated for is consequently
+		// rejected with the same "Barcode matches existing item" shape used
+		// for a genuine cross-object duplicate, because the link endpoint's
+		// own preflight treats any object the text already resolves to as
+		// already claimed. assign_barcode's real purpose is linking a
+		// different (externally sourced or printed) barcode value to an
+		// object, not re-linking a native-plugin-generated value to itself.
+		generatedText, err := fixture.client.GenerateBarcode(ctx, "stockitem", stockItem.PK)
+		r.NoError(err)
+		r.NotEmpty(generatedText)
+		afterGenerate, err := fixture.client.GetStockItemDetail(ctx, stockItem.PK)
+		r.NoError(err)
+		a.False(afterGenerate.HasBarcode, "generation must not itself assign/link the generated text")
+
+		match, matched, err := fixture.client.ResolveBarcode(ctx, generatedText)
+		r.NoError(err)
+		r.True(matched, "InvenTree's default plugin's native generated format is expected to resolve immediately, without any explicit link")
+		a.Equal("stockitem", match.ObjectType)
+		a.Equal(stockItem.PK, match.ObjectID)
+		a.NotEmpty(match.WebURL)
+
+		selfLinkErr := fixture.client.LinkBarcode(ctx, generatedText, "stockitem", stockItem.PK)
+		r.Error(selfLinkErr, "linking the native plugin's own generated text back to the object it already resolves to is expected to be rejected as an existing match")
+		var selfLinkAPIErr *inventree.APIError
+		r.ErrorAs(selfLinkErr, &selfLinkAPIErr)
+		a.Equal(http.StatusBadRequest, selfLinkAPIErr.StatusCode)
+		a.Equal([]string{"Barcode matches existing item"}, selfLinkAPIErr.FieldErrors["error"])
+		afterSelfLink, err := fixture.client.GetStockItemDetail(ctx, stockItem.PK)
+		r.NoError(err)
+		a.False(afterSelfLink.HasBarcode, "the rejected self-link attempt must not have populated barcode_hash")
+
+		// No-match resolve's real shape: ResolveBarcode must decode this into
+		// (zero value, false, nil), not propagate an error.
+		unmatchedBarcode, err := fixture.run.Name("fs99-unmatched")
+		r.NoError(err)
+		noMatch, matched, err := fixture.client.ResolveBarcode(ctx, unmatchedBarcode)
+		r.NoError(err, "a genuine no-match must decode into (false, nil), not an error")
+		a.False(matched)
+		a.Empty(noMatch.ObjectType)
+
+		// Explicit link to a second stock item, then the duplicate-conflict
+		// rejection's real shape when a different object tries to claim the
+		// same barcode text.
+		customBarcode, err := fixture.run.Name("fs99-custom-barcode")
+		r.NoError(err)
+		r.NoError(fixture.client.LinkBarcode(ctx, customBarcode, "stockitem", stockItemTwo.PK))
+
+		dupErr := fixture.client.LinkBarcode(ctx, customBarcode, "purchaseorder", order.PK)
+		r.Error(dupErr, "assigning an already-linked barcode to a different object must be rejected")
+		var dupAPIErr *inventree.APIError
+		r.ErrorAs(dupErr, &dupAPIErr)
+		a.Equal(http.StatusBadRequest, dupAPIErr.StatusCode)
+		a.Equal([]string{"Barcode matches existing item"}, dupAPIErr.FieldErrors["error"])
+		r.Len(dupAPIErr.FieldErrors["stockitem"], 1)
+		// Pinned characterization: the embedded conflict object is a
+		// JSON-encoded string (not a nested object), and DRF's nested-
+		// serializer error path stringifies every field within it --
+		// including "pk" (e.g. "pk":"2" rather than "pk":2) -- contrary to
+		// this story's original numeric-pk assumption. redactBarcodeConflict
+		// (internal/tools/barcode_tools.go) accepts both forms via
+		// flexibleConflictInt; this asserts the string form directly against
+		// the raw upstream shape so a future drift back to a numeric pk is
+		// also caught.
+		var embedded struct {
+			PK     string `json:"pk"`
+			WebURL string `json:"web_url"`
+		}
+		r.NoError(json.Unmarshal([]byte(dupAPIErr.FieldErrors["stockitem"][0]), &embedded), "the embedded conflict object is a JSON-encoded string, not a nested object")
+		embeddedPK, err := strconv.Atoi(embedded.PK)
+		r.NoError(err)
+		a.Equal(stockItemTwo.PK, embeddedPK)
+		a.NotEmpty(embedded.WebURL)
+
+		// Unlink frees the value for a different object AND a different
+		// object type.
+		r.NoError(fixture.client.UnlinkBarcode(ctx, "stockitem", stockItemTwo.PK))
+		afterUnlink, err := fixture.client.GetStockItemDetail(ctx, stockItemTwo.PK)
+		r.NoError(err)
+		a.False(afterUnlink.HasBarcode)
+
+		r.NoError(fixture.client.LinkBarcode(ctx, customBarcode, "purchaseorder", order.PK))
+		afterRelink, err := fixture.client.GetPurchaseOrderDetail(ctx, order.PK)
+		r.NoError(err)
+		a.True(afterRelink.HasBarcode)
+
+		// Scan history: ensure BARCODE_STORE_RESULTS is enabled so the scans
+		// below are actually recorded, restoring its original value after.
+		storeResults, err := fixture.client.GetGlobalSetting(ctx, "BARCODE_STORE_RESULTS")
+		r.NoError(err)
+		if storeResults.Value != "true" {
+			r.NoError(fixture.client.Patch(ctx, "/api/settings/global/BARCODE_STORE_RESULTS/", inventree.PatchFields{"value": inventree.Set("true")}, nil))
+			originalValue := storeResults.Value
+			t.Cleanup(func() {
+				cleanupCtx := context.WithoutCancel(ctx)
+				_ = fixture.client.Patch(cleanupCtx, "/api/settings/global/BARCODE_STORE_RESULTS/", inventree.PatchFields{"value": inventree.Set(originalValue)}, nil)
+			})
+		}
+
+		searchToken, err := fixture.run.Name("fs99-history-search-token")
+		r.NoError(err)
+		_, _, err = fixture.client.ResolveBarcode(ctx, searchToken)
+		r.NoError(err, "a no-match scan is still expected to be recorded, not fail the call")
+		_, matchedAgain, err := fixture.client.ResolveBarcode(ctx, generatedText)
+		r.NoError(err)
+		r.True(matchedAgain)
+
+		// search filter narrows to the exact recorded scan.
+		bySearch, err := fixture.client.SearchBarcodeScanHistoryPage(ctx, inventree.BarcodeScanHistoryQuery{Search: searchToken, Limit: 50})
+		r.NoError(err)
+		foundSearchToken := false
+		for _, row := range bySearch.Results {
+			if row.Data == searchToken {
+				foundSearchToken = true
+				a.False(row.Result, "the unmatched scan must be recorded with result:false")
+			}
+		}
+		a.True(foundSearchToken, "search:%q must find the just-recorded scan row", searchToken)
+		require.NotEmpty(t, bySearch.Results)
+		// internal/tools' bounded scan-history walk client-side-filters
+		// endpoint/from/to (they are not real upstream query params) by
+		// parsing each row's own Timestamp field through a small set of
+		// candidate layouts (parseBarcodeScanHistoryTimestamp in
+		// internal/tools/barcode_tools.go), since a prior version of that
+		// parser assumed RFC3339-only and silently excluded every real row
+		// (fixed in this same story). This canary reconfirms live, against
+		// this exact instance, that a freshly recorded row's real Timestamp
+		// still matches one of that parser's layouts, so a future InvenTree
+		// format change is caught here rather than only by an idealized
+		// fixture in a unit test.
+		timestampParsed := false
+		for _, layout := range []string{time.RFC3339, time.RFC3339Nano, "2006-01-02T15:04:05", "2006-01-02 15:04:05", "2006-01-02 15:04"} {
+			if _, parseErr := time.Parse(layout, bySearch.Results[0].Timestamp); parseErr == nil {
+				timestampParsed = true
+				break
+			}
+		}
+		a.True(timestampParsed, "scan-history row Timestamp %q must match one of internal/tools' parseBarcodeScanHistoryTimestamp layouts, or search_barcode_scan_history's from/to filter will silently exclude every real row again", bySearch.Results[0].Timestamp)
+
+		// result filter narrows to successful scans only.
+		resultFilter := true
+		successOnly, err := fixture.client.SearchBarcodeScanHistoryPage(ctx, inventree.BarcodeScanHistoryQuery{Result: &resultFilter, Limit: 50})
+		r.NoError(err)
+		for _, row := range successOnly.Results {
+			a.True(row.Result, "result:true must narrow to successful scans only")
+		}
+
+		// user filter narrows to this fixture's own account's scans.
+		currentUser, err := fixture.client.GetCurrentUser(ctx)
+		r.NoError(err)
+		byUser, err := fixture.client.SearchBarcodeScanHistoryPage(ctx, inventree.BarcodeScanHistoryQuery{UserID: &currentUser.PK, Limit: 50})
+		r.NoError(err)
+		r.NotEmpty(byUser.Results, "user:<this account> must find at least the scans this subtest just performed")
+		for _, row := range byUser.Results {
+			if row.UserID != nil {
+				a.Equal(currentUser.PK, *row.UserID)
+			}
+		}
+
+		// An unknown user id 400s upstream (live-confirmed).
+		bogusUserID := currentUser.PK + 987654321
+		_, err = fixture.client.SearchBarcodeScanHistoryPage(ctx, inventree.BarcodeScanHistoryQuery{UserID: &bogusUserID, Limit: 20})
+		r.Error(err, "an unknown user id must be rejected, not silently return zero rows")
+		var userAPIErr *inventree.APIError
+		r.ErrorAs(err, &userAPIErr)
+		a.Equal(http.StatusBadRequest, userAPIErr.StatusCode)
+
+		// Non-staff read scoping: a non-staff account's own history read must
+		// not include this subtest's own staff-performed scan. F-S55 already
+		// established the underlying API behavior at the raw-request level;
+		// this repeats a lighter version through the typed client method for
+		// F-S99's own coverage.
+		nonStaffClient := newNonStaffClient(t, ctx, fixture, "fs99-nonstaff", "F-S99-live-characterization-password")
+		nonStaffHistory, err := nonStaffClient.SearchBarcodeScanHistoryPage(ctx, inventree.BarcodeScanHistoryQuery{Limit: 50})
+		r.NoError(err, "pinned characterization: /api/barcode/history/ read access is not staff-gated")
+		for _, row := range nonStaffHistory.Results {
+			a.NotEqual(searchToken, row.Data, "a non-staff account's own history read must not include this subtest's staff-performed scan")
+		}
+
+		// Infosec residual-risk check (F-S99 review): does the user_id
+		// filter's FK-existence validation run independent of g:read row
+		// scoping, letting a non-staff caller use the "no such user id"
+		// 400-vs-success distinction as an oracle to enumerate valid user
+		// PKs it can never actually see the scans of? Query as non-staff
+		// using the STAFF fixture account's own real, valid, different PK:
+		// if this errored the way the truly-bogus PK above does, the filter
+		// would be scoping-aware; if it succeeds (regardless of how many
+		// rows come back, since those remain separately scoped), the FK
+		// check is scope-independent, confirming the enumeration-oracle risk
+		// this story's Decisions/Residual-risk record must document.
+		_, err = nonStaffClient.SearchBarcodeScanHistoryPage(ctx, inventree.BarcodeScanHistoryQuery{UserID: &currentUser.PK, Limit: 20})
+		a.NoError(err, "pinned characterization: user_id FK validation accepts any real user id regardless of the caller's own visibility into that user's scans -- a non-staff caller can use the invalid-vs-valid-id 400 distinction to enumerate real user PKs on the instance, a documented residual risk, not a bug to fix here")
+	})
+
 	t.Run("cross_object_tag_search_and_assignment", func(t *testing.T) {
 		r := require.New(t)
 		a := assert.New(t)

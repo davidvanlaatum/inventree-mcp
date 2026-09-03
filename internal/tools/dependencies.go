@@ -33,8 +33,15 @@ type Dependencies struct {
 	// effectiveBulkConcurrency (bulk_progress.go), which fall back to
 	// defaultBulkMaxItems/defaultBulkConcurrency instead of treating every
 	// batch as oversized. Do not read these fields directly in new code.
-	BulkMaxItems                         int
-	BulkConcurrency                      int
+	BulkMaxItems    int
+	BulkConcurrency int
+	// ScanHistoryMaxPageDepth bounds how many internal upstream pages
+	// search_barcode_scan_history may walk while client-side filtering on
+	// endpoint/from/to (neither of which InvenTree accepts as a real query
+	// parameter). Same read-only-through-effective*() rule as BulkMaxItems/
+	// BulkConcurrency above: read it only through
+	// effectiveScanHistoryMaxPageDepth (barcode_tools.go), never directly.
+	ScanHistoryMaxPageDepth              int
 	stockPlanStore                       *stockPlanStore
 	stockProvenancePlanStore             *stockProvenancePlanStore
 	parameterPlanStore                   *parameterPlanStore

@@ -208,6 +208,9 @@ func TestToolReferenceDocumentsRegisteredWriteTools(t *testing.T) {
 			} else {
 				a.Equal([]string{ScopeInventreeRead, ScopeInventreeWrite, ScopeInventreeDestructive}, auth.Scopes)
 			}
+		case GenerateBarcodeToolName, ResolveBarcodeToolName, AssignBarcodeToolName, UnassignBarcodeToolName:
+			a.Equal("write", auth.MutationClass)
+			a.Equal([]string{ScopeInventreeRead, ScopeInventreeWrite}, auth.Scopes)
 		default:
 			a.Equal("write", auth.MutationClass)
 			a.Equal([]string{ScopeInventreeWrite}, auth.Scopes)

@@ -48,6 +48,10 @@ inventree_url: https://inventory.example.test
 # bulk_max_items: 25
 # bulk_concurrency: 4
 
+# search_barcode_scan_history's internal upstream-page walk depth ceiling,
+# used only when endpoint/from/to client-side filtering is requested.
+# scan_history_max_page_depth: 50
+
 # OpenTelemetry tracing is disabled by default. When enabled, use a trusted
 # OTLP collector and protect any exporter headers as secrets.
 # otel_enabled: false

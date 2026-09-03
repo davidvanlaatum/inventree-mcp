@@ -231,16 +231,17 @@ func dependenciesForConfig(cfg config.Config) (tools.Dependencies, error) {
 	}
 	if cfg.Transport == config.TransportHTTP && cfg.Environment == config.EnvironmentProduction {
 		return tools.Dependencies{
-			EnableWriteTools:    true,
-			AuthorizationMode:   tools.AuthorizationModeOAuth,
-			ResourceMetadataURL: cfg.OAuthProtectedResourceMetadataURL(),
-			UploadMode:          upload.ModeHTTP,
-			UploadMaxBytes:      cfg.UploadMaxBytes,
-			UploadTimeout:       cfg.InvenTreeTimeout,
-			ClientFromContext:   server.OAuthClientFromContext(cfg.InvenTreeURL, inventreeHTTPClient(cfg)),
-			WebLinks:            webLinks,
-			BulkMaxItems:        cfg.BulkMaxItems,
-			BulkConcurrency:     cfg.BulkConcurrency,
+			EnableWriteTools:        true,
+			AuthorizationMode:       tools.AuthorizationModeOAuth,
+			ResourceMetadataURL:     cfg.OAuthProtectedResourceMetadataURL(),
+			UploadMode:              upload.ModeHTTP,
+			UploadMaxBytes:          cfg.UploadMaxBytes,
+			UploadTimeout:           cfg.InvenTreeTimeout,
+			ClientFromContext:       server.OAuthClientFromContext(cfg.InvenTreeURL, inventreeHTTPClient(cfg)),
+			WebLinks:                webLinks,
+			BulkMaxItems:            cfg.BulkMaxItems,
+			BulkConcurrency:         cfg.BulkConcurrency,
+			ScanHistoryMaxPageDepth: cfg.ScanHistoryMaxPageDepth,
 		}, nil
 	}
 	if cfg.Transport != config.TransportStdio {
@@ -258,15 +259,16 @@ func dependenciesForConfig(cfg config.Config) (tools.Dependencies, error) {
 		return tools.Dependencies{}, err
 	}
 	return tools.Dependencies{
-		EnableWriteTools: true,
-		UploadMode:       upload.ModeStdio,
-		UploadFS:         afero.NewOsFs(),
-		UploadAllowRoots: cfg.UploadAllowRoots,
-		UploadMaxBytes:   cfg.UploadMaxBytes,
-		UploadTimeout:    cfg.InvenTreeTimeout,
-		WebLinks:         webLinks,
-		BulkMaxItems:     cfg.BulkMaxItems,
-		BulkConcurrency:  cfg.BulkConcurrency,
+		EnableWriteTools:        true,
+		UploadMode:              upload.ModeStdio,
+		UploadFS:                afero.NewOsFs(),
+		UploadAllowRoots:        cfg.UploadAllowRoots,
+		UploadMaxBytes:          cfg.UploadMaxBytes,
+		UploadTimeout:           cfg.InvenTreeTimeout,
+		WebLinks:                webLinks,
+		BulkMaxItems:            cfg.BulkMaxItems,
+		BulkConcurrency:         cfg.BulkConcurrency,
+		ScanHistoryMaxPageDepth: cfg.ScanHistoryMaxPageDepth,
 		ClientFromContext: func(context.Context) (any, error) {
 			return client, nil
 		},

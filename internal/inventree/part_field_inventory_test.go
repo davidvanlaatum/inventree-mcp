@@ -45,7 +45,7 @@ func TestPartFieldInventoryClassifiesPinnedSerializerExactly(t *testing.T) {
 	modeled := map[string]bool{}
 	for _, field := range reflect.VisibleFields(reflect.TypeOf(inventree.PartDetail{})) {
 		name := strings.Split(field.Tag.Get("json"), ",")[0]
-		if name != "" && name != "-" && name != "web_url" && name != "parent_web_url" {
+		if name != "" && name != "-" && name != "web_url" && name != "parent_web_url" && name != "has_barcode" {
 			modeled[name] = true
 		}
 	}

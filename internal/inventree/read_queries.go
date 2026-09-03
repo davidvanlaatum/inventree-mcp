@@ -70,6 +70,40 @@ type TagQuery struct {
 	Offset    int
 }
 
+// BarcodeScanHistoryQuery lists /api/barcode/history/ rows. Only
+// Result/UserID/Search/Ordering/Limit/Offset are real upstream query
+// filters confirmed live against the pinned InvenTree instance; Endpoint and
+// From/To are silently ignored server-side if forwarded, so values() does
+// not emit them at all -- the tools layer applies them as client-side
+// post-filtering across bounded upstream pages instead (see
+// search_barcode_scan_history in internal/tools/barcode_tools.go).
+type BarcodeScanHistoryQuery struct {
+	Result   *bool
+	UserID   *int
+	Search   string
+	Ordering string
+	Limit    int
+	Offset   int
+}
+
+func (q BarcodeScanHistoryQuery) values() url.Values {
+	values := url.Values{}
+	if q.Result != nil {
+		values.Set("result", strconv.FormatBool(*q.Result))
+	}
+	if q.UserID != nil {
+		values.Set("user", strconv.Itoa(*q.UserID))
+	}
+	if q.Search != "" {
+		values.Set("search", q.Search)
+	}
+	if q.Ordering != "" {
+		values.Set("ordering", q.Ordering)
+	}
+	setPagination(values, q.Limit, q.Offset)
+	return values
+}
+
 type CategoryParameterTemplateQuery struct {
 	CategoryID  int
 	FetchParent *bool
