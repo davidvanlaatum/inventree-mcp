@@ -448,6 +448,253 @@ func TestSearchBarcodeScanHistoryFromToWalkMatchesInvenTreesRealTimestampFormat(
 	a.Equal("abc123", out.Records[0].Data)
 }
 
+func TestGenerateBarcodeRejectsNonPositiveObjectID(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+
+	fake := &fakeBarcodeClient{}
+	_, out, err := generateBarcode(depsForFakeBarcode(fake))(ctx, &mcp.CallToolRequest{}, GenerateBarcodeInput{ObjectType: OwnerObjectPart, ObjectID: 0})
+	r.NoError(err)
+	a.Equal(StatusValidationFailed, out.Status)
+	a.Equal(0, fake.generateCalledPK, "a non-positive object_id must be rejected before the client is called")
+}
+
+// TestGenerateBarcodeMapsValidationFailureAndPropagatesOtherErrors covers
+// generateBarcode's two upstream-error branches: an ordinary validation-
+// shaped rejection is mapped through safeValidationFailure, while anything
+// else (e.g. a 5xx or network failure) propagates as a raw error rather than
+// being silently swallowed.
+func TestGenerateBarcodeMapsValidationFailureAndPropagatesOtherErrors(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+
+	validationErr := &inventree.APIError{StatusCode: http.StatusBadRequest, Kind: inventree.ErrorKindValidation, FieldErrors: map[string][]string{}}
+	fake := &fakeBarcodeClient{generateErr: validationErr}
+	_, out, err := generateBarcode(depsForFakeBarcode(fake))(ctx, &mcp.CallToolRequest{}, GenerateBarcodeInput{ObjectType: OwnerObjectPart, ObjectID: 12})
+	r.NoError(err)
+	a.Equal(StatusValidationFailed, out.Status)
+
+	other := &fakeBarcodeClient{generateErr: errors.New("plugin unavailable")}
+	_, _, err = generateBarcode(depsForFakeBarcode(other))(ctx, &mcp.CallToolRequest{}, GenerateBarcodeInput{ObjectType: OwnerObjectPart, ObjectID: 12})
+	r.Error(err, "a non-validation-shaped upstream error must propagate rather than be swallowed")
+}
+
+func TestResolveBarcodePropagatesClientError(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+
+	fake := &fakeBarcodeClient{resolveErr: errors.New("upstream unreachable")}
+	_, _, err := resolveBarcode(depsForFakeBarcode(fake))(ctx, &mcp.CallToolRequest{}, ResolveBarcodeInput{BarcodeText: "abc123"})
+	r.Error(err)
+}
+
+func TestUnassignBarcodeInvalidInputsRejectedBeforeClientCall(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+
+	fake := &fakeBarcodeClient{}
+	_, out, err := unassignBarcode(depsForFakeBarcode(fake))(ctx, &mcp.CallToolRequest{}, UnassignBarcodeInput{ObjectType: "bogus", ObjectID: 12, Confirm: true})
+	r.NoError(err)
+	a.Equal(StatusValidationFailed, out.Status)
+	a.Empty(fake.unlinkCalledKey)
+
+	_, out, err = unassignBarcode(depsForFakeBarcode(fake))(ctx, &mcp.CallToolRequest{}, UnassignBarcodeInput{ObjectType: OwnerObjectStockItem, ObjectID: -1, Confirm: true})
+	r.NoError(err)
+	a.Equal(StatusValidationFailed, out.Status)
+	a.Empty(fake.unlinkCalledKey)
+}
+
+// TestUnassignBarcodePreflightNotFoundAndOtherError covers unassign_barcode's
+// preflight hasBarcode read: a not-found object reports StatusNotFound, and
+// any other read failure propagates as a raw error, both before UnlinkBarcode
+// is ever called.
+func TestUnassignBarcodePreflightNotFoundAndOtherError(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+
+	notFound := &fakeBarcodeClient{stockItemErr: &inventree.APIError{StatusCode: http.StatusNotFound, Kind: inventree.ErrorKindNotFound}}
+	_, out, err := unassignBarcode(depsForFakeBarcode(notFound))(ctx, &mcp.CallToolRequest{}, UnassignBarcodeInput{ObjectType: OwnerObjectStockItem, ObjectID: 12, Confirm: true})
+	r.NoError(err)
+	a.Equal(StatusNotFound, out.Status)
+	a.Empty(notFound.unlinkCalledKey)
+
+	otherErr := &fakeBarcodeClient{stockItemErr: errors.New("upstream unreachable")}
+	_, _, err = unassignBarcode(depsForFakeBarcode(otherErr))(ctx, &mcp.CallToolRequest{}, UnassignBarcodeInput{ObjectType: OwnerObjectStockItem, ObjectID: 12, Confirm: true})
+	r.Error(err)
+	a.Empty(otherErr.unlinkCalledKey)
+}
+
+// TestUnassignBarcodeMapsValidationFailure covers unassign_barcode's
+// UnlinkBarcode-error branch not already exercised elsewhere: a validation-
+// shaped rejection is mapped through safeValidationFailure. The definite-
+// rejection and ambiguous-error branches are covered by
+// TestUnassignBarcodeDefiniteRejectionFailsFastWithoutVerifying and
+// TestUnassignBarcodeAmbiguousErrorFallsThroughToVerification below.
+func TestUnassignBarcodeMapsValidationFailure(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+
+	validationErr := &inventree.APIError{StatusCode: http.StatusBadRequest, Kind: inventree.ErrorKindValidation, FieldErrors: map[string][]string{}}
+	mappable := &fakeBarcodeClient{stockItemDetail: inventree.StockItemDetail{PK: 12, HasBarcode: true}, unlinkErr: validationErr}
+	_, out, err := unassignBarcode(depsForFakeBarcode(mappable))(ctx, &mcp.CallToolRequest{}, UnassignBarcodeInput{ObjectType: OwnerObjectStockItem, ObjectID: 12, Confirm: true})
+	r.NoError(err)
+	a.Equal(StatusValidationFailed, out.Status)
+}
+
+func TestUnassignBarcodeReportsPartialFailureWhenVerificationFails(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+
+	fake := &fakeBarcodeClient{stockItemDetailSequence: []inventree.StockItemDetail{
+		{PK: 12, HasBarcode: true}, // preflight
+		{PK: 12, HasBarcode: true}, // post-unlink verification still reports a barcode present
+	}}
+	_, out, err := unassignBarcode(depsForFakeBarcode(fake))(ctx, &mcp.CallToolRequest{}, UnassignBarcodeInput{ObjectType: OwnerObjectStockItem, ObjectID: 12, Confirm: true})
+	r.NoError(err)
+	a.Equal(StatusPartialFailure, out.Status)
+	a.NotEmpty(out.RecoveryPlan)
+}
+
+// TestRedactBarcodeConflictFallsBackWhenEmbeddedObjectMissing covers
+// redactBarcodeConflict's other fallback branch (the malformed-JSON case is
+// covered separately by TestRedactBarcodeConflictFallsBackWhenEmbeddedJSONIsUnparsable
+// below): no FieldErrors entry at all under the object-type key that was
+// sent. It must still report the conflict (the caller already knows one
+// occurred), just without a PK/WebURL.
+func TestRedactBarcodeConflictFallsBackWhenEmbeddedObjectMissing(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+
+	missingKey := &inventree.APIError{StatusCode: http.StatusBadRequest, FieldErrors: map[string][]string{"error": {"Barcode matches existing item"}}}
+	fake := &fakeBarcodeClient{linkErr: missingKey}
+	_, out, err := assignBarcode(depsForFakeBarcode(fake))(ctx, &mcp.CallToolRequest{}, AssignBarcodeInput{ObjectType: OwnerObjectStockItem, ObjectID: 99, BarcodeText: "abc123"})
+	r.NoError(err)
+	a.Equal(StatusBarcodeConflict, out.Status)
+	require.NotNil(t, out.Conflict)
+	a.Equal(OwnerObjectStockItem, out.Conflict.ObjectType)
+	a.Zero(out.Conflict.ObjectID)
+}
+
+// TestFlexibleConflictIntRejectsNonNumericString confirms flexibleConflictInt
+// surfaces a decode error (driving redactBarcodeConflict's fallback) rather
+// than silently zeroing out when the embedded "pk" is a string that isn't
+// itself a valid integer.
+func TestFlexibleConflictIntRejectsNonNumericString(t *testing.T) {
+	t.Parallel()
+	a := assert.New(t)
+
+	var v flexibleConflictInt
+	err := v.UnmarshalJSON([]byte(`"not-a-number"`))
+	a.Error(err)
+
+	err = v.UnmarshalJSON([]byte(`true`))
+	a.Error(err, "a JSON value that is neither a number nor a string must also be rejected")
+}
+
+// TestBarcodeHistoryUserValidationFallsThroughToSafeValidationFailure covers
+// the two branches that are not the confirmed-live invalid-user-id shape:
+// no user_id filter was supplied at all, and a user_id filter was supplied
+// but the upstream error is not the expected 400-APIError shape (e.g. a
+// plain network error). Both must fall through to the shared
+// safeValidationFailure mapping rather than the purpose-built "no such user
+// id" message.
+func TestBarcodeHistoryUserValidationFallsThroughToSafeValidationFailure(t *testing.T) {
+	t.Parallel()
+	a := assert.New(t)
+
+	validationErr := &inventree.APIError{StatusCode: http.StatusBadRequest, Kind: inventree.ErrorKindValidation, FieldErrors: map[string][]string{"quantity": {"must be positive"}}}
+	validation, ok := barcodeHistoryUserValidation(validationErr, false)
+	a.True(ok)
+	if ok {
+		require.NotEmpty(t, validation.Fields)
+		a.Equal("quantity", validation.Fields[0].Field, "with no user_id filter supplied, this must fall through to the shared allowlist mapping, not claim the rejection was about user_id")
+	}
+
+	_, ok = barcodeHistoryUserValidation(errors.New("connection reset"), true)
+	a.False(ok, "a non-APIError, non-400 failure is not a mappable validation shape even with a user_id filter supplied")
+}
+
+// TestSearchBarcodeScanHistoryPropagatesNonMappableErrors confirms both the
+// fast (single-upstream-page) path and the bounded-walk path propagate a raw
+// error, rather than silently returning an empty/OK result, when the
+// upstream failure is neither the invalid-user-id shape nor otherwise
+// validation-mappable.
+func TestSearchBarcodeScanHistoryPropagatesNonMappableErrors(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+
+	fastPath := &fakeBarcodeClient{historyErr: errors.New("upstream unreachable")}
+	_, _, err := searchBarcodeScanHistory(depsForFakeBarcode(fastPath))(ctx, &mcp.CallToolRequest{}, SearchBarcodeScanHistoryInput{})
+	r.Error(err)
+
+	walk := &fakeBarcodeClient{historyErr: errors.New("upstream unreachable")}
+	_, _, err = searchBarcodeScanHistory(depsForFakeBarcode(walk))(ctx, &mcp.CallToolRequest{}, SearchBarcodeScanHistoryInput{Endpoint: "stock-detail"})
+	r.Error(err)
+}
+
+// TestWalkBarcodeScanHistoryRespectsContextCancellation confirms the bounded
+// walk checks ctx.Err() rather than looping past a caller cancellation.
+func TestWalkBarcodeScanHistoryRespectsContextCancellation(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	ctx, cancel := context.WithCancel(ctx)
+	cancel()
+
+	entry := inventree.BarcodeScanHistoryEntry{PK: 1, Data: "abc123", Endpoint: "stock-detail", Result: true}
+	fake := &fakeBarcodeClient{historyPage: inventree.BarcodeScanHistoryPage{Count: 1, HasMore: true, Results: []inventree.BarcodeScanHistoryEntry{entry}}}
+	_, _, err := searchBarcodeScanHistory(depsForFakeBarcode(fake))(ctx, &mcp.CallToolRequest{}, SearchBarcodeScanHistoryInput{Endpoint: "stock-detail"})
+	r.Error(err, "a canceled context must stop the bounded walk rather than continuing to fetch pages")
+}
+
+// TestWalkBarcodeScanHistoryHonorsOffsetAcrossUpstreamPages confirms a
+// caller-supplied Offset skips that many already-matching records before
+// any are returned, counted across the walk's own internal upstream pages
+// rather than only within a single upstream page.
+func TestWalkBarcodeScanHistoryHonorsOffsetAcrossUpstreamPages(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+
+	entry := inventree.BarcodeScanHistoryEntry{PK: 1, Data: "abc123", Endpoint: "stock-detail", Result: true}
+	fake := &fakeBarcodeClient{historyPage: inventree.BarcodeScanHistoryPage{Count: 1, HasMore: true, Results: []inventree.BarcodeScanHistoryEntry{entry}}}
+
+	_, out, err := searchBarcodeScanHistory(depsForFakeBarcode(fake))(ctx, &mcp.CallToolRequest{}, SearchBarcodeScanHistoryInput{Endpoint: "stock-detail", Offset: 1, Limit: 1})
+	r.NoError(err)
+	a.Equal(StatusOK, out.Status)
+	require.Len(t, out.Records, 1)
+	a.True(len(fake.historyQueries) > 1, "the offset must be satisfied by skipping matches across multiple internal upstream pages, not just the first")
+}
+
+// TestBarcodeScanHistoryEntryMatchesExcludesUnparseableTimestamp confirms an
+// entry whose Timestamp does not match any known layout is excluded (not
+// panicked on, not spuriously included) once a from/to range is requested.
+func TestBarcodeScanHistoryEntryMatchesExcludesUnparseableTimestamp(t *testing.T) {
+	t.Parallel()
+	a := assert.New(t)
+
+	entry := inventree.BarcodeScanHistoryEntry{PK: 1, Timestamp: "not-a-timestamp"}
+	a.False(barcodeScanHistoryEntryMatches(entry, "", time.Now().Add(-time.Hour), time.Now().Add(time.Hour)))
+	a.True(barcodeScanHistoryEntryMatches(entry, "", time.Time{}, time.Time{}), "with no from/to requested, an unparseable timestamp must not matter")
+}
+
 // TestBarcodeScanHistoryToBoundIsExclusive locks in the operator-approved
 // contract (docs/TASKS.md F-S99 Decisions: "from is inclusive and to is
 // exclusive"). A row timestamped exactly at to must be excluded, not
