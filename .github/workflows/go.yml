@@ -79,6 +79,9 @@ jobs:
           coverage-threshold: 80
           cover-mode: atomic
           cover-pkg: ./...
+          ignore-pattern: |
+            ^github\.com/davidvanlaatum/inventree-mcp/cmd/generate-render-samples/
+            ^github\.com/davidvanlaatum/inventree-mcp/cmd/generate-tool-manifest/
           test-args: '["-v", "-race"]'
           notes-ref: gocoverage-stable
 
