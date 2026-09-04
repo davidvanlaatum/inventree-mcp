@@ -23,6 +23,7 @@ coverage_areas:
   - stocktake_generation
   - search
   - pricing
+  - barcode
 
 forbidden_paths:
   - /api/notes-image-upload/
@@ -1047,3 +1048,44 @@ endpoints:
     method: GET
     operation_id: settings_user_retrieve
     response_schema: '#/components/schemas/UserSettings'
+  - id: barcode_generate_create
+    area: barcode
+    path: /api/barcode/generate/
+    method: POST
+    operation_id: barcode_generate_create
+    request_schema: '#/components/schemas/BarcodeGenerate'
+    request_content_type: application/json
+    response_schema: '#/components/schemas/Barcode'
+    response_status: "200"
+  - id: barcode_create
+    area: barcode
+    path: /api/barcode/
+    method: POST
+    operation_id: barcode_create
+    request_schema: '#/components/schemas/Barcode'
+    request_content_type: application/json
+    response_schema: '#/components/schemas/Barcode'
+  - id: barcode_link_create
+    area: barcode
+    path: /api/barcode/link/
+    method: POST
+    operation_id: barcode_link_create
+    request_schema: '#/components/schemas/BarcodeAssign'
+    request_content_type: application/json
+    response_schema: '#/components/schemas/BarcodeAssign'
+  - id: barcode_unlink_create
+    area: barcode
+    path: /api/barcode/unlink/
+    method: POST
+    operation_id: barcode_unlink_create
+    request_schema: '#/components/schemas/BarcodeUnassign'
+    request_content_type: application/json
+    response_schema: '#/components/schemas/BarcodeUnassign'
+  - id: search_barcode_scan_history
+    area: barcode
+    path: /api/barcode/history/
+    method: GET
+    operation_id: barcode_history_list
+    required_query:
+      - limit
+    response_schema: '#/components/schemas/PaginatedBarcodeScanResultList'

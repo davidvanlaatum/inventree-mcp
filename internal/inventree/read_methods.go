@@ -102,12 +102,21 @@ func (c *Client) GetPart(ctx context.Context, id int) (Part, error) {
 	return out, err
 }
 
+// GetPartDetail decodes into a local wrapper embedding PartDetail plus the
+// upstream barcode_hash string, then discards the raw hash and retains only
+// the derived HasBarcode bool -- barcode_hash itself stays PartFieldExcluded
+// and is never marshaled back out (see part_field_inventory.go).
 func (c *Client) GetPartDetail(ctx context.Context, id int) (PartDetail, error) {
-	var out PartDetail
+	var raw struct {
+		PartDetail
+		BarcodeHash string `json:"barcode_hash"`
+	}
 	req, err := c.NewRequest(ctx, http.MethodGet, fmt.Sprintf("/api/part/%d/", id), url.Values{"tags": []string{"true"}}, nil)
 	if err == nil {
-		err = c.DoJSON(req, &out)
+		err = c.DoJSON(req, &raw)
 	}
+	out := raw.PartDetail
+	out.HasBarcode = raw.BarcodeHash != ""
 	return out, err
 }
 
@@ -170,12 +179,22 @@ func (c *Client) SearchStockLocationsPage(ctx context.Context, query StockLocati
 	return StockLocationPage{Count: page.Count, Results: page.Results, HasMore: page.Next != nil && *page.Next != ""}, err
 }
 
+// GetStockLocation decodes into a local wrapper embedding StockLocation plus
+// the upstream barcode_hash string, then discards the raw hash and retains
+// only the derived HasBarcode bool -- barcode_hash itself stays
+// StockLocationFieldExcluded and is never marshaled back out (see
+// stock_location_field_inventory.go).
 func (c *Client) GetStockLocation(ctx context.Context, id int) (StockLocation, error) {
-	var out StockLocation
+	var raw struct {
+		StockLocation
+		BarcodeHash string `json:"barcode_hash"`
+	}
 	req, err := c.NewRequest(ctx, http.MethodGet, fmt.Sprintf("/api/stock/location/%d/", id), url.Values{"path_detail": []string{"true"}, "tags": []string{"true"}}, nil)
 	if err == nil {
-		err = c.DoJSON(req, &out)
+		err = c.DoJSON(req, &raw)
 	}
+	out := raw.StockLocation
+	out.HasBarcode = raw.BarcodeHash != ""
 	return out, err
 }
 
@@ -231,7 +250,10 @@ func (c *Client) GetStockItem(ctx context.Context, id int) (StockItem, error) {
 // off because nested part, location, and supplier-part records remain
 // separate exact lookups.
 func (c *Client) GetStockItemDetail(ctx context.Context, id int) (StockItemDetail, error) {
-	var out StockItemDetail
+	var raw struct {
+		StockItemDetail
+		BarcodeHash string `json:"barcode_hash"`
+	}
 	query := url.Values{
 		"path_detail":          []string{"true"},
 		"part_detail":          []string{"false"},
@@ -242,9 +264,15 @@ func (c *Client) GetStockItemDetail(ctx context.Context, id int) (StockItemDetai
 	}
 	req, err := c.NewRequest(ctx, http.MethodGet, fmt.Sprintf("/api/stock/%d/", id), query, nil)
 	if err != nil {
-		return out, err
+		return raw.StockItemDetail, err
 	}
-	err = c.DoJSON(req, &out)
+	err = c.DoJSON(req, &raw)
+	out := raw.StockItemDetail
+	// out.HasBarcode is computed from the decoded raw.BarcodeHash rather than
+	// forwarding it, per the field-inventory drift tests' web_url-style
+	// exclusion -- barcode_hash itself stays StockItemFieldExcluded and is
+	// never marshaled back out (see stock_item_field_inventory.go).
+	out.HasBarcode = raw.BarcodeHash != ""
 	return out, err
 }
 
@@ -574,12 +602,22 @@ func (c *Client) GetPurchaseOrder(ctx context.Context, id int) (PurchaseOrder, e
 	return out, err
 }
 
+// GetPurchaseOrderDetail decodes into a local wrapper embedding
+// PurchaseOrderDetail plus the upstream barcode_hash string, then discards
+// the raw hash and retains only the derived HasBarcode bool -- barcode_hash
+// itself stays PurchaseOrderFieldExcluded and is never marshaled back out
+// (see purchase_order_field_inventory.go).
 func (c *Client) GetPurchaseOrderDetail(ctx context.Context, id int) (PurchaseOrderDetail, error) {
-	var out PurchaseOrderDetail
+	var raw struct {
+		PurchaseOrderDetail
+		BarcodeHash string `json:"barcode_hash"`
+	}
 	req, err := c.NewRequest(ctx, http.MethodGet, fmt.Sprintf("/api/order/po/%d/", id), url.Values{"tags": []string{"true"}}, nil)
 	if err == nil {
-		err = c.DoJSON(req, &out)
+		err = c.DoJSON(req, &raw)
 	}
+	out := raw.PurchaseOrderDetail
+	out.HasBarcode = raw.BarcodeHash != ""
 	return out, err
 }
 

@@ -18,6 +18,9 @@ var PartFieldInventory = map[string]PartFieldClass{
 	"allocated_to_build_orders": PartFieldExposed,
 	"allocated_to_sales_orders": PartFieldExposed,
 	"assembly":                  PartFieldExposed,
+	// barcode_hash stays excluded by design: F-S99 derives a computed
+	// has_barcode bool from it instead (see GetPartDetail), rather than
+	// reclassifying barcode_hash itself.
 	"barcode_hash":              PartFieldExcluded,
 	"building":                  PartFieldExposed,
 	"category":                  PartFieldExposed,

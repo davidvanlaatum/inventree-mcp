@@ -56,6 +56,7 @@ type fileConfig struct {
 	TelemetryMetricsPath      *string  `yaml:"otel_metrics_path"`
 	BulkMaxItems              *int     `yaml:"bulk_max_items"`
 	BulkConcurrency           *int     `yaml:"bulk_concurrency"`
+	ScanHistoryMaxPageDepth   *int     `yaml:"scan_history_max_page_depth"`
 }
 
 func defaultConfig() Config {
@@ -77,6 +78,7 @@ func defaultConfig() Config {
 		Telemetry:                 telemetry.DefaultConfig(),
 		BulkMaxItems:              DefaultBulkMaxItems,
 		BulkConcurrency:           DefaultBulkConcurrency,
+		ScanHistoryMaxPageDepth:   DefaultScanHistoryMaxPageDepth,
 	}
 }
 
@@ -197,6 +199,9 @@ func applyEnvironment(cfg *Config, getenv Env) {
 	}
 	if raw := strings.TrimSpace(getenv(EnvBulkConcurrency)); raw != "" {
 		cfg.BulkConcurrency = intDefault(getenv, EnvBulkConcurrency, cfg.BulkConcurrency)
+	}
+	if raw := strings.TrimSpace(getenv(EnvScanHistoryMaxPageDepth)); raw != "" {
+		cfg.ScanHistoryMaxPageDepth = intDefault(getenv, EnvScanHistoryMaxPageDepth, cfg.ScanHistoryMaxPageDepth)
 	}
 }
 
@@ -354,6 +359,9 @@ func applyFileConfig(cfg *Config, fileCfg fileConfig) error {
 	}
 	if fileCfg.BulkConcurrency != nil {
 		cfg.BulkConcurrency = *fileCfg.BulkConcurrency
+	}
+	if fileCfg.ScanHistoryMaxPageDepth != nil {
+		cfg.ScanHistoryMaxPageDepth = *fileCfg.ScanHistoryMaxPageDepth
 	}
 	return nil
 }

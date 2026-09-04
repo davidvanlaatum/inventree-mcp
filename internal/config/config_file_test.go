@@ -32,6 +32,7 @@ trusted_proxy_cidrs:
   - 192.0.2.0/24
 bulk_max_items: 15
 bulk_concurrency: 6
+scan_history_max_page_depth: 30
 otel_enabled: true
 otel_service_name: yaml-telemetry
 otel_exporter: otlphttp
@@ -73,6 +74,7 @@ otel_export_timeout: 7s
 	assert.Equal(t, []string{"198.51.100.0/24"}, cfg.TrustedProxyCIDRs)
 	assert.Equal(t, 15, cfg.BulkMaxItems)
 	assert.Equal(t, 6, cfg.BulkConcurrency)
+	assert.Equal(t, 30, cfg.ScanHistoryMaxPageDepth)
 	assert.True(t, cfg.Telemetry.Enabled)
 	assert.Equal(t, "yaml-telemetry", cfg.Telemetry.ServiceName)
 	assert.Equal(t, "otlphttp", cfg.Telemetry.Exporter)
@@ -264,32 +266,33 @@ func TestApplyFileConfigCoversTypedFields(t *testing.T) {
 	t.Parallel()
 	cfg := defaultConfig()
 	fileCfg := fileConfig{
-		Transport:              stringPtr("http"),
-		Environment:            stringPtr("development"),
-		Listen:                 stringPtr("127.0.0.1:9999"),
-		Path:                   stringPtr("/custom"),
-		InvenTreeURL:           stringPtr("https://inventory.example.test"),
-		InvenTreeWebURL:        stringPtr("https://inventory.example.test/web"),
-		InvenTreeToken:         stringPtr("token"),
-		InvenTreeAuthScheme:    stringPtr("Bearer"),
-		InvenTreeTimeout:       stringPtr("7s"),
-		InvenTreeTLSSkipVerify: boolPtr(true),
-		UploadAllowRoots:       []string{"/one", "/two"},
-		UploadMaxBytes:         int64Ptr(100),
-		MCPMaxRequestBodyBytes: int64Ptr(200),
-		LogLevel:               stringPtr("debug"),
-		DebugTrafficLog:        stringPtr("/tmp/traffic.jsonl"),
-		DevIncompleteOAuth:     boolPtr(true),
-		OAuthIssuerURL:         stringPtr("https://issuer.example.test"),
-		OAuthResourceURL:       stringPtr("https://resource.example.test/mcp"),
-		OAuthKeys:              []string{"current:active:MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY"},
-		OAuthClientIDs:         []string{"https://client.example.test"},
-		TrustedProxyCIDRs:      []string{"192.0.2.0/24"},
-		OAuthAccessLifetime:    stringPtr("1m"),
-		OAuthRefreshLifetime:   stringPtr("2m"),
-		OAuthSessionLifetime:   stringPtr("3m"),
-		BulkMaxItems:           intPtr(10),
-		BulkConcurrency:        intPtr(2),
+		Transport:               stringPtr("http"),
+		Environment:             stringPtr("development"),
+		Listen:                  stringPtr("127.0.0.1:9999"),
+		Path:                    stringPtr("/custom"),
+		InvenTreeURL:            stringPtr("https://inventory.example.test"),
+		InvenTreeWebURL:         stringPtr("https://inventory.example.test/web"),
+		InvenTreeToken:          stringPtr("token"),
+		InvenTreeAuthScheme:     stringPtr("Bearer"),
+		InvenTreeTimeout:        stringPtr("7s"),
+		InvenTreeTLSSkipVerify:  boolPtr(true),
+		UploadAllowRoots:        []string{"/one", "/two"},
+		UploadMaxBytes:          int64Ptr(100),
+		MCPMaxRequestBodyBytes:  int64Ptr(200),
+		LogLevel:                stringPtr("debug"),
+		DebugTrafficLog:         stringPtr("/tmp/traffic.jsonl"),
+		DevIncompleteOAuth:      boolPtr(true),
+		OAuthIssuerURL:          stringPtr("https://issuer.example.test"),
+		OAuthResourceURL:        stringPtr("https://resource.example.test/mcp"),
+		OAuthKeys:               []string{"current:active:MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY"},
+		OAuthClientIDs:          []string{"https://client.example.test"},
+		TrustedProxyCIDRs:       []string{"192.0.2.0/24"},
+		OAuthAccessLifetime:     stringPtr("1m"),
+		OAuthRefreshLifetime:    stringPtr("2m"),
+		OAuthSessionLifetime:    stringPtr("3m"),
+		BulkMaxItems:            intPtr(10),
+		BulkConcurrency:         intPtr(2),
+		ScanHistoryMaxPageDepth: intPtr(20),
 	}
 	require.NoError(t, applyFileConfig(&cfg, fileCfg))
 	assert.Equal(t, TransportHTTP, cfg.Transport)
@@ -318,38 +321,40 @@ func TestApplyFileConfigCoversTypedFields(t *testing.T) {
 	assert.Equal(t, 3*time.Minute, cfg.OAuthSessionLifetime)
 	assert.Equal(t, 10, cfg.BulkMaxItems)
 	assert.Equal(t, 2, cfg.BulkConcurrency)
+	assert.Equal(t, 20, cfg.ScanHistoryMaxPageDepth)
 }
 
 func TestApplyEnvironmentCoversTypedFields(t *testing.T) {
 	t.Parallel()
 	cfg := defaultConfig()
 	applyEnvironment(&cfg, mapEnv(map[string]string{
-		EnvTransport:              "http",
-		EnvEnvironment:            "development",
-		EnvListen:                 "127.0.0.1:9999",
-		EnvPath:                   "/custom",
-		EnvInvenTreeURL:           "https://inventory.example.test",
-		EnvInvenTreeWebURL:        "https://inventory.example.test/web",
-		EnvInvenTreeToken:         "token",
-		EnvInvenTreeAuthScheme:    "Bearer",
-		EnvInvenTreeTimeout:       "7s",
-		EnvInvenTreeTLSSkipVerify: "true",
-		EnvUploadAllowRoots:       "/one" + string(os.PathListSeparator) + "/two",
-		EnvUploadMaxBytes:         "100",
-		EnvMCPMaxRequestBodyBytes: "200",
-		EnvLogLevel:               "debug",
-		EnvDebugTrafficLog:        "/tmp/traffic.jsonl",
-		EnvDevIncompleteOAuth:     "true",
-		EnvOAuthIssuerURL:         "https://issuer.example.test",
-		EnvOAuthResourceURL:       "https://resource.example.test/mcp",
-		EnvOAuthKeys:              "current:active:MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY",
-		EnvOAuthClientIDs:         "https://client.example.test",
-		EnvTrustedProxyCIDRs:      "192.0.2.0/24",
-		EnvOAuthAccessLifetime:    "1m",
-		EnvOAuthRefreshLifetime:   "2m",
-		EnvOAuthSessionLifetime:   "3m",
-		EnvBulkMaxItems:           "10",
-		EnvBulkConcurrency:        "2",
+		EnvTransport:               "http",
+		EnvEnvironment:             "development",
+		EnvListen:                  "127.0.0.1:9999",
+		EnvPath:                    "/custom",
+		EnvInvenTreeURL:            "https://inventory.example.test",
+		EnvInvenTreeWebURL:         "https://inventory.example.test/web",
+		EnvInvenTreeToken:          "token",
+		EnvInvenTreeAuthScheme:     "Bearer",
+		EnvInvenTreeTimeout:        "7s",
+		EnvInvenTreeTLSSkipVerify:  "true",
+		EnvUploadAllowRoots:        "/one" + string(os.PathListSeparator) + "/two",
+		EnvUploadMaxBytes:          "100",
+		EnvMCPMaxRequestBodyBytes:  "200",
+		EnvLogLevel:                "debug",
+		EnvDebugTrafficLog:         "/tmp/traffic.jsonl",
+		EnvDevIncompleteOAuth:      "true",
+		EnvOAuthIssuerURL:          "https://issuer.example.test",
+		EnvOAuthResourceURL:        "https://resource.example.test/mcp",
+		EnvOAuthKeys:               "current:active:MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY",
+		EnvOAuthClientIDs:          "https://client.example.test",
+		EnvTrustedProxyCIDRs:       "192.0.2.0/24",
+		EnvOAuthAccessLifetime:     "1m",
+		EnvOAuthRefreshLifetime:    "2m",
+		EnvOAuthSessionLifetime:    "3m",
+		EnvBulkMaxItems:            "10",
+		EnvBulkConcurrency:         "2",
+		EnvScanHistoryMaxPageDepth: "20",
 	}))
 	assert.Equal(t, TransportHTTP, cfg.Transport)
 	assert.Equal(t, EnvironmentDevelopment, cfg.Environment)
@@ -375,6 +380,7 @@ func TestApplyEnvironmentCoversTypedFields(t *testing.T) {
 	assert.Equal(t, 3*time.Minute, cfg.OAuthSessionLifetime)
 	assert.Equal(t, 10, cfg.BulkMaxItems)
 	assert.Equal(t, 2, cfg.BulkConcurrency)
+	assert.Equal(t, 20, cfg.ScanHistoryMaxPageDepth)
 }
 
 func TestConfigPathFromArgsRejectsDuplicateAndEmptyValues(t *testing.T) {

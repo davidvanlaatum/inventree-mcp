@@ -187,6 +187,11 @@ const (
 	DeleteSupplierPriceBreakToolName          = "delete_supplier_price_break"
 	UpdatePartPricingOverrideToolName         = "update_part_pricing_override"
 	RefreshPartPricingToolName                = "refresh_part_pricing"
+	GenerateBarcodeToolName                   = "generate_barcode"
+	ResolveBarcodeToolName                    = "resolve_barcode"
+	AssignBarcodeToolName                     = "assign_barcode"
+	UnassignBarcodeToolName                   = "unassign_barcode"
+	SearchBarcodeScanHistoryToolName          = "search_barcode_scan_history"
 
 	defaultDownloadMaxBytes int64 = 5 * 1024 * 1024
 	maxDownloadMaxBytes     int64 = 25 * 1024 * 1024
@@ -269,6 +274,7 @@ var lookupToolNames = []string{
 	SearchSalePriceBreaksToolName,
 	SearchSupplierPriceBreaksToolName,
 	GetPartPricingToolName,
+	SearchBarcodeScanHistoryToolName,
 }
 
 var writeToolNames = []string{
@@ -377,6 +383,10 @@ var writeToolNames = []string{
 	DeleteSupplierPriceBreakToolName,
 	UpdatePartPricingOverrideToolName,
 	RefreshPartPricingToolName,
+	GenerateBarcodeToolName,
+	ResolveBarcodeToolName,
+	AssignBarcodeToolName,
+	UnassignBarcodeToolName,
 }
 
 var ToolAuthorizations = map[string]ToolAuthorization{
@@ -422,6 +432,14 @@ func init() {
 		mutationClass := "write"
 		switch name {
 		case CreatePartToolName, UpdatePartToolName, CreatePartRelationToolName, UpdatePartRelationToolName, CreateCompanyToolName, CreateSupplierPartToolName, CreateManufacturerPartToolName, UpsertPartWorkflowToolName, CreateParameterTemplateToolName, UpdateParameterTemplateToolName, CreateObjectParameterToolName, CreateCategoryParameterDefaultToolName, UpdateCategoryParameterDefaultToolName, CreatePartCategoryToolName, UpdatePartCategoryToolName, UpdateCompanyToolName, UpdateSupplierPartToolName, UpdateManufacturerPartToolName, CreateStockLocationToolName, UpdateStockLocationToolName, CreateStockLocationTypeToolName, UpdateStockLocationTypeToolName, CreatePurchaseOrderExtraLineToolName, UpdatePurchaseOrderExtraLineToolName, UpdatePurchaseOrderToolName, CreatePurchaseOrderWorkflowToolName, IssuePurchaseOrderToolName, CompletePurchaseOrderToolName, CreateInternalPriceBreakToolName, UpdateInternalPriceBreakToolName, CreateSalePriceBreakToolName, UpdateSalePriceBreakToolName, CreateSupplierPriceBreakToolName, UpdateSupplierPriceBreakToolName, UpdatePartPricingOverrideToolName:
+			scopes = []string{ScopeInventreeRead, ScopeInventreeWrite}
+		// generate_barcode/resolve_barcode/assign_barcode/unassign_barcode are
+		// non-destructive per F-S99's operator-approved decision: assigning or
+		// clearing a barcode link is not itself a responsibility/ownership
+		// transfer or an inventory-loss action, matching F-S91/F-S98's
+		// preflighted-PATCH-not-plan-token precedent rather than F-S48's
+		// destructive plan-token pattern (see assign_owner).
+		case GenerateBarcodeToolName, ResolveBarcodeToolName, AssignBarcodeToolName, UnassignBarcodeToolName:
 			scopes = []string{ScopeInventreeRead, ScopeInventreeWrite}
 		case BulkPropagatePartParametersToolName:
 			scopes = []string{ScopeInventreeRead, ScopeInventreeWrite, ScopeInventreeDestructive}
@@ -764,6 +782,7 @@ func registerLookupTools(server *mcp.Server, deps Dependencies) {
 	registerGlobalSearchTool(server, deps)
 	addReadOnlyTool(server, deps, SearchTagsToolName, "Search tags", "Searches InvenTree's shared cross-object tag taxonomy, optionally scoped to one qualified app.model value.", searchTags(deps))
 	registerPricingLookupTools(server, deps)
+	registerBarcodeLookupTools(server, deps)
 }
 
 func addReadOnlyTool[In, Out any](server *mcp.Server, deps Dependencies, name string, title string, description string, handler mcp.ToolHandlerFor[In, Out]) {

@@ -112,7 +112,7 @@ func purchaseOrderModelFields(model any) map[string]bool {
 	fields := map[string]bool{}
 	for _, field := range reflect.VisibleFields(reflect.TypeOf(model)) {
 		name := strings.Split(field.Tag.Get("json"), ",")[0]
-		if name != "" && name != "-" && name != "web_url" && name != "parent_web_url" {
+		if name != "" && name != "-" && name != "web_url" && name != "parent_web_url" && name != "has_barcode" {
 			fields[name] = true
 		}
 	}

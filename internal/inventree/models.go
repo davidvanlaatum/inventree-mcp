@@ -112,6 +112,10 @@ type PartDetail struct {
 	VariantStock            *float64       `json:"variant_stock"`
 	Responsible             *int           `json:"responsible"`
 	Tags                    []string       `json:"tags,omitempty"`
+	// HasBarcode is computed by GetPartDetail from the upstream barcode_hash
+	// value (non-empty means assigned) and has no OpenAPI counterpart of its
+	// own -- see the field-inventory drift tests' web_url-style exclusion.
+	HasBarcode bool `json:"has_barcode"`
 }
 
 type PartPage struct {
@@ -188,6 +192,10 @@ type StockLocation struct {
 	LocationTypeDetail *StockLocationType `json:"location_type_detail,omitempty"`
 	Path               []TreePath         `json:"path,omitempty"`
 	Tags               []string           `json:"tags,omitempty"`
+	// HasBarcode is computed by GetStockLocation from the upstream
+	// barcode_hash value and has no OpenAPI counterpart -- see the
+	// field-inventory drift tests' web_url-style exclusion.
+	HasBarcode bool `json:"has_barcode"`
 }
 
 type StockLocationPage struct {
@@ -352,6 +360,10 @@ type StockItemDetail struct {
 	PurchaseOrderReference *string        `json:"purchase_order_reference"`
 	LocationPath           []TreePath     `json:"location_path,omitempty"`
 	Tags                   []string       `json:"tags,omitempty"`
+	// HasBarcode is computed by GetStockItemDetail from the upstream
+	// barcode_hash value and has no OpenAPI counterpart -- see the
+	// field-inventory drift tests' web_url-style exclusion.
+	HasBarcode bool `json:"has_barcode"`
 }
 
 // StockItemPage is a bounded single-request page over /api/stock/, used by
@@ -644,6 +656,10 @@ type PurchaseOrderDetail struct {
 	ProjectCode      *int                   `json:"project_code"`
 	ProjectCodeLabel string                 `json:"project_code_label"`
 	Tags             []string               `json:"tags,omitempty"`
+	// HasBarcode is computed by GetPurchaseOrderDetail from the upstream
+	// barcode_hash value and has no OpenAPI counterpart -- see the
+	// field-inventory drift tests' web_url-style exclusion.
+	HasBarcode bool `json:"has_barcode"`
 }
 
 type PurchaseOrderLineItem struct {
@@ -857,4 +873,39 @@ type PartPricing struct {
 	SalePriceMax        *DecimalString `json:"sale_price_max"`
 	SaleHistoryMin      *DecimalString `json:"sale_history_min"`
 	SaleHistoryMax      *DecimalString `json:"sale_history_max"`
+}
+
+// BarcodeMatch is ResolveBarcode's success projection: only the matched
+// object's type/ID/web URL, never the nested "instance" record InvenTree
+// embeds in a match response. ObjectType is one of the four in-scope bare
+// object-type keys ("part", "stockitem", "stocklocation", "purchaseorder")
+// on a supported match, or empty when the barcode matched an out-of-scope
+// InvenTree object type (e.g. "build", "manufacturerpart") this server has
+// no tool support for.
+type BarcodeMatch struct {
+	ObjectType string
+	ObjectID   int
+	WebURL     string
+}
+
+// BarcodeScanHistoryEntry is one /api/barcode/history/ row, allowlisted to
+// the fields approved for MCP exposure. Context, Response, and UserDetail
+// are deliberately absent: F-S99 excludes them from every tool output, and
+// User stays a raw nullable ID rather than an expanded/embedded user object.
+type BarcodeScanHistoryEntry struct {
+	PK        int    `json:"pk"`
+	Data      string `json:"data"`
+	Timestamp string `json:"timestamp"`
+	Endpoint  string `json:"endpoint"`
+	Result    bool   `json:"result"`
+	UserID    *int   `json:"user"`
+}
+
+// BarcodeScanHistoryPage is a bounded page over /api/barcode/history/,
+// shaped like SearchTagsPage: HasMore is computed from the upstream Next
+// cursor rather than surfacing the raw Next/Previous URLs.
+type BarcodeScanHistoryPage struct {
+	Count   int
+	Results []BarcodeScanHistoryEntry
+	HasMore bool
 }

@@ -50,6 +50,7 @@ const (
 	EnvBootstrapEnvelopeLifetime = "INVENTREE_MCP_BOOTSTRAP_ENVELOPE_LIFETIME"
 	EnvBulkMaxItems              = "INVENTREE_MCP_BULK_MAX_ITEMS"
 	EnvBulkConcurrency           = "INVENTREE_MCP_BULK_CONCURRENCY"
+	EnvScanHistoryMaxPageDepth   = "INVENTREE_MCP_SCAN_HISTORY_MAX_PAGE_DEPTH"
 	EnvOTelEnabled               = "INVENTREE_MCP_OTEL_ENABLED"
 	EnvOTelServiceName           = "INVENTREE_MCP_OTEL_SERVICE_NAME"
 	EnvOTelExporter              = "INVENTREE_MCP_OTEL_EXPORTER"
@@ -62,14 +63,15 @@ const (
 	EnvOTelMetricsEnabled        = "INVENTREE_MCP_OTEL_METRICS_ENABLED"
 	EnvOTelMetricsPath           = "INVENTREE_MCP_OTEL_METRICS_PATH"
 
-	invalidDuration               = time.Duration(-1)
-	DefaultListen                 = "127.0.0.1:28686"
-	DefaultMCPMaxRequestBodyBytes = int64(8 * 1024 * 1024)
-	mcpRequestBodyOverheadBytes   = int64(1024 * 1024)
-	DefaultBulkMaxItems           = 25
-	DefaultBulkConcurrency        = 4
-	maxBulkMaxItemsLimit          = 500
-	maxBulkConcurrencyLimit       = 64
+	invalidDuration                = time.Duration(-1)
+	DefaultListen                  = "127.0.0.1:28686"
+	DefaultMCPMaxRequestBodyBytes  = int64(8 * 1024 * 1024)
+	mcpRequestBodyOverheadBytes    = int64(1024 * 1024)
+	DefaultBulkMaxItems            = 25
+	DefaultBulkConcurrency         = 4
+	maxBulkMaxItemsLimit           = 500
+	maxBulkConcurrencyLimit        = 64
+	DefaultScanHistoryMaxPageDepth = 50
 )
 
 type Environment string
@@ -123,6 +125,7 @@ type Config struct {
 	Telemetry                 telemetry.Config
 	BulkMaxItems              int
 	BulkConcurrency           int
+	ScanHistoryMaxPageDepth   int
 }
 
 type Env func(string) string
@@ -224,6 +227,7 @@ func parseServeWithDeps(args []string, getenv Env, output io.Writer, filesystem 
 	fs.DurationVar(&cfg.BootstrapEnvelopeLifetime, "bootstrap-envelope-lifetime", cfg.BootstrapEnvelopeLifetime, flagHelp("bootstrap-issued MCP bearer envelope lifetime", EnvBootstrapEnvelopeLifetime))
 	fs.IntVar(&cfg.BulkMaxItems, "bulk-max-items", cfg.BulkMaxItems, flagHelp("maximum items accepted per bulk mutation call", EnvBulkMaxItems))
 	fs.IntVar(&cfg.BulkConcurrency, "bulk-concurrency", cfg.BulkConcurrency, flagHelp("maximum concurrent workers per bulk mutation call", EnvBulkConcurrency))
+	fs.IntVar(&cfg.ScanHistoryMaxPageDepth, "scan-history-max-page-depth", cfg.ScanHistoryMaxPageDepth, flagHelp("maximum internal upstream pages search_barcode_scan_history may walk for client-side endpoint/timestamp filtering", EnvScanHistoryMaxPageDepth))
 	fs.BoolVar(&cfg.Telemetry.Enabled, "otel-enabled", cfg.Telemetry.Enabled, flagHelp("enable OpenTelemetry trace export", EnvOTelEnabled))
 	fs.StringVar(&cfg.Telemetry.ServiceName, "otel-service-name", cfg.Telemetry.ServiceName, flagHelp("OpenTelemetry service name", EnvOTelServiceName))
 	fs.StringVar(&cfg.Telemetry.Exporter, "otel-exporter", cfg.Telemetry.Exporter, flagHelp("OpenTelemetry trace exporter: otlpgrpc or otlphttp", EnvOTelExporter))
@@ -324,6 +328,17 @@ func (c Config) Validate() error {
 		validationErrors = append(validationErrors, errors.New("bulk concurrency must be greater than zero"))
 	} else if c.BulkConcurrency > maxBulkConcurrencyLimit {
 		validationErrors = append(validationErrors, fmt.Errorf("bulk concurrency must not exceed %d", maxBulkConcurrencyLimit))
+	}
+	// Zero/negative is a hard error, not a "use the default" signal: an
+	// operator may configure any large finite page-depth ceiling, but never
+	// zero/negative, per F-S99's product decision. Unlike BulkMaxItems/
+	// BulkConcurrency, this setting deliberately has NO upper ceiling: the
+	// operator explicitly approved "operators may choose any finite value
+	// rather than being constrained by a product-level maximum" (docs/TASKS.md
+	// F-S99 Decisions), so no maxScanHistoryMaxPageDepthLimit-style check
+	// belongs here.
+	if c.ScanHistoryMaxPageDepth <= 0 {
+		validationErrors = append(validationErrors, errors.New("scan history max page depth must be greater than zero"))
 	}
 
 	if c.InvenTreeTLSSkipVerify && c.Environment == EnvironmentProduction {

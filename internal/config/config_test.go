@@ -283,6 +283,67 @@ func TestParseServeRejectsExcessiveBulkLimits(t *testing.T) {
 	r.ErrorContains(err, "bulk concurrency must not exceed")
 }
 
+func TestParseServeConfiguresScanHistoryMaxPageDepth(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+
+	cfg, err := ParseServeWithEnv([]string{
+		"--transport", "stdio",
+		"--inventree-url", "https://inventory.example.test",
+		"--scan-history-max-page-depth", "75",
+	}, mapEnv(map[string]string{EnvInvenTreeToken: "token"}), nil)
+	r.NoError(err)
+	r.Equal(75, cfg.ScanHistoryMaxPageDepth)
+}
+
+func TestParseServeUsesScanHistoryMaxPageDepthDefault(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+
+	cfg, err := ParseServeWithEnv([]string{
+		"--transport", "stdio",
+		"--inventree-url", "https://inventory.example.test",
+	}, mapEnv(map[string]string{EnvInvenTreeToken: "token"}), nil)
+	r.NoError(err)
+	r.Equal(DefaultScanHistoryMaxPageDepth, cfg.ScanHistoryMaxPageDepth)
+}
+
+func TestParseServeRejectsNonPositiveScanHistoryMaxPageDepth(t *testing.T) {
+	t.Parallel()
+	for _, args := range [][]string{
+		{"--scan-history-max-page-depth", "0"},
+		{"--scan-history-max-page-depth", "-1"},
+	} {
+		t.Run(strings.Join(args, " "), func(t *testing.T) {
+			t.Parallel()
+			r := require.New(t)
+			base := []string{"--transport", "stdio", "--inventree-url", "https://inventory.example.test"}
+			_, err := ParseServeWithEnv(append(base, args...), mapEnv(map[string]string{EnvInvenTreeToken: "token"}), nil)
+			r.Error(err)
+			r.ErrorContains(err, "scan history max page depth must be greater than zero")
+		})
+	}
+}
+
+// TestParseServeAllowsScanHistoryMaxPageDepthWithNoProductCeiling confirms
+// the operator's explicit "no product-level maximum" decision (docs/TASKS.md
+// F-S99 Decisions): any large finite value is accepted, unlike BulkMaxItems/
+// BulkConcurrency, which do have a maxBulkMaxItemsLimit/maxBulkConcurrencyLimit
+// ceiling. Only <= 0 (TestParseServeRejectsNonPositiveScanHistoryMaxPageDepth)
+// is ever rejected.
+func TestParseServeAllowsScanHistoryMaxPageDepthWithNoProductCeiling(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+
+	cfg, err := ParseServeWithEnv([]string{
+		"--transport", "stdio",
+		"--inventree-url", "https://inventory.example.test",
+		"--scan-history-max-page-depth", "1000000",
+	}, mapEnv(map[string]string{EnvInvenTreeToken: "token"}), nil)
+	r.NoError(err)
+	r.Equal(1000000, cfg.ScanHistoryMaxPageDepth)
+}
+
 func TestParseServeDoesNotCoupleStdioUploadAndHTTPBodyLimits(t *testing.T) {
 	t.Parallel()
 	r := require.New(t)
