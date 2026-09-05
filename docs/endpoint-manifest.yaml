@@ -24,6 +24,7 @@ coverage_areas:
   - search
   - pricing
   - barcode
+  - users
 
 forbidden_paths:
   - /api/notes-image-upload/
@@ -412,6 +413,18 @@ endpoints:
     method: GET
     operation_id: user_owner_retrieve
     response_schema: '#/components/schemas/Owner'
+  - id: search_users
+    area: users
+    path: /api/user/
+    method: GET
+    operation_id: user_list
+    response_schema: '#/components/schemas/PaginatedUserCreateList'
+  - id: get_user
+    area: users
+    path: /api/user/{id}/
+    method: GET
+    operation_id: user_retrieve
+    response_schema: '#/components/schemas/ExtendedUser'
   - id: search_project_codes
     area: project_codes
     path: /api/project-code/

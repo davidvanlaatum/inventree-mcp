@@ -230,6 +230,29 @@ type Owner struct {
 	Label      string `json:"label"`
 }
 
+// User projects InvenTree's `/api/user/` account model. Per the F-S104
+// operator decision, this is an intentionally narrow safe-identity
+// projection: email, groups, permissions, and profile detail are never
+// decoded here even though the upstream response carries them. is_staff and
+// is_superuser are query-side filters only (see UserQuery) and are
+// deliberately absent from this struct so they can never leak into a tool
+// projection.
+type User struct {
+	PK        int    `json:"pk"`
+	Username  string `json:"username"`
+	FirstName string `json:"first_name"`
+	LastName  string `json:"last_name"`
+	IsActive  bool   `json:"is_active"`
+}
+
+// UserPage wraps a bounded page of User search results with a
+// caller-facing HasMore flag, matching the PartPage/CategoryPage precedent.
+type UserPage struct {
+	Count   int
+	Results []User
+	HasMore bool
+}
+
 // Contact projects InvenTree's structured company Contact model. Per the
 // F-S49 operator decision, phone and email are intentionally absent from
 // every MCP projection (search results and exact reads alike) so contact PII

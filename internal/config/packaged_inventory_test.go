@@ -75,6 +75,7 @@ func TestPackagedHTTPTemplateSettingInventory(t *testing.T) {
 		"inventree_web_url", "inventree_timeout", "inventree_tls_skip_verify",
 		"mcp_max_request_body_bytes", "upload_max_bytes", "debug_traffic_log",
 		"bulk_max_items", "bulk_concurrency", "scan_history_max_page_depth",
+		"user_search_max_page_depth",
 		"otel_enabled", "otel_service_name", "otel_exporter", "otel_endpoint",
 		"otel_insecure", "otel_headers", "otel_sample_ratio", "otel_batch_timeout",
 		"otel_export_timeout", "otel_metrics_enabled", "otel_metrics_path",

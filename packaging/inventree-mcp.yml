@@ -52,6 +52,9 @@ inventree_url: https://inventory.example.test
 # used only when endpoint/from/to client-side filtering is requested.
 # scan_history_max_page_depth: 50
 
+# search_users' maximum offset-based page depth.
+# user_search_max_page_depth: 50
+
 # OpenTelemetry tracing is disabled by default. When enabled, use a trusted
 # OTLP collector and protect any exporter headers as secrets.
 # otel_enabled: false

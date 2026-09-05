@@ -344,6 +344,48 @@ func TestParseServeAllowsScanHistoryMaxPageDepthWithNoProductCeiling(t *testing.
 	r.Equal(1000000, cfg.ScanHistoryMaxPageDepth)
 }
 
+func TestParseServeConfiguresUserSearchMaxPageDepth(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+
+	cfg, err := ParseServeWithEnv([]string{
+		"--transport", "stdio",
+		"--inventree-url", "https://inventory.example.test",
+		"--user-search-max-page-depth", "75",
+	}, mapEnv(map[string]string{EnvInvenTreeToken: "token"}), nil)
+	r.NoError(err)
+	r.Equal(75, cfg.UserSearchMaxPageDepth)
+}
+
+func TestParseServeUsesUserSearchMaxPageDepthDefault(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+
+	cfg, err := ParseServeWithEnv([]string{
+		"--transport", "stdio",
+		"--inventree-url", "https://inventory.example.test",
+	}, mapEnv(map[string]string{EnvInvenTreeToken: "token"}), nil)
+	r.NoError(err)
+	r.Equal(DefaultUserSearchMaxPageDepth, cfg.UserSearchMaxPageDepth)
+}
+
+func TestParseServeRejectsNonPositiveUserSearchMaxPageDepth(t *testing.T) {
+	t.Parallel()
+	for _, args := range [][]string{
+		{"--user-search-max-page-depth", "0"},
+		{"--user-search-max-page-depth", "-1"},
+	} {
+		t.Run(strings.Join(args, " "), func(t *testing.T) {
+			t.Parallel()
+			r := require.New(t)
+			base := []string{"--transport", "stdio", "--inventree-url", "https://inventory.example.test"}
+			_, err := ParseServeWithEnv(append(base, args...), mapEnv(map[string]string{EnvInvenTreeToken: "token"}), nil)
+			r.Error(err)
+			r.ErrorContains(err, "user search max page depth must be greater than zero")
+		})
+	}
+}
+
 func TestParseServeDoesNotCoupleStdioUploadAndHTTPBodyLimits(t *testing.T) {
 	t.Parallel()
 	r := require.New(t)

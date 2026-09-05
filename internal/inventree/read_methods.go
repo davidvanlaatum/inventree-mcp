@@ -838,6 +838,17 @@ func (c *Client) GetOwner(ctx context.Context, id int) (Owner, error) {
 	return out, err
 }
 
+func (c *Client) SearchUsersPage(ctx context.Context, query UserQuery) (UserPage, error) {
+	page, err := listPage[User](ctx, c, "/api/user/", query.values())
+	return UserPage{Count: page.Count, Results: page.Results, HasMore: page.Next != nil && *page.Next != ""}, err
+}
+
+func (c *Client) GetUser(ctx context.Context, id int) (User, error) {
+	var out User
+	err := c.get(ctx, fmt.Sprintf("/api/user/%d/", id), &out)
+	return out, err
+}
+
 func (c *Client) SearchContactsPage(ctx context.Context, query ContactQuery) (Page[Contact], error) {
 	return listPage[Contact](ctx, c, "/api/company/contact/", query.values())
 }

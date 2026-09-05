@@ -33,6 +33,7 @@ trusted_proxy_cidrs:
 bulk_max_items: 15
 bulk_concurrency: 6
 scan_history_max_page_depth: 30
+user_search_max_page_depth: 45
 otel_enabled: true
 otel_service_name: yaml-telemetry
 otel_exporter: otlphttp
@@ -75,6 +76,7 @@ otel_export_timeout: 7s
 	assert.Equal(t, 15, cfg.BulkMaxItems)
 	assert.Equal(t, 6, cfg.BulkConcurrency)
 	assert.Equal(t, 30, cfg.ScanHistoryMaxPageDepth)
+	assert.Equal(t, 45, cfg.UserSearchMaxPageDepth)
 	assert.True(t, cfg.Telemetry.Enabled)
 	assert.Equal(t, "yaml-telemetry", cfg.Telemetry.ServiceName)
 	assert.Equal(t, "otlphttp", cfg.Telemetry.Exporter)
@@ -293,6 +295,7 @@ func TestApplyFileConfigCoversTypedFields(t *testing.T) {
 		BulkMaxItems:            intPtr(10),
 		BulkConcurrency:         intPtr(2),
 		ScanHistoryMaxPageDepth: intPtr(20),
+		UserSearchMaxPageDepth:  intPtr(35),
 	}
 	require.NoError(t, applyFileConfig(&cfg, fileCfg))
 	assert.Equal(t, TransportHTTP, cfg.Transport)
@@ -322,6 +325,7 @@ func TestApplyFileConfigCoversTypedFields(t *testing.T) {
 	assert.Equal(t, 10, cfg.BulkMaxItems)
 	assert.Equal(t, 2, cfg.BulkConcurrency)
 	assert.Equal(t, 20, cfg.ScanHistoryMaxPageDepth)
+	assert.Equal(t, 35, cfg.UserSearchMaxPageDepth)
 }
 
 func TestApplyEnvironmentCoversTypedFields(t *testing.T) {
@@ -355,6 +359,7 @@ func TestApplyEnvironmentCoversTypedFields(t *testing.T) {
 		EnvBulkMaxItems:            "10",
 		EnvBulkConcurrency:         "2",
 		EnvScanHistoryMaxPageDepth: "20",
+		EnvUserSearchMaxPageDepth:  "35",
 	}))
 	assert.Equal(t, TransportHTTP, cfg.Transport)
 	assert.Equal(t, EnvironmentDevelopment, cfg.Environment)
@@ -381,6 +386,7 @@ func TestApplyEnvironmentCoversTypedFields(t *testing.T) {
 	assert.Equal(t, 10, cfg.BulkMaxItems)
 	assert.Equal(t, 2, cfg.BulkConcurrency)
 	assert.Equal(t, 20, cfg.ScanHistoryMaxPageDepth)
+	assert.Equal(t, 35, cfg.UserSearchMaxPageDepth)
 }
 
 func TestConfigPathFromArgsRejectsDuplicateAndEmptyValues(t *testing.T) {

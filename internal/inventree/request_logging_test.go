@@ -305,6 +305,15 @@ func TestPathMatchesTemplate(t *testing.T) {
 	a.False(pathMatchesTemplate("/api/part/42/extra/", "/api/part/{id}/"))
 	a.False(pathMatchesTemplate("/api/part/", "/api/part/{id}/"))
 	a.False(pathMatchesTemplate("/api/company/42/", "/api/part/{id}/"))
+
+	// {id} always names a numeric InvenTree primary key. This keeps a
+	// literal same-shape sibling path (GetCurrentUser's excluded
+	// /api/user/me/) from being misattributed to GetUser's /api/user/{id}/
+	// route, while every other placeholder keeps the permissive
+	// any-non-empty-segment match.
+	a.True(pathMatchesTemplate("/api/user/2/", "/api/user/{id}/"))
+	a.False(pathMatchesTemplate("/api/user/me/", "/api/user/{id}/"))
+	a.True(pathMatchesTemplate("/api/settings/global/INVENTREE_BASE_URL/", "/api/settings/global/{key}/"))
 }
 
 func TestStatusClassOf(t *testing.T) {

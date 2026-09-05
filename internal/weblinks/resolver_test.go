@@ -100,6 +100,7 @@ func TestPinnedRouterEvidenceCoversEveryRoutePattern(t *testing.T) {
 		"<Route path='purchasing/'>", "purchase-order/:id/*", "supplier/:id/*",
 		"supplier-part/:id/*", "manufacturer/:id/*", "manufacturer-part/:id/*",
 		"company/:id/*",
+		"<Route path='core/'>", "user/:id/*",
 	}
 	for _, declaration := range wantDeclarations {
 		r.True(strings.Contains(evidence, declaration), declaration)
@@ -115,6 +116,7 @@ func TestPinnedRouterEvidenceCoversEveryRoutePattern(t *testing.T) {
 		StockLocation:    "stock/location/:id?/*",
 		StockItem:        "stock/item/:id/*",
 		PurchaseOrder:    "purchasing/purchase-order/:id/*",
+		User:             "core/user/:id/*",
 	}
 	r.Len(routePatterns, len(wantComposed))
 	for kind, route := range wantComposed {

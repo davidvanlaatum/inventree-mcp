@@ -27,6 +27,7 @@ const (
 	StockLocation    Kind = "stock_location"
 	StockItem        Kind = "stock_item"
 	PurchaseOrder    Kind = "purchase_order"
+	User             Kind = "user"
 )
 
 var routePatterns = map[Kind]string{
@@ -40,6 +41,16 @@ var routePatterns = map[Kind]string{
 	StockLocation:    "stock/location/%d/",
 	StockItem:        "stock/item/%d/",
 	PurchaseOrder:    "purchasing/purchase-order/%d/",
+	// User follows the same "core/" section pattern the pinned InvenTree
+	// 1.5.0 frontend router registers for every other object
+	// (<Route path='core/'><Route path='user/:id/*' .../></Route> in
+	// router.tsx, mirroring company/:id/* -> "company/%d/" below). The
+	// F-S104 operator decision's suggested .../detail suffix reflects a
+	// live browser observation of UserDetail's own default internal tab
+	// redirect, not the canonical registered route -- every other Kind
+	// here already omits its object's default-tab suffix the same way and
+	// still resolves correctly, so User does too.
+	User: "core/user/%d/",
 }
 
 // NewAtDefaultMount validates a credential-free InvenTree site base and

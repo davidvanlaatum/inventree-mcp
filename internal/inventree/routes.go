@@ -133,6 +133,8 @@ var clientMethodRoutes = map[string]clientRoute{
 	"DownloadDataOutput":                   {Method: "GET", Path: "/media/{path}", Family: RequestFamilyDataOutputDownload, ManifestID: "download_data_output_content"},
 	"SearchOwnersPage":                     {Method: "GET", Path: "/api/user/owner/", Family: RequestFamilyJSONAPI, ManifestID: "search_owners"},
 	"GetOwner":                             {Method: "GET", Path: "/api/user/owner/{id}/", Family: RequestFamilyJSONAPI, ManifestID: "get_owner"},
+	"SearchUsersPage":                      {Method: "GET", Path: "/api/user/", Family: RequestFamilyJSONAPI, ManifestID: "search_users"},
+	"GetUser":                              {Method: "GET", Path: "/api/user/{id}/", Family: RequestFamilyJSONAPI, ManifestID: "get_user"},
 	"SearchContactsPage":                   {Method: "GET", Path: "/api/company/contact/", Family: RequestFamilyJSONAPI, ManifestID: "search_contacts"},
 	"GetContact":                           {Method: "GET", Path: "/api/company/contact/{id}/", Family: RequestFamilyJSONAPI, ManifestID: "get_contact"},
 	"SearchAddressesPage":                  {Method: "GET", Path: "/api/company/address/", Family: RequestFamilyJSONAPI, ManifestID: "search_addresses"},

@@ -51,6 +51,7 @@ const (
 	EnvBulkMaxItems              = "INVENTREE_MCP_BULK_MAX_ITEMS"
 	EnvBulkConcurrency           = "INVENTREE_MCP_BULK_CONCURRENCY"
 	EnvScanHistoryMaxPageDepth   = "INVENTREE_MCP_SCAN_HISTORY_MAX_PAGE_DEPTH"
+	EnvUserSearchMaxPageDepth    = "INVENTREE_MCP_USER_SEARCH_MAX_PAGE_DEPTH"
 	EnvOTelEnabled               = "INVENTREE_MCP_OTEL_ENABLED"
 	EnvOTelServiceName           = "INVENTREE_MCP_OTEL_SERVICE_NAME"
 	EnvOTelExporter              = "INVENTREE_MCP_OTEL_EXPORTER"
@@ -72,6 +73,7 @@ const (
 	maxBulkMaxItemsLimit           = 500
 	maxBulkConcurrencyLimit        = 64
 	DefaultScanHistoryMaxPageDepth = 50
+	DefaultUserSearchMaxPageDepth  = 50
 )
 
 type Environment string
@@ -126,6 +128,7 @@ type Config struct {
 	BulkMaxItems              int
 	BulkConcurrency           int
 	ScanHistoryMaxPageDepth   int
+	UserSearchMaxPageDepth    int
 }
 
 type Env func(string) string
@@ -228,6 +231,7 @@ func parseServeWithDeps(args []string, getenv Env, output io.Writer, filesystem 
 	fs.IntVar(&cfg.BulkMaxItems, "bulk-max-items", cfg.BulkMaxItems, flagHelp("maximum items accepted per bulk mutation call", EnvBulkMaxItems))
 	fs.IntVar(&cfg.BulkConcurrency, "bulk-concurrency", cfg.BulkConcurrency, flagHelp("maximum concurrent workers per bulk mutation call", EnvBulkConcurrency))
 	fs.IntVar(&cfg.ScanHistoryMaxPageDepth, "scan-history-max-page-depth", cfg.ScanHistoryMaxPageDepth, flagHelp("maximum internal upstream pages search_barcode_scan_history may walk for client-side endpoint/timestamp filtering", EnvScanHistoryMaxPageDepth))
+	fs.IntVar(&cfg.UserSearchMaxPageDepth, "user-search-max-page-depth", cfg.UserSearchMaxPageDepth, flagHelp("maximum pages of results search_users may page into via offset", EnvUserSearchMaxPageDepth))
 	fs.BoolVar(&cfg.Telemetry.Enabled, "otel-enabled", cfg.Telemetry.Enabled, flagHelp("enable OpenTelemetry trace export", EnvOTelEnabled))
 	fs.StringVar(&cfg.Telemetry.ServiceName, "otel-service-name", cfg.Telemetry.ServiceName, flagHelp("OpenTelemetry service name", EnvOTelServiceName))
 	fs.StringVar(&cfg.Telemetry.Exporter, "otel-exporter", cfg.Telemetry.Exporter, flagHelp("OpenTelemetry trace exporter: otlpgrpc or otlphttp", EnvOTelExporter))
@@ -339,6 +343,12 @@ func (c Config) Validate() error {
 	// belongs here.
 	if c.ScanHistoryMaxPageDepth <= 0 {
 		validationErrors = append(validationErrors, errors.New("scan history max page depth must be greater than zero"))
+	}
+	// Same zero/negative-is-a-hard-error, no-upper-ceiling shape as
+	// ScanHistoryMaxPageDepth above, per the F-S104 operator decision to
+	// reuse that contract for search_users' bounded pagination.
+	if c.UserSearchMaxPageDepth <= 0 {
+		validationErrors = append(validationErrors, errors.New("user search max page depth must be greater than zero"))
 	}
 
 	if c.InvenTreeTLSSkipVerify && c.Environment == EnvironmentProduction {
