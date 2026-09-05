@@ -30,6 +30,10 @@ canonical_default_mount=web
   />
 </Route>
 <Route path='company/:id/*' element={<CompanyDetail />} />
+<Route path='core/'>
+  <Route path='user/:id/*' element={<UserDetail />} />
+  <Route path='group/:id/*' element={<GroupDetail />} />
+</Route>
 canonical_route part=part/:id/*
 canonical_route part_category=part/category/:id?/*
 canonical_route company=company/:id/*
@@ -40,3 +44,4 @@ canonical_route manufacturer_part=purchasing/manufacturer-part/:id/*
 canonical_route stock_location=stock/location/:id?/*
 canonical_route stock_item=stock/item/:id/*
 canonical_route purchase_order=purchasing/purchase-order/:id/*
+canonical_route user=core/user/:id/*

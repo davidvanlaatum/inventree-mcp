@@ -19,6 +19,7 @@ type webLinkProjectionOutput struct {
 	Attachment    AttachmentMetadata              `json:"attachment"`
 	Parameter     PartParameterSearchResult       `json:"parameter"`
 	Company       CompanyView                     `json:"company"`
+	User          UserView                        `json:"user"`
 	Clarification ClarificationResponse           `json:"clarification"`
 }
 
@@ -35,6 +36,7 @@ func TestProjectWebLinksCoversDirectParentAndClarificationContracts(t *testing.T
 		Attachment: AttachmentMetadata{PK: 13, ModelType: "part", ModelID: 11},
 		Parameter:  PartParameterSearchResult{ParameterID: 14, PartID: 11},
 		Company:    CompanyView{ID: 15},
+		User:       UserView{PK: 16},
 		Clarification: NewClarification("Which line?", "line", "ambiguous", "id", true, []ClarificationCandidate{
 			{ID: "12", WebURL: "https://attacker.example/direct", ParentWebURL: "https://attacker.example/parent", APIURL: "/api/order/po-line/12/", Fields: map[string]any{"order": 21}},
 			{ID: "unsafe", APIURL: "https://attacker.example/api/part/99/?token=secret"},
@@ -48,6 +50,7 @@ func TestProjectWebLinksCoversDirectParentAndClarificationContracts(t *testing.T
 	a.Equal(out.Part.WebURL, out.Attachment.ParentWebURL)
 	a.Equal(out.Part.WebURL, out.Parameter.ParentWebURL)
 	a.Equal("https://inventory.example.test/prefix/company/15/", out.Company.WebURL)
+	a.Equal("https://inventory.example.test/prefix/core/user/16/", out.User.WebURL)
 	r.Len(out.Clarification.Candidates, 2)
 	candidate := out.Clarification.Candidates[0]
 	a.Empty(candidate.WebURL)
@@ -115,6 +118,7 @@ func TestProjectWebLinksCoversDetailRecoveryPlanAndSubordinateViews(t *testing.T
 		&inventree.Attachment{PK: 7, ModelType: "stockitem", ModelID: 70},
 		&AttachmentMetadata{PK: 8, ModelType: "company", ModelID: 80},
 		&CompanyView{ID: 9},
+		&UserView{PK: 23},
 		&CompanyRecoveryView{ID: 10},
 		&SupplierPartView{ID: 11},
 		&SupplierPartRecoveryView{ID: 12},

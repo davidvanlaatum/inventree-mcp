@@ -57,6 +57,7 @@ type fileConfig struct {
 	BulkMaxItems              *int     `yaml:"bulk_max_items"`
 	BulkConcurrency           *int     `yaml:"bulk_concurrency"`
 	ScanHistoryMaxPageDepth   *int     `yaml:"scan_history_max_page_depth"`
+	UserSearchMaxPageDepth    *int     `yaml:"user_search_max_page_depth"`
 }
 
 func defaultConfig() Config {
@@ -79,6 +80,7 @@ func defaultConfig() Config {
 		BulkMaxItems:              DefaultBulkMaxItems,
 		BulkConcurrency:           DefaultBulkConcurrency,
 		ScanHistoryMaxPageDepth:   DefaultScanHistoryMaxPageDepth,
+		UserSearchMaxPageDepth:    DefaultUserSearchMaxPageDepth,
 	}
 }
 
@@ -202,6 +204,9 @@ func applyEnvironment(cfg *Config, getenv Env) {
 	}
 	if raw := strings.TrimSpace(getenv(EnvScanHistoryMaxPageDepth)); raw != "" {
 		cfg.ScanHistoryMaxPageDepth = intDefault(getenv, EnvScanHistoryMaxPageDepth, cfg.ScanHistoryMaxPageDepth)
+	}
+	if raw := strings.TrimSpace(getenv(EnvUserSearchMaxPageDepth)); raw != "" {
+		cfg.UserSearchMaxPageDepth = intDefault(getenv, EnvUserSearchMaxPageDepth, cfg.UserSearchMaxPageDepth)
 	}
 }
 
@@ -362,6 +367,9 @@ func applyFileConfig(cfg *Config, fileCfg fileConfig) error {
 	}
 	if fileCfg.ScanHistoryMaxPageDepth != nil {
 		cfg.ScanHistoryMaxPageDepth = *fileCfg.ScanHistoryMaxPageDepth
+	}
+	if fileCfg.UserSearchMaxPageDepth != nil {
+		cfg.UserSearchMaxPageDepth = *fileCfg.UserSearchMaxPageDepth
 	}
 	return nil
 }

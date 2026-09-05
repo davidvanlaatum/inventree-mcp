@@ -161,6 +161,8 @@ const (
 	SearchOwnersToolName                      = "search_owners"
 	GetOwnerToolName                          = "get_owner"
 	AssignOwnerToolName                       = "assign_owner"
+	SearchUsersToolName                       = "search_users"
+	GetUserToolName                           = "get_user"
 	SearchContactsToolName                    = "search_contacts"
 	GetContactToolName                        = "get_contact"
 	AssignContactToolName                     = "assign_contact"
@@ -262,6 +264,8 @@ var lookupToolNames = []string{
 	GetInstanceInfoToolName,
 	SearchOwnersToolName,
 	GetOwnerToolName,
+	SearchUsersToolName,
+	GetUserToolName,
 	SearchContactsToolName,
 	GetContactToolName,
 	SearchAddressesToolName,
@@ -776,6 +780,7 @@ func registerLookupTools(server *mcp.Server, deps Dependencies) {
 	registerPurchasingLookupTools(server, deps)
 	registerInstanceInfoTool(server, deps)
 	registerOwnerLookupTools(server, deps)
+	registerUserLookupTools(server, deps)
 	registerContactLookupTools(server, deps)
 	registerAddressLookupTools(server, deps)
 	registerProjectCodeLookupTools(server, deps)

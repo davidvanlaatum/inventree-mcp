@@ -278,6 +278,31 @@ func TestReadMethodsUseExpectedEndpoints(t *testing.T) {
 			response: `{"pk":9,"owner_id":7,"owner_model":"user","name":"jdoe","label":"User: jdoe"}`,
 		},
 		{
+			name: "search users page",
+			call: func(ctx context.Context, client *Client) error {
+				page, err := client.SearchUsersPage(ctx, UserQuery{Search: "jdoe", IsActive: dvgoutils.Ptr(true), IsStaff: dvgoutils.Ptr(true), IsSuperuser: dvgoutils.Ptr(false), Limit: 10, Offset: 5})
+				if err == nil && (page.Count != 1 || len(page.Results) != 1 || page.Results[0].Username != "jdoe" || !page.Results[0].IsActive || page.HasMore) {
+					return errors.New("user search did not preserve exact fields")
+				}
+				return err
+			},
+			wantPath:  "/api/user/",
+			wantQuery: url.Values{"search": []string{"jdoe"}, "is_active": []string{"true"}, "is_staff": []string{"true"}, "is_superuser": []string{"false"}, "ordering": []string{"username"}, "limit": []string{"10"}, "offset": []string{"5"}},
+			response:  `{"count":1,"next":null,"previous":null,"results":[{"pk":2,"username":"jdoe","first_name":"Jane","last_name":"Doe","is_active":true,"email":"jdoe@example.com","is_staff":true,"is_superuser":false}]}`,
+		},
+		{
+			name: "get user",
+			call: func(ctx context.Context, client *Client) error {
+				user, err := client.GetUser(ctx, 2)
+				if err == nil && (user.PK != 2 || user.Username != "jdoe" || user.IsActive) {
+					return errors.New("user detail did not preserve exact fields")
+				}
+				return err
+			},
+			wantPath: "/api/user/2/",
+			response: `{"pk":2,"username":"jdoe","first_name":"Jane","last_name":"Doe","is_active":false,"email":"jdoe@example.com"}`,
+		},
+		{
 			name: "search contacts page",
 			call: func(ctx context.Context, client *Client) error {
 				page, err := client.SearchContactsPage(ctx, ContactQuery{CompanyID: 30, Search: "jane", Limit: 10, Offset: 5})

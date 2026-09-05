@@ -242,6 +242,7 @@ func dependenciesForConfig(cfg config.Config) (tools.Dependencies, error) {
 			BulkMaxItems:            cfg.BulkMaxItems,
 			BulkConcurrency:         cfg.BulkConcurrency,
 			ScanHistoryMaxPageDepth: cfg.ScanHistoryMaxPageDepth,
+			UserSearchMaxPageDepth:  cfg.UserSearchMaxPageDepth,
 		}, nil
 	}
 	if cfg.Transport != config.TransportStdio {
@@ -269,6 +270,7 @@ func dependenciesForConfig(cfg config.Config) (tools.Dependencies, error) {
 		BulkMaxItems:            cfg.BulkMaxItems,
 		BulkConcurrency:         cfg.BulkConcurrency,
 		ScanHistoryMaxPageDepth: cfg.ScanHistoryMaxPageDepth,
+		UserSearchMaxPageDepth:  cfg.UserSearchMaxPageDepth,
 		ClientFromContext: func(context.Context) (any, error) {
 			return client, nil
 		},

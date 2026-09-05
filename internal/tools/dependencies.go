@@ -41,7 +41,16 @@ type Dependencies struct {
 	// parameter). Same read-only-through-effective*() rule as BulkMaxItems/
 	// BulkConcurrency above: read it only through
 	// effectiveScanHistoryMaxPageDepth (barcode_tools.go), never directly.
-	ScanHistoryMaxPageDepth              int
+	ScanHistoryMaxPageDepth int
+	// UserSearchMaxPageDepth bounds how deep a caller may page into
+	// search_users via offset (see effectiveUserSearchMaxPageDepth in
+	// user_tools.go), reusing the F-S99 scan-history paging contract by
+	// decision but as its own dedicated setting: search_users forwards
+	// real upstream filters in one call per page rather than walking
+	// multiple upstream pages internally, so this guards against unbounded
+	// caller-side directory enumeration rather than an internal walk.
+	// Same read-only-through-effective*() rule as the settings above.
+	UserSearchMaxPageDepth               int
 	stockPlanStore                       *stockPlanStore
 	stockProvenancePlanStore             *stockProvenancePlanStore
 	parameterPlanStore                   *parameterPlanStore

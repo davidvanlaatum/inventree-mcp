@@ -4019,6 +4019,66 @@ func TestMilestoneHappyPathToolsAgainstInvenTree(t *testing.T) {
 		a.NotContains(ToolAuthorizations, "upload_report_attachment")
 		a.NotContains(ToolAuthorizations, "upload_stock_test_result_attachment")
 	})
+
+	t.Run("user_lookup", func(t *testing.T) {
+		r := require.New(t)
+		a := assert.New(t)
+		ctx, _, _ := testhandler.SetupTestHandler(t)
+		fixture := newMilestoneToolFixture(t, shared)
+
+		currentUser, err := fixture.client.GetCurrentUser(ctx)
+		r.NoError(err)
+
+		_, byQuery, err := searchUsers(fixture.deps())(ctx, &mcp.CallToolRequest{}, SearchUsersInput{Query: currentUser.Username})
+		r.NoError(err)
+		a.Equal(StatusOK, byQuery.Status)
+		r.NotEmpty(byQuery.Results)
+		var found *UserView
+		for index := range byQuery.Results {
+			if byQuery.Results[index].Username == currentUser.Username {
+				found = &byQuery.Results[index]
+				break
+			}
+		}
+		r.NotNil(found, "search_users must return the exact-username match it was queried for")
+		a.True(found.IsActive)
+		userPK := found.PK
+
+		// The admin fixture account is staff and a superuser; forwarding
+		// these as real upstream filters should still surface it. This
+		// proves the filters reach the live API rather than proving any
+		// specific account's administrative flags.
+		_, byStaff, err := searchUsers(fixture.deps())(ctx, &mcp.CallToolRequest{}, SearchUsersInput{Query: currentUser.Username, IsStaff: dvgoutils.Ptr(true)})
+		r.NoError(err)
+		a.Equal(StatusOK, byStaff.Status)
+		r.NotEmpty(byStaff.Results)
+
+		_, bySuperuser, err := searchUsers(fixture.deps())(ctx, &mcp.CallToolRequest{}, SearchUsersInput{Query: currentUser.Username, IsSuperuser: dvgoutils.Ptr(true)})
+		r.NoError(err)
+		a.Equal(StatusOK, bySuperuser.Status)
+		r.NotEmpty(bySuperuser.Results)
+
+		_, emptyQuery, err := searchUsers(fixture.deps())(ctx, &mcp.CallToolRequest{}, SearchUsersInput{})
+		r.NoError(err)
+		a.Equal(StatusValidationFailed, emptyQuery.Status)
+		r.NotNil(emptyQuery.Validation)
+
+		depthBoundDeps := fixture.deps()
+		depthBoundDeps.UserSearchMaxPageDepth = 1
+		_, beyondDepth, err := searchUsers(depthBoundDeps)(ctx, &mcp.CallToolRequest{}, SearchUsersInput{Query: currentUser.Username, Limit: 1, Offset: 1})
+		r.NoError(err)
+		a.Equal(StatusValidationFailed, beyondDepth.Status)
+
+		_, exactUser, err := getUser(fixture.deps())(ctx, &mcp.CallToolRequest{}, IDInput{ID: userPK})
+		r.NoError(err)
+		a.Equal(StatusOK, exactUser.Status)
+		a.Equal(userPK, exactUser.Record.PK)
+		a.Equal(currentUser.Username, exactUser.Record.Username)
+
+		_, missingUser, err := getUser(fixture.deps())(ctx, &mcp.CallToolRequest{}, IDInput{ID: 999999})
+		r.NoError(err)
+		a.Equal(StatusNotFound, missingUser.Status)
+	})
 }
 
 type milestoneToolFixture struct {

@@ -242,6 +242,21 @@ type OwnerQuery struct {
 	Offset   int
 }
 
+// UserQuery searches InvenTree's `/api/user/` list. IsStaff and IsSuperuser
+// are real upstream filters (confirmed against docs/api-schema.yaml); per
+// the F-S104 operator decision they narrow results only and are never
+// echoed back in a User projection. Ordering is always fixed to
+// username-ascending for deterministic pagination, so it is not a field
+// here.
+type UserQuery struct {
+	Search      string
+	IsActive    *bool
+	IsStaff     *bool
+	IsSuperuser *bool
+	Limit       int
+	Offset      int
+}
+
 type ContactQuery struct {
 	CompanyID int
 	Search    string
@@ -671,6 +686,25 @@ func (q OwnerQuery) values() url.Values {
 	if q.IsActive != nil {
 		values.Set("is_active", strconv.FormatBool(*q.IsActive))
 	}
+	setPagination(values, q.Limit, q.Offset)
+	return values
+}
+
+func (q UserQuery) values() url.Values {
+	values := url.Values{}
+	if q.Search != "" {
+		values.Set("search", q.Search)
+	}
+	if q.IsActive != nil {
+		values.Set("is_active", strconv.FormatBool(*q.IsActive))
+	}
+	if q.IsStaff != nil {
+		values.Set("is_staff", strconv.FormatBool(*q.IsStaff))
+	}
+	if q.IsSuperuser != nil {
+		values.Set("is_superuser", strconv.FormatBool(*q.IsSuperuser))
+	}
+	values.Set("ordering", "username")
 	setPagination(values, q.Limit, q.Offset)
 	return values
 }

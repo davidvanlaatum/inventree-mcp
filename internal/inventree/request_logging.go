@@ -184,9 +184,28 @@ func pathMatchesTemplate(actual, template string) bool {
 			if actualParts[i] == "" {
 				return false
 			}
+			// {id} always names a numeric InvenTree primary key. Requiring
+			// digits here keeps a literal same-shape sibling path (such as
+			// GetCurrentUser's excluded /api/user/me/ alongside GetUser's
+			// /api/user/{id}/) from being misattributed to the {id} route;
+			// every other placeholder (e.g. {key}, {param}) may be
+			// non-numeric and keeps the permissive any-non-empty-segment
+			// match.
+			if part == "{id}" && !isAllDigits(actualParts[i]) {
+				return false
+			}
 			continue
 		}
 		if part != actualParts[i] {
+			return false
+		}
+	}
+	return true
+}
+
+func isAllDigits(segment string) bool {
+	for _, r := range segment {
+		if r < '0' || r > '9' {
 			return false
 		}
 	}

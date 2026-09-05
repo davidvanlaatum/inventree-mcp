@@ -84,6 +84,8 @@ func decorateWebLink(resolver *weblinks.Resolver, toolName string, target any) {
 		value.ParentWebURL = modelParentWebURL(resolver, value.ModelType, value.ModelID)
 	case *CompanyView:
 		value.WebURL = resolver.URL(companyRouteKind(toolName), value.ID)
+	case *UserView:
+		value.WebURL = resolver.URL(weblinks.User, value.PK)
 	case *CompanyRecoveryView:
 		value.WebURL = resolver.URL(companyRouteKind(toolName), value.ID)
 	case *SupplierPartView:
