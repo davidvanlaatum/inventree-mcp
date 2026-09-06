@@ -35,8 +35,6 @@ forbidden_paths:
   - /api/report/snippet/{id}/
   - /api/report/template/
   - /api/report/template/{id}/
-  - /api/stock/test/
-  - /api/stock/test/{id}/
 
 attachment_model_types:
   in_scope:
@@ -132,6 +130,18 @@ endpoints:
     method: DELETE
     operation_id: part_related_destroy
     response_status: "204"
+  - id: search_part_test_templates
+    area: parts
+    path: /api/part/test-template/
+    method: GET
+    operation_id: part_test_template_list
+    response_schema: '#/components/schemas/PaginatedPartTestTemplateList'
+  - id: get_part_test_template
+    area: parts
+    path: /api/part/test-template/{id}/
+    method: GET
+    operation_id: part_test_template_retrieve
+    response_schema: '#/components/schemas/PartTestTemplate'
   - id: search_internal_price_breaks
     area: pricing
     path: /api/part/internal-price/
@@ -711,6 +721,18 @@ endpoints:
     method: DELETE
     operation_id: stock_location_type_destroy
     response_status: "204"
+  - id: search_stock_item_test_results
+    area: stock
+    path: /api/stock/test/
+    method: GET
+    operation_id: stock_test_list
+    response_schema: '#/components/schemas/PaginatedStockItemTestResultList'
+  - id: get_stock_item_test_result
+    area: stock
+    path: /api/stock/test/{id}/
+    method: GET
+    operation_id: stock_test_retrieve
+    response_schema: '#/components/schemas/StockItemTestResult'
   - id: search_part_parameters
     area: parameters
     path: /api/parameter/

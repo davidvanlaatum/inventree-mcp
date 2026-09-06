@@ -64,6 +64,11 @@ var StockItemFieldInventory = map[string]StockItemFieldClass{
 	"part_detail":             StockItemFieldSeparateLookup,
 	"supplier_part_detail":    StockItemFieldSeparateLookup,
 	"tags":                    StockItemFieldExposed,
-	"tests":                   StockItemFieldDeferred,
-	"tracking_items":          StockItemFieldExposed,
+	// tests is a nested embedded array of StockItemTestResult; F-S100 exposes
+	// it through the dedicated search_stock_item_test_results/
+	// get_stock_item_test_result tools instead of embedding it here, the
+	// same separate_lookup treatment as location_detail/part_detail/
+	// supplier_part_detail above.
+	"tests":          StockItemFieldSeparateLookup,
+	"tracking_items": StockItemFieldExposed,
 }

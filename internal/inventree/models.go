@@ -898,6 +898,52 @@ type PartPricing struct {
 	SaleHistoryMax      *DecimalString `json:"sale_history_max"`
 }
 
+// PartTestTemplate is one named test defined against a part with
+// testable:true (/api/part/test-template/). Key is a server-derived stable
+// slug of TestName; Results is the number of stock-item test results
+// recorded against this template. No field here carries PII, so the full
+// upstream serializer is exposed as-is.
+type PartTestTemplate struct {
+	PK                 int     `json:"pk"`
+	Key                string  `json:"key"`
+	Part               int     `json:"part"`
+	TestName           string  `json:"test_name"`
+	Description        *string `json:"description"`
+	Enabled            bool    `json:"enabled"`
+	Required           bool    `json:"required"`
+	RequiresValue      bool    `json:"requires_value"`
+	RequiresAttachment bool    `json:"requires_attachment"`
+	Results            int     `json:"results"`
+	Choices            string  `json:"choices"`
+}
+
+// StockItemTestResult is one pass/fail (or free-form) test outcome recorded
+// against a stock item (/api/stock/test/). User and Template stay bare IDs
+// rather than requesting the upstream user_detail/template_detail
+// expansions: user_detail nests a full User object including email, which
+// this repo's F-S104 privacy boundary never returns through any tool
+// surface. Callers resolve User through get_user and Template through
+// GetPartTestTemplate instead. Attachment is the raw upstream media path;
+// it requires an authenticated InvenTree request to fetch (confirmed live
+// against pinned InvenTree 1.5.2: unauthenticated fetch returns 401), so it
+// is exposed only as sanitized metadata alongside a dedicated bounded
+// DownloadStockItemTestResultAttachment method, mirroring the existing
+// Attachment/DownloadAttachment and Part.Image/DownloadPartImage pattern.
+type StockItemTestResult struct {
+	PK               int     `json:"pk"`
+	StockItem        int     `json:"stock_item"`
+	Result           bool    `json:"result"`
+	Value            string  `json:"value"`
+	Attachment       *string `json:"attachment"`
+	Notes            string  `json:"notes"`
+	TestStation      string  `json:"test_station"`
+	StartedDatetime  *string `json:"started_datetime"`
+	FinishedDatetime *string `json:"finished_datetime"`
+	User             *int    `json:"user"`
+	Date             string  `json:"date"`
+	Template         *int    `json:"template"`
+}
+
 // BarcodeMatch is ResolveBarcode's success projection: only the matched
 // object's type/ID/web URL, never the nested "instance" record InvenTree
 // embeds in a match response. ObjectType is one of the four in-scope bare

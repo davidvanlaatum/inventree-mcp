@@ -115,6 +115,135 @@ func TestClientMethodsAgainstInvenTree(t *testing.T) {
 		t.Logf("schema-backed read-only discovery: templates=%v results=%v requirements=%v", templates["count"], results["count"], requirements)
 	})
 
+	t.Run("part_testing_templates_and_results", func(t *testing.T) {
+		r := require.New(t)
+		a := assert.New(t)
+		ctx, _, _ := testhandler.SetupTestHandler(t)
+		fixture := newClientMethodFixture(t, shared)
+		part := fixture.ensure(t, testenv.FixturePart)
+		location := fixture.ensure(t, testenv.FixtureLocation)
+
+		_, err := fixture.client.UpdatePart(ctx, part.ID, inventree.PatchFields{"testable": inventree.Set(true)})
+		r.NoError(err)
+
+		templateName, err := fixture.run.Name("test-template")
+		r.NoError(err)
+		template := createPartTestTemplate(t, fixture.client, part.ID, templateName)
+		r.True(template.Enabled)
+		r.True(template.Required)
+		r.True(template.RequiresValue)
+		r.True(template.RequiresAttachment)
+		r.Equal(0, template.Results)
+
+		// Live characterization (F-S57 residual finding, resolved here): the
+		// documented `part` list filter on /api/part/test-template/ is
+		// validated against a testable:true-only queryset, exactly like
+		// PartSalePriceBreak's salable-gated `part` filter (F-S58). It works
+		// for a testable part and is rejected for a non-testable one with the
+		// same "Invalid pk ... object does not exist" shape as an outright
+		// invalid id -- SearchPartTestTemplatesPage itself performs no
+		// preflight, so this asserts the raw upstream contract the tool layer
+		// preflights around.
+		testablePage, err := fixture.client.SearchPartTestTemplatesPage(ctx, inventree.PartTestTemplateQuery{Part: part.ID, Limit: 100})
+		r.NoError(err)
+		r.Len(testablePage.Results, 1)
+		a.Equal(template.PK, testablePage.Results[0].PK)
+		a.Equal(templateName, testablePage.Results[0].TestName)
+
+		nonTestablePart := fixture.ensure(t, testenv.FixtureAssemblyPart)
+		_, filterErr := fixture.client.SearchPartTestTemplatesPage(ctx, inventree.PartTestTemplateQuery{Part: nonTestablePart.ID, Limit: 100})
+		var filterAPIErr *inventree.APIError
+		r.ErrorAs(filterErr, &filterAPIErr)
+		a.Equal(http.StatusBadRequest, filterAPIErr.StatusCode)
+
+		enabledTrue := true
+		enabledPage, err := fixture.client.SearchPartTestTemplatesPage(ctx, inventree.PartTestTemplateQuery{Part: part.ID, Enabled: &enabledTrue, Limit: 100})
+		r.NoError(err)
+		a.Len(enabledPage.Results, 1)
+		hasResultsTrue := true
+		beforeResultsPage, err := fixture.client.SearchPartTestTemplatesPage(ctx, inventree.PartTestTemplateQuery{Part: part.ID, HasResults: &hasResultsTrue, Limit: 100})
+		r.NoError(err)
+		a.Empty(beforeResultsPage.Results, "no results have been recorded against this template yet")
+
+		gotTemplate, err := fixture.client.GetPartTestTemplate(ctx, template.PK)
+		r.NoError(err)
+		a.Equal(template, gotTemplate)
+		_, err = fixture.client.GetPartTestTemplate(ctx, 0)
+		r.Error(err)
+		var notFoundErr *inventree.APIError
+		r.ErrorAs(err, &notFoundErr)
+		a.Equal(inventree.ErrorKindNotFound, notFoundErr.Kind)
+
+		stockItem, err := fixture.client.CreateStockItem(ctx, inventree.StockItemCreate{Part: part.ID, Location: location.ID, Quantity: 5})
+		r.NoError(err)
+		attachmentContent := []byte("integration test attachment content")
+		result := createStockItemTestResult(t, fixture.shared.Environment().BaseURL, fixture.account.Token, stockItem.PK, template.PK, attachmentContent, "probe.txt")
+		r.True(result.Result)
+		a.Equal("12.3", result.Value)
+		a.Equal("probe notes", result.Notes)
+		r.NotNil(result.Attachment)
+		r.NotNil(result.Template)
+		a.Equal(template.PK, *result.Template)
+		r.NotNil(result.User)
+
+		afterResultsPage, err := fixture.client.SearchPartTestTemplatesPage(ctx, inventree.PartTestTemplateQuery{Part: part.ID, HasResults: &hasResultsTrue, Limit: 100})
+		r.NoError(err)
+		a.Len(afterResultsPage.Results, 1, "the recorded result should now count against the template")
+
+		// Live characterization: unauthenticated fetch of the raw attachment
+		// path is rejected; the field is not a directly usable public URL,
+		// unlike a generic external link. DownloadStockItemTestResultAttachment
+		// is the supported bounded way to read this content.
+		unauthenticatedURL := strings.TrimRight(fixture.shared.Environment().BaseURL, "/") + *result.Attachment
+		unauthReq, err := http.NewRequestWithContext(ctx, http.MethodGet, unauthenticatedURL, nil)
+		r.NoError(err)
+		unauthResp, err := http.DefaultClient.Do(unauthReq)
+		r.NoError(err)
+		r.NoError(unauthResp.Body.Close())
+		a.Equal(http.StatusUnauthorized, unauthResp.StatusCode)
+
+		for _, filter := range []inventree.StockItemTestResultQuery{
+			{StockItem: stockItem.PK, Limit: 100},
+			{StockItem: stockItem.PK, Template: &template.PK, Limit: 100},
+			{StockItem: stockItem.PK, Result: dvgoutils.Ptr(true), Limit: 100},
+		} {
+			page, err := fixture.client.SearchStockItemTestResultsPage(ctx, filter)
+			r.NoError(err)
+			r.Len(page.Results, 1)
+			a.Equal(result.PK, page.Results[0].PK)
+		}
+		noMatchFalse := false
+		noMatchPage, err := fixture.client.SearchStockItemTestResultsPage(ctx, inventree.StockItemTestResultQuery{StockItem: stockItem.PK, Result: &noMatchFalse, Limit: 100})
+		r.NoError(err)
+		a.Empty(noMatchPage.Results)
+
+		gotResult, err := fixture.client.GetStockItemTestResult(ctx, result.PK)
+		r.NoError(err)
+		a.Equal(result, gotResult)
+		_, err = fixture.client.GetStockItemTestResult(ctx, 0)
+		r.ErrorAs(err, &notFoundErr)
+		a.Equal(inventree.ErrorKindNotFound, notFoundErr.Kind)
+
+		download, err := fixture.client.DownloadStockItemTestResultAttachment(ctx, result.PK, 1024*1024)
+		r.NoError(err)
+		a.Equal(attachmentContent, download.Content)
+		a.Equal(result.PK, download.Result.PK)
+		a.NotContains(download.SourceURL, fixture.account.Token, "the redacted source URL must never carry the auth token")
+		a.NotContains(download.SourceURL, "?")
+
+		_, err = fixture.client.DownloadStockItemTestResultAttachment(ctx, 0, 1024*1024)
+		r.ErrorAs(err, &notFoundErr)
+		a.Equal(inventree.ErrorKindNotFound, notFoundErr.Kind)
+
+		lenientTemplateName, err := fixture.run.Name("test-template-lenient")
+		r.NoError(err)
+		lenientTemplate := createPartTestTemplateLenient(t, fixture.client, part.ID, lenientTemplateName)
+		resultWithoutAttachment := createStockItemTestResult(t, fixture.shared.Environment().BaseURL, fixture.account.Token, stockItem.PK, lenientTemplate.PK, nil, "")
+		r.Nil(resultWithoutAttachment.Attachment)
+		_, err = fixture.client.DownloadStockItemTestResultAttachment(ctx, resultWithoutAttachment.PK, 1024*1024)
+		r.ErrorIs(err, inventree.ErrStockItemTestResultAttachmentMissing)
+	})
+
 	t.Run("current_user_and_connector_token", func(t *testing.T) {
 		r := require.New(t)
 		ctx, _, _ := testhandler.SetupTestHandler(t)
@@ -4402,6 +4531,84 @@ func createParameterTemplate(t *testing.T, client *inventree.Client, run *testen
 	r.NoError(client.DoJSON(req, &created))
 	r.NotZero(created.PK)
 	r.Equal(name, created.Name)
+	return created
+}
+
+func createPartTestTemplate(t *testing.T, client *inventree.Client, partID int, testName string) inventree.PartTestTemplate {
+	t.Helper()
+	r := require.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+
+	req, err := client.NewRequest(ctx, http.MethodPost, "/api/part/test-template/", nil, map[string]any{
+		"part": partID, "test_name": testName, "description": "integration test template",
+		"enabled": true, "required": true, "requires_value": true, "requires_attachment": true,
+	})
+	r.NoError(err)
+	var created inventree.PartTestTemplate
+	r.NoError(client.DoJSON(req, &created))
+	r.NotZero(created.PK)
+	return created
+}
+
+func createPartTestTemplateLenient(t *testing.T, client *inventree.Client, partID int, testName string) inventree.PartTestTemplate {
+	t.Helper()
+	r := require.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+
+	req, err := client.NewRequest(ctx, http.MethodPost, "/api/part/test-template/", nil, map[string]any{
+		"part": partID, "test_name": testName, "description": "integration test template without required evidence",
+		"enabled": true, "required": false, "requires_value": false, "requires_attachment": false,
+	})
+	r.NoError(err)
+	var created inventree.PartTestTemplate
+	r.NoError(client.DoJSON(req, &created))
+	r.NotZero(created.PK)
+	return created
+}
+
+// createStockItemTestResult uploads one StockItemTestResult via raw
+// multipart POST (there is no typed create client method: F-S100's approved
+// scope is read-only, matching F-S57's decision that result mutation
+// remains a deferred evidence-retention decision). Pass a nil attachment to
+// exercise a result with no attachment.
+func createStockItemTestResult(t *testing.T, baseURL string, token string, stockItemID int, templateID int, attachment []byte, filename string) inventree.StockItemTestResult {
+	t.Helper()
+	r := require.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	r.NoError(writer.WriteField("stock_item", strconv.Itoa(stockItemID)))
+	r.NoError(writer.WriteField("template", strconv.Itoa(templateID)))
+	r.NoError(writer.WriteField("result", "true"))
+	if attachment != nil {
+		r.NoError(writer.WriteField("value", "12.3"))
+		r.NoError(writer.WriteField("notes", "probe notes"))
+		fileWriter, err := writer.CreateFormFile("attachment", filename)
+		r.NoError(err)
+		_, err = fileWriter.Write(attachment)
+		r.NoError(err)
+	}
+	r.NoError(writer.Close())
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, baseURL+"/api/stock/test/", &body)
+	r.NoError(err)
+	req.Header.Set("Authorization", "Token "+token)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	req.Header.Set("Accept", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	r.NoError(err)
+	defer func() {
+		r.NoError(resp.Body.Close())
+	}()
+	respBody, err := io.ReadAll(resp.Body)
+	r.NoError(err)
+	if resp.StatusCode != http.StatusCreated {
+		r.Failf("stock item test result upload failed", "status %d body %s", resp.StatusCode, string(respBody))
+	}
+	var created inventree.StockItemTestResult
+	r.NoError(json.Unmarshal(respBody, &created))
+	r.NotZero(created.PK)
 	return created
 }
 
