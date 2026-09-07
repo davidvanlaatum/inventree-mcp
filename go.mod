@@ -4,12 +4,12 @@ go 1.27.0
 
 require (
 	github.com/coreos/go-systemd/v22 v22.7.0
-	github.com/davidvanlaatum/dvgoutils v0.0.0-20260704011248-9d2ce1ecf3de
+	github.com/davidvanlaatum/dvgoutils v0.0.1
 	github.com/fogleman/gg v1.3.0
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/golang/freetype v0.0.0-20170609003504-e2365dfdc4a0
 	github.com/google/jsonschema-go v0.4.3
-	github.com/moby/moby/api v1.55.0
+	github.com/moby/moby/api v1.56.0
 	github.com/modelcontextprotocol/go-sdk v1.7.0
 	github.com/prometheus/client_golang v1.24.1
 	github.com/spf13/afero v1.15.0
