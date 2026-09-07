@@ -1061,6 +1061,135 @@ func TestDownloadStockItemTestResultAttachmentReturnsErrorWhenMissing(t *testing
 	r.ErrorIs(err, ErrStockItemTestResultAttachmentMissing)
 }
 
+func TestDownloadStockItemTestResultAttachmentRejectsInvalidMaxBytesAndLookupFailure(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+
+	client, err := NewClient(Config{
+		BaseURL:    "https://inventory.example.test",
+		Credential: Credential{Scheme: AuthSchemeToken, Token: "secret"},
+		HTTPClient: &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			return jsonResponse(req, http.StatusNotFound, `{"detail":"not found"}`), nil
+		})},
+	})
+	r.NoError(err)
+
+	_, err = client.DownloadStockItemTestResultAttachment(ctx, 21, 0)
+	r.ErrorContains(err, "maxBytes must be positive")
+
+	_, err = client.DownloadStockItemTestResultAttachment(ctx, 21, 32)
+	var apiErr *APIError
+	r.ErrorAs(err, &apiErr)
+	r.Equal(ErrorKindNotFound, apiErr.Kind)
+}
+
+func TestDownloadStockItemTestResultAttachmentRejectsUnsafeSourcesAndOversizedContent(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name          string
+		resultBody    string
+		mediaStatus   int
+		mediaBody     string
+		wantError     string
+		mediaExpected bool
+	}{
+		{
+			name:       "attachment URL outside configured instance",
+			resultBody: `{"pk":21,"stock_item":50,"result":true,"attachment":"https://evil.example.test/probe.txt","date":"2026-01-01 10:00"}`,
+			wantError:  "outside configured InvenTree instance",
+		},
+		{
+			name:       "attachment URL with userinfo",
+			resultBody: `{"pk":21,"stock_item":50,"result":true,"attachment":"https://user:pass@inventory.example.test/probe.txt","date":"2026-01-01 10:00"}`,
+			wantError:  "must not include userinfo",
+		},
+		{
+			name:          "redirect",
+			resultBody:    `{"pk":21,"stock_item":50,"result":true,"attachment":"/media/stock_files/50/probe.txt","date":"2026-01-01 10:00"}`,
+			mediaStatus:   http.StatusFound,
+			wantError:     "redirected with status 302",
+			mediaExpected: true,
+		},
+		{
+			name:          "not found",
+			resultBody:    `{"pk":21,"stock_item":50,"result":true,"attachment":"/media/stock_files/50/probe.txt","date":"2026-01-01 10:00"}`,
+			mediaStatus:   http.StatusNotFound,
+			wantError:     "failed with status 404",
+			mediaExpected: true,
+		},
+		{
+			name:          "oversized",
+			resultBody:    `{"pk":21,"stock_item":50,"result":true,"attachment":"/media/stock_files/50/probe.txt","date":"2026-01-01 10:00"}`,
+			mediaStatus:   http.StatusOK,
+			mediaBody:     "too-large-content",
+			wantError:     "exceeds maxBytes 4",
+			mediaExpected: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			r := require.New(t)
+			ctx, _, _ := testhandler.SetupTestHandler(t)
+
+			client, err := NewClient(Config{
+				BaseURL:    "https://inventory.example.test",
+				Credential: Credential{Scheme: AuthSchemeToken, Token: "secret"},
+				HTTPClient: &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+					switch req.URL.Path {
+					case "/api/stock/test/21/":
+						return jsonResponse(req, http.StatusOK, tt.resultBody), nil
+					case "/media/stock_files/50/probe.txt":
+						r.True(tt.mediaExpected, "unexpected media fetch")
+						return &http.Response{
+							StatusCode: tt.mediaStatus,
+							Header:     http.Header{"Content-Type": []string{"text/plain"}},
+							Body:       io.NopCloser(strings.NewReader(tt.mediaBody)),
+							Request:    req,
+						}, nil
+					default:
+						return jsonResponse(req, http.StatusNotFound, `{"detail":"unexpected path"}`), nil
+					}
+				})},
+			})
+			r.NoError(err)
+
+			_, err = client.DownloadStockItemTestResultAttachment(ctx, 21, 4)
+			r.ErrorContains(err, tt.wantError)
+		})
+	}
+}
+
+func TestDownloadStockItemTestResultAttachmentDoesNotSurfaceSensitiveURLOnTransportError(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+
+	client, err := NewClient(Config{
+		BaseURL:    "https://inventory.example.test",
+		Credential: Credential{Scheme: AuthSchemeToken, Token: "secret"},
+		HTTPClient: &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			switch req.URL.Path {
+			case "/api/stock/test/21/":
+				return jsonResponse(req, http.StatusOK, `{"pk":21,"stock_item":50,"result":true,"attachment":"/media/stock_files/50/probe.txt?signature=secret","date":"2026-01-01 10:00"}`), nil
+			case "/media/stock_files/50/probe.txt":
+				return nil, errors.New("dial tcp inventory.example.test:443 failed")
+			default:
+				return jsonResponse(req, http.StatusNotFound, `{"detail":"unexpected path"}`), nil
+			}
+		})},
+	})
+	r.NoError(err)
+
+	_, err = client.DownloadStockItemTestResultAttachment(ctx, 21, 1024)
+	r.Error(err)
+	a.Equal("download InvenTree stock item test result attachment failed", err.Error())
+}
+
 func TestDownloadPartImageThumbnailUsesPartThumbEndpoint(t *testing.T) {
 	t.Parallel()
 	r := require.New(t)
