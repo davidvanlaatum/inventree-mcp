@@ -70,7 +70,7 @@ func TestStockItemDetailPreservesNullableScalarsAndOmitsUnapprovedFields(t *test
 		"part_detail":          inventree.StockItemFieldSeparateLookup,
 		"supplier_part_detail": inventree.StockItemFieldSeparateLookup,
 		"tags":                 inventree.StockItemFieldExposed,
-		"tests":                inventree.StockItemFieldDeferred,
+		"tests":                inventree.StockItemFieldSeparateLookup,
 		"use_pack_size":        inventree.StockItemFieldWriteOnly,
 		"serial_numbers":       inventree.StockItemFieldWriteOnly,
 	} {

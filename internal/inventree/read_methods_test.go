@@ -303,6 +303,66 @@ func TestReadMethodsUseExpectedEndpoints(t *testing.T) {
 			response: `{"pk":2,"username":"jdoe","first_name":"Jane","last_name":"Doe","is_active":false,"email":"jdoe@example.com"}`,
 		},
 		{
+			name: "search part test templates page",
+			call: func(ctx context.Context, client *Client) error {
+				enabled, required, requiresValue, requiresAttachment, hasResults := true, true, true, true, false
+				page, err := client.SearchPartTestTemplatesPage(ctx, PartTestTemplateQuery{
+					Part: 1, Enabled: &enabled, Required: &required, RequiresValue: &requiresValue,
+					RequiresAttachment: &requiresAttachment, HasResults: &hasResults, Search: "voltage", Limit: 10, Offset: 5,
+				})
+				if err == nil && (page.Count != 1 || len(page.Results) != 1 || page.Results[0].TestName != "Voltage check" || page.Results[0].Part != 1) {
+					return errors.New("part test template search did not preserve exact fields")
+				}
+				return err
+			},
+			wantPath: "/api/part/test-template/",
+			wantQuery: url.Values{
+				"part": []string{"1"}, "enabled": []string{"true"}, "required": []string{"true"},
+				"requires_value": []string{"true"}, "requires_attachment": []string{"true"}, "has_results": []string{"false"},
+				"search": []string{"voltage"}, "limit": []string{"10"}, "offset": []string{"5"},
+			},
+			response: `{"count":1,"next":null,"previous":null,"results":[{"pk":9,"key":"voltagecheck","part":1,"test_name":"Voltage check","enabled":true,"required":true,"results":0,"choices":""}]}`,
+		},
+		{
+			name: "get part test template",
+			call: func(ctx context.Context, client *Client) error {
+				template, err := client.GetPartTestTemplate(ctx, 9)
+				if err == nil && (template.PK != 9 || template.TestName != "Voltage check") {
+					return errors.New("part test template detail did not preserve exact fields")
+				}
+				return err
+			},
+			wantPath: "/api/part/test-template/9/",
+			response: `{"pk":9,"key":"voltagecheck","part":1,"test_name":"Voltage check","enabled":true,"required":true,"results":0,"choices":""}`,
+		},
+		{
+			name: "search stock item test results page",
+			call: func(ctx context.Context, client *Client) error {
+				template := 9
+				result := true
+				page, err := client.SearchStockItemTestResultsPage(ctx, StockItemTestResultQuery{StockItem: 50, Template: &template, Result: &result, IncludeInstalled: true, Limit: 10, Offset: 5})
+				if err == nil && (page.Count != 1 || len(page.Results) != 1 || page.Results[0].StockItem != 50 || page.Results[0].Template == nil || *page.Results[0].Template != 9) {
+					return errors.New("stock item test result search did not preserve exact fields")
+				}
+				return err
+			},
+			wantPath:  "/api/stock/test/",
+			wantQuery: url.Values{"stock_item": []string{"50"}, "template": []string{"9"}, "result": []string{"true"}, "include_installed": []string{"true"}, "limit": []string{"10"}, "offset": []string{"5"}},
+			response:  `{"count":1,"next":null,"previous":null,"results":[{"pk":21,"stock_item":50,"template":9,"result":true,"value":"12.3","date":"2026-01-01 10:00"}]}`,
+		},
+		{
+			name: "get stock item test result",
+			call: func(ctx context.Context, client *Client) error {
+				result, err := client.GetStockItemTestResult(ctx, 21)
+				if err == nil && (result.PK != 21 || result.StockItem != 50 || !result.Result) {
+					return errors.New("stock item test result detail did not preserve exact fields")
+				}
+				return err
+			},
+			wantPath: "/api/stock/test/21/",
+			response: `{"pk":21,"stock_item":50,"template":9,"result":true,"value":"12.3","date":"2026-01-01 10:00"}`,
+		},
+		{
 			name: "search contacts page",
 			call: func(ctx context.Context, client *Client) error {
 				page, err := client.SearchContactsPage(ctx, ContactQuery{CompanyID: 30, Search: "jane", Limit: 10, Offset: 5})
@@ -934,6 +994,200 @@ func TestDownloadPartImageFetchesOnlyPartImageURLWithBounds(t *testing.T) {
 		"GET https://inventory.example.test/api/part/10/",
 		"GET https://inventory.example.test/media/part_images/resistor.png?signature=secret",
 	}, requests)
+}
+
+func TestDownloadStockItemTestResultAttachmentFetchesOnlyAttachmentURLWithBounds(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+
+	var requests []string
+	client, err := NewClient(Config{
+		BaseURL:    "https://inventory.example.test",
+		Credential: Credential{Scheme: AuthSchemeToken, Token: "secret"},
+		HTTPClient: &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			requests = append(requests, req.Method+" "+req.URL.String())
+			a.Equal("Token secret", req.Header.Get("Authorization"))
+			switch req.URL.Path {
+			case "/api/stock/test/21/":
+				body := `{"pk":21,"stock_item":50,"result":true,"attachment":"/media/stock_files/50/probe.txt?signature=secret","date":"2026-01-01 10:00"}`
+				return jsonResponse(req, http.StatusOK, body), nil
+			case "/media/stock_files/50/probe.txt":
+				_, hasDeadline := req.Context().Deadline()
+				a.True(hasDeadline)
+				a.Equal("signature=secret", req.URL.RawQuery)
+				return &http.Response{
+					StatusCode: http.StatusOK,
+					Header:     http.Header{"Content-Type": []string{"text/plain"}},
+					Body:       io.NopCloser(strings.NewReader("attachment-bytes")),
+					Request:    req,
+				}, nil
+			default:
+				return jsonResponse(req, http.StatusNotFound, `{"detail":"unexpected path"}`), nil
+			}
+		})},
+	})
+	r.NoError(err)
+
+	download, err := client.DownloadStockItemTestResultAttachment(ctx, 21, 32)
+	r.NoError(err)
+
+	a.Equal("attachment-bytes", string(download.Content))
+	a.Equal("text/plain", download.ContentType)
+	a.Equal(21, download.Result.PK)
+	a.Equal("https://inventory.example.test/media/stock_files/50/probe.txt", download.SourceURL)
+	a.Equal([]string{
+		"GET https://inventory.example.test/api/stock/test/21/",
+		"GET https://inventory.example.test/media/stock_files/50/probe.txt?signature=secret",
+	}, requests)
+}
+
+func TestDownloadStockItemTestResultAttachmentReturnsErrorWhenMissing(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+
+	client, err := NewClient(Config{
+		BaseURL:    "https://inventory.example.test",
+		Credential: Credential{Scheme: AuthSchemeToken, Token: "secret"},
+		HTTPClient: &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			return jsonResponse(req, http.StatusOK, `{"pk":21,"stock_item":50,"result":true,"date":"2026-01-01 10:00"}`), nil
+		})},
+	})
+	r.NoError(err)
+
+	_, err = client.DownloadStockItemTestResultAttachment(ctx, 21, 32)
+	r.ErrorIs(err, ErrStockItemTestResultAttachmentMissing)
+}
+
+func TestDownloadStockItemTestResultAttachmentRejectsInvalidMaxBytesAndLookupFailure(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+
+	client, err := NewClient(Config{
+		BaseURL:    "https://inventory.example.test",
+		Credential: Credential{Scheme: AuthSchemeToken, Token: "secret"},
+		HTTPClient: &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			return jsonResponse(req, http.StatusNotFound, `{"detail":"not found"}`), nil
+		})},
+	})
+	r.NoError(err)
+
+	_, err = client.DownloadStockItemTestResultAttachment(ctx, 21, 0)
+	r.ErrorContains(err, "maxBytes must be positive")
+
+	_, err = client.DownloadStockItemTestResultAttachment(ctx, 21, 32)
+	var apiErr *APIError
+	r.ErrorAs(err, &apiErr)
+	r.Equal(ErrorKindNotFound, apiErr.Kind)
+}
+
+func TestDownloadStockItemTestResultAttachmentRejectsUnsafeSourcesAndOversizedContent(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name          string
+		resultBody    string
+		mediaStatus   int
+		mediaBody     string
+		wantError     string
+		mediaExpected bool
+	}{
+		{
+			name:       "attachment URL outside configured instance",
+			resultBody: `{"pk":21,"stock_item":50,"result":true,"attachment":"https://evil.example.test/probe.txt","date":"2026-01-01 10:00"}`,
+			wantError:  "outside configured InvenTree instance",
+		},
+		{
+			name:       "attachment URL with userinfo",
+			resultBody: `{"pk":21,"stock_item":50,"result":true,"attachment":"https://user:pass@inventory.example.test/probe.txt","date":"2026-01-01 10:00"}`,
+			wantError:  "must not include userinfo",
+		},
+		{
+			name:          "redirect",
+			resultBody:    `{"pk":21,"stock_item":50,"result":true,"attachment":"/media/stock_files/50/probe.txt","date":"2026-01-01 10:00"}`,
+			mediaStatus:   http.StatusFound,
+			wantError:     "redirected with status 302",
+			mediaExpected: true,
+		},
+		{
+			name:          "not found",
+			resultBody:    `{"pk":21,"stock_item":50,"result":true,"attachment":"/media/stock_files/50/probe.txt","date":"2026-01-01 10:00"}`,
+			mediaStatus:   http.StatusNotFound,
+			wantError:     "failed with status 404",
+			mediaExpected: true,
+		},
+		{
+			name:          "oversized",
+			resultBody:    `{"pk":21,"stock_item":50,"result":true,"attachment":"/media/stock_files/50/probe.txt","date":"2026-01-01 10:00"}`,
+			mediaStatus:   http.StatusOK,
+			mediaBody:     "too-large-content",
+			wantError:     "exceeds maxBytes 4",
+			mediaExpected: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			r := require.New(t)
+			ctx, _, _ := testhandler.SetupTestHandler(t)
+
+			client, err := NewClient(Config{
+				BaseURL:    "https://inventory.example.test",
+				Credential: Credential{Scheme: AuthSchemeToken, Token: "secret"},
+				HTTPClient: &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+					switch req.URL.Path {
+					case "/api/stock/test/21/":
+						return jsonResponse(req, http.StatusOK, tt.resultBody), nil
+					case "/media/stock_files/50/probe.txt":
+						r.True(tt.mediaExpected, "unexpected media fetch")
+						return &http.Response{
+							StatusCode: tt.mediaStatus,
+							Header:     http.Header{"Content-Type": []string{"text/plain"}},
+							Body:       io.NopCloser(strings.NewReader(tt.mediaBody)),
+							Request:    req,
+						}, nil
+					default:
+						return jsonResponse(req, http.StatusNotFound, `{"detail":"unexpected path"}`), nil
+					}
+				})},
+			})
+			r.NoError(err)
+
+			_, err = client.DownloadStockItemTestResultAttachment(ctx, 21, 4)
+			r.ErrorContains(err, tt.wantError)
+		})
+	}
+}
+
+func TestDownloadStockItemTestResultAttachmentDoesNotSurfaceSensitiveURLOnTransportError(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+
+	client, err := NewClient(Config{
+		BaseURL:    "https://inventory.example.test",
+		Credential: Credential{Scheme: AuthSchemeToken, Token: "secret"},
+		HTTPClient: &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			switch req.URL.Path {
+			case "/api/stock/test/21/":
+				return jsonResponse(req, http.StatusOK, `{"pk":21,"stock_item":50,"result":true,"attachment":"/media/stock_files/50/probe.txt?signature=secret","date":"2026-01-01 10:00"}`), nil
+			case "/media/stock_files/50/probe.txt":
+				return nil, errors.New("dial tcp inventory.example.test:443 failed")
+			default:
+				return jsonResponse(req, http.StatusNotFound, `{"detail":"unexpected path"}`), nil
+			}
+		})},
+	})
+	r.NoError(err)
+
+	_, err = client.DownloadStockItemTestResultAttachment(ctx, 21, 1024)
+	r.Error(err)
+	a.Equal("download InvenTree stock item test result attachment failed", err.Error())
 }
 
 func TestDownloadPartImageThumbnailUsesPartThumbEndpoint(t *testing.T) {

@@ -29,6 +29,8 @@ var ErrPartImageMissing = errors.New("part has no primary image")
 
 var ErrCompanyImageMissing = errors.New("company has no primary image")
 
+var ErrStockItemTestResultAttachmentMissing = errors.New("stock item test result has no attachment")
+
 var downloadAttachmentModelTypes = map[string]bool{
 	"part":             true,
 	"stockitem":        true,
@@ -77,6 +79,14 @@ type DownloadedPartImage struct {
 
 type DownloadedCompanyImage struct {
 	Company     CompanyDetail
+	Content     []byte
+	Filename    string
+	ContentType string
+	SourceURL   string
+}
+
+type DownloadedStockItemTestResultAttachment struct {
+	Result      StockItemTestResult
 	Content     []byte
 	Filename    string
 	ContentType string
@@ -507,6 +517,62 @@ func (c *Client) DownloadCompanyImage(ctx context.Context, id int, maxBytes int6
 	}, nil
 }
 
+// DownloadStockItemTestResultAttachment fetches the bounded content of one
+// StockItemTestResult's Attachment field. Confirmed live against pinned
+// InvenTree 1.5.2: this is a plain authenticated media path (not a
+// generic /api/attachment/ record), identical in shape to Part.Image and
+// Company.Image, so this mirrors DownloadPartImage/DownloadCompanyImage
+// rather than DownloadAttachment.
+func (c *Client) DownloadStockItemTestResultAttachment(ctx context.Context, id int, maxBytes int64) (DownloadedStockItemTestResultAttachment, error) {
+	if maxBytes <= 0 {
+		return DownloadedStockItemTestResultAttachment{}, errors.New("stock item test result attachment download maxBytes must be positive")
+	}
+	result, err := c.GetStockItemTestResult(ctx, id)
+	if err != nil {
+		return DownloadedStockItemTestResultAttachment{}, err
+	}
+	if result.Attachment == nil || strings.TrimSpace(*result.Attachment) == "" {
+		return DownloadedStockItemTestResultAttachment{}, ErrStockItemTestResultAttachmentMissing
+	}
+	sourceURL, err := c.resolveInvenTreeContentURL(*result.Attachment)
+	if err != nil {
+		return DownloadedStockItemTestResultAttachment{}, err
+	}
+
+	downloadCtx, cancel := boundedDownloadContext(ctx, c.httpClient)
+	defer cancel()
+	downloadCtx = requestctx.WithExplicitRoute(downloadCtx, clientMethodRoutes["DownloadStockItemTestResultAttachment"].ManifestID, string(clientMethodRoutes["DownloadStockItemTestResultAttachment"].Family))
+	req, err := http.NewRequestWithContext(downloadCtx, http.MethodGet, sourceURL.String(), nil)
+	if err != nil {
+		return DownloadedStockItemTestResultAttachment{}, err
+	}
+	req.Header.Set("Accept", "*/*")
+	c.applyRequestIdentity(req)
+
+	resp, err := noRedirectClient(c.httpClient).Do(req)
+	if err != nil {
+		return DownloadedStockItemTestResultAttachment{}, errors.New("download InvenTree stock item test result attachment failed")
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+		if resp.StatusCode >= http.StatusMultipleChoices && resp.StatusCode < http.StatusBadRequest {
+			return DownloadedStockItemTestResultAttachment{}, fmt.Errorf("InvenTree stock item test result attachment redirected with status %d", resp.StatusCode)
+		}
+		return DownloadedStockItemTestResultAttachment{}, fmt.Errorf("download InvenTree stock item test result attachment failed with status %d", resp.StatusCode)
+	}
+	content, err := readBounded(resp.Body, maxBytes)
+	if err != nil {
+		return DownloadedStockItemTestResultAttachment{}, err
+	}
+	return DownloadedStockItemTestResultAttachment{
+		Result:      result,
+		Content:     content,
+		Filename:    filenameFromContentURL(sourceURL),
+		ContentType: resp.Header.Get("Content-Type"),
+		SourceURL:   redactedURLString(sourceURL),
+	}, nil
+}
+
 func (c *Client) partImageURL(ctx context.Context, part Part, mode AttachmentContentMode) (string, error) {
 	switch mode {
 	case "", AttachmentContentOriginal:
@@ -846,6 +912,26 @@ func (c *Client) SearchUsersPage(ctx context.Context, query UserQuery) (UserPage
 func (c *Client) GetUser(ctx context.Context, id int) (User, error) {
 	var out User
 	err := c.get(ctx, fmt.Sprintf("/api/user/%d/", id), &out)
+	return out, err
+}
+
+func (c *Client) SearchPartTestTemplatesPage(ctx context.Context, query PartTestTemplateQuery) (Page[PartTestTemplate], error) {
+	return listPage[PartTestTemplate](ctx, c, "/api/part/test-template/", query.values())
+}
+
+func (c *Client) GetPartTestTemplate(ctx context.Context, id int) (PartTestTemplate, error) {
+	var out PartTestTemplate
+	err := c.get(ctx, fmt.Sprintf("/api/part/test-template/%d/", id), &out)
+	return out, err
+}
+
+func (c *Client) SearchStockItemTestResultsPage(ctx context.Context, query StockItemTestResultQuery) (Page[StockItemTestResult], error) {
+	return listPage[StockItemTestResult](ctx, c, "/api/stock/test/", query.values())
+}
+
+func (c *Client) GetStockItemTestResult(ctx context.Context, id int) (StockItemTestResult, error) {
+	var out StockItemTestResult
+	err := c.get(ctx, fmt.Sprintf("/api/stock/test/%d/", id), &out)
 	return out, err
 }
 

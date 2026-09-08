@@ -264,6 +264,40 @@ type ContactQuery struct {
 	Offset    int
 }
 
+// PartTestTemplateQuery searches /api/part/test-template/, always scoped to
+// one part. Confirmed live against pinned InvenTree 1.5.2: the upstream
+// `part` filter is validated against a testable:true-only queryset, exactly
+// like PartSalePriceBreak's salable-gated `part` filter (F-S58) -- filtering
+// by a part with testable:false is rejected with the same
+// `Invalid pk "<id>" - object does not exist.` shape as an outright invalid
+// id. Callers must preflight the part's Testable flag for an actionable
+// error instead of surfacing that ambiguous upstream message.
+type PartTestTemplateQuery struct {
+	Part               int
+	Enabled            *bool
+	Required           *bool
+	RequiresValue      *bool
+	RequiresAttachment *bool
+	HasResults         *bool
+	Search             string
+	Limit              int
+	Offset             int
+}
+
+// StockItemTestResultQuery searches /api/stock/test/, always scoped to one
+// stock item. Every filter here is a real, independently confirmed upstream
+// query parameter (stock_item, template, result); unlike
+// PartTestTemplateQuery's `part`, this endpoint applies no testable-gated
+// validation to its own `stock_item` filter.
+type StockItemTestResultQuery struct {
+	StockItem        int
+	Template         *int
+	Result           *bool
+	IncludeInstalled bool
+	Limit            int
+	Offset           int
+}
+
 type AddressQuery struct {
 	CompanyID int
 	Search    string
@@ -705,6 +739,49 @@ func (q UserQuery) values() url.Values {
 		values.Set("is_superuser", strconv.FormatBool(*q.IsSuperuser))
 	}
 	values.Set("ordering", "username")
+	setPagination(values, q.Limit, q.Offset)
+	return values
+}
+
+func (q PartTestTemplateQuery) values() url.Values {
+	values := url.Values{}
+	if q.Part > 0 {
+		values.Set("part", strconv.Itoa(q.Part))
+	}
+	if q.Enabled != nil {
+		values.Set("enabled", strconv.FormatBool(*q.Enabled))
+	}
+	if q.Required != nil {
+		values.Set("required", strconv.FormatBool(*q.Required))
+	}
+	if q.RequiresValue != nil {
+		values.Set("requires_value", strconv.FormatBool(*q.RequiresValue))
+	}
+	if q.RequiresAttachment != nil {
+		values.Set("requires_attachment", strconv.FormatBool(*q.RequiresAttachment))
+	}
+	if q.HasResults != nil {
+		values.Set("has_results", strconv.FormatBool(*q.HasResults))
+	}
+	if q.Search != "" {
+		values.Set("search", q.Search)
+	}
+	setPagination(values, q.Limit, q.Offset)
+	return values
+}
+
+func (q StockItemTestResultQuery) values() url.Values {
+	values := url.Values{}
+	values.Set("stock_item", strconv.Itoa(q.StockItem))
+	if q.Template != nil {
+		values.Set("template", strconv.Itoa(*q.Template))
+	}
+	if q.Result != nil {
+		values.Set("result", strconv.FormatBool(*q.Result))
+	}
+	if q.IncludeInstalled {
+		values.Set("include_installed", "true")
+	}
 	setPagination(values, q.Limit, q.Offset)
 	return values
 }
