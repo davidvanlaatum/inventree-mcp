@@ -34,7 +34,7 @@ const (
 )
 
 const (
-	defaultStartupTimeout = 5 * time.Minute
+	defaultStartupTimeout = 10 * time.Minute
 	cleanupTimeout        = 30 * time.Second
 )
 
