@@ -45,6 +45,22 @@ updates:
       prefix: deps
       include: scope
 
+  - package-ecosystem: docker
+    directory: /internal/testenv
+    schedule:
+      interval: weekly
+      day: monday
+      time: "09:45"
+      timezone: Australia/Adelaide
+    open-pull-requests-limit: 5
+    cooldown:
+      semver-major-days: 14
+      semver-minor-days: 3
+      semver-patch-days: 1
+    commit-message:
+      prefix: deps
+      include: scope
+
   - package-ecosystem: pre-commit
     directory: /
     schedule:
