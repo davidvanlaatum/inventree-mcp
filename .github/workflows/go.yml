@@ -54,8 +54,13 @@ jobs:
         shell: bash
         run: |
           set -u
+          inventree_image="$(awk '$1 == "FROM" && $2 ~ /^inventree\/inventree:/ { print $2; exit }' internal/testenv/Dockerfile)"
+          if [ -z "$inventree_image" ]; then
+            echo "internal/testenv/Dockerfile does not pin an inventree/inventree image" >&2
+            exit 1
+          fi
           images=(
-            "inventree/inventree:1.5.2"
+            "$inventree_image"
             "postgres:17"
             "redis:7-alpine"
           )

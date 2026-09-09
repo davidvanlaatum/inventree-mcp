@@ -140,7 +140,7 @@ gh release view vX.X.X --repo davidvanlaatum/inventree-mcp
 GitHub repository setup required for first release:
 
 - Actions are enabled for the repository.
-- Dependabot version updates are enabled by `.github/dependabot.yml` for Go modules, GitHub Actions, and pre-commit hooks.
+- Dependabot version updates are enabled by `.github/dependabot.yml` for Go modules, GitHub Actions, pre-commit hooks, and the Dockerfile that exposes the blocking Testcontainers InvenTree baseline.
 - Workflow permissions allow the Go workflow to write coverage baselines to git notes and comment on pull requests.
 - `COVERAGE_GIST_SECRET` is configured with permission to update gist `709e99cf973e064f68cf3937b3d5c633` for the coverage badge.
 - Workflow permissions allow `GITHUB_TOKEN` to create releases with `contents: write`.

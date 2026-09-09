@@ -46,6 +46,19 @@ func TestDefaultConstantsMatchBuildinfoBaseline(t *testing.T) {
 	a.Equal(buildinfo.PinnedInvenTreeAPIVersion, DefaultAPIVersion)
 }
 
+func TestDependabotDockerfileMatchesBuildinfoBaseline(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+
+	data, err := os.ReadFile("Dockerfile")
+	r.NoError(err)
+
+	image, ok := pinnedInvenTreeImageFromDockerfile(string(data))
+	r.True(ok, "Dockerfile should pin an inventree/inventree FROM image for Dependabot")
+	a.Equal(DefaultInvenTreeImage, image)
+}
+
 func TestDefaultTestOptionsForwardsContainerLogs(t *testing.T) {
 	t.Parallel()
 	r := require.New(t)
@@ -98,6 +111,85 @@ func TestValidateOptionsRejectsMissingVersionAPIAndNegativeTimeout(t *testing.T)
 	r.ErrorContains(err, "expected InvenTree version is required")
 	r.ErrorContains(err, "expected InvenTree API version is required")
 	r.ErrorContains(err, "startup timeout must not be negative")
+}
+
+func TestPinnedInvenTreeImageFromDockerfile(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		in   string
+		want string
+		ok   bool
+	}{
+		{
+			name: "pinned inventree base",
+			in:   "FROM inventree/inventree:1.5.2\n",
+			want: "inventree/inventree:1.5.2",
+			ok:   true,
+		},
+		{
+			name: "ignores other base image",
+			in:   "FROM postgres:17\nFROM inventree/inventree:1.5.2\n",
+			want: "inventree/inventree:1.5.2",
+			ok:   true,
+		},
+		{
+			name: "rejects missing tag",
+			in:   "FROM inventree/inventree\n",
+			ok:   false,
+		},
+		{
+			name: "rejects digest pin",
+			in:   "FROM inventree/inventree@sha256:abc123\n",
+			ok:   false,
+		},
+		{
+			name: "rejects floating stable tag",
+			in:   "FROM inventree/inventree:stable\n",
+			ok:   false,
+		},
+		{
+			name: "rejects floating latest tag",
+			in:   "FROM inventree/inventree:latest\n",
+			ok:   false,
+		},
+		{
+			name: "missing inventree base",
+			in:   "FROM postgres:17\n",
+			ok:   false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			a := assert.New(t)
+
+			got, ok := pinnedInvenTreeImageFromDockerfile(tt.in)
+
+			a.Equal(tt.ok, ok)
+			a.Equal(tt.want, got)
+		})
+	}
+}
+
+func pinnedInvenTreeImageFromDockerfile(data string) (string, bool) {
+	for line := range strings.Lines(data) {
+		fields := strings.Fields(line)
+		if len(fields) < 2 || fields[0] != "FROM" {
+			continue
+		}
+		image := fields[1]
+		if !strings.HasPrefix(image, "inventree/inventree:") {
+			continue
+		}
+		version := strings.TrimPrefix(image, "inventree/inventree:")
+		if version == "" || version == "stable" || version == "latest" {
+			return "", false
+		}
+		return image, true
+	}
+	return "", false
 }
 
 func TestSkipDockerParsesExplicitExclusion(t *testing.T) {
