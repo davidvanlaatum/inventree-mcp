@@ -19,7 +19,7 @@ This table records the InvenTree version and API revision the blocking Testconta
 | `v0.0.11`–`v0.0.12` | 1.5.0 | 530 |
 | `v0.0.13`–`v0.0.14` | 1.5.1 | 530 |
 | `v0.0.15`-`v0.1.1` | 1.5.2 | 530 |
-| `main` (unreleased) | 1.5.4 | 530 | <!-- inventree-compat-table:current-row -->
+| `v0.1.2+` | 1.5.4 | 530 | <!-- inventree-compat-table:current-row -->
 <!-- END inventree-compat-table -->
 
 ## Quick Start
