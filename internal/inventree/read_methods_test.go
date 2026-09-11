@@ -363,6 +363,18 @@ func TestReadMethodsUseExpectedEndpoints(t *testing.T) {
 			response: `{"pk":21,"stock_item":50,"template":9,"result":true,"value":"12.3","date":"2026-01-01 10:00"}`,
 		},
 		{
+			name: "get part requirements",
+			call: func(ctx context.Context, client *Client) error {
+				requirements, err := client.GetPartRequirements(ctx, 10)
+				if err == nil && (requirements.CanBuild != 5 || requirements.ScheduledToBuild != 2) {
+					return errors.New("part requirements did not preserve exact fields")
+				}
+				return err
+			},
+			wantPath: "/api/part/10/requirements/",
+			response: `{"total_stock":10,"unallocated_stock":8,"can_build":5,"ordering":3,"building":2,"scheduled_to_build":2,"required_for_build_orders":4,"allocated_to_build_orders":1,"required_for_sales_orders":2,"allocated_to_sales_orders":1}`,
+		},
+		{
 			name: "search contacts page",
 			call: func(ctx context.Context, client *Client) error {
 				page, err := client.SearchContactsPage(ctx, ContactQuery{CompanyID: 30, Search: "jane", Limit: 10, Offset: 5})

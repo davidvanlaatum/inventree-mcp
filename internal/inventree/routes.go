@@ -124,6 +124,7 @@ var clientMethodRoutes = map[string]clientRoute{
 	"SearchSupplierPriceBreaksPage":         {Method: "GET", Path: "/api/company/price-break/", Family: RequestFamilyJSONAPI, ManifestID: "search_supplier_price_breaks"},
 	"GetSupplierPriceBreak":                 {Method: "GET", Path: "/api/company/price-break/{id}/", Family: RequestFamilyJSONAPI, ManifestID: "get_supplier_price_break"},
 	"GetPartPricing":                        {Method: "GET", Path: "/api/part/{id}/pricing/", Family: RequestFamilyJSONAPI, ManifestID: "get_part_pricing"},
+	"GetPartRequirements":                   {Method: "GET", Path: "/api/part/{id}/requirements/", Family: RequestFamilyJSONAPI, ManifestID: "get_part_requirements"},
 	"SearchStockTrackingPage":               {Method: "GET", Path: "/api/stock/track/", Family: RequestFamilyJSONAPI, ManifestID: "search_stock_tracking"},
 	"GetStockTrackingEntry":                 {Method: "GET", Path: "/api/stock/track/{id}/", Family: RequestFamilyJSONAPI, ManifestID: "get_stock_tracking_entry"},
 	"SearchPartStocktakesPage":              {Method: "GET", Path: "/api/part/stocktake/", Family: RequestFamilyJSONAPI, ManifestID: "search_part_stocktakes"},
