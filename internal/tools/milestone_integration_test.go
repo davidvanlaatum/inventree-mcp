@@ -4079,6 +4079,28 @@ func TestMilestoneHappyPathToolsAgainstInvenTree(t *testing.T) {
 		r.NoError(err)
 		a.Equal(StatusNotFound, missingUser.Status)
 	})
+
+	t.Run("part_requirements", func(t *testing.T) {
+		r := require.New(t)
+		a := assert.New(t)
+		ctx, _, _ := testhandler.SetupTestHandler(t)
+		fixture := newMilestoneToolFixture(t, shared)
+		part := fixture.ensure(t, testenv.FixturePart)
+
+		_, ok, err := getPartRequirements(fixture.deps())(ctx, &mcp.CallToolRequest{}, GetPartRequirementsInput{PartID: part.ID})
+		r.NoError(err)
+		a.Equal(StatusOK, ok.Status)
+		r.NotNil(ok.Record)
+		a.GreaterOrEqual(ok.Record.CanBuild, float64(0))
+
+		_, notFound, err := getPartRequirements(fixture.deps())(ctx, &mcp.CallToolRequest{}, GetPartRequirementsInput{PartID: 999999})
+		r.NoError(err)
+		a.Equal(StatusNotFound, notFound.Status)
+
+		_, invalid, err := getPartRequirements(fixture.deps())(ctx, &mcp.CallToolRequest{}, GetPartRequirementsInput{PartID: 0})
+		r.NoError(err)
+		a.Equal(StatusNotFound, invalid.Status)
+	})
 }
 
 type milestoneToolFixture struct {

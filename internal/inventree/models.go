@@ -898,6 +898,35 @@ type PartPricing struct {
 	SaleHistoryMax      *DecimalString `json:"sale_history_max"`
 }
 
+// PartRequirements is a Part's calculated build/sales-demand snapshot from
+// GET /api/part/{id}/requirements/, a distinct endpoint from PartDetail's
+// own overlapping aggregate fields (allocated_to_build_orders,
+// allocated_to_sales_orders, building, ordering, required_for_build_orders,
+// required_for_sales_orders, scheduled_to_build, unallocated_stock).
+// PartDetail's copies are read alongside the rest of GET /api/part/{id}/ and
+// may momentarily disagree with this endpoint's freshly computed values;
+// neither is more authoritative than the other, both are non-atomic. Every
+// field here is required and non-nullable per the pinned API 530 schema.
+// CanBuild is the only field with no PartDetail counterpart. Field types are
+// pinned to this endpoint's own schema, not PartDetail's: ScheduledToBuild
+// is an int here versus PartDetail's *float64, while RequiredForBuildOrders
+// and RequiredForSalesOrders are float64 here versus PartDetail's *int --
+// the same field name does not guarantee the same wire type across the two
+// endpoints. See docs/api-schema.md's "Verified Part Requirements Endpoint"
+// section for the full comparison.
+type PartRequirements struct {
+	TotalStock             float64 `json:"total_stock"`
+	UnallocatedStock       float64 `json:"unallocated_stock"`
+	CanBuild               float64 `json:"can_build"`
+	Ordering               float64 `json:"ordering"`
+	Building               float64 `json:"building"`
+	ScheduledToBuild       int     `json:"scheduled_to_build"`
+	RequiredForBuildOrders float64 `json:"required_for_build_orders"`
+	AllocatedToBuildOrders float64 `json:"allocated_to_build_orders"`
+	RequiredForSalesOrders float64 `json:"required_for_sales_orders"`
+	AllocatedToSalesOrders float64 `json:"allocated_to_sales_orders"`
+}
+
 // PartTestTemplate is one named test defined against a part with
 // testable:true (/api/part/test-template/). Key is a server-derived stable
 // slug of TestName; Results is the number of stock-item test results

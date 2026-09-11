@@ -824,6 +824,12 @@ func (c *Client) GetPartPricing(ctx context.Context, partID int) (PartPricing, e
 	return out, err
 }
 
+func (c *Client) GetPartRequirements(ctx context.Context, partID int) (PartRequirements, error) {
+	var out PartRequirements
+	err := c.get(ctx, fmt.Sprintf("/api/part/%d/requirements/", partID), &out)
+	return out, err
+}
+
 func (c *Client) SearchStockTrackingPage(ctx context.Context, query StockTrackingQuery) (Page[StockTracking], error) {
 	return listPage[StockTracking](ctx, c, "/api/stock/track/", query.values())
 }

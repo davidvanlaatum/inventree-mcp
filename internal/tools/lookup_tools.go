@@ -178,6 +178,7 @@ const (
 	SearchSalePriceBreaksToolName                 = "search_sale_price_breaks"
 	SearchSupplierPriceBreaksToolName             = "search_supplier_price_breaks"
 	GetPartPricingToolName                        = "get_part_pricing"
+	GetPartRequirementsToolName                   = "get_part_requirements"
 	CreateInternalPriceBreakToolName              = "create_internal_price_break"
 	UpdateInternalPriceBreakToolName              = "update_internal_price_break"
 	DeleteInternalPriceBreakToolName              = "delete_internal_price_break"
@@ -289,6 +290,7 @@ var lookupToolNames = []string{
 	SearchStockItemTestResultsToolName,
 	GetStockItemTestResultToolName,
 	DownloadStockItemTestResultAttachmentToolName,
+	GetPartRequirementsToolName,
 }
 
 var writeToolNames = []string{
@@ -799,6 +801,7 @@ func registerLookupTools(server *mcp.Server, deps Dependencies) {
 	registerPricingLookupTools(server, deps)
 	registerBarcodeLookupTools(server, deps)
 	registerPartTestingLookupTools(server, deps)
+	registerPartRequirementsLookupTools(server, deps)
 }
 
 func addReadOnlyTool[In, Out any](server *mcp.Server, deps Dependencies, name string, title string, description string, handler mcp.ToolHandlerFor[In, Out]) {

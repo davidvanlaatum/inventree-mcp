@@ -265,6 +265,12 @@ endpoints:
     request_schema: '#/components/schemas/PatchedPartPricing'
     request_content_type: application/json
     response_schema: '#/components/schemas/PartPricing'
+  - id: get_part_requirements
+    area: parts
+    path: /api/part/{id}/requirements/
+    method: GET
+    operation_id: part_requirements_retrieve
+    response_schema: '#/components/schemas/PartRequirements'
   - id: search_bom_items
     area: bom
     path: /api/bom/

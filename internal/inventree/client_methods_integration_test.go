@@ -1919,6 +1919,70 @@ func TestClientMethodsAgainstInvenTree(t *testing.T) {
 		t.Logf("part pricing immediately after RefreshPartPricing (scheduled_for_update=%t): overall_min=%v overall_max=%v", refreshed.ScheduledForUpdate, refreshed.OverallMin, refreshed.OverallMax)
 	})
 
+	t.Run("part_requirements_client_methods", func(t *testing.T) {
+		r := require.New(t)
+		a := assert.New(t)
+		ctx, _, _ := testhandler.SetupTestHandler(t)
+		fixture := newClientMethodFixture(t, shared)
+
+		part := fixture.ensure(t, testenv.FixturePart)
+		location := fixture.ensure(t, testenv.FixtureLocation)
+		category := fixture.ensure(t, testenv.FixtureCategory)
+
+		// Baseline: a fresh part with no stock still returns all ten
+		// calculated fields with zero values, not an error or omission.
+		baseline, err := fixture.client.GetPartRequirements(ctx, part.ID)
+		r.NoError(err)
+		a.Zero(baseline.TotalStock)
+		a.Zero(baseline.UnallocatedStock)
+		a.Zero(baseline.CanBuild)
+
+		_, err = fixture.client.CreateStockItem(ctx, inventree.StockItemCreate{Part: part.ID, Location: location.ID, Quantity: 6})
+		r.NoError(err)
+
+		withStock, err := fixture.client.GetPartRequirements(ctx, part.ID)
+		r.NoError(err)
+		a.InDelta(6, withStock.TotalStock, 0.001, "total_stock should reflect the newly created stock item")
+		a.InDelta(6, withStock.UnallocatedStock, 0.001, "unallocated_stock should reflect unreserved stock")
+
+		// Variant parts expose their own independent requirements snapshot;
+		// no special cross-variant aggregation is asserted here beyond a
+		// successful, well-formed read.
+		templateName, err := fixture.run.Name("part-requirements-template")
+		r.NoError(err)
+		templatePart, err := fixture.client.CreatePart(ctx, inventree.PartCreate{Name: templateName, Category: dvgoutils.Ptr(category.ID), IsTemplate: dvgoutils.Ptr(true)})
+		r.NoError(err)
+		variantName, err := fixture.run.Name("part-requirements-variant")
+		r.NoError(err)
+		variantPart, err := fixture.client.CreatePart(ctx, inventree.PartCreate{Name: variantName, Category: dvgoutils.Ptr(category.ID)})
+		r.NoError(err)
+		variantPart, err = fixture.client.UpdatePart(ctx, variantPart.PK, inventree.PatchFields{"variant_of": inventree.Set(templatePart.PK)})
+		r.NoError(err)
+		variantRequirements, err := fixture.client.GetPartRequirements(ctx, variantPart.PK)
+		r.NoError(err)
+		t.Logf("variant part requirements: %+v", variantRequirements)
+
+		// Not-found: an id with no matching part is rejected, not silently
+		// zero-valued.
+		_, err = fixture.client.GetPartRequirements(ctx, 0)
+		var notFoundErr *inventree.APIError
+		r.ErrorAs(err, &notFoundErr, "expected not-found for a nonexistent part id, got %v", err)
+		a.Equal(inventree.ErrorKindNotFound, notFoundErr.Kind)
+
+		// Permission characterization: the pinned schema declares this
+		// endpoint requires both build-view and part-view scopes. A
+		// run-scoped non-staff account (no group membership, hence no
+		// InvenTree permissions at all) exercises the deny path end to end;
+		// this does not isolate build-view specifically from part-view, but
+		// confirms the endpoint enforces authorization rather than being
+		// openly readable once authenticated.
+		nonStaffClient := newNonStaffClient(t, ctx, fixture, "part-requirements-nonstaff", "part-requirements-nonstaff-pw")
+		_, nonStaffErr := nonStaffClient.GetPartRequirements(ctx, part.ID)
+		var nonStaffAPIErr *inventree.APIError
+		r.ErrorAs(nonStaffErr, &nonStaffAPIErr, "expected a permission-denied API error for a no-permission account, got %v", nonStaffErr)
+		t.Logf("non-staff/no-permission account GetPartRequirements: HTTP %d, kind %s", nonStaffAPIErr.StatusCode, nonStaffAPIErr.Kind)
+	})
+
 	t.Run("barcode_workflow_discovery", func(t *testing.T) {
 		r := require.New(t)
 		a := assert.New(t)
