@@ -131,3 +131,23 @@ func TestRenderComponentImageFieldsOmitsEmptyFamily(t *testing.T) {
 	a.Nil(renderComponentImageFields([]byte(`{}`)))
 	a.Nil(renderComponentImageFields([]byte(`not json`)))
 }
+
+func TestRenderAndAttachComponentImageFieldsExtractsFamilyAndAttachOnly(t *testing.T) {
+	t.Parallel()
+	a := assert.New(t)
+	attrs := renderAndAttachComponentImageFields([]byte(`{"family":"resistor","resistor":{"resistance_ohms":100},"attach":{"part_id":42,"set_primary":true}}`))
+	a.Len(attrs, 3)
+	byKey := attrsByKey(attrs)
+	a.Equal("resistor", byKey["family"])
+	a.EqualValues(42, byKey["attach_part_id"])
+	a.Equal(true, byKey["attach_set_primary"])
+	_, hasResistor := byKey["resistor"]
+	a.False(hasResistor)
+}
+
+func TestRenderAndAttachComponentImageFieldsOmitsEmptyFamily(t *testing.T) {
+	t.Parallel()
+	a := assert.New(t)
+	a.Nil(renderAndAttachComponentImageFields([]byte(`{}`)))
+	a.Nil(renderAndAttachComponentImageFields([]byte(`not json`)))
+}

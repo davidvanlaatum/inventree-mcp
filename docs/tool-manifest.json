@@ -2541,6 +2541,32 @@
       ]
     },
     {
+      "name": "render_and_attach_component_image",
+      "milestone_status": "milestone_1",
+      "mutation_class": "write",
+      "scopes": [
+        "inventree.read",
+        "inventree.write",
+        "inventree.upload"
+      ],
+      "annotations": {
+        "read_only": false,
+        "destructive": false,
+        "idempotent": false,
+        "open_world": false
+      },
+      "upload_sources": [
+        "server_rendered_bytes"
+      ],
+      "http_registration": "registered_with_oauth_scope_guard",
+      "icons": [
+        {
+          "src": "https://docs.inventree.org/en/latest/assets/logo.png",
+          "mimeType": "image/png"
+        }
+      ]
+    },
+    {
       "name": "render_component_image",
       "milestone_status": "milestone_1",
       "mutation_class": "read_only",

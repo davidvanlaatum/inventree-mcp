@@ -2,11 +2,15 @@ package tools
 
 import (
 	"bytes"
+	"context"
 	"encoding/base64"
+	"errors"
+	"fmt"
 	"image/png"
 	"testing"
 
 	"github.com/davidvanlaatum/dvgoutils/logging/testhandler"
+	"github.com/davidvanlaatum/inventree-mcp/internal/inventree"
 	"github.com/davidvanlaatum/inventree-mcp/internal/render"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/stretchr/testify/assert"
@@ -223,4 +227,282 @@ func TestRenderComponentImageValidation(t *testing.T) {
 			require.Error(t, err)
 		})
 	}
+}
+
+// validRenderResistorInput is a minimal valid render input reused by every
+// render_and_attach_component_image test below; the family/parameter
+// contract itself is exercised by TestRenderComponentImageValidation above.
+func validRenderResistorInput() RenderComponentImageInput {
+	return RenderComponentImageInput{Family: "resistor", Resistor: &RenderResistorInput{ResistanceOhms: 100, ToleranceLabel: "5%"}}
+}
+
+func TestRenderAndAttachComponentImageRequiresPositivePartID(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	fake := &fakeMilestoneLookupClient{}
+
+	_, output, err := renderAndAttachComponentImage(depsForFake(fake))(ctx, &mcp.CallToolRequest{}, RenderAndAttachComponentImageInput{
+		RenderComponentImageInput: validRenderResistorInput(),
+		Attach:                    RenderAttachInput{PartID: 0},
+	})
+
+	r.NoError(err)
+	a.Equal(StatusClarificationRequired, output.Status)
+	r.NotNil(output.Clarification)
+	a.Equal("part_id", output.Clarification.Field)
+	a.Empty(output.Base64)
+	a.False(fake.uploadedAttachment)
+}
+
+func TestRenderAndAttachComponentImageUploadsWithoutSettingPrimary(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	fake := &fakeMilestoneLookupClient{}
+
+	_, output, err := renderAndAttachComponentImage(depsForFake(fake))(ctx, &mcp.CallToolRequest{}, RenderAndAttachComponentImageInput{
+		RenderComponentImageInput: validRenderResistorInput(),
+		Attach:                    RenderAttachInput{PartID: 42},
+	})
+
+	r.NoError(err)
+	a.Equal(StatusOK, output.Status)
+	a.Equal(42, output.PartID)
+	a.Equal(90, output.AttachmentID)
+	a.False(output.PrimarySet)
+	a.Empty(output.Base64)
+	a.NotEmpty(output.SHA256)
+	a.True(fake.uploadedAttachment)
+	a.Equal("part", fake.lastAttachmentCreate.ModelType)
+	a.Equal(42, fake.lastAttachmentCreate.ModelID)
+	a.Equal("image/png", fake.lastAttachmentCreate.ContentType)
+	a.NotEmpty(fake.lastAttachmentCreate.Content)
+	a.False(fake.setPartPrimaryImage)
+}
+
+func TestRenderAndAttachComponentImageSetsPrimaryWhenNoExistingImage(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	fake := &fakeMilestoneLookupClient{}
+
+	_, output, err := renderAndAttachComponentImage(depsForFake(fake))(ctx, &mcp.CallToolRequest{}, RenderAndAttachComponentImageInput{
+		RenderComponentImageInput: validRenderResistorInput(),
+		Attach:                    RenderAttachInput{PartID: 42, SetPrimary: true},
+	})
+
+	r.NoError(err)
+	a.Equal(StatusOK, output.Status)
+	a.True(output.PrimarySet)
+	a.True(fake.setPartPrimaryImage)
+	a.Equal(42, fake.lastSetPartPrimaryImagePartID)
+	a.Equal("image/png", fake.lastSetPartPrimaryImageInput.ContentType)
+}
+
+func TestRenderAndAttachComponentImageReplacingExistingPrimaryRequiresConfirm(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	existingImage := "/media/part_images/old.png"
+	fake := &fakeMilestoneLookupClient{part: inventree.Part{PK: 42, Image: &existingImage}}
+
+	_, output, err := renderAndAttachComponentImage(depsForFake(fake))(ctx, &mcp.CallToolRequest{}, RenderAndAttachComponentImageInput{
+		RenderComponentImageInput: validRenderResistorInput(),
+		Attach:                    RenderAttachInput{PartID: 42, SetPrimary: true},
+	})
+	r.NoError(err)
+	a.Equal(StatusClarificationRequired, output.Status)
+	r.NotNil(output.Clarification)
+	a.Equal("confirm", output.Clarification.Field)
+	a.False(fake.uploadedAttachment)
+	a.False(fake.setPartPrimaryImage)
+
+	_, output, err = renderAndAttachComponentImage(depsForFake(fake))(ctx, &mcp.CallToolRequest{}, RenderAndAttachComponentImageInput{
+		RenderComponentImageInput: validRenderResistorInput(),
+		Attach:                    RenderAttachInput{PartID: 42, SetPrimary: true, Confirm: true},
+	})
+	r.NoError(err)
+	a.Equal(StatusOK, output.Status)
+	a.True(output.PrimarySet)
+	a.True(fake.uploadedAttachment)
+	a.True(fake.setPartPrimaryImage)
+}
+
+func TestRenderAndAttachComponentImageValidationFailureNeverTouchesClient(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	fake := &fakeMilestoneLookupClient{}
+
+	_, _, err := renderAndAttachComponentImage(depsForFake(fake))(ctx, &mcp.CallToolRequest{}, RenderAndAttachComponentImageInput{
+		RenderComponentImageInput: RenderComponentImageInput{Family: "resistor", Resistor: &RenderResistorInput{ResistanceOhms: 4712, ToleranceLabel: "5%"}},
+		Attach:                    RenderAttachInput{PartID: 42},
+	})
+	r.Error(err)
+	a.False(fake.uploadedAttachment)
+	a.False(fake.setPartPrimaryImage)
+}
+
+func TestRenderAndAttachComponentImageReusesExistingAttachmentWithMatchingFilename(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+
+	result, err := renderFromComponentInput(validRenderResistorInput())
+	r.NoError(err)
+	existingFilename := fmt.Sprintf("render_resistor_%s.png", result.SHA256[:12])
+	fake := &fakeMilestoneLookupClient{attachments: []inventree.Attachment{{PK: 77, ModelType: "part", ModelID: 42, Filename: existingFilename}}}
+
+	_, output, err := renderAndAttachComponentImage(depsForFake(fake))(ctx, &mcp.CallToolRequest{}, RenderAndAttachComponentImageInput{
+		RenderComponentImageInput: validRenderResistorInput(),
+		Attach:                    RenderAttachInput{PartID: 42},
+	})
+	r.NoError(err)
+	a.Equal(StatusOK, output.Status)
+	a.Equal(77, output.AttachmentID)
+	a.False(fake.uploadedAttachment, "a matching existing attachment must be reused, not duplicated")
+}
+
+func TestRenderAndAttachComponentImageGetPartFailurePropagatesError(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	fake := &fakeMilestoneLookupClient{getPartErr: errors.New("part not found")}
+
+	_, _, err := renderAndAttachComponentImage(depsForFake(fake))(ctx, &mcp.CallToolRequest{}, RenderAndAttachComponentImageInput{
+		RenderComponentImageInput: validRenderResistorInput(),
+		Attach:                    RenderAttachInput{PartID: 999, SetPrimary: true},
+	})
+	r.Error(err)
+	r.False(fake.uploadedAttachment)
+}
+
+func TestRenderAndAttachComponentImageUploadFailurePropagatesError(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	fake := &fakeMilestoneLookupClient{uploadAttachmentErr: errors.New("part not found")}
+
+	_, _, err := renderAndAttachComponentImage(depsForFake(fake))(ctx, &mcp.CallToolRequest{}, RenderAndAttachComponentImageInput{
+		RenderComponentImageInput: validRenderResistorInput(),
+		Attach:                    RenderAttachInput{PartID: 999},
+	})
+	r.Error(err)
+}
+
+func TestRenderAndAttachComponentImageSetPrimaryFailureIsPartialFailureWithRecoveryPlan(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	fake := &fakeMilestoneLookupClient{setPartPrimaryImageErr: errors.New("upstream rejected")}
+
+	_, output, err := renderAndAttachComponentImage(depsForFake(fake))(ctx, &mcp.CallToolRequest{}, RenderAndAttachComponentImageInput{
+		RenderComponentImageInput: validRenderResistorInput(),
+		Attach:                    RenderAttachInput{PartID: 42, SetPrimary: true},
+	})
+
+	r.NoError(err)
+	a.Equal(StatusPartialFailure, output.Status)
+	a.Equal(42, output.PartID)
+	a.Equal(90, output.AttachmentID)
+	a.False(output.PrimarySet)
+	a.NotEmpty(output.RecoveryPlan)
+	a.Contains(output.RecoveryPlan, "attachment_id 90")
+	a.Contains(output.RecoveryPlan, "part_id 42")
+	a.NotContains(output.RecoveryPlan, "confirm:true", "no existing primary image was being replaced, so a retry needs no confirm")
+	a.True(fake.uploadedAttachment)
+}
+
+func TestRenderAndAttachComponentImageSetPrimaryFailureWhileReplacingMentionsConfirm(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	existingImage := "/media/part_images/old.png"
+	fake := &fakeMilestoneLookupClient{part: inventree.Part{PK: 42, Image: &existingImage}, setPartPrimaryImageErr: errors.New("upstream rejected")}
+
+	_, output, err := renderAndAttachComponentImage(depsForFake(fake))(ctx, &mcp.CallToolRequest{}, RenderAndAttachComponentImageInput{
+		RenderComponentImageInput: validRenderResistorInput(),
+		Attach:                    RenderAttachInput{PartID: 42, SetPrimary: true, Confirm: true},
+	})
+
+	r.NoError(err)
+	a.Equal(StatusPartialFailure, output.Status)
+	a.Contains(output.RecoveryPlan, "attachment_id 90")
+	a.Contains(output.RecoveryPlan, "part_id 42")
+	a.Contains(output.RecoveryPlan, "confirm:true", "retrying set_primary_image against a part with an existing primary image needs confirm:true again")
+}
+
+func TestRenderAndAttachComponentImageRequiresClient(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+
+	_, _, err := renderAndAttachComponentImage(Dependencies{})(ctx, &mcp.CallToolRequest{}, RenderAndAttachComponentImageInput{
+		RenderComponentImageInput: validRenderResistorInput(),
+		Attach:                    RenderAttachInput{PartID: 42},
+	})
+	r.ErrorIs(err, ErrLookupClientUnavailable)
+}
+
+func TestRenderAndAttachComponentImageRejectsClientMissingInterface(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	deps := Dependencies{ClientFromContext: func(context.Context) (any, error) { return struct{}{}, nil }}
+
+	_, _, err := renderAndAttachComponentImage(deps)(ctx, &mcp.CallToolRequest{}, RenderAndAttachComponentImageInput{
+		RenderComponentImageInput: validRenderResistorInput(),
+		Attach:                    RenderAttachInput{PartID: 42},
+	})
+	r.ErrorIs(err, ErrLookupClientUnavailable)
+}
+
+// TestComponentRenderAndAttachInputSchemaEnums mirrors
+// TestComponentRenderInputSchemaEnums's thoroughness for
+// render_and_attach_component_image's schema, proving the promoted-embedding
+// path (RenderAndAttachComponentImageInput embeds RenderComponentImageInput)
+// carries every enum through intact, that attach is required only on this
+// tool's schema, and that render_component_image's own schema is untouched
+// by the embedding.
+func TestComponentRenderAndAttachInputSchemaEnums(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+
+	stringValues := func(vs []string) []any {
+		out := make([]any, len(vs))
+		for i, v := range vs {
+			out[i] = v
+		}
+		return out
+	}
+
+	schema, err := componentRenderAndAttachInputSchema()
+	r.NoError(err)
+	a.Equal(stringValues(render.Orientations()), schema.Properties["orientation"].Enum)
+	a.Equal(stringValues(render.Backgrounds()), schema.Properties["background"].Enum)
+	resistor := schema.Properties["resistor"]
+	r.NotNil(resistor)
+	a.Equal(stringValues(render.ToleranceLabels()), resistor.Properties["tolerance_label"].Enum)
+	led := schema.Properties["led"]
+	r.NotNil(led)
+	a.Equal(stringValues(render.LEDLensColors()), led.Properties["lens_color"].Enum)
+
+	a.Contains(schema.Required, "attach")
+	r.NotNil(schema.Properties["attach"])
+	a.Contains(schema.Properties["attach"].Required, "part_id")
+
+	plainSchema, err := componentRenderInputSchema()
+	r.NoError(err)
+	a.NotContains(plainSchema.Required, "attach")
+	a.Nil(plainSchema.Properties["attach"])
 }

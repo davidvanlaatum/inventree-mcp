@@ -6,13 +6,17 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"strings"
 
+	"github.com/davidvanlaatum/inventree-mcp/internal/inventree"
 	"github.com/davidvanlaatum/inventree-mcp/internal/render"
 	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 const RenderComponentImageToolName = "render_component_image"
+
+const RenderAndAttachComponentImageToolName = "render_and_attach_component_image"
 
 const (
 	renderDefaultAxialWidth    = 400
@@ -44,6 +48,32 @@ type RenderComponentImageInput struct {
 	LED                *RenderLEDInput       `json:"led,omitempty" jsonschema:"Required and only valid when family is led."`
 	Capacitor          *RenderCapacitorInput `json:"capacitor,omitempty" jsonschema:"Required and only valid when family is capacitor."`
 	Fuse               *RenderFuseInput      `json:"fuse,omitempty" jsonschema:"Required and only valid when family is fuse."`
+}
+
+// RenderAndAttachComponentImageInput is render_and_attach_component_image's
+// input: every render_component_image field, plus a mandatory Attach that
+// uploads the rendered bytes straight to InvenTree, reusing
+// upload_attachment's and set_primary_image's existing write paths so the
+// calling model never has to relay the rendered image bytes through a
+// separate tool call. Kept as a distinct, separately registered,
+// write-scoped tool (rather than an optional field on render_component_image
+// itself) because render_component_image is always registered -- even when
+// this server's write tools are disabled -- and this repo's tool-scope
+// contract requires every registered tool's declared mutation class and
+// scopes to reflect what it can actually do; a tool that can write must not
+// be reachable when write tools are disabled.
+type RenderAndAttachComponentImageInput struct {
+	RenderComponentImageInput
+	Attach RenderAttachInput `json:"attach" jsonschema:"Uploads the rendered image as an attachment on part_id and, when set_primary is true, sets it as that part's primary image, entirely on the server. The response omits base64, since the bytes never need to reach the caller."`
+}
+
+// RenderAttachInput is render_and_attach_component_image's write target: the
+// part to attach the rendered image to, and whether to also promote it to
+// that part's primary image.
+type RenderAttachInput struct {
+	PartID     int  `json:"part_id" jsonschema:"Stable part primary key that receives the rendered image as an attachment."`
+	SetPrimary bool `json:"set_primary,omitempty" jsonschema:"Also set the newly created attachment as this part's primary image."`
+	Confirm    bool `json:"confirm,omitempty" jsonschema:"Required true when set_primary is true and the part already has an existing primary image."`
 }
 
 // RenderResistorInput mirrors render.ResistorParams. Band colors are never
@@ -111,14 +141,22 @@ type RenderFuseInput struct {
 }
 
 // RenderComponentImageOutput is the bounded, deterministic PNG result.
+// Base64 is omitted whenever Attach was supplied on the request, since the
+// rendered bytes were written directly to InvenTree and never need to reach
+// the caller.
 type RenderComponentImageOutput struct {
-	Status      string `json:"status"`
-	Family      string `json:"family"`
-	ContentType string `json:"content_type"`
-	Width       int    `json:"width"`
-	Height      int    `json:"height"`
-	SHA256      string `json:"sha256"`
-	Base64      string `json:"base64"`
+	Status        string                 `json:"status"`
+	Family        string                 `json:"family"`
+	ContentType   string                 `json:"content_type"`
+	Width         int                    `json:"width"`
+	Height        int                    `json:"height"`
+	SHA256        string                 `json:"sha256"`
+	Base64        string                 `json:"base64,omitempty"`
+	AttachmentID  int                    `json:"attachment_id,omitempty"`
+	PartID        int                    `json:"part_id,omitempty"`
+	PrimarySet    bool                   `json:"primary_set,omitempty"`
+	Clarification *ClarificationResponse `json:"clarification,omitempty"`
+	RecoveryPlan  string                 `json:"recovery_plan,omitempty"`
 }
 
 // stringEnumSchema builds a JSON Schema string enum from an ordered list of
@@ -133,35 +171,50 @@ func stringEnumSchema(values []string) *jsonschema.Schema {
 	return &jsonschema.Schema{Type: "string", Enum: enum}
 }
 
+// componentRenderTypeSchemas is shared by render_component_image's and
+// render_and_attach_component_image's input schemas so every field with a
+// fixed set of accepted values is registered with a real JSON Schema enum
+// instead of only descriptive text, and the two tools cannot drift apart.
+func componentRenderTypeSchemas() map[reflect.Type]*jsonschema.Schema {
+	familyValues := make([]string, 0, len(render.Families()))
+	for _, f := range render.Families() {
+		familyValues = append(familyValues, string(f))
+	}
+	return map[reflect.Type]*jsonschema.Schema{
+		reflect.TypeFor[render.Family]():         stringEnumSchema(familyValues),
+		reflect.TypeFor[render.Orientation]():    stringEnumSchema(render.Orientations()),
+		reflect.TypeFor[render.Background]():     stringEnumSchema(render.Backgrounds()),
+		reflect.TypeFor[render.ToleranceLabel](): stringEnumSchema(render.ToleranceLabels()),
+		reflect.TypeFor[render.BodySize]():       stringEnumSchema(render.BodySizes()),
+		reflect.TypeFor[render.ResistorType]():   stringEnumSchema(render.ResistorTypes()),
+		reflect.TypeFor[render.Side]():           stringEnumSchema(render.Sides()),
+		reflect.TypeFor[render.LEDLensColor]():   stringEnumSchema(render.LEDLensColors()),
+		reflect.TypeFor[render.LEDSize]():        stringEnumSchema(render.LEDSizes()),
+		reflect.TypeFor[render.FuseSpeed]():      stringEnumSchema(render.FuseSpeeds()),
+		reflect.TypeFor[render.FuseSize]():       stringEnumSchema(render.FuseSizes()),
+	}
+}
+
 // componentRenderInputSchema builds render_component_image's input schema
 // explicitly rather than relying on automatic inference, so every field
 // with a fixed set of accepted values is registered with a real JSON Schema
 // enum instead of only descriptive text.
 func componentRenderInputSchema() (*jsonschema.Schema, error) {
-	familyValues := make([]string, 0, len(render.Families()))
-	for _, f := range render.Families() {
-		familyValues = append(familyValues, string(f))
-	}
-	return jsonschema.For[RenderComponentImageInput](&jsonschema.ForOptions{
-		TypeSchemas: map[reflect.Type]*jsonschema.Schema{
-			reflect.TypeFor[render.Family]():         stringEnumSchema(familyValues),
-			reflect.TypeFor[render.Orientation]():    stringEnumSchema(render.Orientations()),
-			reflect.TypeFor[render.Background]():     stringEnumSchema(render.Backgrounds()),
-			reflect.TypeFor[render.ToleranceLabel](): stringEnumSchema(render.ToleranceLabels()),
-			reflect.TypeFor[render.BodySize]():       stringEnumSchema(render.BodySizes()),
-			reflect.TypeFor[render.ResistorType]():   stringEnumSchema(render.ResistorTypes()),
-			reflect.TypeFor[render.Side]():           stringEnumSchema(render.Sides()),
-			reflect.TypeFor[render.LEDLensColor]():   stringEnumSchema(render.LEDLensColors()),
-			reflect.TypeFor[render.LEDSize]():        stringEnumSchema(render.LEDSizes()),
-			reflect.TypeFor[render.FuseSpeed]():      stringEnumSchema(render.FuseSpeeds()),
-			reflect.TypeFor[render.FuseSize]():       stringEnumSchema(render.FuseSizes()),
-		},
-	})
+	return jsonschema.For[RenderComponentImageInput](&jsonschema.ForOptions{TypeSchemas: componentRenderTypeSchemas()})
 }
+
+// componentRenderAndAttachInputSchema builds
+// render_and_attach_component_image's input schema, reusing the same
+// closed-vocabulary enum overrides as componentRenderInputSchema.
+func componentRenderAndAttachInputSchema() (*jsonschema.Schema, error) {
+	return jsonschema.For[RenderAndAttachComponentImageInput](&jsonschema.ForOptions{TypeSchemas: componentRenderTypeSchemas()})
+}
+
+const componentRenderToolDescription = "Renders a deterministic PNG image for a common, highly repetitive electronic component (axial resistor, axial diode, through-hole LED, radial electrolytic capacitor, or glass fuse) from a small parameter set. Output is illustrative inventory imagery, not a datasheet or a claim of physical scale beyond explicitly supplied dimensions. Only these five families are supported: do not call this tool for a MOSFET, IC, connector, USB part, or any other component by approximating it with the closest of the five — none of them represent those packages."
 
 func registerComponentRenderTool(server *mcp.Server, deps Dependencies) {
 	tool := ToolDescriptor(RenderComponentImageToolName, "Render component image",
-		"Renders a deterministic PNG image for a common, highly repetitive electronic component (axial resistor, axial diode, through-hole LED, radial electrolytic capacitor, or glass fuse) from a small parameter set. Output is illustrative inventory imagery, not a datasheet or a claim of physical scale beyond explicitly supplied dimensions. Only these five families are supported: do not call this tool for a MOSFET, IC, connector, USB part, or any other component by approximating it with the closest of the five — none of them represent those packages. This tool does not upload or assign the image to InvenTree; pass the returned bytes to an attachment or primary-image tool for that.")
+		componentRenderToolDescription+" If the operator wants this image attached to a part (optionally as its primary image), use render_and_attach_component_image instead: it does the render and the upload in one server-side call, so you never have to relay the image bytes yourself. This tool alone does not upload or assign the image to InvenTree; only use it directly when the operator wants the raw bytes for something other than attaching to a part.")
 	schema, err := componentRenderInputSchema()
 	if err != nil {
 		panic(fmt.Errorf("%s: building input schema: %w", RenderComponentImageToolName, err))
@@ -170,32 +223,12 @@ func registerComponentRenderTool(server *mcp.Server, deps Dependencies) {
 	mcp.AddTool(server, tool, GuardTool(deps, RenderComponentImageToolName, renderComponentImage))
 }
 
-func renderComponentImage(ctx context.Context, _ *mcp.CallToolRequest, input RenderComponentImageInput) (*mcp.CallToolResult, RenderComponentImageOutput, error) {
-	canvas, err := resolveRenderCanvas(input)
+func renderComponentImage(_ context.Context, _ *mcp.CallToolRequest, input RenderComponentImageInput) (*mcp.CallToolResult, RenderComponentImageOutput, error) {
+	result, err := renderFromComponentInput(input)
 	if err != nil {
 		return nil, RenderComponentImageOutput{}, err
 	}
-
-	var result render.Result
-	switch input.Family {
-	case render.FamilyResistor:
-		result, err = renderResistorFamily(canvas, input)
-	case render.FamilyDiode:
-		result, err = renderDiodeFamily(canvas, input)
-	case render.FamilyLED:
-		result, err = renderLEDFamily(canvas, input)
-	case render.FamilyCapacitor:
-		result, err = renderCapacitorFamily(canvas, input)
-	case render.FamilyFuse:
-		result, err = renderFuseFamily(canvas, input)
-	default:
-		return nil, RenderComponentImageOutput{}, fmt.Errorf("family must be one of %v", render.Families())
-	}
-	if err != nil {
-		return nil, RenderComponentImageOutput{}, err
-	}
-
-	out := RenderComponentImageOutput{
+	return nil, RenderComponentImageOutput{
 		Status:      StatusOK,
 		Family:      string(input.Family),
 		ContentType: "image/png",
@@ -203,8 +236,153 @@ func renderComponentImage(ctx context.Context, _ *mcp.CallToolRequest, input Ren
 		Height:      result.Height,
 		SHA256:      result.SHA256,
 		Base64:      base64.StdEncoding.EncodeToString(result.PNG),
+	}, nil
+}
+
+// renderFromComponentInput is the rendering core shared by
+// render_component_image and render_and_attach_component_image: it resolves
+// the canvas and dispatches to the selected family template. Neither caller
+// makes an InvenTree API call from here.
+func renderFromComponentInput(input RenderComponentImageInput) (render.Result, error) {
+	canvas, err := resolveRenderCanvas(input)
+	if err != nil {
+		return render.Result{}, err
 	}
-	return nil, out, nil
+	switch input.Family {
+	case render.FamilyResistor:
+		return renderResistorFamily(canvas, input)
+	case render.FamilyDiode:
+		return renderDiodeFamily(canvas, input)
+	case render.FamilyLED:
+		return renderLEDFamily(canvas, input)
+	case render.FamilyCapacitor:
+		return renderCapacitorFamily(canvas, input)
+	case render.FamilyFuse:
+		return renderFuseFamily(canvas, input)
+	default:
+		return render.Result{}, fmt.Errorf("family must be one of %v", render.Families())
+	}
+}
+
+func registerRenderAndAttachComponentImageTool(server *mcp.Server, deps Dependencies) {
+	tool := ToolDescriptor(RenderAndAttachComponentImageToolName, "Render and attach component image",
+		componentRenderToolDescription+" Uploads the rendered image as a part attachment (and, when attach.set_primary is true, sets it as that part's primary image) entirely on the server -- so the caller only has to supply a part_id, never the image bytes themselves. Replacing an existing primary image reuses set_primary_image's own confirm-gated semantics exactly. Calling this again with identical parameters against the same part reuses the existing attachment instead of creating a duplicate. Use render_component_image instead for a plain render with no InvenTree write.")
+	schema, err := componentRenderAndAttachInputSchema()
+	if err != nil {
+		panic(fmt.Errorf("%s: building input schema: %w", RenderAndAttachComponentImageToolName, err))
+	}
+	tool.InputSchema = schema
+	mcp.AddTool(server, tool, GuardTool(deps, RenderAndAttachComponentImageToolName, renderAndAttachComponentImage(deps)))
+}
+
+func renderAndAttachComponentImage(deps Dependencies) mcp.ToolHandlerFor[RenderAndAttachComponentImageInput, RenderComponentImageOutput] {
+	return func(ctx context.Context, _ *mcp.CallToolRequest, input RenderAndAttachComponentImageInput) (*mcp.CallToolResult, RenderComponentImageOutput, error) {
+		result, err := renderFromComponentInput(input.RenderComponentImageInput)
+		if err != nil {
+			return nil, RenderComponentImageOutput{}, err
+		}
+		out := RenderComponentImageOutput{
+			Status:      StatusOK,
+			Family:      string(input.Family),
+			ContentType: "image/png",
+			Width:       result.Width,
+			Height:      result.Height,
+			SHA256:      result.SHA256,
+		}
+
+		attach := input.Attach
+		if attach.PartID <= 0 {
+			clarification := NewClarification("Which part should receive this rendered image?", "part_id", "render_and_attach_component_image's attach.part_id must be a positive part ID", "part_id", true, nil, map[string]any{"family": string(input.Family)})
+			out.Status = StatusClarificationRequired
+			out.Clarification = &clarification
+			return TextResult(StatusClarificationRequired), out, nil
+		}
+
+		// The part_id clarification above must fire before any client is
+		// resolved, which rules out the shared LookupHandler helper (it
+		// always resolves a client first). Resolving manually here means
+		// this handler is also responsible for its own projectWebLinks
+		// call -- currently a no-op since RenderComponentImageOutput
+		// carries no web-linkable fields, but revisit if that changes.
+		rawClient, err := deps.Client(ctx)
+		if err != nil {
+			return nil, RenderComponentImageOutput{}, safeToolError(ctx, err)
+		}
+		client, ok := rawClient.(AttachmentWriteClient)
+		if !ok {
+			return nil, RenderComponentImageOutput{}, fmt.Errorf("%w: client does not implement required interface for %s", ErrLookupClientUnavailable, RenderAndAttachComponentImageToolName)
+		}
+
+		replacingPrimary := false
+		if attach.SetPrimary {
+			part, err := client.GetPart(ctx, attach.PartID)
+			if err != nil {
+				return nil, RenderComponentImageOutput{}, safeToolError(ctx, err)
+			}
+			replacingPrimary = part.Image != nil && strings.TrimSpace(*part.Image) != ""
+			if replacingPrimary && !attach.Confirm {
+				clarification := NewClarification("Replace the existing primary image for this part?", "confirm", "render_and_attach_component_image requires attach.confirm:true before replacing an existing primary image", "confirm", true, nil, map[string]any{"part_id": attach.PartID})
+				out.Status = StatusClarificationRequired
+				out.PartID = attach.PartID
+				out.Clarification = &clarification
+				return TextResult(StatusClarificationRequired), out, nil
+			}
+		}
+
+		// The filename is content-addressed (family plus a rendered-bytes
+		// digest prefix), so a repeated call with identical render input
+		// against the same part always computes the same filename. Reuse
+		// a matching existing attachment instead of uploading a duplicate,
+		// mirroring upload_attachment's own duplicate-avoidance intent
+		// without needing an allow_duplicate escape hatch this tool's
+		// narrower attach contract doesn't have.
+		filename := fmt.Sprintf("render_%s_%s.png", input.Family, result.SHA256[:12])
+		existing, err := client.ListAttachments(ctx, inventree.AttachmentQuery{ModelType: "part", ModelID: attach.PartID, Limit: MaxLookupLimit})
+		if err != nil {
+			return nil, RenderComponentImageOutput{}, safeToolError(ctx, err)
+		}
+		attachmentID := 0
+		for _, record := range existing {
+			if record.Filename == filename {
+				attachmentID = record.PK
+				break
+			}
+		}
+		if attachmentID == 0 {
+			attachment, err := client.UploadAttachment(ctx, inventree.AttachmentCreate{
+				ModelType:   "part",
+				ModelID:     attach.PartID,
+				Filename:    filename,
+				ContentType: "image/png",
+				Content:     result.PNG,
+			})
+			if err != nil {
+				return nil, RenderComponentImageOutput{}, safeToolError(ctx, err)
+			}
+			attachmentID = attachment.PK
+		}
+		out.PartID = attach.PartID
+		out.AttachmentID = attachmentID
+
+		if attach.SetPrimary {
+			if _, err := client.SetPartPrimaryImage(ctx, attach.PartID, inventree.PartPrimaryImageCreate{
+				Filename:    filename,
+				ContentType: "image/png",
+				Content:     result.PNG,
+			}); err != nil {
+				out.Status = StatusPartialFailure
+				recovery := fmt.Sprintf("The rendered image was uploaded as attachment_id %d on part_id %d, but setting it as the primary image failed. Retry set_primary_image with part_id %d and attachment_id %d", attachmentID, attach.PartID, attach.PartID, attachmentID)
+				if replacingPrimary {
+					recovery += ", passing confirm:true since this part already has an existing primary image"
+				}
+				out.RecoveryPlan = recovery + "."
+				return TextResult(StatusPartialFailure), out, nil
+			}
+			out.PrimarySet = true
+		}
+		out.Status = StatusOK
+		return nil, out, nil
+	}
 }
 
 func resolveRenderCanvas(input RenderComponentImageInput) (render.CanvasOptions, error) {

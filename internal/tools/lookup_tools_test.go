@@ -733,6 +733,8 @@ type fakeMilestoneLookupClient struct {
 	searchManufacturersErr             error
 	createSupplierPartErr              error
 	createManufacturerPartErr          error
+	uploadAttachmentErr                error
+	setPartPrimaryImageErr             error
 
 	lastSearchPartsQuery                      inventree.SearchQuery
 	lastSearchPartCategoriesQuery             inventree.SearchQuery
@@ -997,6 +999,9 @@ func (f *fakeMilestoneLookupClient) DownloadPartImage(_ context.Context, _ int, 
 func (f *fakeMilestoneLookupClient) UploadAttachment(_ context.Context, input inventree.AttachmentCreate) (inventree.Attachment, error) {
 	f.uploadedAttachment = true
 	f.lastAttachmentCreate = input
+	if f.uploadAttachmentErr != nil {
+		return inventree.Attachment{}, f.uploadAttachmentErr
+	}
 	return inventree.Attachment{PK: 90, ModelType: input.ModelType, ModelID: input.ModelID, Filename: input.Filename, Comment: derefString(input.Comment), FileSize: ptrInt64(int64(len(input.Content)))}, nil
 }
 
@@ -1021,6 +1026,9 @@ func (f *fakeMilestoneLookupClient) SetPartPrimaryImage(_ context.Context, partI
 	f.setPartPrimaryImage = true
 	f.lastSetPartPrimaryImagePartID = partID
 	f.lastSetPartPrimaryImageInput = input
+	if f.setPartPrimaryImageErr != nil {
+		return inventree.Part{}, f.setPartPrimaryImageErr
+	}
 	imageURL := "/media/part_images/" + input.Filename
 	return inventree.Part{PK: partID, Image: &imageURL}, nil
 }
