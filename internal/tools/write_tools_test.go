@@ -632,7 +632,7 @@ func TestWriteToolAuthorizationsUseWriteScope(t *testing.T) {
 			a.Equal("write", auth.MutationClass)
 			a.Equal([]string{ScopeInventreeWrite, ScopeInventreeUpload}, auth.Scopes)
 			a.True(auth.Annotations.OpenWorld)
-		case SetCompanyImageToolName:
+		case SetCompanyImageToolName, RenderAndAttachComponentImageToolName:
 			a.Equal("write", auth.MutationClass)
 			a.Equal([]string{ScopeInventreeRead, ScopeInventreeWrite, ScopeInventreeUpload}, auth.Scopes)
 			a.Equal(WriteAnnotations, auth.Annotations)

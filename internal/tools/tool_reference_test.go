@@ -192,7 +192,7 @@ func TestToolReferenceDocumentsRegisteredWriteTools(t *testing.T) {
 		case UploadAttachmentToolName, UploadAttachmentFromURLToolName, CreateLinkAttachmentToolName, UpdateAttachmentMetadataToolName, SetPrimaryImageToolName:
 			a.Equal("write", auth.MutationClass)
 			a.Equal([]string{ScopeInventreeWrite, ScopeInventreeUpload}, auth.Scopes)
-		case SetCompanyImageToolName, SetCompanyImageFromURLToolName:
+		case SetCompanyImageToolName, SetCompanyImageFromURLToolName, RenderAndAttachComponentImageToolName:
 			a.Equal("write", auth.MutationClass)
 			a.Equal([]string{ScopeInventreeRead, ScopeInventreeWrite, ScopeInventreeUpload}, auth.Scopes)
 		case DeleteAttachmentToolName:
@@ -348,6 +348,8 @@ func uploadSourceLabels(uploadSources []string) []string {
 			labels = append(labels, "HTTP(S) link only, no fetch")
 		case "existing_attachment_image":
 			labels = append(labels, "Existing attachment/image ID")
+		case "server_rendered_bytes":
+			labels = append(labels, "Server-rendered bytes")
 		default:
 			labels = append(labels, uploadSource)
 		}

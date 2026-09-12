@@ -75,6 +75,7 @@ func buildToolInvocationFieldExtractors() map[string]invocationFieldExtractor {
 	}
 	extractors[BulkPropagatePartParametersToolName] = bulkPropagatePartParametersFields
 	extractors[RenderComponentImageToolName] = renderComponentImageFields
+	extractors[RenderAndAttachComponentImageToolName] = renderAndAttachComponentImageFields
 	return extractors
 }
 
@@ -192,4 +193,25 @@ func renderComponentImageFields(arguments json.RawMessage) []slog.Attr {
 		return nil
 	}
 	return []slog.Attr{slog.String("family", boundedShortString(input.Family))}
+}
+
+// renderAndAttachComponentImageFields logs the closed-vocabulary component
+// family plus the non-sensitive attach.part_id/attach.set_primary fields,
+// never the rendering parameter values.
+func renderAndAttachComponentImageFields(arguments json.RawMessage) []slog.Attr {
+	var input struct {
+		Family string `json:"family"`
+		Attach struct {
+			PartID     int  `json:"part_id"`
+			SetPrimary bool `json:"set_primary"`
+		} `json:"attach"`
+	}
+	if json.Unmarshal(arguments, &input) != nil || input.Family == "" {
+		return nil
+	}
+	return []slog.Attr{
+		slog.String("family", boundedShortString(input.Family)),
+		slog.Int("attach_part_id", input.Attach.PartID),
+		slog.Bool("attach_set_primary", input.Attach.SetPrimary),
+	}
 }

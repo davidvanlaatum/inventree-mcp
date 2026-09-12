@@ -380,6 +380,7 @@ var writeToolNames = []string{
 	BulkUpdateAttachmentsToolName,
 	DeleteAttachmentToolName,
 	SetPrimaryImageToolName,
+	RenderAndAttachComponentImageToolName,
 	SetCompanyImageToolName,
 	SetCompanyImageFromURLToolName,
 	ClearCompanyImageToolName,
@@ -427,7 +428,12 @@ var ToolAuthorizations = map[string]ToolAuthorization{
 		// This tool makes no InvenTree API calls at all; it requires
 		// inventree.read anyway so it still goes through the existing
 		// OAuth authenticate-and-scope-check path (GuardTool) rather
-		// than being reachable unauthenticated over HTTP.
+		// than being reachable unauthenticated over HTTP. F-S105 added a
+		// separate render_and_attach_component_image tool for the
+		// optional-write case instead of widening this tool's own scope,
+		// because this tool is always registered -- even when this
+		// server's write tools are disabled -- and a write-capable tool
+		// must not be reachable in that configuration.
 		Scopes:      []string{ScopeInventreeRead},
 		Annotations: ReadOnlyAnnotations,
 	},
@@ -480,7 +486,7 @@ func init() {
 			mutationClass = "operational"
 		case UploadAttachmentToolName, UploadAttachmentFromURLToolName, CreateLinkAttachmentToolName, UpdateAttachmentMetadataToolName, SetPrimaryImageToolName:
 			scopes = []string{ScopeInventreeWrite, ScopeInventreeUpload}
-		case SetCompanyImageToolName, SetCompanyImageFromURLToolName:
+		case SetCompanyImageToolName, SetCompanyImageFromURLToolName, RenderAndAttachComponentImageToolName:
 			scopes = []string{ScopeInventreeRead, ScopeInventreeWrite, ScopeInventreeUpload}
 		case DeletePartParameterToolName, DeleteObjectParameterToolName, DeleteParameterTemplateToolName, MergeParameterTemplatesToolName, DeleteCategoryParameterDefaultToolName, DeletePurchaseOrderExtraLineToolName, DeletePurchaseOrderLineToolName, DeletePartToolName, DeletePartRelationToolName, DeleteStockLocationTypeToolName, DeletePartCategoryToolName:
 			scopes = []string{ScopeInventreeRead, ScopeInventreeWrite, ScopeInventreeDestructive}
