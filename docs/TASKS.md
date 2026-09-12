@@ -99,7 +99,7 @@ Before assigning a new story ID, inspect `git worktree list --porcelain`, search
 | [F-S14](#f-s14-bulk-parameter-propagation-and-audit-workflows) | Add dry-run bulk parameter propagation and consistency audits. | Done |
 | [F-S15](#f-s15-live-order-entry-tool-hardening) | Close gaps found during live order-entry use of the MCP tools. | Done |
 | [F-S16](#f-s16-mcp-go-sdk-v17-and-2026-07-28-protocol-adoption) | Adopt MCP Go SDK v1.7 and the MCP 2026-07-28 protocol safely. | Done |
-| [F-S17](#f-s17-native-mcp-elicitation-for-structured-clarifications) | Add native MCP elicitation while preserving structured clarification fallback. | Planned |
+| [F-S17](#f-s17-native-mcp-elicitation-for-structured-clarifications) | Investigate native MCP elicitation; operator decided won't do after live testing showed it blocks model context-based auto-resolution. | Done |
 | [F-S18](#f-s18-local-cli-self-update) | Add an explicit local CLI self-update workflow for direct binary installs. | Done |
 | [F-S19](#f-s19-part-category-administration) | Add guarded part-category retrieval, creation, and editing. | Done |
 | [F-S20](#f-s20-company-and-sourcing-link-maintenance) | Add exact reads and guarded maintenance for companies and sourcing links. | Done |
@@ -1446,11 +1446,13 @@ Tasks:
 
 ### F-S17: Native MCP Elicitation For Structured Clarifications
 
-- Status: `Planned`
+- Status: `Done`
 - Issue: [#45](https://github.com/davidvanlaatum/inventree-mcp/issues/45)
 - Depends on: F-S16, product review, QA review, and live ChatGPT connector capability verification
 - Scope: use MCP multi-round-trip requests and structured elicitation for missing or ambiguous operator input while preserving the existing `clarification_required` result contract as a compatibility fallback for clients that cannot complete elicitation.
-- Acceptance:
+- Decision (operator, 2026-09-12): **won't do.** A working prototype was built (capability-gated native elicitation, SEP-2322 multi-round-trip, wired into `search_part_categories` and `upsert_part_with_supplier_and_manufacturer`, full protocol-boundary test coverage against the real MCP Go SDK) and live-tested against a real ChatGPT desktop app over local STDIO. The prototype worked correctly end to end — the client declared elicitation capability, rendered a native candidate picker, and the round trip completed — but live use surfaced a fundamental architectural problem that makes the mechanism a net regression for the primary use case (a conversational agent client), not an implementation bug: while a tool call sits in the MRTR `input_required` state, the connected model has zero visibility into the elicitation's content (message, schema, candidates). This is confirmed both by the MCP Go SDK's own source and by an identical, independently-reported case in `openai/codex` (issue #39149: *"the model sees only an unresolved tool call"*). Before this story, the existing plain `clarification_required` JSON already let a competent agent read the returned candidate labels and silently resolve the ambiguity itself (e.g. call `get_part_category` with the matching ID) whenever the operator's request already made the intent clear, with zero human interaction. Native elicitation removes that capability entirely: every ambiguous match forces a blocking human click through a UI widget, even in the common case where the agent could safely have inferred the answer from conversation context. Confirmed live: asking the connected model to answer from already-stated context while a native elicitation was pending did not work, because the candidate data was never part of the model's context to begin with. Net assessment: the destructive-confirmation exclusion (elicitation must never satisfy `confirm`) remains correct and validated, but the mechanism does not deliver a UX improvement for benign candidate-selection ambiguity in an agentic chat client, and is not being adopted. All prototype code was reverted; nothing from this story ships. This section, the linked issue, and its comment history remain the record of the investigation and decision for anyone reconsidering this in the future.
+- Possible future variant (not committed, not scheduled): a timeout on an unanswered elicitation that hands control back to the model to decide from context was raised as a idea worth revisiting later. It is only buildable for a *legacy* (pre-`2026-07-28`) elicitation-capable client, where the server itself blocks synchronously inside `ServerSession.Elicit` and a context deadline genuinely applies (confirmed against the SDK's `jsonrpc2` wait loop, which does honor context cancellation). It is **not** buildable for a modern native-MRTR client (the case actually tested here, and the direction the ecosystem is moving): the server returns `input_required` and holds nothing open, so there is no pending request on the server side left to time out — any such behavior would have to live in the client, entirely outside this project's control. Revisit only if a concrete client/use case needing the legacy-only variant emerges.
+- Acceptance (as originally scoped; superseded by the won't-do decision above — retained for context, not as outstanding work):
   - A documented capability policy decides when handlers return native elicitation versus the existing structured clarification result.
   - Eligible clarification paths issue focused structured elicitation requests that collect only non-secret values the operator can reasonably supply.
   - Authentication credentials, tokens, uploaded content, and other secrets are never requested through elicitation.
@@ -1460,18 +1462,9 @@ Tasks:
   - Unit and protocol-boundary tests cover accepted, declined, cancelled, malformed, unsupported-capability, legacy-client, retry-state, and no-partial-write paths.
   - Live ChatGPT connector validation proves at least one read ambiguity, one write preflight, and one destructive confirmation path before broad migration.
   - Tool reference, operator recipes, prompts, and public clarification contracts explain native elicitation and fallback behavior.
-
-Tasks:
-
-- [ ] Verify current ChatGPT connector MRTR and elicitation behavior against official docs and a live development connector.
-- [ ] Resolve whether accepted native elicitation may supply an explicit destructive-confirmation value on retry or whether destructive confirmation must remain in the structured fallback/tool-input flow; rendering an elicitation UI alone never confirms an action.
-- [ ] Define the hybrid native-elicitation and structured-fallback policy.
-- [ ] Add reusable clarification-to-elicitation request and retry-state helpers.
-- [ ] Convert a narrow representative clarification set before expanding across tools.
-- [ ] Preserve destructive confirmation and no-partial-write boundaries.
-- [ ] Add MCP `2026-07-28`, legacy-client, unsupported-capability, and cancellation tests.
-- [ ] Run live connector validation and record evidence.
-- [ ] Update tool reference, operator recipes, prompts, and task evidence.
+- Validation: a full prototype (capability gating on `Capabilities.Elicitation` including the `Form`-vs-`URL`-only distinction, `oneOf`/`const`/`title` candidate labeling, accept/decline/cancel/malformed/stale/retry-state-mismatch handling) passed `go build`/`go vet`/`gofmt`/`golangci-lint`/`git diff --check`/`go generate`/the full race test suite, with full protocol-boundary tests against the real `github.com/modelcontextprotocol/go-sdk` client and server, and was independently reviewed by Senior Go Developer, Senior QA/Test Architect, and Senior Product Manager subagents (all findings fixed). It was then live-tested by the operator against a real ChatGPT desktop app over STDIO against a real InvenTree instance, which is what produced the won't-do decision above. None of this validation evidence gates future work, since the code was reverted; it is recorded here purely so a future reattempt does not repeat the same investigation.
+- Review: the Go/QA/Product panel reviewed the (since-reverted) prototype and found it correctly implemented; the decision not to ship was a product call made after that review, based on live-testing evidence the panel could not have had.
+- Residual risk: none — no code from this story ships. The ~90 existing `NewClarification` call sites across `internal/tools/*.go` are entirely unaffected and continue to use the structured `clarification_required` contract exactly as before this story began.
 
 ### F-S18: Local CLI Self-Update
 
