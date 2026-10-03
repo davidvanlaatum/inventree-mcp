@@ -48,8 +48,7 @@ updates:
   - package-ecosystem: docker
     directory: /internal/testenv
     schedule:
-      interval: weekly
-      day: monday
+      interval: daily
       time: "09:45"
       timezone: Australia/Adelaide
     open-pull-requests-limit: 5
