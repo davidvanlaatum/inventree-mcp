@@ -4,6 +4,10 @@ Use these reviewer roles when `AGENTS.md` and [TASKS.md](TASKS.md) require a rev
 
 Prefer read-only workspace access for review agents so they can inspect surrounding implementation, tests, and documentation without mutating files. If review tooling only supports writable forked workspaces, the reviewer prompt must explicitly say not to edit files, and the parent agent must verify the checkout afterward. Treat unexpected reviewer edits as untrusted until they are independently inspected, validated, and reviewed. Use diff-only review only as a fallback for narrow follow-ups or unavailable workspace access.
 
+## Repository Code Owner
+
+GitHub automatically requests `@davidvanlaatum` as a code owner for every non-draft pull request. This operator review request is separate from, and does not replace, the task-specific specialist review panel below.
+
 ## Standard Review Panel
 
 ### Senior Go Developer
