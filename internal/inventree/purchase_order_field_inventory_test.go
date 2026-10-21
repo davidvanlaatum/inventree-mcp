@@ -68,7 +68,6 @@ func TestPurchaseOrderDetailsPreserveNullableFieldsAndOmitUnapprovedData(t *test
 	r.NotNil(order.CompletedLines)
 	a.Equal(0, *order.CompletedLines)
 	a.Empty(order.Link)
-	a.Nil(order.Notes)
 	a.Equal("Acme", order.SupplierName)
 	r.NotNil(order.Responsible)
 	a.Equal(3, *order.Responsible)

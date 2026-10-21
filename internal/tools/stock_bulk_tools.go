@@ -66,8 +66,6 @@ type BulkUpdateStockItemMetadataItem struct {
 	ClearExpiryDate bool    `json:"clear_expiry_date,omitempty" jsonschema:"Explicitly clear expiry_date; mutually exclusive with expiry_date."`
 	Packaging       *string `json:"packaging,omitempty" jsonschema:"Optional replacement packaging; an explicit empty string is preserved."`
 	ClearPackaging  bool    `json:"clear_packaging,omitempty" jsonschema:"Explicitly clear packaging; mutually exclusive with packaging."`
-	Notes           *string `json:"notes,omitempty" jsonschema:"Optional replacement notes; an explicit empty string is preserved."`
-	ClearNotes      bool    `json:"clear_notes,omitempty" jsonschema:"Explicitly clear notes; mutually exclusive with notes."`
 	Link            *string `json:"link,omitempty" jsonschema:"Optional complete HTTP(S) external link without userinfo; query parameters and fragments are preserved, and an explicit empty string clears it."`
 }
 
@@ -101,7 +99,7 @@ func (p stockMetadataBulkPlan) ids() []int {
 // fields into the same map[string]any shape patchMatches/valuesMatchForKeys
 // compare against, mirroring partValues/companyValues.
 func stockMetadataBulkValues(item inventree.StockItem) map[string]any {
-	return map[string]any{"batch": item.Batch, "expiry_date": item.ExpiryDate, "packaging": item.Packaging, "notes": item.Notes, "link": item.Link}
+	return map[string]any{"batch": item.Batch, "expiry_date": item.ExpiryDate, "packaging": item.Packaging, "link": item.Link}
 }
 
 func buildStockMetadataBulkPlan(ctx context.Context, client StockAdminClient, items []BulkUpdateStockItemMetadataItem) stockMetadataBulkPlan {
@@ -130,7 +128,7 @@ func buildStockMetadataBulkPlanItem(ctx context.Context, client StockAdminClient
 		ID: item.ID, Batch: item.Batch, ClearBatch: item.ClearBatch,
 		ExpiryDate: item.ExpiryDate, ClearExpiryDate: item.ClearExpiryDate,
 		Packaging: item.Packaging, ClearPackaging: item.ClearPackaging,
-		Notes: item.Notes, ClearNotes: item.ClearNotes, Link: item.Link,
+		Link: item.Link,
 	}
 	// stockMetadataFields (not stockMetadataPatch) is used deliberately: an
 	// item whose requested values already equal before must still carry real

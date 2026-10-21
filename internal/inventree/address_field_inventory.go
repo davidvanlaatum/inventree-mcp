@@ -1,7 +1,7 @@
 package inventree
 
 // AddressFieldClass records the approved handling for every field in the
-// pinned API 530 Address serializer. This inventory is exhaustive so schema
+// pinned API 560 Address serializer. This inventory is exhaustive so schema
 // drift cannot silently widen exact address output.
 type AddressFieldClass string
 
@@ -16,6 +16,8 @@ const (
 // never reaches agent context; city/region, country, and shipping notes
 // remain to disambiguate between a company's addresses.
 var AddressFieldInventory = map[string]AddressFieldClass{
+	"phone":                   AddressFieldExcluded,
+	"email":                   AddressFieldExcluded,
 	"pk":                      AddressFieldExposed,
 	"company":                 AddressFieldExposed,
 	"title":                   AddressFieldExposed,

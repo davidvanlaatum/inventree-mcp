@@ -65,7 +65,7 @@ func TestWorkflowPlannedChangesMCPWireContract(t *testing.T) {
 	a.Equal(map[string]any{"field": "part", "action": "create_part"}, dependencies[0])
 
 	stockResult, err := catalogSession.CallTool(ctx, &mcp.CallToolParams{Name: InitialStockWorkflowToolName, Arguments: map[string]any{
-		"dry_run": true, "part_id": 10, "location_id": 40, "quantity": 7, "status": 0, "batch": "", "serial": "", "notes": "",
+		"dry_run": true, "part_id": 10, "location_id": 40, "quantity": 7, "status": 0, "batch": "", "serial": "",
 	}})
 	r.NoError(err)
 	a.False(stockResult.IsError)
@@ -75,7 +75,7 @@ func TestWorkflowPlannedChangesMCPWireContract(t *testing.T) {
 	a.Equal(float64(0), stockFields["status"])
 	a.Equal("", stockFields["batch"])
 	a.Equal("", stockFields["serial"])
-	a.Equal("", stockFields["notes"])
+	a.NotContains(stockFields, "notes")
 
 	purchasingFake := &fakePurchasingClient{
 		company:       inventree.Company{PK: 30, Name: "Supplier", IsSupplier: true},

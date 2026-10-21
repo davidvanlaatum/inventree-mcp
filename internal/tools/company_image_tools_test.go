@@ -51,7 +51,6 @@ func TestSetCompanyImageAssignsAndVerifiesExactDigest(t *testing.T) {
 	a.True(fake.company.IsCustomer)
 	a.Equal(4, fake.company.PartsSupplied)
 	a.Equal(5, fake.company.PartsManufactured)
-	a.Equal("private note", *fake.company.Notes)
 }
 
 func TestSetCompanyImageRequiresReplacementConfirmation(t *testing.T) {
@@ -515,11 +514,10 @@ type fakeCompanyImageClient struct {
 }
 
 func newFakeCompanyImageClient(content []byte) *fakeCompanyImageClient {
-	note := "private note"
 	email := "private@example.test"
 	fake := &fakeCompanyImageClient{company: inventree.CompanyDetail{
 		Company: inventree.Company{PK: 30, Name: "Supplier", Description: "description", Currency: "AUD", Active: true, IsSupplier: true, IsCustomer: true, PartsSupplied: 4, PartsManufactured: 5},
-		Website: "https://example.test", Phone: "private", Email: &email, Contact: "private", Link: "https://example.test/private", Notes: &note, TaxID: "private-tax",
+		Website: "https://example.test", Phone: "private", Email: &email, Contact: "private", Link: "https://example.test/private", TaxID: "private-tax",
 	}}
 	if content != nil {
 		imageURL := "/media/company_images/company_30_img.png?secret=value"

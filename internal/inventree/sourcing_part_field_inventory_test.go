@@ -67,14 +67,12 @@ func TestSourcingPartDetailsPreserveNullableFieldsAndOmitUnapprovedData(t *testi
 	a.Equal(2.5, *supplier.OnOrder)
 	a.Nil(supplier.MPN)
 	a.Equal("short", *supplier.Note)
-	a.Nil(supplier.Notes)
 	a.Equal([]string{"reference"}, supplier.Tags)
 	assertSourcingJSONOmits(t, supplier, "barcode_hash", "supplier_detail", "price_breaks", "parameters")
 
 	var manufacturer inventree.ManufacturerPartDetail
 	r.NoError(json.Unmarshal([]byte(`{"pk":50,"part":10,"manufacturer":31,"pretty_name":null,"MPN":null,"description":null,"link":null,"notes":"markdown","barcode_hash":"secret","manufacturer_detail":{"pk":31},"parameters":[],"tags":["reference"]}`), &manufacturer))
 	a.Nil(manufacturer.MPN)
-	a.Equal("markdown", *manufacturer.Notes)
 	a.Equal([]string{"reference"}, manufacturer.Tags)
 	assertSourcingJSONOmits(t, manufacturer, "barcode_hash", "manufacturer_detail", "parameters")
 }

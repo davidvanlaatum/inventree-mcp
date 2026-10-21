@@ -144,8 +144,6 @@ type CreatePurchaseOrderInput struct {
 type UpdatePurchaseOrderInput struct {
 	ID                int      `json:"id" jsonschema:"Existing purchase-order primary key."`
 	Description       *string  `json:"description,omitempty" jsonschema:"Optional replacement order description, including an explicit empty string."`
-	Notes             *string  `json:"notes,omitempty" jsonschema:"Optional replacement Markdown notes."`
-	ClearNotes        bool     `json:"clear_notes,omitempty" jsonschema:"Explicitly PATCH notes to null; mutually exclusive with notes."`
 	SupplierReference *string  `json:"supplier_reference,omitempty" jsonschema:"Optional replacement supplier or external order identifier, including an explicit empty string."`
 	CreationDate      *string  `json:"creation_date,omitempty" jsonschema:"Optional replacement creation date in YYYY-MM-DD form. Pinned InvenTree 1.5.0 behavior resets this to the current date rather than clearing it when sent null, so no clear flag is offered."`
 	StartDate         *string  `json:"start_date,omitempty" jsonschema:"Optional replacement scheduled start date in YYYY-MM-DD form."`
@@ -1314,7 +1312,6 @@ func updatePurchaseOrderPatch(input UpdatePurchaseOrderInput) (inventree.PatchFi
 		provided bool
 		clear    bool
 	}{
-		{field: "notes", provided: input.Notes != nil, clear: input.ClearNotes},
 		{field: "start_date", provided: input.StartDate != nil, clear: input.ClearStartDate},
 		{field: "target_date", provided: input.TargetDate != nil, clear: input.ClearTargetDate},
 		{field: "destination_id", provided: input.DestinationID != nil, clear: input.ClearDestination},
@@ -1338,7 +1335,6 @@ func updatePurchaseOrderPatch(input UpdatePurchaseOrderInput) (inventree.PatchFi
 	setPatchString(fields, "order_currency", input.Currency)
 	setPatchString(fields, "link", link)
 	setPatchString(fields, "creation_date", input.CreationDate)
-	setNullableString(fields, "notes", input.Notes, input.ClearNotes)
 	setNullableString(fields, "start_date", input.StartDate, input.ClearStartDate)
 	setNullableString(fields, "target_date", input.TargetDate, input.ClearTargetDate)
 	setNullableIntPatch(fields, "destination", input.DestinationID, input.ClearDestination)

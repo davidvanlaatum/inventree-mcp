@@ -1116,7 +1116,6 @@ func TestUpdatePurchaseOrderValidatesAndPatches(t *testing.T) {
 	a.Equal(map[string]any{"id": 120}, emptyPatch.Clarification.RetryValues)
 
 	for _, conflict := range []UpdatePurchaseOrderInput{
-		{ID: 120, Notes: dvgoutils.Ptr("x"), ClearNotes: true},
 		{ID: 120, StartDate: dvgoutils.Ptr("2026-01-01"), ClearStartDate: true},
 		{ID: 120, TargetDate: dvgoutils.Ptr("2026-01-01"), ClearTargetDate: true},
 		{ID: 120, DestinationID: dvgoutils.Ptr(5), ClearDestination: true},
@@ -1150,11 +1149,6 @@ func TestUpdatePurchaseOrderValidatesAndPatches(t *testing.T) {
 	a.Equal("replacement description", updated.Record.Description)
 	a.Equal("https://example.com/order", updated.Record.Link)
 	a.Equal(1, fake.updateOrderDetailCalls)
-
-	_, clearedNotes, err := updatePurchaseOrder(deps)(ctx, &mcp.CallToolRequest{}, UpdatePurchaseOrderInput{ID: 120, ClearNotes: true})
-	r.NoError(err)
-	a.Equal(StatusOK, clearedNotes.Status)
-	a.Nil(clearedNotes.Record.Notes)
 
 	fake.updateOrderDetailMismatchPK = true
 	_, mismatched, err := updatePurchaseOrder(deps)(ctx, &mcp.CallToolRequest{}, UpdatePurchaseOrderInput{ID: 120, Description: dvgoutils.Ptr("again")})
@@ -1537,11 +1531,6 @@ func (f *fakePurchasingClient) UpdatePurchaseOrderDetail(ctx context.Context, id
 		order.Description, _ = value.(string)
 	}
 	detail := inventree.PurchaseOrderDetail{PurchaseOrder: order}
-	if value, ok := decoded["notes"]; ok {
-		if text, isString := value.(string); isString {
-			detail.Notes = &text
-		}
-	}
 	if value, ok := decoded["link"]; ok {
 		detail.Link, _ = value.(string)
 	}

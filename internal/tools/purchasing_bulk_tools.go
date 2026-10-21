@@ -90,8 +90,6 @@ type PurchaseOrderBulkUpdateClient interface {
 type BulkUpdatePurchaseOrderItem struct {
 	ID                int     `json:"id" jsonschema:"Stable purchase-order primary key."`
 	Description       *string `json:"description,omitempty" jsonschema:"Optional replacement order description, including an explicit empty string."`
-	Notes             *string `json:"notes,omitempty" jsonschema:"Optional replacement Markdown notes."`
-	ClearNotes        bool    `json:"clear_notes,omitempty" jsonschema:"Explicitly PATCH notes to null; mutually exclusive with notes."`
 	SupplierReference *string `json:"supplier_reference,omitempty" jsonschema:"Optional replacement supplier or external order identifier, including an explicit empty string."`
 	CreationDate      *string `json:"creation_date,omitempty" jsonschema:"Optional replacement creation date in YYYY-MM-DD form."`
 	StartDate         *string `json:"start_date,omitempty" jsonschema:"Optional replacement scheduled start date in YYYY-MM-DD form."`
@@ -137,7 +135,7 @@ func purchaseOrderValues(record inventree.PurchaseOrderDetail) map[string]any {
 	return map[string]any{
 		"description": record.Description, "supplier_reference": record.SupplierReference,
 		"order_currency": record.OrderCurrency, "link": record.Link, "creation_date": record.CreationDate,
-		"notes": record.Notes, "start_date": record.StartDate, "target_date": record.TargetDate,
+		"start_date": record.StartDate, "target_date": record.TargetDate,
 		"destination": record.Destination,
 	}
 }
@@ -168,8 +166,7 @@ func buildPurchaseOrderBulkPlanItem(ctx context.Context, client PurchaseOrderBul
 	// except tags, which stays out of bulk scope per F-S91; this maps every
 	// other field through explicitly rather than relying on a type conversion.
 	fields, err := updatePurchaseOrderPatch(UpdatePurchaseOrderInput{
-		ID: item.ID, Description: item.Description, Notes: item.Notes, ClearNotes: item.ClearNotes,
-		SupplierReference: item.SupplierReference, CreationDate: item.CreationDate,
+		ID: item.ID, Description: item.Description, SupplierReference: item.SupplierReference, CreationDate: item.CreationDate,
 		StartDate: item.StartDate, ClearStartDate: item.ClearStartDate,
 		TargetDate: item.TargetDate, ClearTargetDate: item.ClearTargetDate,
 		Currency: item.Currency, DestinationID: item.DestinationID,

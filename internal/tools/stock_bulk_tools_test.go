@@ -103,9 +103,6 @@ func applyPatchToStockItem(item *inventree.StockItem, fields inventree.PatchFiel
 	if field, ok := fields["packaging"]; ok {
 		item.Packaging = nullableStringPatchValue(field)
 	}
-	if field, ok := fields["notes"]; ok {
-		item.Notes = nullableStringPatchValue(field)
-	}
 	if field, ok := fields["link"]; ok {
 		if value, ok := field.Value().(string); ok {
 			item.Link = value
@@ -332,7 +329,7 @@ func TestBulkUpdateStockItemMetadataAcceptsExactlyMaxItems(t *testing.T) {
 	for i := range maxItems {
 		id := i + 1
 		client.items[id] = inventree.StockItem{PK: id, Batch: dvgoutils.Ptr("Old")}
-		maxItems[i] = BulkUpdateStockItemMetadataItem{ID: id, Notes: dvgoutils.Ptr("bulk note")}
+		maxItems[i] = BulkUpdateStockItemMetadataItem{ID: id, Batch: dvgoutils.Ptr("New")}
 	}
 	deps := testStockBulkDeps(client)
 	handler := bulkUpdateStockItemMetadata(deps)

@@ -86,7 +86,6 @@ type PartDetail struct {
 	Link                    *string        `json:"link"`
 	MinimumStock            float64        `json:"minimum_stock"`
 	MaximumStock            float64        `json:"maximum_stock"`
-	Notes                   *string        `json:"notes"`
 	Revision                *string        `json:"revision"`
 	RevisionOf              *int           `json:"revision_of"`
 	RevisionCount           *int           `json:"revision_count"`
@@ -306,7 +305,6 @@ type StockItem struct {
 	Batch                  *string        `json:"batch"`
 	ExpiryDate             *string        `json:"expiry_date"`
 	Packaging              *string        `json:"packaging"`
-	Notes                  *string        `json:"notes"`
 	Link                   string         `json:"link"`
 	Status                 int            `json:"status"`
 	StatusText             *string        `json:"status_text"`
@@ -349,7 +347,6 @@ type StockItemDetail struct {
 	Batch                  *string        `json:"batch"`
 	ExpiryDate             *string        `json:"expiry_date"`
 	Packaging              *string        `json:"packaging"`
-	Notes                  *string        `json:"notes"`
 	Link                   string         `json:"link"`
 	Status                 int            `json:"status"`
 	StatusText             *string        `json:"status_text"`
@@ -531,7 +528,6 @@ type CompanyDetail struct {
 	Email   *string  `json:"email"`
 	Contact string   `json:"contact"`
 	Link    string   `json:"link"`
-	Notes   *string  `json:"notes"`
 	TaxID   string   `json:"tax_id"`
 	Tags    []string `json:"tags,omitempty"`
 }
@@ -552,7 +548,6 @@ type SupplierPartDetail struct {
 	PackQuantity        string   `json:"pack_quantity"`
 	PackQuantityNative  float64  `json:"pack_quantity_native"`
 	Note                *string  `json:"note"`
-	Notes               *string  `json:"notes"`
 	Available           float64  `json:"available"`
 	AvailabilityUpdated *string  `json:"availability_updated"`
 	InStock             *float64 `json:"in_stock"`
@@ -569,7 +564,6 @@ type ManufacturerPartDetail struct {
 	MPN          *string  `json:"MPN"`
 	Description  *string  `json:"description"`
 	Link         *string  `json:"link"`
-	Notes        *string  `json:"notes"`
 	Tags         []string `json:"tags,omitempty"`
 }
 
@@ -668,7 +662,6 @@ type PurchaseOrderDetail struct {
 	Link             string                 `json:"link"`
 	StatusText       *string                `json:"status_text"`
 	StatusCustomKey  *int                   `json:"status_custom_key"`
-	Notes            *string                `json:"notes"`
 	Overdue          *bool                  `json:"overdue"`
 	CompleteDate     *string                `json:"complete_date"`
 	SupplierName     string                 `json:"supplier_name"`

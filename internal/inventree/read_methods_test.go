@@ -83,7 +83,7 @@ func TestReadMethodsUseExpectedEndpoints(t *testing.T) {
 			name: "get part detail",
 			call: func(ctx context.Context, client *Client) error {
 				record, err := client.GetPartDetail(ctx, 10)
-				if err == nil && (record.PK != 10 || record.Notes == nil || *record.Notes != "detail" || record.RevisionOf == nil || *record.RevisionOf != 8 || record.RevisionCount == nil || *record.RevisionCount != 2 || record.VariantOf == nil || *record.VariantOf != 9) {
+				if err == nil && (record.PK != 10 || record.RevisionOf == nil || *record.RevisionOf != 8 || record.RevisionCount == nil || *record.RevisionCount != 2 || record.VariantOf == nil || *record.VariantOf != 9) {
 					return errors.New("part detail did not preserve exact fields")
 				}
 				return err

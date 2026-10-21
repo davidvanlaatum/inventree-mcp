@@ -9,6 +9,9 @@ Current status: milestone 1 STDIO workflows are implemented for part/company ent
 
 ## Supported InvenTree Versions
 
+The current implementation targets InvenTree **1.6.0 / API 560** and drops 1.5.x compatibility. Markdown notes have moved from inline object fields to `search_notes`, `get_note`, `create_note`, `update_note`, and `delete_note`, with batch create/update tools. Select a qualified `model_type` and parent `model_id` to create or search; use the stable `note_id` to edit or delete. Supplier-part short `note` and transaction/line notes remain separate fields.
+
+
 This table records the InvenTree version and API revision the blocking Testcontainers integration suite verified against for each released `inventree-mcp` version. It documents tested compatibility only; it is not a claim of minimum supported InvenTree version. See [Compatibility Decisions](docs/PLAN.md#compatibility-decisions) for the full policy. The last row always tracks the InvenTree pin currently in effect on `main`, shown as its shipped tag once released; it instead reads `` `main` (unreleased) `` whenever that pin has not yet shipped in a tagged release.
 
 <!-- BEGIN inventree-compat-table -->
@@ -21,7 +24,7 @@ This table records the InvenTree version and API revision the blocking Testconta
 | `v0.0.15`-`v0.1.1` | 1.5.2 | 530 |
 | `v0.1.2`-`v0.2.0` | 1.5.4 | 530 |
 | `v0.2.1` | 1.5.5 | 530 |
-| `main` (unreleased) | 1.5.7 | 530 | <!-- inventree-compat-table:current-row -->
+| `main` (unreleased) | 1.6.0 | 560 | <!-- inventree-compat-table:current-row -->
 <!-- END inventree-compat-table -->
 
 ## Quick Start

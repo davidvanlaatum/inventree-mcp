@@ -203,9 +203,9 @@ func TestUpdateStockItemMetadataBindsCompleteStateAndApprovedFields(t *testing.T
 	r := require.New(t)
 	a := assert.New(t)
 	fake := newStockAdminFake()
-	fake.stockItems[50] = inventree.StockItem{PK: 50, Part: 5, Location: dvgoutils.Ptr(40), Quantity: 8, Serial: dvgoutils.Ptr("S-1"), Status: 10, DeleteOnDeplete: true, Batch: dvgoutils.Ptr("old"), Packaging: dvgoutils.Ptr("reel"), Notes: dvgoutils.Ptr("old note")}
+	fake.stockItems[50] = inventree.StockItem{PK: 50, Part: 5, Location: dvgoutils.Ptr(40), Quantity: 8, Serial: dvgoutils.Ptr("S-1"), Status: 10, DeleteOnDeplete: true, Batch: dvgoutils.Ptr("old"), Packaging: dvgoutils.Ptr("reel")}
 	completeLink := "https://example.test/item?account=42#details"
-	input := UpdateStockItemMetadataInput{ID: 50, Batch: dvgoutils.Ptr("B-2"), ExpiryDate: dvgoutils.Ptr("2027-01-02"), ClearPackaging: true, Notes: dvgoutils.Ptr("checked"), Link: &completeLink, DryRun: true}
+	input := UpdateStockItemMetadataInput{ID: 50, Batch: dvgoutils.Ptr("B-2"), ExpiryDate: dvgoutils.Ptr("2027-01-02"), ClearPackaging: true, Link: &completeLink, DryRun: true}
 
 	_, plan, err := updateStockItemMetadata(stockAdminDeps(fake))(ctx, &mcp.CallToolRequest{}, input)
 	r.NoError(err)
@@ -228,7 +228,7 @@ func TestUpdateStockItemMetadataBindsCompleteStateAndApprovedFields(t *testing.T
 	a.True(fake.lastPatchHas("batch"))
 	a.True(fake.lastPatchHas("expiry_date"))
 	a.True(fake.lastPatchNull("packaging"))
-	a.True(fake.lastPatchHas("notes"))
+	a.False(fake.lastPatchHas("notes"))
 	a.True(fake.lastPatchHas("link"))
 	for _, forbidden := range []string{"location", "quantity", "status", "serial", "owner", "supplier_part", "purchase_price", "delete_on_deplete", "belongs_to", "purchase_order", "build"} {
 		a.False(fake.lastPatchHas(forbidden), forbidden)
@@ -883,8 +883,6 @@ func applyStockPatch(value *inventree.StockItem, fields inventree.PatchFields) {
 			value.ExpiryDate = stockTestStringPointer(patch.Value())
 		case "packaging":
 			value.Packaging = stockTestStringPointer(patch.Value())
-		case "notes":
-			value.Notes = stockTestStringPointer(patch.Value())
 		case "link":
 			value.Link = patch.Value().(string)
 		case "supplier_part":

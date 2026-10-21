@@ -135,7 +135,7 @@ func TestGetPartReturnsCompleteApprovedDetailAndSanitizesExternalLink(t *testing
 	pricing := inventree.DecimalString("1.250000")
 	stock := 4.5
 	fake := &fakeMilestoneLookupClient{partDetail: inventree.PartDetail{
-		PK: 10, Name: "resistor", IPN: "R-10K", Link: &complete, Notes: dvgoutils.Ptr("markdown"),
+		PK: 10, Name: "resistor", IPN: "R-10K", Link: &complete,
 		PricingMin: &pricing, InStock: &stock, CreationUser: dvgoutils.Ptr(7), Consumable: true,
 		RevisionOf: dvgoutils.Ptr(8), RevisionCount: dvgoutils.Ptr(2), VariantOf: dvgoutils.Ptr(9),
 	}}
@@ -149,7 +149,6 @@ func TestGetPartReturnsCompleteApprovedDetailAndSanitizesExternalLink(t *testing
 	a.Equal(StatusOK, output.Status)
 	a.Equal("R-10K", output.Record.IPN)
 	a.Equal(complete, output.Record.Link)
-	a.Equal(dvgoutils.Ptr("markdown"), output.Record.Notes)
 	a.Equal(&pricing, output.Record.PricingMin)
 	a.Equal(&stock, output.Record.InStock)
 	a.Equal(dvgoutils.Ptr(7), output.Record.CreationUser)
@@ -1112,7 +1111,7 @@ func (f *fakeMilestoneLookupClient) GetSupplierPartDetail(_ context.Context, id 
 		}
 	}
 	input := f.lastCreateSupplierPart
-	return inventree.SupplierPartDetail{PK: id, Part: input.Part, Supplier: input.Supplier, SKU: input.SKU, Description: input.Description, Link: input.Link, ManufacturerPart: input.ManufacturerPart, Packaging: input.Packaging, Note: input.Note, Notes: input.Notes, Available: derefFloat64(input.Available)}, nil
+	return inventree.SupplierPartDetail{PK: id, Part: input.Part, Supplier: input.Supplier, SKU: input.SKU, Description: input.Description, Link: input.Link, ManufacturerPart: input.ManufacturerPart, Packaging: input.Packaging, Note: input.Note, Available: derefFloat64(input.Available)}, nil
 }
 
 func (f *fakeMilestoneLookupClient) SearchManufacturerParts(_ context.Context, query inventree.ManufacturerPartQuery) ([]inventree.ManufacturerPart, error) {
@@ -1153,7 +1152,7 @@ func (f *fakeMilestoneLookupClient) GetManufacturerPartDetail(_ context.Context,
 		}
 	}
 	input := f.lastCreateManufacturerPart
-	return inventree.ManufacturerPartDetail{PK: id, Part: input.Part, Manufacturer: input.Manufacturer, MPN: input.MPN, Description: input.Description, Link: input.Link, Notes: input.Notes}, nil
+	return inventree.ManufacturerPartDetail{PK: id, Part: input.Part, Manufacturer: input.Manufacturer, MPN: input.MPN, Description: input.Description, Link: input.Link}, nil
 }
 
 func derefFloat64(value *float64) float64 {
@@ -1166,7 +1165,7 @@ func derefFloat64(value *float64) float64 {
 func (f *fakeMilestoneLookupClient) CreateStockItem(_ context.Context, input inventree.StockItemCreate) (inventree.StockItem, error) {
 	f.createdStockItem = true
 	f.lastCreateStockItem = input
-	return inventree.StockItem{PK: 50, Part: input.Part, Location: &input.Location, Quantity: input.Quantity, Status: 10, Batch: input.Batch, Serial: input.Serial, Notes: input.Notes}, nil
+	return inventree.StockItem{PK: 50, Part: input.Part, Location: &input.Location, Quantity: input.Quantity, Status: 10, Batch: input.Batch, Serial: input.Serial}, nil
 }
 
 func ptrInt64(value int64) *int64 {

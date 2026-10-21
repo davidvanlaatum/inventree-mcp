@@ -1,0 +1,178 @@
+package inventree
+
+import (
+	"encoding/json"
+	"net/http"
+	"strings"
+	"testing"
+
+	"github.com/davidvanlaatum/dvgoutils"
+	"github.com/davidvanlaatum/dvgoutils/logging/testhandler"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+)
+
+func TestNoteMethodsUseScopedEndpointsAndExplicitValues(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	note := Note{PK: 2, ModelType: "part.part", ModelID: 1, Title: "Test", Content: "text", Primary: true}
+	var calls []string
+	c, err := NewClient(Config{BaseURL: "https://inventory.example.test", Credential: Credential{Scheme: AuthSchemeToken, Token: "secret"}, HTTPClient: &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		calls = append(calls, req.Method+" "+req.URL.Path)
+		switch req.URL.Path {
+		case "/api/part/1/":
+			return jsonResponse(req, 200, `{"pk":1}`), nil
+		case "/api/note/":
+			if req.Method == http.MethodGet {
+				a.Equal("part.part", req.URL.Query().Get("model_type"))
+				a.Equal("false", req.URL.Query().Get("template"))
+				a.Equal("false", req.URL.Query().Get("updated_by_detail"))
+				a.Equal("1", req.URL.Query().Get("model_id"))
+				a.Equal("needle", req.URL.Query().Get("search"))
+				a.Equal("10", req.URL.Query().Get("offset"))
+				b, _ := json.Marshal(Page[Note]{Count: 1, Results: []Note{note}})
+				return jsonResponse(req, 200, string(b)), nil
+			}
+			var body map[string]any
+			r.NoError(json.NewDecoder(req.Body).Decode(&body))
+			a.Equal(false, body["primary"])
+			a.Equal("", body["content"])
+			a.NotContains(body, "template")
+			b, _ := json.Marshal(note)
+			return jsonResponse(req, 201, string(b)), nil
+		case "/api/note/2/":
+			if req.Method == http.MethodDelete {
+				return jsonResponse(req, 204, ""), nil
+			}
+			if req.Method == http.MethodPatch {
+				var body map[string]any
+				r.NoError(json.NewDecoder(req.Body).Decode(&body))
+				a.Equal(map[string]any{"content": "", "primary": false}, body)
+			}
+			b, _ := json.Marshal(note)
+			return jsonResponse(req, 200, string(b)), nil
+		default:
+			t.Errorf("unexpected path %s", req.URL.Path)
+			return jsonResponse(req, 404, `{}`), nil
+		}
+	})}})
+	r.NoError(err)
+	page, err := c.SearchNotesPage(ctx, NoteQuery{ModelType: "part.part", ModelID: 1, Search: "needle", Limit: 20, Offset: 10})
+	r.NoError(err)
+	a.Len(page.Results, 1)
+	_, err = c.GetNote(ctx, 2)
+	r.NoError(err)
+	_, err = c.CreateNote(ctx, NoteCreate{ModelType: "part.part", ModelID: 1, Title: "Test", Content: "", Primary: dvgoutils.Ptr(false)})
+	r.NoError(err)
+	_, err = c.UpdateNote(ctx, 2, PatchFields{"content": Set(""), "primary": Set(false)})
+	r.NoError(err)
+	r.NoError(c.DeleteNote(ctx, 2))
+	a.Contains(calls, "DELETE /api/note/2/")
+}
+
+func TestNotesRejectOutOfScopeAndUnsafeInputs(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name       string
+		note       Note
+		parentCode int
+	}{
+		{"template", Note{PK: 2, Template: true}, 200},
+		{"sales object", Note{PK: 2, ModelType: "order.salesorder", ModelID: 1}, 200},
+		{"mismatched identity", Note{PK: 3, ModelType: "part.part", ModelID: 1}, 200},
+		{"unreadable parent", Note{PK: 2, ModelType: "part.part", ModelID: 1}, 403},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r := require.New(t)
+			ctx, _, _ := testhandler.SetupTestHandler(t)
+			writes := 0
+			c, err := NewClient(Config{BaseURL: "https://inventory.example.test", Credential: Credential{Scheme: AuthSchemeToken, Token: "secret"}, HTTPClient: &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+				if req.Method != "GET" {
+					writes++
+				}
+				if strings.HasPrefix(req.URL.Path, "/api/part/") {
+					return jsonResponse(req, tc.parentCode, `{}`), nil
+				}
+				b, _ := json.Marshal(tc.note)
+				return jsonResponse(req, 200, string(b)), nil
+			})}})
+			r.NoError(err)
+			_, err = c.GetNote(ctx, 2)
+			r.Error(err)
+			_, err = c.UpdateNote(ctx, 2, PatchFields{"content": Set("changed")})
+			r.Error(err)
+			r.Error(c.DeleteNote(ctx, 2))
+			r.Zero(writes)
+		})
+	}
+	t.Run("invalid fields and bounds", func(t *testing.T) {
+		r := require.New(t)
+		ctx, _, _ := testhandler.SetupTestHandler(t)
+		c, err := NewClient(Config{BaseURL: "https://inventory.example.test", Credential: Credential{Scheme: AuthSchemeToken, Token: "secret"}, HTTPClient: &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			if strings.HasPrefix(req.URL.Path, "/api/part/") {
+				return jsonResponse(req, 200, `{"pk":1}`), nil
+			}
+			return jsonResponse(req, 200, `{"pk":2,"model_type":"part.part","model_id":1,"title":"Test"}`), nil
+		})}})
+		r.NoError(err)
+		for _, fields := range []PatchFields{{}, {"model_type": Set("company.company")}, {"model_id": Set(3)}, {"template": Set(true)}, {"primary": Null()}, {"title": Set("")}, {"content": Set(strings.Repeat("a", 50001))}, {"title": Set(strings.Repeat("é", 101))}, {"description": Null()}} {
+			_, err = c.UpdateNote(ctx, 2, fields)
+			r.Error(err)
+		}
+		for _, q := range []NoteQuery{{}, {ModelType: "part.part", Limit: 101}, {ModelType: "part.part", Limit: 1, Offset: 5001}, {ModelType: "part.part", Limit: 1, ModelID: -1}} {
+			_, err = c.SearchNotesPage(ctx, q)
+			r.Error(err)
+		}
+		_, err = c.CreateNote(ctx, NoteCreate{ModelType: "part.part", ModelID: 1, Title: ""})
+		r.Error(err)
+	})
+}
+
+func TestNotesReadEverySupportedParentAndRejectBadListResponses(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct{ modelType, parentPath string }{
+		{"part.part", "/api/part/1/"}, {"company.company", "/api/company/1/"},
+		{"company.supplierpart", "/api/company/part/1/"}, {"company.manufacturerpart", "/api/company/part/manufacturer/1/"},
+		{"stock.stockitem", "/api/stock/1/"}, {"order.purchaseorder", "/api/order/po/1/"},
+	} {
+		t.Run(tc.modelType, func(t *testing.T) {
+			r := require.New(t)
+			ctx, _, _ := testhandler.SetupTestHandler(t)
+			parentRead := false
+			c, err := NewClient(Config{BaseURL: "https://inventory.example.test", Credential: Credential{Scheme: AuthSchemeToken, Token: "secret"}, HTTPClient: &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+				if req.URL.Path == tc.parentPath {
+					parentRead = true
+					return jsonResponse(req, 200, `{"pk":1}`), nil
+				}
+				b, _ := json.Marshal(Note{PK: 2, ModelType: tc.modelType, ModelID: 1, Title: "T"})
+				return jsonResponse(req, 200, string(b)), nil
+			})}})
+			r.NoError(err)
+			_, err = c.GetNote(ctx, 2)
+			r.NoError(err)
+			r.True(parentRead)
+		})
+	}
+	for _, payload := range []string{
+		`{"count":1,"results":[{"pk":2,"model_type":"order.salesorder","model_id":1}]}`,
+		`{"count":1,"results":[{"pk":2,"model_type":"part.part","model_id":2}]}`,
+		`{"count":1,"results":[{"pk":2,"template":true,"model_type":"part.part","model_id":1}]}`,
+		`{"count":2,"results":[{"pk":2,"model_type":"part.part","model_id":1},{"pk":3,"model_type":"part.part","model_id":1}]}`,
+	} {
+		t.Run(payload, func(t *testing.T) {
+			r := require.New(t)
+			ctx, _, _ := testhandler.SetupTestHandler(t)
+			c, err := NewClient(Config{BaseURL: "https://inventory.example.test", Credential: Credential{Scheme: AuthSchemeToken, Token: "secret"}, HTTPClient: &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+				if req.URL.Path == "/api/part/1/" {
+					return jsonResponse(req, 200, `{"pk":1}`), nil
+				}
+				return jsonResponse(req, 200, payload), nil
+			})}})
+			r.NoError(err)
+			_, err = c.SearchNotesPage(ctx, NoteQuery{ModelType: "part.part", ModelID: 1, Limit: 1})
+			r.Error(err)
+		})
+	}
+}

@@ -58,3 +58,5 @@ Clarification candidates use the breaking explicit contract:
 - `api_url`: sanitized relative REST inspection path when one exists.
 
 The former ambiguous `url` candidate field is removed. `api_url` is clarification-only and is not added universally to object records.
+
+F-S106 revalidated every composed route and the default `/web` mount against the exact InvenTree 1.6.0 release commit `4d05a10ade57554883e26cc2cc10b962934b8c31`. Immutable excerpts and source blob identities are recorded in `internal/weblinks/testdata/inventree-1.6.0-router-routes.txt`; existing object route templates are unchanged. Notes have no separate stable detail route in the approved inventory and therefore do not invent a `web_url`.

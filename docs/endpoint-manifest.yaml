@@ -1,8 +1,8 @@
 schema:
   path: docs/api-schema.yaml
-  sha256: 27d5989485dd4d56918c4761300fa6b4e782e3af3f8aa7153ed55a1f42e62590
+  sha256: bd00f78f27c095a225130a83ba337e993cd3a062fa7b09d5be06bd4dd62a8426
   openapi: 3.0.3
-  api_version: "530"
+  api_version: "560"
 
 coverage_areas:
   - tags
@@ -25,9 +25,10 @@ coverage_areas:
   - pricing
   - barcode
   - users
+  - notes
 
 forbidden_paths:
-  - /api/notes-image-upload/
+  - /api/note/image/
   - /api/report/asset/
   - /api/report/asset/{id}/
   - /api/report/print/
@@ -1003,6 +1004,8 @@ endpoints:
     area: purchasing
     path: /api/order/po/{id}/issue/
     method: POST
+    request_schema: '#/components/schemas/PurchaseOrder'
+    request_content_type: application/json
     operation_id: order_po_issue_create
     response_status: 201
   - id: complete_purchase_order
@@ -1017,12 +1020,16 @@ endpoints:
     area: purchasing
     path: /api/order/po/{id}/hold/
     method: POST
+    request_schema: '#/components/schemas/PurchaseOrder'
+    request_content_type: application/json
     operation_id: order_po_hold_create
     response_status: 201
   - id: cancel_purchase_order
     area: purchasing
     path: /api/order/po/{id}/cancel/
     method: POST
+    request_schema: '#/components/schemas/PurchaseOrder'
+    request_content_type: application/json
     operation_id: order_po_cancel_create
     response_status: 201
   - id: delete_purchase_order_line
@@ -1130,3 +1137,37 @@ endpoints:
     required_query:
       - limit
     response_schema: '#/components/schemas/PaginatedBarcodeScanResultList'
+  - id: search_notes
+    area: notes
+    path: /api/note/
+    method: GET
+    operation_id: note_list
+    response_schema: '#/components/schemas/PaginatedNoteList'
+  - id: get_note
+    area: notes
+    path: /api/note/{id}/
+    method: GET
+    operation_id: note_retrieve
+    response_schema: '#/components/schemas/Note'
+  - id: create_note
+    area: notes
+    path: /api/note/
+    method: POST
+    operation_id: note_create
+    request_schema: '#/components/schemas/Note'
+    request_content_type: application/json
+    response_schema: '#/components/schemas/Note'
+  - id: update_note
+    area: notes
+    path: /api/note/{id}/
+    method: PATCH
+    operation_id: note_partial_update
+    request_schema: '#/components/schemas/PatchedNote'
+    request_content_type: application/json
+    response_schema: '#/components/schemas/Note'
+  - id: delete_note
+    area: notes
+    path: /api/note/{id}/
+    method: DELETE
+    operation_id: note_destroy
+    response_status: "204"

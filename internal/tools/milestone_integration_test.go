@@ -59,6 +59,8 @@ func TestMilestoneHappyPathToolsAgainstInvenTree(t *testing.T) {
 		return shared.Close(context.WithoutCancel(ctx))
 	}))
 
+	t.Run("notes", func(t *testing.T) { runNoteToolsIntegration(t, shared) })
+
 	t.Run("catalog_stock_supplier_and_purchase_preview_happy_path", func(t *testing.T) {
 		r := require.New(t)
 		a := assert.New(t)
@@ -74,7 +76,6 @@ func TestMilestoneHappyPathToolsAgainstInvenTree(t *testing.T) {
 			LocationID: location.ID,
 			Quantity:   11,
 			Batch:      dvgoutils.Ptr("M1H"),
-			Notes:      dvgoutils.Ptr("milestone happy path"),
 		})
 		r.NoError(err)
 		a.Equal(StatusOK, stock.Status)
@@ -122,12 +123,11 @@ func TestMilestoneHappyPathToolsAgainstInvenTree(t *testing.T) {
 			Name: name, CategoryID: category.ID, Consumable: dvgoutils.Ptr(true), DefaultExpiry: dvgoutils.Ptr(30),
 			IsTemplate: dvgoutils.Ptr(false), Keywords: dvgoutils.Ptr("integration keywords"), Link: &link,
 			Locked: dvgoutils.Ptr(false), MinimumStock: dvgoutils.Ptr(2.5), MaximumStock: dvgoutils.Ptr(5.5),
-			Revision: dvgoutils.Ptr("A"), Salable: dvgoutils.Ptr(true), Testable: dvgoutils.Ptr(true), Notes: dvgoutils.Ptr("integration markdown"),
+			Revision: dvgoutils.Ptr("A"), Salable: dvgoutils.Ptr(true), Testable: dvgoutils.Ptr(true),
 		})
 		r.NoError(err)
 		a.Equal(StatusOK, created.Status)
 		a.Equal(link, created.Record.Link)
-		a.Equal("integration markdown", *created.Record.Notes)
 		r.NotNil(created.Record.CreationUser)
 
 		_, exact, err := getPart(fixture.deps())(ctx, &mcp.CallToolRequest{}, IDInput{ID: created.Record.PK})
@@ -139,7 +139,7 @@ func TestMilestoneHappyPathToolsAgainstInvenTree(t *testing.T) {
 		a.True(exact.Record.Consumable)
 
 		_, updated, err := updatePart(fixture.deps())(ctx, &mcp.CallToolRequest{}, UpdatePartInput{
-			ID: created.Record.PK, ClearKeywords: true, ClearLink: true, ClearRevision: true, ClearNotes: true,
+			ID: created.Record.PK, ClearKeywords: true, ClearLink: true, ClearRevision: true,
 			DefaultExpiry: dvgoutils.Ptr(0), MinimumStock: dvgoutils.Ptr(3.0), MaximumStock: dvgoutils.Ptr(0.0),
 			Consumable: dvgoutils.Ptr(false), Salable: dvgoutils.Ptr(false), Testable: dvgoutils.Ptr(false),
 		})
@@ -148,7 +148,6 @@ func TestMilestoneHappyPathToolsAgainstInvenTree(t *testing.T) {
 		a.Nil(updated.Record.Keywords)
 		a.Empty(updated.Record.Link)
 		a.Nil(updated.Record.Revision)
-		a.Nil(updated.Record.Notes)
 		a.Zero(updated.Record.DefaultExpiry)
 		a.Equal(3.0, updated.Record.MinimumStock)
 		a.Zero(updated.Record.MaximumStock)
@@ -631,7 +630,7 @@ func TestMilestoneHappyPathToolsAgainstInvenTree(t *testing.T) {
 
 		stock, err := fixture.client.CreateStockItem(ctx, inventree.StockItemCreate{Part: part.ID, Location: child.PK, Quantity: 3})
 		r.NoError(err)
-		metadataInput := UpdateStockItemMetadataInput{ID: stock.PK, Batch: dvgoutils.Ptr("F-S21"), ExpiryDate: dvgoutils.Ptr("2027-01-02"), Packaging: dvgoutils.Ptr("tray"), Notes: dvgoutils.Ptr("reviewed metadata"), Link: dvgoutils.Ptr("https://example.test/stock"), DryRun: true}
+		metadataInput := UpdateStockItemMetadataInput{ID: stock.PK, Batch: dvgoutils.Ptr("F-S21"), ExpiryDate: dvgoutils.Ptr("2027-01-02"), Packaging: dvgoutils.Ptr("tray"), Link: dvgoutils.Ptr("https://example.test/stock"), DryRun: true}
 		_, metadataPlan, err := updateStockItemMetadata(fixture.deps())(ctx, &mcp.CallToolRequest{}, metadataInput)
 		r.NoError(err)
 		r.NotEmpty(metadataPlan.PlanHash)
@@ -1317,15 +1316,13 @@ func TestMilestoneHappyPathToolsAgainstInvenTree(t *testing.T) {
 		r.NoError(err)
 		r.NotNil(supplierGet.Record)
 		packaging := "reel"
-		supplierLongNotes := "supplier **Markdown** notes"
 		explicitZeroAvailability := 0.0
-		_, supplierUpdate, err := updateSupplierPartAdmin(fixture.deps())(ctx, &mcp.CallToolRequest{}, UpdateSupplierPartInput{ID: supplierPart.ID, Packaging: &packaging, ManufacturerPartID: &manufacturerPart.PK, Notes: &supplierLongNotes, Available: &explicitZeroAvailability})
+		_, supplierUpdate, err := updateSupplierPartAdmin(fixture.deps())(ctx, &mcp.CallToolRequest{}, UpdateSupplierPartInput{ID: supplierPart.ID, Packaging: &packaging, ManufacturerPartID: &manufacturerPart.PK, Available: &explicitZeroAvailability})
 		r.NoError(err)
 		a.Equal(StatusOK, supplierUpdate.Status)
 		r.NotNil(supplierUpdate.Record)
 		r.NotNil(supplierUpdate.Record.Packaging)
 		a.Equal(packaging, *supplierUpdate.Record.Packaging)
-		a.Equal(supplierLongNotes, *supplierUpdate.Record.Notes)
 		a.Zero(supplierUpdate.Record.Available)
 		a.Equal(manufacturerPart.MPN, *supplierUpdate.Record.MPN)
 		r.NotNil(supplierUpdate.Record.AvailabilityUpdated)
@@ -1340,14 +1337,12 @@ func TestMilestoneHappyPathToolsAgainstInvenTree(t *testing.T) {
 		r.NoError(err)
 		r.NotNil(manufacturerGet.Record)
 		manufacturerDescription := "verified F-S20 manufacturer link"
-		manufacturerLongNotes := "manufacturer **Markdown** notes"
-		_, manufacturerUpdate, err := updateManufacturerPartAdmin(fixture.deps())(ctx, &mcp.CallToolRequest{}, UpdateManufacturerPartInput{ID: manufacturerPart.PK, Description: &manufacturerDescription, Notes: &manufacturerLongNotes})
+		_, manufacturerUpdate, err := updateManufacturerPartAdmin(fixture.deps())(ctx, &mcp.CallToolRequest{}, UpdateManufacturerPartInput{ID: manufacturerPart.PK, Description: &manufacturerDescription})
 		r.NoError(err)
 		a.Equal(StatusOK, manufacturerUpdate.Status)
 		r.NotNil(manufacturerUpdate.Record)
 		r.NotNil(manufacturerUpdate.Record.Description)
 		a.Equal(manufacturerDescription, *manufacturerUpdate.Record.Description)
-		a.Equal(manufacturerLongNotes, *manufacturerUpdate.Record.Notes)
 
 		missingPartID := 999999999
 		_, _, err = updateSupplierPartAdmin(fixture.deps())(ctx, &mcp.CallToolRequest{}, UpdateSupplierPartInput{ID: supplierPart.ID, PartID: &missingPartID})
@@ -1398,12 +1393,11 @@ func TestMilestoneHappyPathToolsAgainstInvenTree(t *testing.T) {
 		r.NotNil(explicitSupplierValues.Record.Description)
 		a.Empty(*explicitSupplierValues.Record.Description)
 		a.False(explicitSupplierValues.Record.Active)
-		_, clearedSupplierNote, err := updateSupplierPartAdmin(fixture.deps())(ctx, &mcp.CallToolRequest{}, UpdateSupplierPartInput{ID: supplierPart.ID, ClearNote: true, ClearNotes: true})
+		_, clearedSupplierNote, err := updateSupplierPartAdmin(fixture.deps())(ctx, &mcp.CallToolRequest{}, UpdateSupplierPartInput{ID: supplierPart.ID, ClearNote: true})
 		r.NoError(err)
 		a.Equal(StatusOK, clearedSupplierNote.Status)
 		r.NotNil(clearedSupplierNote.Record)
 		a.Nil(clearedSupplierNote.Record.Note)
-		a.Nil(clearedSupplierNote.Record.Notes)
 
 		_, explicitManufacturerValues, err := updateManufacturerPartAdmin(fixture.deps())(ctx, &mcp.CallToolRequest{}, UpdateManufacturerPartInput{ID: manufacturerPart.PK, Description: &empty, Link: &empty})
 		r.NoError(err)
@@ -1411,13 +1405,12 @@ func TestMilestoneHappyPathToolsAgainstInvenTree(t *testing.T) {
 		r.NotNil(explicitManufacturerValues.Record)
 		r.NotNil(explicitManufacturerValues.Record.Description)
 		a.Empty(*explicitManufacturerValues.Record.Description)
-		_, clearedManufacturerValues, err := updateManufacturerPartAdmin(fixture.deps())(ctx, &mcp.CallToolRequest{}, UpdateManufacturerPartInput{ID: manufacturerPart.PK, ClearDescription: true, ClearLink: true, ClearNotes: true})
+		_, clearedManufacturerValues, err := updateManufacturerPartAdmin(fixture.deps())(ctx, &mcp.CallToolRequest{}, UpdateManufacturerPartInput{ID: manufacturerPart.PK, ClearDescription: true, ClearLink: true})
 		r.NoError(err)
 		a.Equal(StatusOK, clearedManufacturerValues.Status)
 		r.NotNil(clearedManufacturerValues.Record)
 		a.Nil(clearedManufacturerValues.Record.Description)
 		a.Empty(clearedManufacturerValues.Record.Link)
-		a.Nil(clearedManufacturerValues.Record.Notes)
 
 		roleRemovalName, err := fixture.run.Name("supplier-role-removal")
 		r.NoError(err)
@@ -1439,19 +1432,14 @@ func TestMilestoneHappyPathToolsAgainstInvenTree(t *testing.T) {
 		a.Equal(StatusOK, manufacturerRoleRemoval.Status)
 		r.NotNil(manufacturerRoleRemoval.Record)
 		a.False(manufacturerRoleRemoval.Record.IsManufacturer)
-
-		companyNote := "temporary company note"
-		_, explicitCompanyValues, err := updateCompanyAdmin(fixture.deps())(ctx, &mcp.CallToolRequest{}, UpdateCompanyInput{ID: roleRemovalCompany.PK, Notes: &companyNote})
+		_, explicitCompanyValues, err := updateCompanyAdmin(fixture.deps())(ctx, &mcp.CallToolRequest{}, UpdateCompanyInput{ID: roleRemovalCompany.PK, ClearEmail: true})
 		r.NoError(err)
 		a.Equal(StatusOK, explicitCompanyValues.Status)
 		r.NotNil(explicitCompanyValues.Record)
-		r.NotNil(explicitCompanyValues.Record.Notes)
-		a.Equal(companyNote, *explicitCompanyValues.Record.Notes)
-		_, clearedCompanyNote, err := updateCompanyAdmin(fixture.deps())(ctx, &mcp.CallToolRequest{}, UpdateCompanyInput{ID: roleRemovalCompany.PK, ClearNotes: true})
+		_, clearedCompanyNote, err := updateCompanyAdmin(fixture.deps())(ctx, &mcp.CallToolRequest{}, UpdateCompanyInput{ID: roleRemovalCompany.PK, ClearEmail: true})
 		r.NoError(err)
 		a.Equal(StatusOK, clearedCompanyNote.Status)
 		r.NotNil(clearedCompanyNote.Record)
-		a.Nil(clearedCompanyNote.Record.Notes)
 	})
 
 	t.Run("company_customer_role_removal_happy_path", func(t *testing.T) {
@@ -1935,7 +1923,17 @@ func TestMilestoneHappyPathToolsAgainstInvenTree(t *testing.T) {
 		})
 
 		t.Run("cancel_refuses_a_completed_order", func(t *testing.T) {
-			order := newOrder("po-cancel-complete")
+			r := require.New(t)
+			a := assert.New(t)
+			ctx, _, _ := testhandler.SetupTestHandler(t)
+			fixture := newMilestoneToolFixture(t, shared)
+			supplier := fixture.ensure(t, testenv.FixtureSupplier)
+			supplierPart := fixture.ensure(t, testenv.FixtureSupplierPart)
+			destination := fixture.ensure(t, testenv.FixtureLocation)
+			reference, err := fixture.run.Name("po-cancel-complete")
+			r.NoError(err)
+			order, err := fixture.client.CreatePurchaseOrder(ctx, inventree.PurchaseOrderCreate{Supplier: supplier.ID, SupplierReference: &reference})
+			r.NoError(err)
 			lineReference, err := fixture.run.Name("po-cancel-complete-line")
 			r.NoError(err)
 			line, err := fixture.client.CreatePurchaseOrderLine(ctx, inventree.PurchaseOrderLineCreate{Order: order.PK, SupplierPart: supplierPart.ID, Reference: &lineReference, Quantity: 1, Destination: &destination.ID})
@@ -1943,7 +1941,14 @@ func TestMilestoneHappyPathToolsAgainstInvenTree(t *testing.T) {
 			r.NoError(fixture.client.IssuePurchaseOrder(ctx, order.PK))
 			_, err = fixture.client.ReceivePurchaseOrder(ctx, order.PK, inventree.PurchaseOrderReceive{Items: []inventree.PurchaseOrderReceiveItem{{LineItem: line.PK, Location: &destination.ID, Quantity: "1"}}})
 			r.NoError(err)
-			r.NoError(fixture.client.CompletePurchaseOrder(ctx, order.PK))
+			receivedOrder, err := fixture.client.GetPurchaseOrder(ctx, order.PK)
+			r.NoError(err)
+			if receivedOrder.Status == inventree.PurchaseOrderStatusPlaced {
+				r.NoError(fixture.client.CompletePurchaseOrder(ctx, order.PK))
+			}
+			completedOrder, err := fixture.client.GetPurchaseOrder(ctx, order.PK)
+			r.NoError(err)
+			r.Equal(inventree.PurchaseOrderStatusComplete, completedOrder.Status)
 
 			_, refused, err := cancelPurchaseOrder(fixture.deps())(ctx, &mcp.CallToolRequest{}, CancelPurchaseOrderInput{DryRun: true, OrderID: order.PK})
 			r.NoError(err)
@@ -3395,8 +3400,8 @@ func TestMilestoneHappyPathToolsAgainstInvenTree(t *testing.T) {
 			// one item does not degrade or block the rest of the batch.
 			sibling := fixture.createStockItem(t, part.PK, location.ID)
 			lostItems := []BulkUpdateStockItemMetadataItem{
-				{ID: applies.PK, Notes: dvgoutils.Ptr("bulk-recovered-notes")},
-				{ID: sibling.PK, Notes: dvgoutils.Ptr("bulk-sibling-notes")},
+				{ID: applies.PK, Packaging: dvgoutils.Ptr("bulk-recovered-notes")},
+				{ID: sibling.PK, Packaging: dvgoutils.Ptr("bulk-sibling-notes")},
 			}
 			_, lostDryRun, err := bulkUpdateStockItemMetadata(fixture.deps())(ctx, &mcp.CallToolRequest{}, BulkUpdateStockItemMetadataInput{Items: lostItems, DryRun: true})
 			r.NoError(err)
@@ -3412,12 +3417,12 @@ func TestMilestoneHappyPathToolsAgainstInvenTree(t *testing.T) {
 			lostByID := bulkResultsByID(lostConfirm.Items)
 			a.Equal(string(batch.OutcomeApplied), lostByID[applies.PK].Outcome)
 			r.NotNil(lostByID[applies.PK].Record)
-			r.NotNil(lostByID[applies.PK].Record.Notes)
-			a.Equal("bulk-recovered-notes", *lostByID[applies.PK].Record.Notes)
+			r.NotNil(lostByID[applies.PK].Record.Packaging)
+			a.Equal("bulk-recovered-notes", *lostByID[applies.PK].Record.Packaging)
 			a.Equal(string(batch.OutcomeApplied), lostByID[sibling.PK].Outcome, "a sibling item sharing the same confirmed batch must apply normally, unaffected by another item's injected response loss")
 			r.NotNil(lostByID[sibling.PK].Record)
-			r.NotNil(lostByID[sibling.PK].Record.Notes)
-			a.Equal("bulk-sibling-notes", *lostByID[sibling.PK].Record.Notes)
+			r.NotNil(lostByID[sibling.PK].Record.Packaging)
+			a.Equal("bulk-sibling-notes", *lostByID[sibling.PK].Record.Packaging)
 			r.NotNil(lostConfirm.Timing, "a confirmed batch call must report throughput evidence separating orchestration from upstream time")
 			a.Equal(2, lostConfirm.Timing.ItemCount)
 			a.Positive(lostConfirm.Timing.OrchestrationMS, "a real live round trip through pinned InvenTree must take measurable wall-clock time")
@@ -3639,7 +3644,7 @@ func TestMilestoneHappyPathToolsAgainstInvenTree(t *testing.T) {
 			// Response-loss recovery: the live PATCH lands upstream but the
 			// response is dropped, so Mutate must recover by reading back
 			// current state rather than reporting a bare ambiguous failure.
-			lostItems := []BulkUpdatePurchaseOrderItem{{ID: applies.PK, Notes: dvgoutils.Ptr("bulk-recovered-notes")}}
+			lostItems := []BulkUpdatePurchaseOrderItem{{ID: applies.PK, Description: dvgoutils.Ptr("bulk-recovered-notes")}}
 			_, lostDryRun, err := bulkUpdatePurchaseOrders(fixture.deps())(ctx, &mcp.CallToolRequest{}, BulkUpdatePurchaseOrdersInput{Items: lostItems, DryRun: true})
 			r.NoError(err)
 			r.NotEmpty(lostDryRun.PlanHash)
@@ -3652,8 +3657,7 @@ func TestMilestoneHappyPathToolsAgainstInvenTree(t *testing.T) {
 			r.Len(lostConfirm.Items, 1)
 			a.Equal(string(batch.OutcomeApplied), lostConfirm.Items[0].Outcome)
 			r.NotNil(lostConfirm.Items[0].Record)
-			r.NotNil(lostConfirm.Items[0].Record.Notes)
-			a.Equal("bulk-recovered-notes", *lostConfirm.Items[0].Record.Notes)
+			a.Equal("bulk-recovered-notes", lostConfirm.Items[0].Record.Description)
 		})
 
 		t.Run("lines", func(t *testing.T) {

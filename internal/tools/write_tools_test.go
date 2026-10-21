@@ -586,7 +586,7 @@ func TestWriteToolAuthorizationsUseWriteScope(t *testing.T) {
 		auth, ok := ToolAuthorizations[name]
 		r.True(ok, "missing authorization for %s", name)
 		switch name {
-		case CreatePartToolName, UpdatePartToolName, CreatePartRelationToolName, UpdatePartRelationToolName, CreateCompanyToolName, CreateSupplierPartToolName, CreateManufacturerPartToolName, UpsertPartWorkflowToolName, CreateParameterTemplateToolName, UpdateParameterTemplateToolName, CreateObjectParameterToolName, CreateCategoryParameterDefaultToolName, UpdateCategoryParameterDefaultToolName, CreatePartCategoryToolName, CreateStockLocationToolName, CreateStockLocationTypeToolName, CreatePurchaseOrderExtraLineToolName, CreatePurchaseOrderWorkflowToolName, IssuePurchaseOrderToolName, CompletePurchaseOrderToolName, CreateInternalPriceBreakToolName, CreateSalePriceBreakToolName, CreateSupplierPriceBreakToolName:
+		case CreateNoteToolName, UpdateNoteToolName, BulkCreateNotesToolName, BulkUpdateNotesToolName, CreatePartToolName, UpdatePartToolName, CreatePartRelationToolName, UpdatePartRelationToolName, CreateCompanyToolName, CreateSupplierPartToolName, CreateManufacturerPartToolName, UpsertPartWorkflowToolName, CreateParameterTemplateToolName, UpdateParameterTemplateToolName, CreateObjectParameterToolName, CreateCategoryParameterDefaultToolName, UpdateCategoryParameterDefaultToolName, CreatePartCategoryToolName, CreateStockLocationToolName, CreateStockLocationTypeToolName, CreatePurchaseOrderExtraLineToolName, CreatePurchaseOrderWorkflowToolName, IssuePurchaseOrderToolName, CompletePurchaseOrderToolName, CreateInternalPriceBreakToolName, CreateSalePriceBreakToolName, CreateSupplierPriceBreakToolName:
 			a.Equal("write", auth.MutationClass)
 			a.Equal([]string{ScopeInventreeRead, ScopeInventreeWrite}, auth.Scopes)
 			a.Equal(WriteAnnotations, auth.Annotations)
@@ -673,7 +673,7 @@ func TestWriteToolAuthorizationsUseWriteScope(t *testing.T) {
 			a.Equal("operational", auth.MutationClass)
 			a.Equal([]string{ScopeInventreeRead, ScopeInventreeWrite, ScopeInventreeOperational}, auth.Scopes)
 			a.Equal(WriteAnnotations, auth.Annotations)
-		case DeletePartParameterToolName, DeleteObjectParameterToolName, DeleteParameterTemplateToolName, MergeParameterTemplatesToolName, DeleteCategoryParameterDefaultToolName, DeletePurchaseOrderExtraLineToolName, DeletePurchaseOrderLineToolName, DeletePartToolName, DeletePartRelationToolName, DeleteStockLocationTypeToolName, DeletePartCategoryToolName, RemoveCompanyCustomerRoleToolName, AssignOwnerToolName, AssignContactToolName, AssignAddressToolName, AssignProjectCodeToolName:
+		case DeleteNoteToolName, DeletePartParameterToolName, DeleteObjectParameterToolName, DeleteParameterTemplateToolName, MergeParameterTemplatesToolName, DeleteCategoryParameterDefaultToolName, DeletePurchaseOrderExtraLineToolName, DeletePurchaseOrderLineToolName, DeletePartToolName, DeletePartRelationToolName, DeleteStockLocationTypeToolName, DeletePartCategoryToolName, RemoveCompanyCustomerRoleToolName, AssignOwnerToolName, AssignContactToolName, AssignAddressToolName, AssignProjectCodeToolName:
 			a.Equal("destructive", auth.MutationClass)
 			a.Equal([]string{ScopeInventreeRead, ScopeInventreeWrite, ScopeInventreeDestructive}, auth.Scopes)
 			a.True(auth.Annotations.Destructive)
@@ -1396,14 +1396,13 @@ func TestCreateStockItemWritesAfterDuplicatePreflight(t *testing.T) {
 		Quantity:   7,
 		Status:     dvgoutils.Ptr(10),
 		Batch:      dvgoutils.Ptr("B-1"),
-		Notes:      dvgoutils.Ptr("initial stock"),
 	})
 
 	r.NoError(err)
 	a.Equal(StatusOK, output.Status)
 	a.True(fake.createdStockItem)
 	a.Equal(inventree.StockItemQuery{PartID: 10, LocationID: 40, Limit: DefaultLookupLimit}, fake.lastSearchStockItemsQuery)
-	a.Equal(inventree.StockItemCreate{Part: 10, Location: 40, Quantity: 7, Status: dvgoutils.Ptr(10), Batch: dvgoutils.Ptr("B-1"), Notes: dvgoutils.Ptr("initial stock")}, fake.lastCreateStockItem)
+	a.Equal(inventree.StockItemCreate{Part: 10, Location: 40, Quantity: 7, Status: dvgoutils.Ptr(10), Batch: dvgoutils.Ptr("B-1")}, fake.lastCreateStockItem)
 }
 
 func TestInitialStockWorkflowDryRunPlansWithoutWrite(t *testing.T) {
@@ -1461,7 +1460,6 @@ func TestInitialStockWorkflowWritesAfterDuplicatePreflight(t *testing.T) {
 		LocationID: 40,
 		Quantity:   7,
 		Batch:      dvgoutils.Ptr("B-1"),
-		Notes:      dvgoutils.Ptr("initial stock"),
 	})
 
 	r.NoError(err)
@@ -1476,7 +1474,7 @@ func TestInitialStockWorkflowWritesAfterDuplicatePreflight(t *testing.T) {
 	a.True(fake.createdStockItem)
 	a.Equal(40, fake.lastGetStockLocationID)
 	a.Equal(inventree.StockItemQuery{PartID: 10, LocationID: 40, Limit: DefaultLookupLimit}, fake.lastSearchStockItemsQuery)
-	a.Equal(inventree.StockItemCreate{Part: 10, Location: 40, Quantity: 7, Batch: dvgoutils.Ptr("B-1"), Notes: dvgoutils.Ptr("initial stock")}, fake.lastCreateStockItem)
+	a.Equal(inventree.StockItemCreate{Part: 10, Location: 40, Quantity: 7, Batch: dvgoutils.Ptr("B-1")}, fake.lastCreateStockItem)
 }
 
 func TestInitialStockWorkflowClarifiesAmbiguousInputsAndDuplicates(t *testing.T) {
@@ -1596,7 +1594,7 @@ func TestCreatePartPassesApprovedScalarFieldsAndValidatesStockBounds(t *testing.
 		Name: "10k resistor", CategoryID: 20, Consumable: dvgoutils.Ptr(false), DefaultExpiry: dvgoutils.Ptr(0),
 		IsTemplate: dvgoutils.Ptr(false), Keywords: dvgoutils.Ptr("resistor 10k"), Link: &link,
 		Locked: dvgoutils.Ptr(false), MinimumStock: dvgoutils.Ptr(2.5), MaximumStock: dvgoutils.Ptr(10.0),
-		Revision: dvgoutils.Ptr("A"), Salable: dvgoutils.Ptr(false), Testable: dvgoutils.Ptr(true), Notes: dvgoutils.Ptr("markdown"),
+		Revision: dvgoutils.Ptr("A"), Salable: dvgoutils.Ptr(false), Testable: dvgoutils.Ptr(true),
 	})
 	r.NoError(err)
 	a.Equal(StatusOK, output.Status)
@@ -1792,7 +1790,7 @@ func TestUpdatePartSupportsNullableClearsAndEffectiveStockValidation(t *testing.
 	fake := &fakeMilestoneLookupClient{partDetail: inventree.PartDetail{PK: 10, MinimumStock: 2, MaximumStock: 10}}
 
 	_, output, err := updatePart(depsForFake(fake))(ctx, &mcp.CallToolRequest{}, UpdatePartInput{
-		ID: 10, ClearKeywords: true, ClearLink: true, ClearRevision: true, ClearNotes: true,
+		ID: 10, ClearKeywords: true, ClearLink: true, ClearRevision: true,
 		DefaultExpiry: dvgoutils.Ptr(0), MinimumStock: dvgoutils.Ptr(3.0), MaximumStock: dvgoutils.Ptr(0.0),
 		Consumable: dvgoutils.Ptr(false), IsTemplate: dvgoutils.Ptr(false), Locked: dvgoutils.Ptr(false), Salable: dvgoutils.Ptr(false), Testable: dvgoutils.Ptr(false),
 	})
@@ -1834,7 +1832,6 @@ func TestUpdatePartAllNullableValueClearConflictsAreStructured(t *testing.T) {
 		{name: "keywords", input: UpdatePartInput{Keywords: &value, ClearKeywords: true}, field: "keywords"},
 		{name: "link", input: UpdatePartInput{Link: dvgoutils.Ptr("https://example.test/part"), ClearLink: true}, field: "link"},
 		{name: "revision", input: UpdatePartInput{Revision: &value, ClearRevision: true}, field: "revision"},
-		{name: "notes", input: UpdatePartInput{Notes: &value, ClearNotes: true}, field: "notes"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			ctx, _, _ := testhandler.SetupTestHandler(t)
@@ -1964,8 +1961,6 @@ func TestDirectExternalLinkCreatesPreserveExactReadBackAndRejectCredentials(t *t
 	a := assert.New(t)
 	ctx, _, _ := testhandler.SetupTestHandler(t)
 	complete := "https://supplier.test/item?account=42&view=full#pricing"
-	supplierNotes := "supplier **Markdown**"
-	manufacturerNotes := "manufacturer **Markdown**"
 	available := 0.0
 
 	companyFake := &fakeMilestoneLookupClient{}
@@ -1976,25 +1971,21 @@ func TestDirectExternalLinkCreatesPreserveExactReadBackAndRejectCredentials(t *t
 	a.Equal(complete, companyFake.lastCreateCompany.Website)
 
 	supplierFake := &fakeMilestoneLookupClient{}
-	_, supplier, err := createSupplierPart(depsForFake(supplierFake))(ctx, &mcp.CallToolRequest{}, CreateSupplierPartInput{PartID: 10, SupplierID: 30, SKU: "SKU-LINK", Link: &complete, Notes: &supplierNotes, Available: &available})
+	_, supplier, err := createSupplierPart(depsForFake(supplierFake))(ctx, &mcp.CallToolRequest{}, CreateSupplierPartInput{PartID: 10, SupplierID: 30, SKU: "SKU-LINK", Link: &complete, Available: &available})
 	r.NoError(err)
 	a.Equal(StatusOK, supplier.Status)
 	a.Equal(complete, supplier.Record.Link)
 	a.Equal(complete, *supplierFake.lastCreateSupplierPart.Link)
-	a.Equal(supplierNotes, *supplier.Record.Notes)
 	a.Zero(supplier.Record.Available)
-	a.Equal(supplierNotes, *supplierFake.lastCreateSupplierPart.Notes)
 	r.NotNil(supplierFake.lastCreateSupplierPart.Available)
 	a.Zero(*supplierFake.lastCreateSupplierPart.Available)
 
 	manufacturerFake := &fakeMilestoneLookupClient{}
-	_, manufacturer, err := createManufacturerPart(depsForFake(manufacturerFake))(ctx, &mcp.CallToolRequest{}, CreateManufacturerPartInput{PartID: 10, ManufacturerID: 31, MPN: dvgoutils.Ptr("MPN-LINK"), Link: &complete, Notes: &manufacturerNotes})
+	_, manufacturer, err := createManufacturerPart(depsForFake(manufacturerFake))(ctx, &mcp.CallToolRequest{}, CreateManufacturerPartInput{PartID: 10, ManufacturerID: 31, MPN: dvgoutils.Ptr("MPN-LINK"), Link: &complete})
 	r.NoError(err)
 	a.Equal(StatusOK, manufacturer.Status)
 	a.Equal(complete, manufacturer.Record.Link)
 	a.Equal(complete, *manufacturerFake.lastCreateManufacturerPart.Link)
-	a.Equal(manufacturerNotes, *manufacturer.Record.Notes)
-	a.Equal(manufacturerNotes, *manufacturerFake.lastCreateManufacturerPart.Notes)
 
 	notFinite := math.Inf(1)
 	_, _, err = createSupplierPart(depsForFake(&fakeMilestoneLookupClient{}))(ctx, &mcp.CallToolRequest{}, CreateSupplierPartInput{PartID: 10, SupplierID: 30, SKU: "INVALID", Available: &notFinite})
@@ -2050,7 +2041,7 @@ func TestDirectExternalLinkCreatesReturnURLFreePartialFailureWhenReadBackCannotV
 	a.NotEmpty(supplier.RecoveryPlan)
 	supplierWire, err := json.Marshal(supplier)
 	r.NoError(err)
-	a.JSONEq(`{"status":"partial_failure","recovery":{"id":40},"recovery_plan":"Read the supplier part by its stable ID and verify the requested external link, long notes, and availability before retrying or applying any further change."}`, string(supplierWire))
+	a.JSONEq(`{"status":"partial_failure","recovery":{"id":40},"recovery_plan":"Read the supplier part by its stable ID and verify the requested external link and availability before retrying or applying any further change."}`, string(supplierWire))
 	a.NotContains(string(supplierWire), requested)
 	a.NotContains(string(supplierWire), description)
 	a.NotContains(string(supplierWire), packaging)
@@ -2069,26 +2060,16 @@ func TestDirectExternalLinkCreatesReturnURLFreePartialFailureWhenReadBackCannotV
 	a.NotContains(string(manufacturerWire), description)
 }
 
-func TestDirectSourcingCreatesRequireLongNotesAndAvailabilityReadBack(t *testing.T) {
+func TestDirectSourcingCreatesRequireAvailabilityReadBack(t *testing.T) {
 	t.Parallel()
 	r := require.New(t)
 	a := assert.New(t)
 	ctx, _, _ := testhandler.SetupTestHandler(t)
 	link := "https://supplier.test/item?account=42#details"
-	requestedNotes, differentNotes := "requested **Markdown**", "different **Markdown**"
 	available := 3.5
 
-	supplierFake := &fakeMilestoneLookupClient{supplierPartDetail: &inventree.SupplierPartDetail{PK: 40, Link: &link, Notes: &differentNotes, Available: available}}
-	_, supplier, err := createSupplierPart(depsForFake(supplierFake))(ctx, &mcp.CallToolRequest{}, CreateSupplierPartInput{PartID: 10, SupplierID: 30, SKU: "SKU-DETAIL", Link: &link, Notes: &requestedNotes, Available: &available})
-	r.NoError(err)
-	a.Equal(StatusPartialFailure, supplier.Status)
-	a.Nil(supplier.Record)
-	r.NotNil(supplier.Recovery)
-	a.Equal(40, supplier.Recovery.ID)
-	a.NotEmpty(supplier.RecoveryPlan)
-
-	supplierAvailabilityFake := &fakeMilestoneLookupClient{supplierPartDetail: &inventree.SupplierPartDetail{PK: 40, Link: &link, Notes: &requestedNotes, Available: 4.5}}
-	_, supplierAvailability, err := createSupplierPart(depsForFake(supplierAvailabilityFake))(ctx, &mcp.CallToolRequest{}, CreateSupplierPartInput{PartID: 10, SupplierID: 30, SKU: "SKU-AVAILABILITY", Link: &link, Notes: &requestedNotes, Available: &available})
+	supplierAvailabilityFake := &fakeMilestoneLookupClient{supplierPartDetail: &inventree.SupplierPartDetail{PK: 40, Link: &link, Available: 4.5}}
+	_, supplierAvailability, err := createSupplierPart(depsForFake(supplierAvailabilityFake))(ctx, &mcp.CallToolRequest{}, CreateSupplierPartInput{PartID: 10, SupplierID: 30, SKU: "SKU-AVAILABILITY", Link: &link, Available: &available})
 	r.NoError(err)
 	a.Equal(StatusPartialFailure, supplierAvailability.Status)
 	a.Nil(supplierAvailability.Record)
@@ -2096,14 +2077,6 @@ func TestDirectSourcingCreatesRequireLongNotesAndAvailabilityReadBack(t *testing
 	a.Equal(40, supplierAvailability.Recovery.ID)
 	a.NotEmpty(supplierAvailability.RecoveryPlan)
 
-	manufacturerFake := &fakeMilestoneLookupClient{manufacturerPartDetail: &inventree.ManufacturerPartDetail{PK: 50, Link: &link, Notes: &differentNotes}}
-	_, manufacturer, err := createManufacturerPart(depsForFake(manufacturerFake))(ctx, &mcp.CallToolRequest{}, CreateManufacturerPartInput{PartID: 10, ManufacturerID: 31, MPN: dvgoutils.Ptr("MPN-DETAIL"), Link: &link, Notes: &requestedNotes})
-	r.NoError(err)
-	a.Equal(StatusPartialFailure, manufacturer.Status)
-	a.Nil(manufacturer.Record)
-	r.NotNil(manufacturer.Recovery)
-	a.Equal(50, manufacturer.Recovery.ID)
-	a.NotEmpty(manufacturer.RecoveryPlan)
 }
 
 func TestDirectSourcingCreateRecoveryWithoutStableIDUsesBoundedSearch(t *testing.T) {
