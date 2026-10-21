@@ -40,7 +40,6 @@ type PartCreate struct {
 	Revision        *string  `json:"revision,omitempty"`
 	Salable         *bool    `json:"salable,omitempty"`
 	Testable        *bool    `json:"testable,omitempty"`
-	Notes           *string  `json:"notes,omitempty"`
 }
 
 type CompanyCreate struct {
@@ -74,7 +73,6 @@ type SupplierPartCreate struct {
 	ManufacturerPart *int     `json:"manufacturer_part,omitempty"`
 	Packaging        *string  `json:"packaging,omitempty"`
 	Note             *string  `json:"note,omitempty"`
-	Notes            *string  `json:"notes,omitempty"`
 	Available        *float64 `json:"available,omitempty"`
 }
 
@@ -84,7 +82,6 @@ type ManufacturerPartCreate struct {
 	MPN          *string `json:"MPN,omitempty"`
 	Description  *string `json:"description,omitempty"`
 	Link         *string `json:"link,omitempty"`
-	Notes        *string `json:"notes,omitempty"`
 }
 
 type ParameterCreate struct {
@@ -120,7 +117,6 @@ type StockItemCreate struct {
 	Batch           *string `json:"batch,omitempty"`
 	Serial          *string `json:"serial,omitempty"`
 	Packaging       *string `json:"packaging,omitempty"`
-	Notes           *string `json:"notes,omitempty"`
 	DeleteOnDeplete *bool   `json:"delete_on_deplete,omitempty"`
 }
 

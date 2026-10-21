@@ -1,7 +1,7 @@
 package inventree
 
 // StockItemFieldClass records the approved handling for every field in the
-// pinned API 530 StockItem serializer. The inventory is intentionally
+// pinned API 560 StockItem serializer. The inventory is intentionally
 // exhaustive so schema drift cannot silently widen exact stock-item output.
 type StockItemFieldClass string
 
@@ -14,6 +14,7 @@ const (
 )
 
 var StockItemFieldInventory = map[string]StockItemFieldClass{
+	"duplicate":                StockItemFieldWriteOnly,
 	"pk":                       StockItemFieldExposed,
 	"part":                     StockItemFieldExposed,
 	"quantity":                 StockItemFieldExposed,
@@ -29,7 +30,6 @@ var StockItemFieldInventory = map[string]StockItemFieldClass{
 	"in_stock":                 StockItemFieldExposed,
 	"is_building":              StockItemFieldExposed,
 	"link":                     StockItemFieldExposed,
-	"notes":                    StockItemFieldExposed,
 	"owner":                    StockItemFieldExposed,
 	"packaging":                StockItemFieldExposed,
 	"parent":                   StockItemFieldExposed,

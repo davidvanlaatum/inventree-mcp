@@ -1,7 +1,7 @@
 package inventree
 
 // PurchaseOrderFieldClass records the approved handling for every field in the
-// pinned API 530 PurchaseOrder, PurchaseOrderLineItem, and PurchaseOrderExtraLine
+// pinned API 560 PurchaseOrder, PurchaseOrderLineItem, and PurchaseOrderExtraLine
 // serializers. These inventories are exhaustive so schema drift cannot silently
 // widen exact purchase-order output or ordinary mutation inputs.
 type PurchaseOrderFieldClass string
@@ -15,25 +15,28 @@ const (
 )
 
 var PurchaseOrderFieldInventory = map[string]PurchaseOrderFieldClass{
-	"pk":                PurchaseOrderFieldExposed,
-	"created_by":        PurchaseOrderFieldExposed,
-	"creation_date":     PurchaseOrderFieldExposed,
-	"issue_date":        PurchaseOrderFieldExposed,
-	"start_date":        PurchaseOrderFieldExposed,
-	"target_date":       PurchaseOrderFieldExposed,
-	"description":       PurchaseOrderFieldExposed,
-	"line_items":        PurchaseOrderFieldExposed,
-	"completed_lines":   PurchaseOrderFieldExposed,
-	"link":              PurchaseOrderFieldExposed,
-	"project_code":      PurchaseOrderFieldExposed,
-	"reference":         PurchaseOrderFieldExposed,
-	"responsible":       PurchaseOrderFieldExposed,
-	"contact":           PurchaseOrderFieldExposed,
-	"address":           PurchaseOrderFieldExposed,
-	"status":            PurchaseOrderFieldExposed,
-	"status_text":       PurchaseOrderFieldExposed,
-	"status_custom_key": PurchaseOrderFieldExposed,
-	"notes":             PurchaseOrderFieldExposed,
+	"receiving_company":        PurchaseOrderFieldDeferred,
+	"receiving_company_detail": PurchaseOrderFieldDeferred,
+	"delivery_address":         PurchaseOrderFieldDeferred,
+	"delivery_address_detail":  PurchaseOrderFieldDeferred,
+	"pk":                       PurchaseOrderFieldExposed,
+	"created_by":               PurchaseOrderFieldExposed,
+	"creation_date":            PurchaseOrderFieldExposed,
+	"issue_date":               PurchaseOrderFieldExposed,
+	"start_date":               PurchaseOrderFieldExposed,
+	"target_date":              PurchaseOrderFieldExposed,
+	"description":              PurchaseOrderFieldExposed,
+	"line_items":               PurchaseOrderFieldExposed,
+	"completed_lines":          PurchaseOrderFieldExposed,
+	"link":                     PurchaseOrderFieldExposed,
+	"project_code":             PurchaseOrderFieldExposed,
+	"reference":                PurchaseOrderFieldExposed,
+	"responsible":              PurchaseOrderFieldExposed,
+	"contact":                  PurchaseOrderFieldExposed,
+	"address":                  PurchaseOrderFieldExposed,
+	"status":                   PurchaseOrderFieldExposed,
+	"status_text":              PurchaseOrderFieldExposed,
+	"status_custom_key":        PurchaseOrderFieldExposed,
 	// barcode_hash stays excluded by design: F-S99 derives a computed
 	// has_barcode bool from it instead (see GetPurchaseOrderDetail), rather
 	// than reclassifying barcode_hash itself.

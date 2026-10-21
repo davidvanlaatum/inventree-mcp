@@ -214,13 +214,6 @@ func applyPurchaseOrderPatchForTest(order *inventree.PurchaseOrderDetail, fields
 		case "creation_date":
 			date := value.(string)
 			order.CreationDate = &date
-		case "notes":
-			if value == nil {
-				order.Notes = nil
-			} else {
-				text := value.(string)
-				order.Notes = &text
-			}
 		case "start_date":
 			if value == nil {
 				order.StartDate = nil

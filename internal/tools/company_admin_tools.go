@@ -49,7 +49,6 @@ type CompanyView struct {
 	IsCustomer        bool     `json:"is_customer"`
 	PartsSupplied     int      `json:"parts_supplied"`
 	PartsManufactured int      `json:"parts_manufactured"`
-	Notes             *string  `json:"notes,omitempty"`
 	Tags              []string `json:"tags,omitempty"`
 }
 
@@ -80,7 +79,6 @@ type SupplierPartView struct {
 	PackQuantity        string   `json:"pack_quantity"`
 	PackQuantityNative  float64  `json:"pack_quantity_native"`
 	Note                *string  `json:"note"`
-	Notes               *string  `json:"notes"`
 	Available           float64  `json:"available"`
 	AvailabilityUpdated *string  `json:"availability_updated"`
 	InStock             *float64 `json:"in_stock"`
@@ -108,7 +106,6 @@ type ManufacturerPartView struct {
 	MPN            *string  `json:"mpn"`
 	Description    *string  `json:"description"`
 	Link           string   `json:"link,omitempty"`
-	Notes          *string  `json:"notes"`
 	Tags           []string `json:"tags,omitempty"`
 }
 
@@ -176,8 +173,6 @@ type UpdateCompanyInput struct {
 	IsSupplier     *bool    `json:"is_supplier,omitempty"`
 	IsManufacturer *bool    `json:"is_manufacturer,omitempty"`
 	IsCustomer     *bool    `json:"is_customer,omitempty" jsonschema:"Set true to add the customer role. An explicit false is rejected here; use remove_company_customer_role for guarded removal."`
-	Notes          *string  `json:"notes,omitempty" jsonschema:"Replacement markdown notes. Notes are never included in recovery or error projections."`
-	ClearNotes     bool     `json:"clear_notes,omitempty" jsonschema:"Explicitly PATCH notes to null; mutually exclusive with notes."`
 	Confirm        bool     `json:"confirm,omitempty" jsonschema:"Required when removing supplier or manufacturer role."`
 	Tags           []string `json:"tags,omitempty" jsonschema:"Optional whole-array replacement of this company's tags from InvenTree's shared tag taxonomy; an explicitly empty array clears every tag."`
 }
@@ -200,8 +195,6 @@ type UpdateSupplierPartInput struct {
 	PackQuantity          *string  `json:"pack_quantity,omitempty"`
 	Note                  *string  `json:"note,omitempty"`
 	ClearNote             bool     `json:"clear_note,omitempty"`
-	Notes                 *string  `json:"notes,omitempty" jsonschema:"Replacement long Markdown notes, distinct from the short note field."`
-	ClearNotes            bool     `json:"clear_notes,omitempty" jsonschema:"Explicitly PATCH long Markdown notes to null; mutually exclusive with notes."`
 	Available             *float64 `json:"available,omitempty" jsonschema:"Replacement upstream availability quantity. Explicit zero is preserved."`
 	Tags                  []string `json:"tags,omitempty" jsonschema:"Optional whole-array replacement of this supplier part's tags from InvenTree's shared tag taxonomy; an explicitly empty array clears every tag."`
 }
@@ -216,13 +209,11 @@ type UpdateManufacturerPartInput struct {
 	ClearDescription bool     `json:"clear_description,omitempty"`
 	Link             *string  `json:"link,omitempty" jsonschema:"Complete HTTP(S) manufacturer-part URL without userinfo; query parameters and fragments are preserved."`
 	ClearLink        bool     `json:"clear_link,omitempty"`
-	Notes            *string  `json:"notes,omitempty" jsonschema:"Replacement long Markdown notes."`
-	ClearNotes       bool     `json:"clear_notes,omitempty" jsonschema:"Explicitly PATCH long Markdown notes to null; mutually exclusive with notes."`
 	Tags             []string `json:"tags,omitempty" jsonschema:"Optional whole-array replacement of this manufacturer part's tags from InvenTree's shared tag taxonomy; an explicitly empty array clears every tag."`
 }
 
 func registerCompanyAdminLookupTools(server *mcp.Server, deps Dependencies) {
-	addReadOnlyTool(server, deps, GetCompanyToolName, "Get company", "Retrieves one company by stable ID, including approved notes and role state.", getCompanyAdmin(deps))
+	addReadOnlyTool(server, deps, GetCompanyToolName, "Get company", "Retrieves one company by stable ID, including approved contact fields and role state.", getCompanyAdmin(deps))
 	addReadOnlyTool(server, deps, SearchSupplierPartsToolName, "Search supplier parts", "Searches supplier-part links with bounded schema-backed filters and deterministic ID ordering.", searchSupplierPartsAdmin(deps))
 	addReadOnlyTool(server, deps, GetSupplierPartToolName, "Get supplier part", "Retrieves one supplier-part link by stable ID.", getSupplierPartAdmin(deps))
 	addReadOnlyTool(server, deps, SearchManufacturerPartsToolName, "Search manufacturer parts", "Searches manufacturer-part links with bounded schema-backed filters and deterministic ID ordering.", searchManufacturerPartsAdmin(deps))
@@ -477,9 +468,6 @@ func updateManufacturerPartAdmin(deps Dependencies) mcp.ToolHandlerFor[UpdateMan
 }
 
 func companyPatch(input UpdateCompanyInput) (inventree.PatchFields, error) {
-	if input.Notes != nil && input.ClearNotes {
-		return nil, errors.New("notes and clear_notes are mutually exclusive")
-	}
 	if conflict(input.Email != nil, input.ClearEmail) {
 		return nil, errors.New("email and clear_email are mutually exclusive")
 	}
@@ -540,11 +528,6 @@ func companyPatch(input UpdateCompanyInput) (inventree.PatchFields, error) {
 		}
 		fields["is_customer"] = inventree.Set(true)
 	}
-	if input.Notes != nil {
-		fields["notes"] = inventree.Set(*input.Notes)
-	} else if input.ClearNotes {
-		fields["notes"] = inventree.Null()
-	}
 	if input.Tags != nil {
 		fields["tags"] = inventree.Set(input.Tags)
 	}
@@ -552,7 +535,7 @@ func companyPatch(input UpdateCompanyInput) (inventree.PatchFields, error) {
 }
 
 func supplierPartPatch(input UpdateSupplierPartInput, before inventree.SupplierPartDetail) (inventree.PatchFields, inventree.SupplierPartDetail, error) {
-	if conflict(input.Description != nil, input.ClearDescription) || conflict(input.Link != nil, input.ClearLink) || conflict(input.ManufacturerPartID != nil, input.ClearManufacturerPart) || conflict(input.Packaging != nil, input.ClearPackaging) || conflict(input.Note != nil, input.ClearNote) || conflict(input.Notes != nil, input.ClearNotes) {
+	if conflict(input.Description != nil, input.ClearDescription) || conflict(input.Link != nil, input.ClearLink) || conflict(input.ManufacturerPartID != nil, input.ClearManufacturerPart) || conflict(input.Packaging != nil, input.ClearPackaging) || conflict(input.Note != nil, input.ClearNote) {
 		return nil, before, errors.New("a nullable field value and its clear flag are mutually exclusive")
 	}
 	fields := inventree.PatchFields{}
@@ -629,12 +612,6 @@ func supplierPartPatch(input UpdateSupplierPartInput, before inventree.SupplierP
 	} else if input.ClearNote {
 		target.Note = nil
 	}
-	setNullableString(fields, "notes", input.Notes, input.ClearNotes)
-	if input.Notes != nil {
-		target.Notes = input.Notes
-	} else if input.ClearNotes {
-		target.Notes = nil
-	}
 	if input.Available != nil {
 		if math.IsNaN(*input.Available) || math.IsInf(*input.Available, 0) {
 			return nil, before, errors.New("available must be finite")
@@ -650,7 +627,7 @@ func supplierPartPatch(input UpdateSupplierPartInput, before inventree.SupplierP
 }
 
 func manufacturerPartPatch(input UpdateManufacturerPartInput, before inventree.ManufacturerPartDetail) (inventree.PatchFields, inventree.ManufacturerPartDetail, error) {
-	if conflict(input.MPN != nil, input.ClearMPN) || conflict(input.Description != nil, input.ClearDescription) || conflict(input.Link != nil, input.ClearLink) || conflict(input.Notes != nil, input.ClearNotes) {
+	if conflict(input.MPN != nil, input.ClearMPN) || conflict(input.Description != nil, input.ClearDescription) || conflict(input.Link != nil, input.ClearLink) {
 		return nil, before, errors.New("a nullable field value and its clear flag are mutually exclusive")
 	}
 	fields := inventree.PatchFields{}
@@ -692,12 +669,6 @@ func manufacturerPartPatch(input UpdateManufacturerPartInput, before inventree.M
 		target.Link = link
 	} else if input.ClearLink {
 		target.Link = nil
-	}
-	setNullableString(fields, "notes", input.Notes, input.ClearNotes)
-	if input.Notes != nil {
-		target.Notes = input.Notes
-	} else if input.ClearNotes {
-		target.Notes = nil
 	}
 	if input.Tags != nil {
 		fields["tags"] = inventree.Set(input.Tags)
@@ -1010,13 +981,13 @@ func manufacturerPartFieldsMatch(record inventree.ManufacturerPartDetail, fields
 // and freshly re-fetched current state, not just to confirm a post-write
 // read-back.
 func companyValues(record inventree.CompanyDetail) map[string]any {
-	return map[string]any{"name": record.Name, "description": record.Description, "website": record.Website, "phone": record.Phone, "email": record.Email, "contact": record.Contact, "tax_id": record.TaxID, "link": record.Link, "currency": record.Currency, "active": record.Active, "is_supplier": record.IsSupplier, "is_manufacturer": record.IsManufacturer, "is_customer": record.IsCustomer, "notes": record.Notes, "tags": record.Tags}
+	return map[string]any{"name": record.Name, "description": record.Description, "website": record.Website, "phone": record.Phone, "email": record.Email, "contact": record.Contact, "tax_id": record.TaxID, "link": record.Link, "currency": record.Currency, "active": record.Active, "is_supplier": record.IsSupplier, "is_manufacturer": record.IsManufacturer, "is_customer": record.IsCustomer, "tags": record.Tags}
 }
 func supplierPartValues(record inventree.SupplierPartDetail) map[string]any {
-	return map[string]any{"part": record.Part, "supplier": record.Supplier, "SKU": record.SKU, "description": record.Description, "link": record.Link, "active": record.Active, "primary": record.Primary, "manufacturer_part": record.ManufacturerPart, "packaging": record.Packaging, "pack_quantity": record.PackQuantity, "note": record.Note, "notes": record.Notes, "available": record.Available, "tags": record.Tags}
+	return map[string]any{"part": record.Part, "supplier": record.Supplier, "SKU": record.SKU, "description": record.Description, "link": record.Link, "active": record.Active, "primary": record.Primary, "manufacturer_part": record.ManufacturerPart, "packaging": record.Packaging, "pack_quantity": record.PackQuantity, "note": record.Note, "available": record.Available, "tags": record.Tags}
 }
 func manufacturerPartValues(record inventree.ManufacturerPartDetail) map[string]any {
-	return map[string]any{"part": record.Part, "manufacturer": record.Manufacturer, "MPN": record.MPN, "description": record.Description, "link": record.Link, "notes": record.Notes, "tags": record.Tags}
+	return map[string]any{"part": record.Part, "manufacturer": record.Manufacturer, "MPN": record.MPN, "description": record.Description, "link": record.Link, "tags": record.Tags}
 }
 
 func patchMatches(fields inventree.PatchFields, values map[string]any) bool {
@@ -1094,20 +1065,20 @@ func companyView(record inventree.CompanyDetail) CompanyView {
 		Currency: record.Currency, Active: record.Active,
 		IsSupplier: record.IsSupplier, IsManufacturer: record.IsManufacturer, IsCustomer: record.IsCustomer,
 		PartsSupplied: record.PartsSupplied, PartsManufactured: record.PartsManufactured,
-		Notes: record.Notes, Tags: record.Tags,
+		Tags: record.Tags,
 	}
 }
 func companyRecovery(record inventree.CompanyDetail) CompanyRecoveryView {
 	return CompanyRecoveryView{ID: record.PK, Name: record.Name, Currency: record.Currency, Active: record.Active, IsSupplier: record.IsSupplier, IsManufacturer: record.IsManufacturer, IsCustomer: record.IsCustomer}
 }
 func supplierPartView(record inventree.SupplierPartDetail) SupplierPartView {
-	return SupplierPartView{ID: record.PK, PartID: record.Part, SupplierID: record.Supplier, SKU: record.SKU, Description: record.Description, Link: projectExternalURL(record.Link), Active: record.Active, Primary: record.Primary, ManufacturerPartID: record.ManufacturerPart, MPN: record.MPN, Packaging: record.Packaging, PackQuantity: record.PackQuantity, PackQuantityNative: record.PackQuantityNative, Note: record.Note, Notes: record.Notes, Available: record.Available, AvailabilityUpdated: record.AvailabilityUpdated, InStock: record.InStock, OnOrder: record.OnOrder, Updated: record.Updated, Tags: record.Tags}
+	return SupplierPartView{ID: record.PK, PartID: record.Part, SupplierID: record.Supplier, SKU: record.SKU, Description: record.Description, Link: projectExternalURL(record.Link), Active: record.Active, Primary: record.Primary, ManufacturerPartID: record.ManufacturerPart, MPN: record.MPN, Packaging: record.Packaging, PackQuantity: record.PackQuantity, PackQuantityNative: record.PackQuantityNative, Note: record.Note, Available: record.Available, AvailabilityUpdated: record.AvailabilityUpdated, InStock: record.InStock, OnOrder: record.OnOrder, Updated: record.Updated, Tags: record.Tags}
 }
 func supplierPartRecovery(record inventree.SupplierPartDetail) SupplierPartRecoveryView {
 	return SupplierPartRecoveryView{ID: record.PK, PartID: record.Part, SupplierID: record.Supplier, SKU: record.SKU, Active: record.Active, Primary: record.Primary, ManufacturerPartID: record.ManufacturerPart}
 }
 func manufacturerPartView(record inventree.ManufacturerPartDetail) ManufacturerPartView {
-	return ManufacturerPartView{ID: record.PK, PartID: record.Part, ManufacturerID: record.Manufacturer, MPN: record.MPN, Description: record.Description, Link: projectExternalURL(record.Link), Notes: record.Notes, Tags: record.Tags}
+	return ManufacturerPartView{ID: record.PK, PartID: record.Part, ManufacturerID: record.Manufacturer, MPN: record.MPN, Description: record.Description, Link: projectExternalURL(record.Link), Tags: record.Tags}
 }
 func manufacturerPartRecovery(record inventree.ManufacturerPartDetail) ManufacturerPartRecoveryView {
 	return ManufacturerPartRecoveryView{ID: record.PK, PartID: record.Part, ManufacturerID: record.Manufacturer, MPN: record.MPN}
@@ -1159,7 +1130,7 @@ func stringPointer(value string) *string {
 func safeCompanyAdminError(action string, err error) error {
 	var apiErr *inventree.APIError
 	if errors.As(err, &apiErr) {
-		allowed := []string{"name", "description", "website", "phone", "email", "contact", "tax_id", "currency", "active", "is_supplier", "is_manufacturer", "is_customer", "notes", "part", "supplier", "SKU", "manufacturer", "MPN", "link", "primary", "manufacturer_part", "packaging", "pack_quantity", "note"}
+		allowed := []string{"name", "description", "website", "phone", "email", "contact", "tax_id", "currency", "active", "is_supplier", "is_manufacturer", "is_customer", "part", "supplier", "SKU", "manufacturer", "MPN", "link", "primary", "manufacturer_part", "packaging", "pack_quantity", "note"}
 		var details []string
 		for _, key := range allowed {
 			if messages := apiErr.FieldErrors[key]; len(messages) > 0 {

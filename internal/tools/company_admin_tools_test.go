@@ -19,14 +19,12 @@ func TestGetCompanyAdminIncludesApprovedFieldsAndRedactsWebsite(t *testing.T) {
 	t.Parallel()
 	ctx, _, _ := testhandler.SetupTestHandler(t)
 	website := "https://example.test/company?token=secret#fragment"
-	notes := "operator-only note"
-	fake := &fakeCompanyAdmin{company: inventree.CompanyDetail{Company: inventree.Company{PK: 30, Name: "Acme", Currency: "AUD", IsSupplier: true, IsCustomer: true}, Website: website, Notes: &notes}}
+	fake := &fakeCompanyAdmin{company: inventree.CompanyDetail{Company: inventree.Company{PK: 30, Name: "Acme", Currency: "AUD", IsSupplier: true, IsCustomer: true}, Website: website}}
 
 	_, out, err := getCompanyAdmin(companyAdminDeps(fake))(ctx, &mcp.CallToolRequest{}, IDInput{ID: 30})
 	require.NoError(t, err)
 	require.NotNil(t, out.Record)
 	assert.Equal(t, website, out.Record.Website)
-	assert.Equal(t, notes, *out.Record.Notes)
 	assert.True(t, out.Record.IsCustomer)
 }
 
@@ -63,22 +61,21 @@ func TestCompanyAdminExactSourcingReadsRedactLinks(t *testing.T) {
 	fake := baseSourcingFake()
 	supplierLink := "https://user:pass@example.test/supplier?token=secret#fragment"
 	manufacturerLink := "https://example.test/manufacturer?secret=yes"
-	shortNote, supplierNotes, manufacturerNotes := "approved short note", "supplier **Markdown**", "manufacturer **Markdown**"
+	shortNote := "approved short note"
 	mpn := "MPN-1"
 	availabilityUpdated, updated := "2026-08-15T00:00:00Z", "2026-08-15T00:01:00Z"
 	inStock, onOrder := 4.5, 2.0
-	fake.supplier.Link, fake.supplier.Note, fake.supplier.Notes = &supplierLink, &shortNote, &supplierNotes
+	fake.supplier.Link, fake.supplier.Note = &supplierLink, &shortNote
 	fake.supplier.MPN = &mpn
 	fake.supplier.Available, fake.supplier.AvailabilityUpdated = 0, &availabilityUpdated
 	fake.supplier.InStock, fake.supplier.OnOrder, fake.supplier.Updated = &inStock, &onOrder, &updated
-	fake.manufacturer.Link, fake.manufacturer.Notes = &manufacturerLink, &manufacturerNotes
+	fake.manufacturer.Link = &manufacturerLink
 
 	_, supplier, err := getSupplierPartAdmin(companyAdminDeps(fake))(ctx, &mcp.CallToolRequest{}, IDInput{ID: 40})
 	r.NoError(err)
 	r.NotNil(supplier.Record)
 	a.Empty(supplier.Record.Link)
 	a.Equal(shortNote, *supplier.Record.Note)
-	a.Equal(supplierNotes, *supplier.Record.Notes)
 	a.Equal(mpn, *supplier.Record.MPN)
 	a.Zero(supplier.Record.Available)
 	a.Equal(availabilityUpdated, *supplier.Record.AvailabilityUpdated)
@@ -90,7 +87,6 @@ func TestCompanyAdminExactSourcingReadsRedactLinks(t *testing.T) {
 	r.NoError(err)
 	r.NotNil(manufacturer.Record)
 	a.Equal(manufacturerLink, manufacturer.Record.Link)
-	a.Equal(manufacturerNotes, *manufacturer.Record.Notes)
 }
 
 func TestSupplierPartExactViewPreservesNullableAndDistinctNoteFieldsOnWire(t *testing.T) {
@@ -111,8 +107,7 @@ func TestSupplierPartExactViewPreservesNullableAndDistinctNoteFieldsOnWire(t *te
 	a.Nil(wire["packaging"])
 	a.Contains(wire, "note")
 	a.Equal("", wire["note"])
-	a.Contains(wire, "notes")
-	a.Nil(wire["notes"])
+	a.NotContains(wire, "notes")
 	a.Contains(wire, "available")
 	a.Equal(float64(0), wire["available"])
 	a.NotContains(wire, "link", "unsafe external links remain omitted rather than serialized")
@@ -297,19 +292,18 @@ func TestUpdateCompanyDetectsPostWriteRoleDependencyRace(t *testing.T) {
 	assert.False(t, out.Current.IsSupplier)
 }
 
-func TestUpdateCompanyNotesOmitSensitiveRecovery(t *testing.T) {
+func TestUpdateCompanyDescriptionOmitSensitiveRecovery(t *testing.T) {
 	t.Parallel()
 	ctx, _, _ := testhandler.SetupTestHandler(t)
-	notes := "secret note"
-	fake := &fakeCompanyAdmin{company: inventree.CompanyDetail{Company: inventree.Company{PK: 30, Name: "Acme", Currency: "AUD", IsSupplier: true}, Notes: &notes}}
-	updatedNotes := "replacement note"
+	description := "secret note"
+	fake := &fakeCompanyAdmin{company: inventree.CompanyDetail{Company: inventree.Company{PK: 30, Name: "Acme", Currency: "AUD", IsSupplier: true, Description: description}}}
+	updatedDescription := "replacement note"
 
-	fake.afterCompanyUpdate = func(inventree.PatchFields) { fake.company.Notes = &updatedNotes }
-	_, out, err := updateCompanyAdmin(companyAdminDeps(fake))(ctx, &mcp.CallToolRequest{}, UpdateCompanyInput{ID: 30, Notes: &updatedNotes})
+	fake.afterCompanyUpdate = func(inventree.PatchFields) { fake.company.Description = updatedDescription }
+	_, out, err := updateCompanyAdmin(companyAdminDeps(fake))(ctx, &mcp.CallToolRequest{}, UpdateCompanyInput{ID: 30, Description: &updatedDescription})
 	require.NoError(t, err)
 	require.NotNil(t, out.Record)
-	require.NotNil(t, out.Record.Notes)
-	assert.Equal(t, updatedNotes, *out.Record.Notes)
+	assert.Equal(t, updatedDescription, out.Record.Description)
 	require.NotNil(t, out.Before)
 	assert.Equal(t, CompanyRecoveryView{ID: 30, Name: "Acme", Currency: "AUD", IsSupplier: true}, *out.Before)
 }
@@ -511,7 +505,7 @@ func TestCompanyAdminSafeErrorAllowListsFields(t *testing.T) {
 	t.Parallel()
 	err := safeCompanyAdminError("company update", &inventree.APIError{StatusCode: 400, FieldErrors: map[string][]string{"name": {"required"}, "tax_id": {"secret-tax"}, "notes": {"too long"}}})
 	assert.Contains(t, err.Error(), "name: rejected by InvenTree")
-	assert.Contains(t, err.Error(), "notes: rejected by InvenTree")
+	assert.NotContains(t, err.Error(), "notes: rejected by InvenTree")
 	assert.NotContains(t, err.Error(), "secret-tax")
 	assert.NotContains(t, err.Error(), "required")
 }
@@ -620,7 +614,7 @@ func TestCompanyAdminPatchBuildersPreserveApprovedExplicitValues(t *testing.T) {
 	currency := " AUD "
 	partID, companyID, manufacturerPartID := 11, 31, 51
 
-	companyFields, err := companyPatch(UpdateCompanyInput{ID: 30, Name: &name, Description: &empty, Website: &empty, Currency: &currency, Active: &falseValue, IsSupplier: &trueValue, IsManufacturer: &falseValue, Notes: &empty})
+	companyFields, err := companyPatch(UpdateCompanyInput{ID: 30, Name: &name, Description: &empty, Website: &empty, Currency: &currency, Active: &falseValue, IsSupplier: &trueValue, IsManufacturer: &falseValue})
 	require.NoError(t, err)
 	companyJSON := patchJSON(t, companyFields)
 	assert.Equal(t, "Updated", companyJSON["name"])
@@ -628,43 +622,37 @@ func TestCompanyAdminPatchBuildersPreserveApprovedExplicitValues(t *testing.T) {
 	assert.Equal(t, false, companyJSON["active"])
 
 	available := 0.0
-	supplierFields, targetSupplier, err := supplierPartPatch(UpdateSupplierPartInput{ID: 40, PartID: &partID, SupplierID: &companyID, SKU: dvgoutils.Ptr(" SKU "), Description: &empty, Link: &empty, Active: &falseValue, Primary: &falseValue, ManufacturerPartID: &manufacturerPartID, Packaging: &empty, PackQuantity: dvgoutils.Ptr("1"), Note: &empty, Notes: &empty, Available: &available}, inventree.SupplierPartDetail{})
+	supplierFields, targetSupplier, err := supplierPartPatch(UpdateSupplierPartInput{ID: 40, PartID: &partID, SupplierID: &companyID, SKU: dvgoutils.Ptr(" SKU "), Description: &empty, Link: &empty, Active: &falseValue, Primary: &falseValue, ManufacturerPartID: &manufacturerPartID, Packaging: &empty, PackQuantity: dvgoutils.Ptr("1"), Note: &empty, Available: &available}, inventree.SupplierPartDetail{})
 	require.NoError(t, err)
 	assert.Equal(t, 11, targetSupplier.Part)
 	assert.Equal(t, "SKU", targetSupplier.SKU)
 	assert.Equal(t, false, patchJSON(t, supplierFields)["primary"])
 	assert.Equal(t, float64(0), patchJSON(t, supplierFields)["available"])
-	assert.Equal(t, "", patchJSON(t, supplierFields)["notes"])
+	assert.NotContains(t, patchJSON(t, supplierFields), "notes")
 
-	manufacturerFields, targetManufacturer, err := manufacturerPartPatch(UpdateManufacturerPartInput{ID: 50, PartID: &partID, ManufacturerID: &companyID, MPN: dvgoutils.Ptr(" MPN "), Description: &empty, Link: &empty, Notes: &empty}, inventree.ManufacturerPartDetail{})
+	manufacturerFields, targetManufacturer, err := manufacturerPartPatch(UpdateManufacturerPartInput{ID: 50, PartID: &partID, ManufacturerID: &companyID, MPN: dvgoutils.Ptr(" MPN "), Description: &empty, Link: &empty}, inventree.ManufacturerPartDetail{})
 	require.NoError(t, err)
 	require.NotNil(t, targetManufacturer.MPN)
 	assert.Equal(t, "MPN", *targetManufacturer.MPN)
 	assert.Equal(t, "", patchJSON(t, manufacturerFields)["link"])
 
-	companyFields, err = companyPatch(UpdateCompanyInput{ID: 30, ClearNotes: true})
+	companyFields, err = companyPatch(UpdateCompanyInput{ID: 30})
 	require.NoError(t, err)
 	assert.Nil(t, patchJSON(t, companyFields)["notes"])
-	supplierFields, _, err = supplierPartPatch(UpdateSupplierPartInput{ID: 40, ClearDescription: true, ClearLink: true, ClearManufacturerPart: true, ClearPackaging: true, ClearNote: true, ClearNotes: true}, inventree.SupplierPartDetail{})
+	supplierFields, _, err = supplierPartPatch(UpdateSupplierPartInput{ID: 40, ClearDescription: true, ClearLink: true, ClearManufacturerPart: true, ClearPackaging: true, ClearNote: true}, inventree.SupplierPartDetail{})
 	require.NoError(t, err)
 	supplierJSON := patchJSON(t, supplierFields)
 	assert.Nil(t, supplierJSON["description"])
 	assert.Nil(t, supplierJSON["manufacturer_part"])
 	assert.Nil(t, supplierJSON["notes"])
-	manufacturerFields, _, err = manufacturerPartPatch(UpdateManufacturerPartInput{ID: 50, ClearMPN: true, ClearDescription: true, ClearLink: true, ClearNotes: true}, inventree.ManufacturerPartDetail{})
+	manufacturerFields, _, err = manufacturerPartPatch(UpdateManufacturerPartInput{ID: 50, ClearMPN: true, ClearDescription: true, ClearLink: true}, inventree.ManufacturerPartDetail{})
 	require.NoError(t, err)
 	assert.Nil(t, patchJSON(t, manufacturerFields)["MPN"])
 	assert.Nil(t, patchJSON(t, manufacturerFields)["notes"])
 
-	_, err = companyPatch(UpdateCompanyInput{Notes: &empty, ClearNotes: true})
-	assert.Error(t, err)
 	_, _, err = supplierPartPatch(UpdateSupplierPartInput{Description: &empty, ClearDescription: true}, inventree.SupplierPartDetail{})
 	assert.Error(t, err)
 	_, _, err = manufacturerPartPatch(UpdateManufacturerPartInput{MPN: &empty, ClearMPN: true}, inventree.ManufacturerPartDetail{})
-	assert.Error(t, err)
-	_, _, err = supplierPartPatch(UpdateSupplierPartInput{Notes: &empty, ClearNotes: true}, inventree.SupplierPartDetail{})
-	assert.Error(t, err)
-	_, _, err = manufacturerPartPatch(UpdateManufacturerPartInput{Notes: &empty, ClearNotes: true}, inventree.ManufacturerPartDetail{})
 	assert.Error(t, err)
 	notFinite := math.Inf(1)
 	_, _, err = supplierPartPatch(UpdateSupplierPartInput{Available: &notFinite}, inventree.SupplierPartDetail{})

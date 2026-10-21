@@ -39,7 +39,6 @@ func TestWriteMethodsUseExpectedEndpoints(t *testing.T) {
 					DefaultExpiry: dvgoutils.Ptr(0),
 					MinimumStock:  dvgoutils.Ptr(0.0),
 					MaximumStock:  dvgoutils.Ptr(10.5),
-					Notes:         dvgoutils.Ptr("markdown"),
 				})
 				return err
 			},
@@ -54,7 +53,7 @@ func TestWriteMethodsUseExpectedEndpoints(t *testing.T) {
 				a.Equal(float64(0), body["default_expiry"])
 				a.Equal(float64(0), body["minimum_stock"])
 				a.Equal(10.5, body["maximum_stock"])
-				a.Equal("markdown", body["notes"])
+				a.NotContains(body, "notes")
 				_, hasCustomerRole := body["is_customer"]
 				a.False(hasCustomerRole)
 			},
@@ -268,14 +267,14 @@ func TestWriteMethodsUseExpectedEndpoints(t *testing.T) {
 			name: "create stock item decodes array response",
 			call: func(ctx context.Context, client *Client) error {
 				_, err := client.CreateStockItem(ctx, StockItemCreate{
-					Part:            10,
-					Location:        40,
-					Quantity:        7,
-					Status:          dvgoutils.Ptr(10),
-					Batch:           dvgoutils.Ptr("B-1"),
-					Serial:          dvgoutils.Ptr("S-1"),
-					Packaging:       dvgoutils.Ptr("reel"),
-					Notes:           dvgoutils.Ptr("initial stock"),
+					Part:      10,
+					Location:  40,
+					Quantity:  7,
+					Status:    dvgoutils.Ptr(10),
+					Batch:     dvgoutils.Ptr("B-1"),
+					Serial:    dvgoutils.Ptr("S-1"),
+					Packaging: dvgoutils.Ptr("reel"),
+
 					DeleteOnDeplete: dvgoutils.Ptr(true),
 				})
 				return err
@@ -291,7 +290,7 @@ func TestWriteMethodsUseExpectedEndpoints(t *testing.T) {
 				a.Equal("B-1", body["batch"])
 				a.Equal("S-1", body["serial"])
 				a.Equal("reel", body["packaging"])
-				a.Equal("initial stock", body["notes"])
+				a.NotContains(body, "notes")
 				a.Equal(true, body["delete_on_deplete"])
 				_, hasCustomer := body["customer"]
 				a.False(hasCustomer)

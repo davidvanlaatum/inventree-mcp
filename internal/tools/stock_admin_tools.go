@@ -84,8 +84,6 @@ type UpdateStockItemMetadataInput struct {
 	ClearExpiryDate bool    `json:"clear_expiry_date,omitempty" jsonschema:"Explicitly clear expiry_date; mutually exclusive with expiry_date."`
 	Packaging       *string `json:"packaging,omitempty" jsonschema:"Optional replacement packaging; an explicit empty string is preserved."`
 	ClearPackaging  bool    `json:"clear_packaging,omitempty" jsonschema:"Explicitly clear packaging; mutually exclusive with packaging."`
-	Notes           *string `json:"notes,omitempty" jsonschema:"Optional replacement notes; an explicit empty string is preserved."`
-	ClearNotes      bool    `json:"clear_notes,omitempty" jsonschema:"Explicitly clear notes; mutually exclusive with notes."`
 	Link            *string `json:"link,omitempty" jsonschema:"Optional complete HTTP(S) external link without userinfo; query parameters and fragments are preserved, and an explicit empty string clears it."`
 	DryRun          bool    `json:"dry_run,omitempty" jsonschema:"Return a current-state-bound metadata plan without writing."`
 	Confirm         bool    `json:"confirm,omitempty" jsonschema:"Required true to execute the reviewed metadata plan."`
@@ -147,7 +145,6 @@ type StockMetadataState struct {
 	Batch           *string                  `json:"batch"`
 	ExpiryDate      *string                  `json:"expiry_date"`
 	Packaging       *string                  `json:"packaging"`
-	Notes           *string                  `json:"notes"`
 	Link            string                   `json:"link"`
 }
 
@@ -848,7 +845,7 @@ func stockMetadataPatch(input UpdateStockItemMetadataInput, before inventree.Sto
 // skipped, rather than a static plan-build rejection that would misreport a
 // harmless already-satisfied item as failed.
 func stockMetadataFields(input UpdateStockItemMetadataInput, before inventree.StockItem) (inventree.PatchFields, inventree.StockItem, error) {
-	if input.Batch != nil && input.ClearBatch || input.ExpiryDate != nil && input.ClearExpiryDate || input.Packaging != nil && input.ClearPackaging || input.Notes != nil && input.ClearNotes {
+	if input.Batch != nil && input.ClearBatch || input.ExpiryDate != nil && input.ClearExpiryDate || input.Packaging != nil && input.ClearPackaging {
 		return nil, before, errors.New("replacement values conflict with their clear flags")
 	}
 	if input.ExpiryDate != nil && !validDate(*input.ExpiryDate) {
@@ -877,7 +874,6 @@ func stockMetadataFields(input UpdateStockItemMetadataInput, before inventree.St
 	applyNullableString("batch", &after.Batch, input.Batch, input.ClearBatch)
 	applyNullableString("expiry_date", &after.ExpiryDate, input.ExpiryDate, input.ClearExpiryDate)
 	applyNullableString("packaging", &after.Packaging, input.Packaging, input.ClearPackaging)
-	applyNullableString("notes", &after.Notes, input.Notes, input.ClearNotes)
 	if input.Link != nil {
 		fields["link"] = inventree.Set(*input.Link)
 		after.Link = *input.Link
@@ -947,7 +943,7 @@ func locationFieldsMatch(location inventree.StockLocation, fields inventree.Patc
 }
 
 func stockMetadataState(item inventree.StockItem) StockMetadataState {
-	return StockMetadataState{ID: item.PK, PartID: item.Part, LocationID: item.Location, Quantity: item.Quantity, Serial: item.Serial, Status: item.Status, StatusText: item.StatusText, StatusCustomKey: item.StatusCustomKey, DeleteOnDeplete: item.DeleteOnDeplete, Allocated: item.Allocated, OwnerID: item.Owner, SupplierPartID: item.SupplierPart, BuildID: item.Build, ConsumedByID: item.ConsumedBy, CustomerID: item.Customer, SalesOrderID: item.SalesOrder, BelongsToID: item.BelongsTo, ParentID: item.Parent, PurchaseOrderID: item.PurchaseOrder, PurchasePrice: canonicalStockDecimal(item.PurchasePrice), PriceCurrency: item.PurchasePriceCurrency, InStock: item.InStock, IsBuilding: item.IsBuilding, Batch: item.Batch, ExpiryDate: item.ExpiryDate, Packaging: item.Packaging, Notes: item.Notes, Link: item.Link}
+	return StockMetadataState{ID: item.PK, PartID: item.Part, LocationID: item.Location, Quantity: item.Quantity, Serial: item.Serial, Status: item.Status, StatusText: item.StatusText, StatusCustomKey: item.StatusCustomKey, DeleteOnDeplete: item.DeleteOnDeplete, Allocated: item.Allocated, OwnerID: item.Owner, SupplierPartID: item.SupplierPart, BuildID: item.Build, ConsumedByID: item.ConsumedBy, CustomerID: item.Customer, SalesOrderID: item.SalesOrder, BelongsToID: item.BelongsTo, ParentID: item.Parent, PurchaseOrderID: item.PurchaseOrder, PurchasePrice: canonicalStockDecimal(item.PurchasePrice), PriceCurrency: item.PurchasePriceCurrency, InStock: item.InStock, IsBuilding: item.IsBuilding, Batch: item.Batch, ExpiryDate: item.ExpiryDate, Packaging: item.Packaging, Link: item.Link}
 }
 
 func canonicalStockDecimal(value *inventree.DecimalString) *inventree.DecimalString {

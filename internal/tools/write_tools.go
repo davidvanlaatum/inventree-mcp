@@ -107,7 +107,6 @@ type CreatePartInput struct {
 	Revision        *string  `json:"revision,omitempty" jsonschema:"Optional revision text."`
 	Salable         *bool    `json:"salable,omitempty" jsonschema:"Optional explicit salable flag."`
 	Testable        *bool    `json:"testable,omitempty" jsonschema:"Optional explicit testable flag."`
-	Notes           *string  `json:"notes,omitempty" jsonschema:"Optional markdown notes."`
 }
 
 type UpdatePartInput struct {
@@ -138,8 +137,6 @@ type UpdatePartInput struct {
 	ClearRevision   bool     `json:"clear_revision,omitempty" jsonschema:"Explicitly PATCH revision to null; mutually exclusive with revision."`
 	Salable         *bool    `json:"salable,omitempty" jsonschema:"Optional explicit salable flag."`
 	Testable        *bool    `json:"testable,omitempty" jsonschema:"Optional explicit testable flag."`
-	Notes           *string  `json:"notes,omitempty" jsonschema:"Replacement markdown notes."`
-	ClearNotes      bool     `json:"clear_notes,omitempty" jsonschema:"Explicitly PATCH notes to null; mutually exclusive with notes."`
 	Tags            []string `json:"tags,omitempty" jsonschema:"Optional whole-array replacement of this part's tags from InvenTree's shared tag taxonomy; an explicitly empty array clears every tag."`
 }
 
@@ -163,7 +160,6 @@ type CreateSupplierPartInput struct {
 	ManufacturerPartID *int     `json:"manufacturer_part_id,omitempty" jsonschema:"Optional existing manufacturer-part primary key."`
 	Packaging          *string  `json:"packaging,omitempty" jsonschema:"Optional packaging text."`
 	Note               *string  `json:"note,omitempty" jsonschema:"Optional short note."`
-	Notes              *string  `json:"notes,omitempty" jsonschema:"Optional long Markdown notes, distinct from the short note field."`
 	Available          *float64 `json:"available,omitempty" jsonschema:"Optional upstream availability quantity. Explicit zero is preserved."`
 }
 
@@ -173,7 +169,6 @@ type CreateManufacturerPartInput struct {
 	MPN            *string `json:"mpn,omitempty" jsonschema:"Optional manufacturer part number."`
 	Description    *string `json:"description,omitempty" jsonschema:"Optional manufacturer part description."`
 	Link           *string `json:"link,omitempty" jsonschema:"Optional complete HTTP(S) manufacturer-part URL without userinfo; query parameters and fragments are preserved."`
-	Notes          *string `json:"notes,omitempty" jsonschema:"Optional long Markdown notes."`
 }
 
 type CreateStockItemInput struct {
@@ -183,7 +178,6 @@ type CreateStockItemInput struct {
 	Status     *int    `json:"status,omitempty" jsonschema:"Optional InvenTree stock status code."`
 	Batch      *string `json:"batch,omitempty" jsonschema:"Optional batch code."`
 	Serial     *string `json:"serial,omitempty" jsonschema:"Optional serial number."`
-	Notes      *string `json:"notes,omitempty" jsonschema:"Optional markdown notes."`
 }
 
 type SetPartParametersInput struct {
@@ -222,7 +216,6 @@ type InitialStockWorkflowInput struct {
 	Status         *int    `json:"status,omitempty" jsonschema:"Optional InvenTree stock status code."`
 	Batch          *string `json:"batch,omitempty" jsonschema:"Optional batch code."`
 	Serial         *string `json:"serial,omitempty" jsonschema:"Optional serial number."`
-	Notes          *string `json:"notes,omitempty" jsonschema:"Optional markdown notes."`
 }
 
 type ParameterSetInput struct {
@@ -272,13 +265,11 @@ type SupplierPartWriteView struct {
 	inventree.SupplierPart
 	Link      string  `json:"link,omitempty"`
 	Available float64 `json:"available"`
-	Notes     *string `json:"notes"`
 }
 
 type ManufacturerPartWriteView struct {
 	inventree.ManufacturerPart
-	Link  string  `json:"link,omitempty"`
-	Notes *string `json:"notes"`
+	Link string `json:"link,omitempty"`
 }
 
 type PartUpsertWorkflowOutput struct {
@@ -382,6 +373,7 @@ func registerWriteTools(server *mcp.Server, deps Dependencies) {
 	registerStockLocationDeleteTool(server, deps)
 	registerAttachmentWriteTools(server, deps)
 	registerAttachmentBulkWriteTools(server, deps)
+	registerNoteWriteTools(server, deps)
 	registerRenderAndAttachComponentImageTool(server, deps)
 	registerPurchasingWriteTools(server, deps)
 	registerPurchasingBulkWriteTools(server, deps)
@@ -447,7 +439,6 @@ func createPart(deps Dependencies) mcp.ToolHandlerFor[CreatePartInput, PartWrite
 				Revision:        input.Revision,
 				Salable:         input.Salable,
 				Testable:        input.Testable,
-				Notes:           input.Notes,
 			})
 			if err != nil {
 				return partDetailWriteError(err)
@@ -654,7 +645,6 @@ func createSupplierPart(deps Dependencies) mcp.ToolHandlerFor[CreateSupplierPart
 				ManufacturerPart: input.ManufacturerPartID,
 				Packaging:        input.Packaging,
 				Note:             input.Note,
-				Notes:            input.Notes,
 				Available:        input.Available,
 			})
 			if err != nil {
@@ -663,9 +653,6 @@ func createSupplierPart(deps Dependencies) mcp.ToolHandlerFor[CreateSupplierPart
 			expected := inventree.PatchFields{}
 			if input.Link != nil {
 				expected["link"] = inventree.Set(*input.Link)
-			}
-			if input.Notes != nil {
-				expected["notes"] = inventree.Set(*input.Notes)
 			}
 			if input.Available != nil {
 				expected["available"] = inventree.Set(*input.Available)
@@ -707,7 +694,6 @@ func createManufacturerPart(deps Dependencies) mcp.ToolHandlerFor[CreateManufact
 				MPN:          input.MPN,
 				Description:  input.Description,
 				Link:         input.Link,
-				Notes:        input.Notes,
 			})
 			if err != nil {
 				return sourcingCreateErrorOutput[ManufacturerPartWriteView](err)
@@ -715,9 +701,6 @@ func createManufacturerPart(deps Dependencies) mcp.ToolHandlerFor[CreateManufact
 			expected := inventree.PatchFields{}
 			if input.Link != nil {
 				expected["link"] = inventree.Set(*input.Link)
-			}
-			if input.Notes != nil {
-				expected["notes"] = inventree.Set(*input.Notes)
 			}
 			return verifyCreatedManufacturerPart(ctx, client, record, expected)
 		})
@@ -831,7 +814,6 @@ func createStockItem(deps Dependencies) mcp.ToolHandlerFor[CreateStockItemInput,
 				Status:   input.Status,
 				Batch:    input.Batch,
 				Serial:   input.Serial,
-				Notes:    input.Notes,
 			})
 			return writeRecordOutput(record, err)
 		})
@@ -875,7 +857,6 @@ func initialStockWorkflow(deps Dependencies) mcp.ToolHandlerFor[InitialStockWork
 				setOptionalField(fields, "status", input.Status)
 				setOptionalField(fields, "batch", input.Batch)
 				setOptionalField(fields, "serial", input.Serial)
-				setOptionalField(fields, "notes", input.Notes)
 				output.PlannedChanges = append(output.PlannedChanges, plannedChange("create_stock_item", "stockitem", 0, fields))
 				return TextResult(StatusOK), output, nil
 			}
@@ -886,7 +867,6 @@ func initialStockWorkflow(deps Dependencies) mcp.ToolHandlerFor[InitialStockWork
 				Status:   input.Status,
 				Batch:    input.Batch,
 				Serial:   input.Serial,
-				Notes:    input.Notes,
 			})
 			if err != nil {
 				return nil, InitialStockWorkflowOutput{}, err
@@ -1665,12 +1645,12 @@ func verifyCreatedCompany(ctx context.Context, client CompanyWriteClient, create
 
 func verifyCreatedSupplierPart(ctx context.Context, client SupplierPartWriteClient, created inventree.SupplierPart, expected inventree.PatchFields) (*mcp.CallToolResult, SourcingCreateOutput[SupplierPartWriteView], error) {
 	if created.PK <= 0 {
-		return TextResult(StatusPartialFailure), SourcingCreateOutput[SupplierPartWriteView]{Status: StatusPartialFailure, RecoveryPlan: "Use a bounded supplier-part search with the requested part, supplier, and SKU identity, then verify the external link, long notes, and availability before retrying or applying any further change."}, nil
+		return TextResult(StatusPartialFailure), SourcingCreateOutput[SupplierPartWriteView]{Status: StatusPartialFailure, RecoveryPlan: "Use a bounded supplier-part search with the requested part, supplier, and SKU identity, then verify the external link and availability before retrying or applying any further change."}, nil
 	}
 	detail, err := client.GetSupplierPartDetail(ctx, created.PK)
 	if err != nil || detail.PK != created.PK || !supplierPartFieldsMatch(detail, expected) {
 		recovery := sourcingCreateRecovery(created.PK)
-		return TextResult(StatusPartialFailure), SourcingCreateOutput[SupplierPartWriteView]{Status: StatusPartialFailure, Recovery: recovery, RecoveryPlan: "Read the supplier part by its stable ID and verify the requested external link, long notes, and availability before retrying or applying any further change."}, nil
+		return TextResult(StatusPartialFailure), SourcingCreateOutput[SupplierPartWriteView]{Status: StatusPartialFailure, Recovery: recovery, RecoveryPlan: "Read the supplier part by its stable ID and verify the requested external link and availability before retrying or applying any further change."}, nil
 	}
 	view := supplierPartWriteView(detail)
 	return TextResult(StatusOK), SourcingCreateOutput[SupplierPartWriteView]{Status: StatusOK, Record: &view}, nil
@@ -1678,12 +1658,12 @@ func verifyCreatedSupplierPart(ctx context.Context, client SupplierPartWriteClie
 
 func verifyCreatedManufacturerPart(ctx context.Context, client ManufacturerPartWriteClient, created inventree.ManufacturerPart, expected inventree.PatchFields) (*mcp.CallToolResult, SourcingCreateOutput[ManufacturerPartWriteView], error) {
 	if created.PK <= 0 {
-		return TextResult(StatusPartialFailure), SourcingCreateOutput[ManufacturerPartWriteView]{Status: StatusPartialFailure, RecoveryPlan: "Use a bounded manufacturer-part search with the requested part, manufacturer, and MPN identity, then verify the external link and long notes before retrying or applying any further change."}, nil
+		return TextResult(StatusPartialFailure), SourcingCreateOutput[ManufacturerPartWriteView]{Status: StatusPartialFailure, RecoveryPlan: "Use a bounded manufacturer-part search with the requested part, manufacturer, and MPN identity, then verify the external link before retrying or applying any further change."}, nil
 	}
 	detail, err := client.GetManufacturerPartDetail(ctx, created.PK)
 	if err != nil || detail.PK != created.PK || !manufacturerPartFieldsMatch(detail, expected) {
 		recovery := sourcingCreateRecovery(created.PK)
-		return TextResult(StatusPartialFailure), SourcingCreateOutput[ManufacturerPartWriteView]{Status: StatusPartialFailure, Recovery: recovery, RecoveryPlan: "Read the manufacturer part by its stable ID and verify the requested external link and long notes before retrying or applying any further change."}, nil
+		return TextResult(StatusPartialFailure), SourcingCreateOutput[ManufacturerPartWriteView]{Status: StatusPartialFailure, Recovery: recovery, RecoveryPlan: "Read the manufacturer part by its stable ID and verify the requested external link before retrying or applying any further change."}, nil
 	}
 	view := manufacturerPartWriteView(detail)
 	return TextResult(StatusOK), SourcingCreateOutput[ManufacturerPartWriteView]{Status: StatusOK, Record: &view}, nil
@@ -1760,11 +1740,11 @@ func companyWriteView(detail inventree.CompanyDetail) CompanyWriteView {
 }
 
 func supplierPartWriteView(detail inventree.SupplierPartDetail) SupplierPartWriteView {
-	return SupplierPartWriteView{SupplierPart: inventree.SupplierPart{WebLinkFields: detail.WebLinkFields, PK: detail.PK, Part: detail.Part, Supplier: detail.Supplier, SKU: detail.SKU, Description: derefString(detail.Description), Active: detail.Active, Primary: detail.Primary, Packaging: detail.Packaging, PackQuantityNative: detail.PackQuantityNative}, Link: projectExternalURL(detail.Link), Available: detail.Available, Notes: detail.Notes}
+	return SupplierPartWriteView{SupplierPart: inventree.SupplierPart{WebLinkFields: detail.WebLinkFields, PK: detail.PK, Part: detail.Part, Supplier: detail.Supplier, SKU: detail.SKU, Description: derefString(detail.Description), Active: detail.Active, Primary: detail.Primary, Packaging: detail.Packaging, PackQuantityNative: detail.PackQuantityNative}, Link: projectExternalURL(detail.Link), Available: detail.Available}
 }
 
 func manufacturerPartWriteView(detail inventree.ManufacturerPartDetail) ManufacturerPartWriteView {
-	return ManufacturerPartWriteView{ManufacturerPart: inventree.ManufacturerPart{WebLinkFields: detail.WebLinkFields, PK: detail.PK, Part: detail.Part, Manufacturer: detail.Manufacturer, MPN: derefString(detail.MPN), Description: derefString(detail.Description)}, Link: projectExternalURL(detail.Link), Notes: detail.Notes}
+	return ManufacturerPartWriteView{ManufacturerPart: inventree.ManufacturerPart{WebLinkFields: detail.WebLinkFields, PK: detail.PK, Part: detail.Part, Manufacturer: detail.Manufacturer, MPN: derefString(detail.MPN), Description: derefString(detail.Description)}, Link: projectExternalURL(detail.Link)}
 }
 
 func writeRecordOutput[T any](record T, err error) (*mcp.CallToolResult, WriteRecordOutput[T], error) {
@@ -1799,7 +1779,6 @@ func partPatchFields(input UpdatePartInput, before inventree.PartDetail) (invent
 		{field: "keywords", provided: input.Keywords != nil, clear: input.ClearKeywords},
 		{field: "link", provided: input.Link != nil, clear: input.ClearLink},
 		{field: "revision", provided: input.Revision != nil, clear: input.ClearRevision},
-		{field: "notes", provided: input.Notes != nil, clear: input.ClearNotes},
 	} {
 		if conflict(pair.provided, pair.clear) {
 			return nil, &partInputValidationError{field: pair.field, message: "Provide either the replacement value or its clear flag, not both."}
@@ -1836,7 +1815,6 @@ func partPatchFields(input UpdatePartInput, before inventree.PartDetail) (invent
 	setNullableString(fields, "revision", input.Revision, input.ClearRevision)
 	setPatchBool(fields, "salable", input.Salable)
 	setPatchBool(fields, "testable", input.Testable)
-	setNullableString(fields, "notes", input.Notes, input.ClearNotes)
 	if input.Tags != nil {
 		fields["tags"] = inventree.Set(input.Tags)
 	}

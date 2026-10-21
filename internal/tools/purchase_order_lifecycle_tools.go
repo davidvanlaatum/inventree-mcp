@@ -15,13 +15,10 @@ import (
 )
 
 // PurchaseOrderLifecycleClient is the narrow client surface needed to plan
-// and execute purchase-order hold, resume, and cancel transitions. InvenTree
-// 1.5.1/API 530 validates almost none of these transitions itself (hold and
-// issue succeed unconditionally from PENDING or PLACED and silently no-op on
-// a CANCELLED order; cancel succeeds even with partially received stock and
-// is refused only from COMPLETE), so every allowed-source-state and
-// received-quantity guard below is enforced at this layer rather than
-// relying on upstream refusal.
+// and execute purchase-order hold, resume, and cancel transitions. API 560
+// enforces native source states. This layer also preflights the permitted
+// states and refuses cancellation after any receipt rather than relying
+// solely on upstream transition checks.
 type PurchaseOrderLifecycleClient interface {
 	GetPurchaseOrder(context.Context, int) (inventree.PurchaseOrder, error)
 	SearchPurchaseOrderLines(context.Context, inventree.PurchaseOrderLineQuery) ([]inventree.PurchaseOrderLineItem, error)

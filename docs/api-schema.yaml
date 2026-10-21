@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: InvenTree API
-  version: '530'
+  version: '560'
   description: API for InvenTree - the intuitive open source inventory management
     system
   license:
@@ -287,11 +287,484 @@ paths:
               schema:
                 $ref: '#/components/schemas/TestEmail'
           description: ''
+  /api/admin/oauth2/:
+    get:
+      operationId: admin_oauth2_list
+      description: Manage a oAuth2 (provider side) application.
+      parameters:
+      - name: limit
+        required: true
+        in: query
+        description: Number of results to return per page.
+        schema:
+          type: integer
+      - name: offset
+        required: false
+        in: query
+        description: The initial index from which to return the results.
+        schema:
+          type: integer
+      tags:
+      - admin
+      security:
+      - tokenAuth: []
+      - basicAuth: []
+      - cookieAuth: []
+      - oauth2:
+        - r:view:admin
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedOAuth2ApplicationList'
+          description: ''
+    post:
+      operationId: admin_oauth2_create
+      description: Manage a oAuth2 (provider side) application.
+      tags:
+      - admin
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OAuth2Application'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/OAuth2Application'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/OAuth2Application'
+        required: true
+      security:
+      - tokenAuth: []
+      - basicAuth: []
+      - cookieAuth: []
+      - oauth2:
+        - r:add:admin
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OAuth2Application'
+          description: ''
+  /api/admin/oauth2/{id}/:
+    get:
+      operationId: admin_oauth2_retrieve
+      description: Manage a oAuth2 (provider side) application.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this application.
+        required: true
+      tags:
+      - admin
+      security:
+      - tokenAuth: []
+      - basicAuth: []
+      - cookieAuth: []
+      - oauth2:
+        - r:view:admin
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OAuth2Application'
+          description: ''
+    put:
+      operationId: admin_oauth2_update
+      description: Manage a oAuth2 (provider side) application.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this application.
+        required: true
+      tags:
+      - admin
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OAuth2Application'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/OAuth2Application'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/OAuth2Application'
+        required: true
+      security:
+      - tokenAuth: []
+      - basicAuth: []
+      - cookieAuth: []
+      - oauth2:
+        - r:change:admin
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OAuth2Application'
+          description: ''
+    patch:
+      operationId: admin_oauth2_partial_update
+      description: Manage a oAuth2 (provider side) application.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this application.
+        required: true
+      tags:
+      - admin
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedOAuth2Application'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedOAuth2Application'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedOAuth2Application'
+      security:
+      - tokenAuth: []
+      - basicAuth: []
+      - cookieAuth: []
+      - oauth2:
+        - r:change:admin
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OAuth2Application'
+          description: ''
+    delete:
+      operationId: admin_oauth2_destroy
+      description: |-
+        Delete an OAuth2 application.
+
+        Deletion of the built-in default OIDC client is not allowed.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this application.
+        required: true
+      tags:
+      - admin
+      security:
+      - tokenAuth: []
+      - basicAuth: []
+      - cookieAuth: []
+      - oauth2:
+        - r:delete:admin
+      responses:
+        '204':
+          description: No response body
+  /api/admin/oauth2/{id}/regenerate/:
+    post:
+      operationId: admin_oauth2_regenerate_create
+      description: Regenerate the client secret.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this application.
+        required: true
+      tags:
+      - admin
+      security:
+      - tokenAuth: []
+      - basicAuth: []
+      - cookieAuth: []
+      - oauth2:
+        - r:add:admin
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OAuth2Application'
+          description: ''
+  /api/admin/scim/:
+    get:
+      operationId: admin_scim_list
+      description: Return the current SCIM configuration status.
+      parameters:
+      - name: limit
+        required: true
+        in: query
+        description: Number of results to return per page.
+        schema:
+          type: integer
+      - name: offset
+        required: false
+        in: query
+        description: The initial index from which to return the results.
+        schema:
+          type: integer
+      tags:
+      - admin
+      security:
+      - tokenAuth: []
+      - basicAuth: []
+      - cookieAuth: []
+      - oauth2:
+        - a:superuser
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedScimConfigurationList'
+          description: ''
+  /api/admin/scim/disable/:
+    post:
+      operationId: admin_scim_disable_create
+      description: Disable the SCIM provisioning endpoint and revoke its secret.
+      tags:
+      - admin
+      security:
+      - tokenAuth: []
+      - basicAuth: []
+      - cookieAuth: []
+      - oauth2:
+        - a:superuser
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ScimConfiguration'
+          description: ''
+  /api/admin/scim/generate/:
+    post:
+      operationId: admin_scim_generate_create
+      description: |-
+        Generate a new SCIM bearer secret, and enable the endpoint.
+
+        The raw secret is returned exactly once in this response - only its
+        HMAC digest is persisted. Generating a new secret invalidates any
+        previously issued one.
+      tags:
+      - admin
+      security:
+      - tokenAuth: []
+      - basicAuth: []
+      - cookieAuth: []
+      - oauth2:
+        - a:superuser
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ScimSecret'
+          description: ''
+  /api/admin/sso/:
+    get:
+      operationId: admin_sso_list
+      description: Manage a SocialApp (client side) application.
+      parameters:
+      - name: limit
+        required: true
+        in: query
+        description: Number of results to return per page.
+        schema:
+          type: integer
+      - name: offset
+        required: false
+        in: query
+        description: The initial index from which to return the results.
+        schema:
+          type: integer
+      tags:
+      - admin
+      security:
+      - tokenAuth: []
+      - basicAuth: []
+      - cookieAuth: []
+      - oauth2:
+        - r:view:admin
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedSocialAppList'
+          description: ''
+    post:
+      operationId: admin_sso_create
+      description: Manage a SocialApp (client side) application.
+      tags:
+      - admin
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SocialApp'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/SocialApp'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/SocialApp'
+        required: true
+      security:
+      - tokenAuth: []
+      - basicAuth: []
+      - cookieAuth: []
+      - oauth2:
+        - r:add:admin
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SocialApp'
+          description: ''
+  /api/admin/sso/{id}/:
+    get:
+      operationId: admin_sso_retrieve
+      description: Manage a SocialApp (client side) application.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this social application.
+        required: true
+      tags:
+      - admin
+      security:
+      - tokenAuth: []
+      - basicAuth: []
+      - cookieAuth: []
+      - oauth2:
+        - r:view:admin
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SocialApp'
+          description: ''
+    put:
+      operationId: admin_sso_update
+      description: Manage a SocialApp (client side) application.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this social application.
+        required: true
+      tags:
+      - admin
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SocialApp'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/SocialApp'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/SocialApp'
+        required: true
+      security:
+      - tokenAuth: []
+      - basicAuth: []
+      - cookieAuth: []
+      - oauth2:
+        - r:change:admin
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SocialApp'
+          description: ''
+    patch:
+      operationId: admin_sso_partial_update
+      description: Manage a SocialApp (client side) application.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this social application.
+        required: true
+      tags:
+      - admin
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedSocialApp'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedSocialApp'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedSocialApp'
+      security:
+      - tokenAuth: []
+      - basicAuth: []
+      - cookieAuth: []
+      - oauth2:
+        - r:change:admin
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SocialApp'
+          description: ''
+    delete:
+      operationId: admin_sso_destroy
+      description: Manage a SocialApp (client side) application.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this social application.
+        required: true
+      tags:
+      - admin
+      security:
+      - tokenAuth: []
+      - basicAuth: []
+      - cookieAuth: []
+      - oauth2:
+        - r:delete:admin
+      responses:
+        '204':
+          description: No response body
   /api/attachment/:
     get:
       operationId: attachment_list
       description: List API endpoint for Attachment objects.
       parameters:
+      - in: query
+        name: filename
+        schema:
+          type: string
+        description: Filename
       - in: query
         name: has_thumbnail
         schema:
@@ -349,11 +822,12 @@ paths:
       - name: search
         required: false
         in: query
-        description: 'A search term. Searched fields: comment, model_id, model_type.'
+        description: 'A search term. Searched fields: attachment, comment, model_id,
+          model_type.'
         schema:
           type: string
       - in: query
-        name: tags
+        name: tag_name
         schema:
           type: string
         description: Tags
@@ -1195,7 +1669,11 @@ paths:
   /api/bom/:
     get:
       operationId: bom_list
-      description: Override the GET method to determine export options.
+      description: |-
+        API endpoint for accessing a list of BomItem objects.
+
+        - GET: Return list of BomItem objects
+        - POST: Create a new BomItem object
       parameters:
       - in: query
         name: allow_variants
@@ -1956,7 +2434,11 @@ paths:
   /api/build/:
     get:
       operationId: build_list
-      description: Override the GET method to determine export options.
+      description: |-
+        API endpoint for accessing a list of Build objects.
+
+        - GET: Return list of objects (with filters)
+        - POST: Create a new Build object
       parameters:
       - in: query
         name: active
@@ -2169,7 +2651,7 @@ paths:
           type: integer
         description: Order Status
       - in: query
-        name: tags
+        name: tag_name
         schema:
           type: string
         description: Tags
@@ -2785,7 +3267,11 @@ paths:
   /api/build/item/:
     get:
       operationId: build_item_list
-      description: Override the GET method to determine export options.
+      description: |-
+        API endpoint for accessing a list of BuildItem objects.
+
+        - GET: Return list of objects
+        - POST: Create a new BuildItem object
       parameters:
       - in: query
         name: build
@@ -3106,7 +3592,7 @@ paths:
   /api/build/line/:
     get:
       operationId: build_line_list
-      description: Override the GET method to determine export options.
+      description: API endpoint for accessing a list of BuildLine objects.
       parameters:
       - in: query
         name: allocated
@@ -3482,7 +3968,13 @@ paths:
   /api/company/:
     get:
       operationId: company_list
-      description: Override the GET method to determine export options.
+      description: |-
+        API endpoint for accessing a list of Company objects.
+
+        Provides two methods:
+
+        - GET: Return list of objects
+        - POST: Create a new Company object
       parameters:
       - in: query
         name: active
@@ -3490,6 +3982,10 @@ paths:
           type: boolean
       - in: query
         name: is_customer
+        schema:
+          type: boolean
+      - in: query
+        name: is_internal
         schema:
           type: boolean
       - in: query
@@ -3538,7 +4034,7 @@ paths:
         schema:
           type: string
       - in: query
-        name: tags
+        name: tag_name
         schema:
           type: string
         description: Tags
@@ -3724,7 +4220,7 @@ paths:
   /api/company/address/:
     get:
       operationId: company_address_list
-      description: Override the GET method to determine export options.
+      description: API endpoint for list view of Address model.
       parameters:
       - in: query
         name: company
@@ -3754,7 +4250,8 @@ paths:
       - name: search
         required: false
         in: query
-        description: A search term.
+        description: 'A search term. Searched fields: company__name, country, email,
+          line1, line2, phone, postal_city, postal_code, title.'
         schema:
           type: string
       tags:
@@ -3965,7 +4462,7 @@ paths:
   /api/company/contact/:
     get:
       operationId: company_contact_list
-      description: Override the GET method to determine export options.
+      description: API endpoint for list view of Company model.
       parameters:
       - in: query
         name: company
@@ -3995,7 +4492,8 @@ paths:
       - name: search
         required: false
         in: query
-        description: 'A search term. Searched fields: company__name, name.'
+        description: 'A search term. Searched fields: company__name, email, name,
+          phone, role.'
         schema:
           type: string
       tags:
@@ -4206,7 +4704,11 @@ paths:
   /api/company/part/:
     get:
       operationId: company_part_list
-      description: Override the GET method to determine export options.
+      description: |-
+        API endpoint for list view of SupplierPart object.
+
+        - GET: Return list of SupplierPart objects
+        - POST: Create a new SupplierPart object
       parameters:
       - in: query
         name: MPN
@@ -4347,7 +4849,7 @@ paths:
           default: false
         description: Include detailed information about the Supplier in the response
       - in: query
-        name: tags
+        name: tag_name
         schema:
           type: string
         description: Tags
@@ -4615,7 +5117,11 @@ paths:
   /api/company/part/manufacturer/:
     get:
       operationId: company_part_manufacturer_list
-      description: Override the GET method to determine export options.
+      description: |-
+        API endpoint for list view of ManufacturerPart object.
+
+        - GET: Return list of ManufacturerPart objects
+        - POST: Create a new ManufacturerPart object
       parameters:
       - in: query
         name: MPN
@@ -4692,7 +5198,7 @@ paths:
         schema:
           type: string
       - in: query
-        name: tags
+        name: tag_name
         schema:
           type: string
         description: Tags
@@ -4929,7 +5435,11 @@ paths:
   /api/company/price-break/:
     get:
       operationId: company_price_break_list
-      description: Override the GET method to determine export options.
+      description: |-
+        API endpoint for list view of SupplierPriceBreak object.
+
+        - GET: Retrieve list of SupplierPriceBreak objects
+        - POST: Create a new SupplierPriceBreak object
       parameters:
       - in: query
         name: base_part
@@ -4980,7 +5490,8 @@ paths:
       - name: search
         required: false
         in: query
-        description: 'A search term. Searched fields: part__SKU, part__supplier__name.'
+        description: 'A search term. Searched fields: part__SKU, part__part__IPN,
+          part__part__name, part__supplier__name.'
         schema:
           type: string
       - in: query
@@ -5808,7 +6319,7 @@ paths:
   /api/generic/status/custom/:
     get:
       operationId: generic_status_custom_list
-      description: Override the GET method to determine export options.
+      description: List view for all custom states.
       parameters:
       - name: limit
         required: true
@@ -6061,10 +6572,17 @@ paths:
         description: Which field to use when ordering the results.
         schema:
           type: string
+          enum:
+          - column_label
+          - -column_label
+          - field_name
+          - -field_name
+          - session
+          - -session
       - name: search
         required: false
         in: query
-        description: A search term.
+        description: 'A search term. Searched fields: column_label, field_name.'
         schema:
           type: string
       - in: query
@@ -6775,6 +7293,37 @@ paths:
               schema:
                 $ref: '#/components/schemas/DataImportAcceptRow'
           description: ''
+  /api/instance-info/:
+    get:
+      operationId: instance_info_retrieve
+      description: Return counts of attachments, notes and parameters for the given
+        instance.
+      parameters:
+      - in: query
+        name: model_id
+        schema:
+          type: integer
+        required: true
+      - in: query
+        name: model_type
+        schema:
+          type: string
+        required: true
+      tags:
+      - instance-info
+      security:
+      - tokenAuth: []
+      - basicAuth: []
+      - cookieAuth: []
+      - oauth2:
+        - g:read
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InstanceInfo'
+          description: ''
   /api/label/print/:
     post:
       operationId: label_print_create
@@ -7145,7 +7694,7 @@ paths:
       - name: search
         required: false
         in: query
-        description: 'A search term. Searched fields: name.'
+        description: 'A search term. Searched fields: driver, machine_type, name.'
         schema:
           type: string
       tags:
@@ -7432,7 +7981,7 @@ paths:
       - basicAuth: []
       - cookieAuth: []
       - oauth2:
-        - g:read
+        - r:view:admin
       responses:
         '200':
           content:
@@ -7488,7 +8037,7 @@ paths:
       - basicAuth: []
       - cookieAuth: []
       - oauth2:
-        - g:read
+        - r:change:admin
       responses:
         '200':
           content:
@@ -7543,7 +8092,7 @@ paths:
       - basicAuth: []
       - cookieAuth: []
       - oauth2:
-        - g:read
+        - r:change:admin
       responses:
         '200':
           content:
@@ -8113,15 +8662,252 @@ paths:
       responses:
         '204':
           description: No response body
-  /api/notes-image-upload/:
+  /api/note/:
     get:
-      operationId: notes_image_upload_list
+      operationId: note_list
+      description: List API endpoint for Note objects.
+      parameters:
+      - name: limit
+        required: true
+        in: query
+        description: Number of results to return per page.
+        schema:
+          type: integer
+      - in: query
+        name: model_id
+        schema:
+          type: integer
+      - in: query
+        name: model_type
+        schema:
+          type: string
+        description: Model Type
+      - name: offset
+        required: false
+        in: query
+        description: The initial index from which to return the results.
+        schema:
+          type: integer
+      - name: ordering
+        required: false
+        in: query
+        description: Which field to use when ordering the results.
+        schema:
+          type: string
+          enum:
+          - model_id
+          - -model_id
+          - model_type
+          - -model_type
+          - updated_by
+          - -updated_by
+          - updated
+          - -updated
+          - primary
+          - -primary
+          - template
+          - -template
+          - title
+          - -title
+      - name: search
+        required: false
+        in: query
+        description: 'A search term. Searched fields: content, description, title.'
+        schema:
+          type: string
+      - in: query
+        name: template
+        schema:
+          type: boolean
+        description: Template
+      - in: query
+        name: updated_by
+        schema:
+          type: integer
+      tags:
+      - note
+      security:
+      - tokenAuth: []
+      - basicAuth: []
+      - cookieAuth: []
+      - oauth2:
+        - g:read
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedNoteList'
+          description: ''
+    post:
+      operationId: note_create
+      description: List API endpoint for Note objects.
+      tags:
+      - note
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Note'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/Note'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/Note'
+        required: true
+      security:
+      - tokenAuth: []
+      - basicAuth: []
+      - cookieAuth: []
+      - oauth2:
+        - g:read
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Note'
+          description: ''
+  /api/note/{id}/:
+    get:
+      operationId: note_retrieve
+      description: Detail API endpoint for Note objects.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - note
+      security:
+      - tokenAuth: []
+      - basicAuth: []
+      - cookieAuth: []
+      - oauth2:
+        - g:read
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Note'
+          description: ''
+    put:
+      operationId: note_update
+      description: Detail API endpoint for Note objects.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - note
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Note'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/Note'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/Note'
+        required: true
+      security:
+      - tokenAuth: []
+      - basicAuth: []
+      - cookieAuth: []
+      - oauth2:
+        - g:read
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Note'
+          description: ''
+    patch:
+      operationId: note_partial_update
+      description: Detail API endpoint for Note objects.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - note
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedNote'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedNote'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedNote'
+      security:
+      - tokenAuth: []
+      - basicAuth: []
+      - cookieAuth: []
+      - oauth2:
+        - g:read
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Note'
+          description: ''
+    delete:
+      operationId: note_destroy
+      description: Detail API endpoint for Note objects.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - note
+      security:
+      - tokenAuth: []
+      - basicAuth: []
+      - cookieAuth: []
+      - oauth2:
+        - g:read
+      responses:
+        '204':
+          description: No response body
+  /api/note/image/:
+    get:
+      operationId: note_image_list
       description: List view for all notes images.
       parameters:
       - name: limit
         required: true
         in: query
         description: Number of results to return per page.
+        schema:
+          type: integer
+      - in: query
+        name: model_id
+        schema:
+          type: integer
+        description: Model ID
+      - in: query
+        name: model_type
+        schema:
+          type: string
+        description: Model Type
+      - in: query
+        name: note
         schema:
           type: integer
       - name: offset
@@ -8139,11 +8925,15 @@ paths:
       - name: search
         required: false
         in: query
-        description: 'A search term. Searched fields: model_id, model_type, user.'
+        description: A search term.
         schema:
           type: string
+      - in: query
+        name: user
+        schema:
+          type: integer
       tags:
-      - notes-image-upload
+      - note
       security:
       - tokenAuth: []
       - basicAuth: []
@@ -8158,10 +8948,10 @@ paths:
                 $ref: '#/components/schemas/PaginatedNotesImageList'
           description: ''
     post:
-      operationId: notes_image_upload_create
+      operationId: note_image_create
       description: List view for all notes images.
       tags:
-      - notes-image-upload
+      - note
       requestBody:
         content:
           application/json:
@@ -8448,7 +9238,7 @@ paths:
   /api/order/po/:
     get:
       operationId: order_po_list
-      description: Override the GET method to determine export options.
+      description: Override the list method to determine export options.
       parameters:
       - in: query
         name: assigned_to
@@ -8631,7 +9421,7 @@ paths:
           type: integer
         description: Supplier Part
       - in: query
-        name: tags
+        name: tag_name
         schema:
           type: string
         description: Tags
@@ -8676,11 +9466,7 @@ paths:
           description: ''
     post:
       operationId: order_po_create
-      description: |-
-        API endpoint for accessing a list of PurchaseOrder objects.
-
-        - GET: Return list of PurchaseOrder objects (with filters)
-        - POST: Create a new PurchaseOrder object
+      description: Save user information on order creation.
       tags:
       - order
       requestBody:
@@ -8711,7 +9497,7 @@ paths:
   /api/order/po-extra-line/:
     get:
       operationId: order_po_extra_line_list
-      description: Override the GET method to determine export options.
+      description: Override the list method to determine export options.
       parameters:
       - name: limit
         required: true
@@ -8774,7 +9560,13 @@ paths:
           description: ''
     post:
       operationId: order_po_extra_line_create
-      description: API endpoint for accessing a list of PurchaseOrderExtraLine objects.
+      description: |-
+        API endpoint for accessing PurchaseOrderExtraLine objects.
+
+        - GET: Return list of PurchaseOrderExtraLine objects (with filters), or a single object
+        - POST: Create a new PurchaseOrderExtraLine object
+        - PUT / PATCH: Update an existing PurchaseOrderExtraLine object
+        - DELETE: Remove a PurchaseOrderExtraLine object (or bulk delete multiple objects)
       tags:
       - order
       requestBody:
@@ -8805,10 +9597,11 @@ paths:
     delete:
       operationId: order_po_extra_line_bulk_destroy
       description: |-
-        Perform a DELETE operation against this list endpoint.
+        Perform a bulk delete operation.
 
-        Note that the typical DRF list endpoint does not support DELETE,
-        so this method is provided as a custom implementation.
+        Provide either a list of ids (via `items`) or a filter (via `filters`) to select the items to be deleted.
+
+        This action is performed attomically, so either all items will be deleted, or none will be deleted.
       tags:
       - order
       security:
@@ -8835,12 +9628,20 @@ paths:
   /api/order/po-extra-line/{id}/:
     get:
       operationId: order_po_extra_line_retrieve
-      description: API endpoint for detail view of a PurchaseOrderExtraLine object.
+      description: |-
+        API endpoint for accessing PurchaseOrderExtraLine objects.
+
+        - GET: Return list of PurchaseOrderExtraLine objects (with filters), or a single object
+        - POST: Create a new PurchaseOrderExtraLine object
+        - PUT / PATCH: Update an existing PurchaseOrderExtraLine object
+        - DELETE: Remove a PurchaseOrderExtraLine object (or bulk delete multiple objects)
       parameters:
       - in: path
         name: id
         schema:
           type: integer
+        description: A unique integer value identifying this Purchase Order Extra
+          Line.
         required: true
       tags:
       - order
@@ -8859,12 +9660,20 @@ paths:
           description: ''
     put:
       operationId: order_po_extra_line_update
-      description: API endpoint for detail view of a PurchaseOrderExtraLine object.
+      description: |-
+        API endpoint for accessing PurchaseOrderExtraLine objects.
+
+        - GET: Return list of PurchaseOrderExtraLine objects (with filters), or a single object
+        - POST: Create a new PurchaseOrderExtraLine object
+        - PUT / PATCH: Update an existing PurchaseOrderExtraLine object
+        - DELETE: Remove a PurchaseOrderExtraLine object (or bulk delete multiple objects)
       parameters:
       - in: path
         name: id
         schema:
           type: integer
+        description: A unique integer value identifying this Purchase Order Extra
+          Line.
         required: true
       tags:
       - order
@@ -8895,12 +9704,20 @@ paths:
           description: ''
     patch:
       operationId: order_po_extra_line_partial_update
-      description: API endpoint for detail view of a PurchaseOrderExtraLine object.
+      description: |-
+        API endpoint for accessing PurchaseOrderExtraLine objects.
+
+        - GET: Return list of PurchaseOrderExtraLine objects (with filters), or a single object
+        - POST: Create a new PurchaseOrderExtraLine object
+        - PUT / PATCH: Update an existing PurchaseOrderExtraLine object
+        - DELETE: Remove a PurchaseOrderExtraLine object (or bulk delete multiple objects)
       parameters:
       - in: path
         name: id
         schema:
           type: integer
+        description: A unique integer value identifying this Purchase Order Extra
+          Line.
         required: true
       tags:
       - order
@@ -8930,12 +9747,20 @@ paths:
           description: ''
     delete:
       operationId: order_po_extra_line_destroy
-      description: API endpoint for detail view of a PurchaseOrderExtraLine object.
+      description: |-
+        API endpoint for accessing PurchaseOrderExtraLine objects.
+
+        - GET: Return list of PurchaseOrderExtraLine objects (with filters), or a single object
+        - POST: Create a new PurchaseOrderExtraLine object
+        - PUT / PATCH: Update an existing PurchaseOrderExtraLine object
+        - DELETE: Remove a PurchaseOrderExtraLine object (or bulk delete multiple objects)
       parameters:
       - in: path
         name: id
         schema:
           type: integer
+        description: A unique integer value identifying this Purchase Order Extra
+          Line.
         required: true
       tags:
       - order
@@ -8951,7 +9776,7 @@ paths:
   /api/order/po-line/:
     get:
       operationId: order_po_line_list
-      description: Override the GET method to determine export options.
+      description: Override the list method to determine export options.
       parameters:
       - in: query
         name: base_part
@@ -9079,11 +9904,7 @@ paths:
           description: ''
     post:
       operationId: order_po_line_create
-      description: |-
-        API endpoint for accessing a list of PurchaseOrderLineItem objects.
-
-        - GET: Return a list of PurchaseOrder Line Item objects
-        - POST: Create a new PurchaseOrderLineItem object
+      description: Create or update a new PurchaseOrderLineItem object.
       tags:
       - order
       requestBody:
@@ -9114,10 +9935,11 @@ paths:
     delete:
       operationId: order_po_line_bulk_destroy
       description: |-
-        Perform a DELETE operation against this list endpoint.
+        Perform a bulk delete operation.
 
-        Note that the typical DRF list endpoint does not support DELETE,
-        so this method is provided as a custom implementation.
+        Provide either a list of ids (via `items`) or a filter (via `filters`) to select the items to be deleted.
+
+        This action is performed attomically, so either all items will be deleted, or none will be deleted.
       tags:
       - order
       security:
@@ -9144,25 +9966,20 @@ paths:
   /api/order/po-line/{id}/:
     get:
       operationId: order_po_line_retrieve
-      description: Detail API endpoint for PurchaseOrderLineItem object.
+      description: |-
+        API endpoint for accessing PurchaseOrderLineItem objects.
+
+        - GET: Return list of PurchaseOrderLineItem objects (with filters), or a single object
+        - POST: Create a new PurchaseOrderLineItem object
+        - PUT / PATCH: Update an existing PurchaseOrderLineItem object
+        - DELETE: Remove a PurchaseOrderLineItem object (or bulk delete multiple objects)
       parameters:
       - in: path
         name: id
         schema:
           type: integer
+        description: A unique integer value identifying this Purchase Order Line Item.
         required: true
-      - in: query
-        name: order_detail
-        schema:
-          type: boolean
-          default: false
-        description: Include detailed information about the sales order in the response
-      - in: query
-        name: part_detail
-        schema:
-          type: boolean
-          default: false
-        description: Include detailed information about the related part in the response
       tags:
       - order
       security:
@@ -9180,12 +9997,19 @@ paths:
           description: ''
     put:
       operationId: order_po_line_update
-      description: Detail API endpoint for PurchaseOrderLineItem object.
+      description: |-
+        API endpoint for accessing PurchaseOrderLineItem objects.
+
+        - GET: Return list of PurchaseOrderLineItem objects (with filters), or a single object
+        - POST: Create a new PurchaseOrderLineItem object
+        - PUT / PATCH: Update an existing PurchaseOrderLineItem object
+        - DELETE: Remove a PurchaseOrderLineItem object (or bulk delete multiple objects)
       parameters:
       - in: path
         name: id
         schema:
           type: integer
+        description: A unique integer value identifying this Purchase Order Line Item.
         required: true
       tags:
       - order
@@ -9216,12 +10040,19 @@ paths:
           description: ''
     patch:
       operationId: order_po_line_partial_update
-      description: Detail API endpoint for PurchaseOrderLineItem object.
+      description: |-
+        API endpoint for accessing PurchaseOrderLineItem objects.
+
+        - GET: Return list of PurchaseOrderLineItem objects (with filters), or a single object
+        - POST: Create a new PurchaseOrderLineItem object
+        - PUT / PATCH: Update an existing PurchaseOrderLineItem object
+        - DELETE: Remove a PurchaseOrderLineItem object (or bulk delete multiple objects)
       parameters:
       - in: path
         name: id
         schema:
           type: integer
+        description: A unique integer value identifying this Purchase Order Line Item.
         required: true
       tags:
       - order
@@ -9251,12 +10082,19 @@ paths:
           description: ''
     delete:
       operationId: order_po_line_destroy
-      description: Detail API endpoint for PurchaseOrderLineItem object.
+      description: |-
+        API endpoint for accessing PurchaseOrderLineItem objects.
+
+        - GET: Return list of PurchaseOrderLineItem objects (with filters), or a single object
+        - POST: Create a new PurchaseOrderLineItem object
+        - PUT / PATCH: Update an existing PurchaseOrderLineItem object
+        - DELETE: Remove a PurchaseOrderLineItem object (or bulk delete multiple objects)
       parameters:
       - in: path
         name: id
         schema:
           type: integer
+        description: A unique integer value identifying this Purchase Order Line Item.
         required: true
       tags:
       - order
@@ -9272,19 +10110,20 @@ paths:
   /api/order/po/{id}/:
     get:
       operationId: order_po_retrieve
-      description: API endpoint for detail view of a PurchaseOrder object.
+      description: |-
+        API endpoint for accessing PurchaseOrder objects.
+
+        - GET: Return list of PurchaseOrder objects (with filters), or a single PurchaseOrder object
+        - POST: Create a new PurchaseOrder object
+        - PUT / PATCH: Update an existing PurchaseOrder object
+        - DELETE: Remove a PurchaseOrder object
       parameters:
       - in: path
         name: id
         schema:
           type: integer
+        description: A unique integer value identifying this Purchase Order.
         required: true
-      - in: query
-        name: supplier_detail
-        schema:
-          type: boolean
-          default: false
-        description: Include detailed information about the supplier in the response
       tags:
       - order
       security:
@@ -9302,12 +10141,19 @@ paths:
           description: ''
     put:
       operationId: order_po_update
-      description: API endpoint for detail view of a PurchaseOrder object.
+      description: |-
+        API endpoint for accessing PurchaseOrder objects.
+
+        - GET: Return list of PurchaseOrder objects (with filters), or a single PurchaseOrder object
+        - POST: Create a new PurchaseOrder object
+        - PUT / PATCH: Update an existing PurchaseOrder object
+        - DELETE: Remove a PurchaseOrder object
       parameters:
       - in: path
         name: id
         schema:
           type: integer
+        description: A unique integer value identifying this Purchase Order.
         required: true
       tags:
       - order
@@ -9338,12 +10184,19 @@ paths:
           description: ''
     patch:
       operationId: order_po_partial_update
-      description: API endpoint for detail view of a PurchaseOrder object.
+      description: |-
+        API endpoint for accessing PurchaseOrder objects.
+
+        - GET: Return list of PurchaseOrder objects (with filters), or a single PurchaseOrder object
+        - POST: Create a new PurchaseOrder object
+        - PUT / PATCH: Update an existing PurchaseOrder object
+        - DELETE: Remove a PurchaseOrder object
       parameters:
       - in: path
         name: id
         schema:
           type: integer
+        description: A unique integer value identifying this Purchase Order.
         required: true
       tags:
       - order
@@ -9373,12 +10226,19 @@ paths:
           description: ''
     delete:
       operationId: order_po_destroy
-      description: API endpoint for detail view of a PurchaseOrder object.
+      description: |-
+        API endpoint for accessing PurchaseOrder objects.
+
+        - GET: Return list of PurchaseOrder objects (with filters), or a single PurchaseOrder object
+        - POST: Create a new PurchaseOrder object
+        - PUT / PATCH: Update an existing PurchaseOrder object
+        - DELETE: Remove a PurchaseOrder object
       parameters:
       - in: path
         name: id
         schema:
           type: integer
+        description: A unique integer value identifying this Purchase Order.
         required: true
       tags:
       - order
@@ -9391,18 +10251,23 @@ paths:
       responses:
         '204':
           description: No response body
-  /api/order/po/{id}/cancel/:
-    post:
-      operationId: order_po_cancel_create
+  /api/order/po/{id}/_transitions/:
+    get:
+      operationId: order_po__transitions_list
       description: |-
-        API endpoint to 'cancel' a purchase order.
+        List the FSM transitions reachable from this object's current state.
 
-        The purchase order must be in a state which can be cancelled
+        Blocked transitions are included and flagged with their reason.
+
+        Only transitions this viewset exposes as an endpoint are reported: ``available_transitions``
+        matches by state field name, so restricting the answer to this viewset's own endpoints keeps
+        every entry something the client can POST to.
       parameters:
       - in: path
         name: id
         schema:
           type: integer
+        description: A unique integer value identifying this Purchase Order.
         required: true
       tags:
       - order
@@ -9413,17 +10278,58 @@ paths:
       - oauth2:
         - g:read
       responses:
-        '201':
-          description: No response body
-  /api/order/po/{id}/complete/:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/AvailableTransition'
+          description: ''
+  /api/order/po/{id}/cancel/:
     post:
-      operationId: order_po_complete_create
-      description: API endpoint to 'complete' a purchase order.
+      operationId: order_po_cancel_create
+      description: API endpoint to 'cancel_order' the current item.
       parameters:
       - in: path
         name: id
         schema:
           type: integer
+        description: A unique integer value identifying this Purchase Order.
+        required: true
+      tags:
+      - order
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PurchaseOrder'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PurchaseOrder'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PurchaseOrder'
+        required: true
+      security:
+      - tokenAuth: []
+      - basicAuth: []
+      - cookieAuth: []
+      - oauth2:
+        - r:add:purchase_order
+      responses:
+        '201':
+          description: No response body
+  /api/order/po/{id}/complete/:
+    post:
+      operationId: order_po_complete_create
+      description: API endpoint to 'complete_order' the current item.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this Purchase Order.
         required: true
       tags:
       - order
@@ -9454,67 +10360,81 @@ paths:
   /api/order/po/{id}/hold/:
     post:
       operationId: order_po_hold_create
-      description: API endpoint to place a PurchaseOrder on hold.
+      description: API endpoint to 'hold_order' the current item.
       parameters:
       - in: path
         name: id
         schema:
           type: integer
+        description: A unique integer value identifying this Purchase Order.
         required: true
       tags:
       - order
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PurchaseOrder'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PurchaseOrder'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PurchaseOrder'
+        required: true
       security:
       - tokenAuth: []
       - basicAuth: []
       - cookieAuth: []
       - oauth2:
-        - g:read
+        - r:add:purchase_order
       responses:
         '201':
           description: No response body
   /api/order/po/{id}/issue/:
     post:
       operationId: order_po_issue_create
-      description: API endpoint to 'issue' (place) a PurchaseOrder.
+      description: API endpoint to 'place_order' the current item.
       parameters:
       - in: path
         name: id
         schema:
           type: integer
+        description: A unique integer value identifying this Purchase Order.
         required: true
       tags:
       - order
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PurchaseOrder'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PurchaseOrder'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PurchaseOrder'
+        required: true
       security:
       - tokenAuth: []
       - basicAuth: []
       - cookieAuth: []
       - oauth2:
-        - g:read
+        - r:add:purchase_order
       responses:
         '201':
           description: No response body
   /api/order/po/{id}/receive/:
     post:
       operationId: order_po_receive_create
-      description: |-
-        API endpoint to receive stock items against a PurchaseOrder.
-
-        - The purchase order is specified in the URL.
-        - Items to receive are specified as a list called "items" with the following options:
-            - line_item: pk of the PO Line item
-            - supplier_part: pk value of the supplier part
-            - quantity: quantity to receive
-            - status: stock item status
-            - expiry_date: stock item expiry date (optional)
-            - location: destination for stock item (optional)
-            - batch_code: the batch code for this stock item
-            - serial_numbers: serial numbers for this stock item
-        - A global location must also be specified. This is used when no locations are specified for items, and no location is given in the PO line item
+      description: API endpoint to receive stock items against a PurchaseOrder.
       parameters:
       - in: path
         name: id
         schema:
           type: integer
+        description: A unique integer value identifying this Purchase Order.
         required: true
       tags:
       - order
@@ -9569,7 +10489,7 @@ paths:
   /api/order/ro/:
     get:
       operationId: order_ro_list
-      description: Override the GET method to determine export options.
+      description: API endpoint for accessing a list of ReturnOrder objects.
       parameters:
       - in: query
         name: assigned_to
@@ -9744,7 +10664,7 @@ paths:
           type: integer
         description: Order Status
       - in: query
-        name: tags
+        name: tag_name
         schema:
           type: string
         description: Tags
@@ -9820,7 +10740,7 @@ paths:
   /api/order/ro-extra-line/:
     get:
       operationId: order_ro_extra_line_list
-      description: Override the GET method to determine export options.
+      description: API endpoint for accessing a list of ReturnOrderExtraLine objects.
       parameters:
       - name: limit
         required: true
@@ -10060,7 +10980,7 @@ paths:
   /api/order/ro-line/:
     get:
       operationId: order_ro_line_list
-      description: Override the GET method to determine export options.
+      description: API endpoint for accessing a list of ReturnOrderLineItemList objects.
       parameters:
       - in: query
         name: has_pricing
@@ -10188,6 +11108,72 @@ paths:
         - r:add:return_order
       responses:
         '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReturnOrderLineItem'
+          description: ''
+    put:
+      operationId: order_ro_line_bulk_update
+      description: |-
+        Perform a PUT operation against this list endpoint.
+
+        Simply redirects to the PATCH method.
+      tags:
+      - order
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReturnOrderLineItem'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/ReturnOrderLineItem'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/ReturnOrderLineItem'
+        required: true
+      security:
+      - tokenAuth: []
+      - basicAuth: []
+      - cookieAuth: []
+      - oauth2:
+        - r:change:return_order
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReturnOrderLineItem'
+          description: ''
+    patch:
+      operationId: order_ro_line_bulk_partial_update
+      description: |-
+        Perform a PATCH operation against this list endpoint.
+
+        Note that the typical DRF list endpoint does not support PATCH,
+        so this method is provided as a custom implementation.
+      tags:
+      - order
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedReturnOrderLineItem'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedReturnOrderLineItem'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedReturnOrderLineItem'
+      security:
+      - tokenAuth: []
+      - basicAuth: []
+      - cookieAuth: []
+      - oauth2:
+        - r:change:return_order
+      responses:
+        '200':
           content:
             application/json:
               schema:
@@ -10645,7 +11631,11 @@ paths:
   /api/order/so/:
     get:
       operationId: order_so_list
-      description: Override the GET method to determine export options.
+      description: |-
+        API endpoint for accessing a list of SalesOrder objects.
+
+        - GET: Return list of SalesOrder objects (with filters)
+        - POST: Create a new SalesOrder
       parameters:
       - in: query
         name: assigned_to
@@ -10822,7 +11812,7 @@ paths:
           type: integer
         description: Order Status
       - in: query
-        name: tags
+        name: tag_name
         schema:
           type: string
         description: Tags
@@ -10902,7 +11892,7 @@ paths:
   /api/order/so-allocation/:
     get:
       operationId: order_so_allocation_list
-      description: Override the GET method to determine export options.
+      description: API endpoint for listing SalesOrderAllocation objects.
       parameters:
       - in: query
         name: assigned_to_shipment
@@ -11012,7 +12002,7 @@ paths:
         required: false
         in: query
         description: 'A search term. Searched fields: item__batch, item__part__IPN,
-          item__part__name, item__serial.'
+          item__part__name, item__serial, line__order__customer__name, line__order__reference.'
         schema:
           type: string
       - in: query
@@ -11249,7 +12239,7 @@ paths:
   /api/order/so-extra-line/:
     get:
       operationId: order_so_extra_line_list
-      description: Override the GET method to determine export options.
+      description: API endpoint for accessing a list of SalesOrderExtraLine objects.
       parameters:
       - name: limit
         required: true
@@ -11489,7 +12479,7 @@ paths:
   /api/order/so-line/:
     get:
       operationId: order_so_line_list
-      description: Override the GET method to determine export options.
+      description: API endpoint for accessing a list of SalesOrderLineItem objects.
       parameters:
       - in: query
         name: allocated
@@ -12216,7 +13206,7 @@ paths:
           type: boolean
         description: shipped
       - in: query
-        name: tags
+        name: tag_name
         schema:
           type: string
         description: Tags
@@ -12441,7 +13431,7 @@ paths:
   /api/order/transfer-order/:
     get:
       operationId: order_transfer_order_list
-      description: Override the GET method to determine export options.
+      description: API endpoint for accessing a list of TransferOrder objects.
       parameters:
       - in: query
         name: assigned_to
@@ -12600,7 +13590,7 @@ paths:
           type: integer
         description: Order Status
       - in: query
-        name: tags
+        name: tag_name
         schema:
           type: string
         description: Tags
@@ -12773,7 +13763,7 @@ paths:
         required: false
         in: query
         description: 'A search term. Searched fields: item__batch, item__part__IPN,
-          item__part__name, item__serial.'
+          item__part__name, item__serial, line__order__reference.'
         schema:
           type: string
       tags:
@@ -12976,7 +13966,7 @@ paths:
   /api/order/transfer-order-line/:
     get:
       operationId: order_transfer_order_line_list
-      description: Override the GET method to determine export options.
+      description: API endpoint for accessing a list of TransferOrderLineItem objects.
       parameters:
       - in: query
         name: allocated
@@ -13570,7 +14560,7 @@ paths:
   /api/parameter/:
     get:
       operationId: parameter_list
-      description: Override the GET method to determine export options.
+      description: List API endpoint for Parameter objects.
       parameters:
       - in: query
         name: enabled
@@ -13826,7 +14816,7 @@ paths:
   /api/parameter/template/:
     get:
       operationId: parameter_template_list
-      description: Override the GET method to determine export options.
+      description: List view for ParameterTemplate objects.
       parameters:
       - in: query
         name: checkbox
@@ -13967,7 +14957,7 @@ paths:
       - basicAuth: []
       - cookieAuth: []
       - oauth2:
-        - g:read
+        - a:staff
       responses:
         '201':
           content:
@@ -14028,7 +15018,7 @@ paths:
       - basicAuth: []
       - cookieAuth: []
       - oauth2:
-        - g:read
+        - a:staff
       responses:
         '200':
           content:
@@ -14063,7 +15053,7 @@ paths:
       - basicAuth: []
       - cookieAuth: []
       - oauth2:
-        - g:read
+        - a:staff
       responses:
         '200':
           content:
@@ -14087,14 +15077,15 @@ paths:
       - basicAuth: []
       - cookieAuth: []
       - oauth2:
-        - g:read
+        - a:staff
       responses:
         '204':
           description: No response body
   /api/part/:
     get:
       operationId: part_list
-      description: Override the GET method to determine export options.
+      description: API endpoint for accessing a list of Part objects, or creating
+        a new Part instance.
       parameters:
       - in: query
         name: IPN
@@ -14366,6 +15357,11 @@ paths:
         schema:
           type: boolean
         description: Required for Build Order
+      - in: query
+        name: tag_name
+        schema:
+          type: string
+        description: Tags
       - in: query
         name: tags
         schema:
@@ -14958,7 +15954,11 @@ paths:
   /api/part/category/:
     get:
       operationId: part_category_list
-      description: Override the GET method to determine export options.
+      description: |-
+        API endpoint for accessing a list of PartCategory objects.
+
+        - GET: Return a list of PartCategory objects
+        - POST: Create a new PartCategory object
       parameters:
       - in: query
         name: cascade
@@ -15286,7 +16286,10 @@ paths:
   /api/part/category/parameters/:
     get:
       operationId: part_category_parameters_list
-      description: Override the GET method to determine export options.
+      description: |-
+        API endpoint for accessing a list of PartCategoryParameterTemplate objects.
+
+        - GET: Return a list of PartCategoryParameterTemplate objects
       parameters:
       - name: limit
         required: true
@@ -15537,7 +16540,7 @@ paths:
   /api/part/internal-price/:
     get:
       operationId: part_internal_price_list
-      description: Override the GET method to determine export options.
+      description: API endpoint for list view of PartInternalPriceBreak model.
       parameters:
       - name: limit
         required: true
@@ -15939,7 +16942,7 @@ paths:
   /api/part/sale-price/:
     get:
       operationId: part_sale_price_list
-      description: Override the GET method to determine export options.
+      description: API endpoint for list view of PartSalePriceBreak model.
       parameters:
       - name: limit
         required: true
@@ -16138,7 +17141,7 @@ paths:
   /api/part/stocktake/:
     get:
       operationId: part_stocktake_list
-      description: Override the GET method to determine export options.
+      description: API endpoint for listing part stocktake information.
       parameters:
       - name: limit
         required: true
@@ -16411,7 +17414,7 @@ paths:
   /api/part/test-template/:
     get:
       operationId: part_test_template_list
-      description: Override the GET method to determine export options.
+      description: API endpoint for listing (and creating) a PartTestTemplate.
       parameters:
       - in: query
         name: enabled
@@ -17540,7 +18543,7 @@ paths:
   /api/project-code/:
     get:
       operationId: project_code_list
-      description: Override the GET method to determine export options.
+      description: List view for all project codes.
       parameters:
       - in: query
         name: active
@@ -17751,6 +18754,21 @@ paths:
         description: The initial index from which to return the results.
         schema:
           type: integer
+      - name: ordering
+        required: false
+        in: query
+        description: Which field to use when ordering the results.
+        schema:
+          type: string
+          enum:
+          - description
+          - -description
+      - name: search
+        required: false
+        in: query
+        description: 'A search term. Searched fields: description.'
+        schema:
+          type: string
       tags:
       - report
       security:
@@ -18415,18 +19433,45 @@ paths:
       operationId: selection_list
       description: List view for SelectionList objects.
       parameters:
+      - in: query
+        name: active
+        schema:
+          type: boolean
       - name: limit
         required: true
         in: query
         description: Number of results to return per page.
         schema:
           type: integer
+      - in: query
+        name: locked
+        schema:
+          type: boolean
       - name: offset
         required: false
         in: query
         description: The initial index from which to return the results.
         schema:
           type: integer
+      - name: ordering
+        required: false
+        in: query
+        description: Which field to use when ordering the results.
+        schema:
+          type: string
+          enum:
+          - name
+          - -name
+          - active
+          - -active
+          - locked
+          - -locked
+      - name: search
+        required: false
+        in: query
+        description: 'A search term. Searched fields: description, name.'
+        schema:
+          type: string
       tags:
       - selection
       security:
@@ -18464,7 +19509,7 @@ paths:
       - basicAuth: []
       - cookieAuth: []
       - oauth2:
-        - g:read
+        - a:staff
       responses:
         '201':
           content:
@@ -18525,7 +19570,7 @@ paths:
       - basicAuth: []
       - cookieAuth: []
       - oauth2:
-        - g:read
+        - a:staff
       responses:
         '200':
           content:
@@ -18560,7 +19605,7 @@ paths:
       - basicAuth: []
       - cookieAuth: []
       - oauth2:
-        - g:read
+        - a:staff
       responses:
         '200':
           content:
@@ -18584,7 +19629,7 @@ paths:
       - basicAuth: []
       - cookieAuth: []
       - oauth2:
-        - g:read
+        - a:staff
       responses:
         '204':
           description: No response body
@@ -18684,7 +19729,7 @@ paths:
       - basicAuth: []
       - cookieAuth: []
       - oauth2:
-        - g:read
+        - a:staff
       responses:
         '201':
           content:
@@ -18755,7 +19800,7 @@ paths:
       - basicAuth: []
       - cookieAuth: []
       - oauth2:
-        - g:read
+        - a:staff
       responses:
         '200':
           content:
@@ -18795,7 +19840,7 @@ paths:
       - basicAuth: []
       - cookieAuth: []
       - oauth2:
-        - g:read
+        - a:staff
       responses:
         '200':
           content:
@@ -18824,7 +19869,7 @@ paths:
       - basicAuth: []
       - cookieAuth: []
       - oauth2:
-        - g:read
+        - a:staff
       responses:
         '204':
           description: No response body
@@ -19149,7 +20194,12 @@ paths:
   /api/stock/:
     get:
       operationId: stock_list
-      description: Override the GET method to determine export options.
+      description: |-
+        API endpoint for list view of Stock objects.
+
+        - GET: Return a list of all StockItem objects (with optional query filters)
+        - POST: Create a new StockItem
+        - DELETE: Delete multiple StockItem objects
       parameters:
       - in: query
         name: IPN
@@ -19525,7 +20575,7 @@ paths:
           type: boolean
           default: false
       - in: query
-        name: tags
+        name: tag_name
         schema:
           type: string
         description: Tags
@@ -20215,7 +21265,11 @@ paths:
   /api/stock/location/:
     get:
       operationId: stock_location_list
-      description: Override the GET method to determine export options.
+      description: |-
+        API endpoint for list view of StockLocation objects.
+
+        - GET: Return list of StockLocation objects
+        - POST: Create a new StockLocation
       parameters:
       - in: query
         name: cascade
@@ -20299,7 +21353,7 @@ paths:
         schema:
           type: boolean
       - in: query
-        name: tags
+        name: tag_name
         schema:
           type: string
         description: Tags
@@ -20464,7 +21518,7 @@ paths:
       - name: search
         required: false
         in: query
-        description: 'A search term. Searched fields: name.'
+        description: 'A search term. Searched fields: description, name.'
         schema:
           type: string
       tags:
@@ -21278,7 +22332,13 @@ paths:
   /api/stock/track/:
     get:
       operationId: stock_track_list
-      description: Override the GET method to determine export options.
+      description: |-
+        API endpoint for list view of StockItemTracking objects.
+
+        StockItemTracking objects are read-only
+        (they are created by internal model functionality)
+
+        - GET: Return list of StockItemTracking objects
       parameters:
       - in: query
         name: include_variants
@@ -21786,7 +22846,7 @@ paths:
   /api/units/:
     get:
       operationId: units_list
-      description: List view for custom units.
+      description: Override the list method to determine export options.
       parameters:
       - name: limit
         required: true
@@ -22054,7 +23114,8 @@ paths:
       - name: search
         required: false
         in: query
-        description: 'A search term. Searched fields: first_name, last_name, username.'
+        description: 'A search term. Searched fields: email, first_name, last_name,
+          username.'
         schema:
           type: string
       tags:
@@ -22643,25 +23704,6 @@ paths:
               schema:
                 $ref: '#/components/schemas/MeUser'
           description: ''
-    delete:
-      operationId: user_me_destroy
-      description: |-
-        Detail endpoint for current user.
-
-        Permissions:
-        - User can edit their own details via this endpoint
-        - Only a subset of fields are available here
-      tags:
-      - user
-      security:
-      - tokenAuth: []
-      - basicAuth: []
-      - cookieAuth: []
-      - oauth2:
-        - g:read
-      responses:
-        '204':
-          description: No response body
   /api/user/me/profile/:
     get:
       operationId: user_me_profile_retrieve
@@ -22773,6 +23815,101 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Role'
+          description: ''
+  /api/user/me/tips/{id}/:
+    get:
+      operationId: user_me_tips_retrieve
+      description: Detail endpoint for tip result manipulation.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - user
+      security:
+      - tokenAuth: []
+      - basicAuth: []
+      - cookieAuth: []
+      - oauth2:
+        - g:read
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TipResult'
+          description: ''
+    put:
+      operationId: user_me_tips_update
+      description: Detail endpoint for tip result manipulation.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - user
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TipResult'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/TipResult'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/TipResult'
+      security:
+      - tokenAuth: []
+      - basicAuth: []
+      - cookieAuth: []
+      - oauth2:
+        - g:read
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TipResult'
+          description: ''
+    patch:
+      operationId: user_me_tips_partial_update
+      description: Detail endpoint for tip result manipulation.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - user
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedTipResult'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedTipResult'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedTipResult'
+      security:
+      - tokenAuth: []
+      - basicAuth: []
+      - cookieAuth: []
+      - oauth2:
+        - g:read
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TipResult'
           description: ''
   /api/user/me/token/:
     get:
@@ -23084,6 +24221,10 @@ paths:
       operationId: user_tokens_list
       description: List of user tokens for current user.
       parameters:
+      - in: query
+        name: issued_by
+        schema:
+          type: integer
       - name: limit
         required: true
         in: query
@@ -23115,16 +24256,27 @@ paths:
           - -name
           - revoked
           - -revoked
-          - revoked
-          - -revoked
+          - revoked_by
+          - -revoked_by
+          - issued_by
+          - -issued_by
+          - token_version
+          - -token_version
+          - revocation_reason
+          - -revocation_reason
       - in: query
         name: revoked
         schema:
           type: boolean
+      - in: query
+        name: revoked_by
+        schema:
+          type: integer
       - name: search
         required: false
         in: query
-        description: 'A search term. Searched fields: key, name.'
+        description: 'A search term. Searched fields: name, revocation_reason, user__email,
+          user__first_name, user__last_name, user__username.'
         schema:
           type: string
       - in: query
@@ -23207,13 +24359,19 @@ paths:
           description: ''
     delete:
       operationId: user_tokens_destroy
-      description: Details for a user token.
+      description: Revoke this specific user token.
       parameters:
       - in: path
         name: id
         schema:
           type: integer
         required: true
+      - in: query
+        name: revocation_reason
+        schema:
+          type: string
+          default: ''
+        description: Reason for revoking the token.
       tags:
       - user
       security:
@@ -25847,6 +27005,19 @@ components:
           type: string
           description: Address country
           maxLength: 50
+        phone:
+          type: string
+          title: Phone number
+          description: Phone number for this address
+          maxLength: 50
+        email:
+          description: Email address for this address
+          oneOf:
+          - type: string
+            format: email
+            maxLength: 254
+          - type: string
+            maxLength: 0
         shipping_notes:
           type: string
           title: Courier shipping notes
@@ -25904,6 +27075,19 @@ components:
           type: string
           description: Address country
           maxLength: 50
+        phone:
+          type: string
+          title: Phone number
+          description: Phone number for this address
+          maxLength: 50
+        email:
+          description: Email address for this address
+          oneOf:
+          - type: string
+            format: email
+            maxLength: 254
+          - type: string
+            maxLength: 0
         shipping_notes:
           type: string
           title: Courier shipping notes
@@ -25915,6 +27099,15 @@ components:
           maxLength: 100
       required:
       - pk
+    AlgorithmEnum:
+      enum:
+      - RS256
+      - HS256
+      type: string
+      description: |-
+        * `` - No OIDC support
+        * `RS256` - RSA with SHA-2 256
+        * `HS256` - HMAC with SHA-2 256
     AllUnitListResponse:
       type: object
       description: Serializer for the AllUnitList.
@@ -26015,6 +27208,34 @@ components:
           type: boolean
           description: Return True if the token is currently used to call the endpoint.
           readOnly: true
+        revoked_by:
+          type: integer
+          nullable: true
+          description: User who revoked the token
+        revoked_by_detail:
+          allOf:
+          - $ref: '#/components/schemas/User'
+          readOnly: true
+          nullable: true
+        issued_by:
+          type: integer
+          nullable: true
+          description: User who issued the token
+        issued_by_detail:
+          allOf:
+          - $ref: '#/components/schemas/User'
+          readOnly: true
+          nullable: true
+        token_version:
+          type: integer
+          maximum: 9223372036854775807
+          minimum: 0
+          format: int64
+          description: Version of the API token
+        revocation_reason:
+          type: string
+          nullable: true
+          description: As entered by the user or action during revocation
       required:
       - active
       - created
@@ -26121,6 +27342,51 @@ components:
         * `transferorder` - Transfer Order
         * `part` - Part
         * `stockitem` - Stock Item
+    AuthorizationGrantTypeEnum:
+      enum:
+      - authorization-code
+      - urn:ietf:params:oauth:grant-type:device_code
+      - implicit
+      - password
+      - client-credentials
+      - openid-hybrid
+      type: string
+      description: |-
+        * `authorization-code` - Authorization code
+        * `urn:ietf:params:oauth:grant-type:device_code` - Device Code
+        * `implicit` - Implicit
+        * `password` - Resource owner password-based
+        * `client-credentials` - Client credentials
+        * `openid-hybrid` - OpenID connect hybrid
+    AvailableTransition:
+      type: object
+      description: Listing of available transitions for a given object.
+      properties:
+        name:
+          type: string
+          readOnly: true
+        url_path:
+          type: string
+          readOnly: true
+        target:
+          type: string
+          readOnly: true
+        label:
+          type: string
+          readOnly: true
+        blocked:
+          type: boolean
+          readOnly: true
+        blocking_reason:
+          type: string
+          readOnly: true
+          nullable: true
+      required:
+      - blocked
+      - label
+      - name
+      - target
+      - url_path
     Barcode:
       type: object
       description: Generic serializer for receiving barcode data.
@@ -26401,6 +27667,11 @@ components:
         quantity:
           type: number
           format: double
+        piece_count:
+          type: integer
+          default: 1
+          description: Number of pieces required (for cut-to-length items). Total
+            material = quantity x piece_count.
         allow_variants:
           type: boolean
           description: Stock items for variant parts can be used for this BOM item
@@ -26755,11 +28026,6 @@ components:
           title: Source Location
           description: Select location to take stock from for this build (leave blank
             to take from any stock location)
-        notes:
-          type: string
-          nullable: true
-          description: Markdown notes (optional)
-          maxLength: 50000
         link:
           title: External Link
           description: Link to external URL
@@ -26971,6 +28237,7 @@ components:
         notes:
           type: string
           description: Optional notes for the stock consumption
+          maxLength: 512
     BuildConsumeAllocation:
       type: object
       description: Serializer for an individual BuildItem to be consumed against a
@@ -27009,6 +28276,10 @@ components:
           type: boolean
           default: true
           description: Copy parameters from the original item
+        copy_notes:
+          type: boolean
+          default: true
+          description: Copy notes from the original item
       required:
       - original
     BuildItem:
@@ -27281,6 +28552,7 @@ components:
           description: Complete outputs if stock has not been fully allocated
         notes:
           type: string
+          maxLength: 512
       required:
       - location
       - outputs
@@ -27301,6 +28573,7 @@ components:
         batch_code:
           type: string
           description: Batch code for this build output
+          maxLength: 100
         serial_numbers:
           type: string
           description: Enter serial numbers for build outputs
@@ -27359,6 +28632,7 @@ components:
         notes:
           type: string
           description: Reason for scrapping build output(s)
+          maxLength: 512
       required:
       - location
       - notes
@@ -27568,6 +28842,14 @@ components:
       - pk
       - subcategories
       - tree_id
+    ClientTypeEnum:
+      enum:
+      - confidential
+      - public
+      type: string
+      description: |-
+        * `confidential` - Confidential
+        * `public` - Public
     ColorEnum:
       enum:
       - primary
@@ -27674,11 +28956,9 @@ components:
         is_supplier:
           type: boolean
           description: Do you purchase items from this company?
-        notes:
-          type: string
-          nullable: true
-          description: Markdown notes (optional)
-          maxLength: 50000
+        is_internal:
+          type: boolean
+          description: Does this company represent your own organization?
         parts_supplied:
           type: integer
           readOnly: true
@@ -27767,6 +29047,10 @@ components:
           type: boolean
           default: true
           description: Copy parameters from the original item
+        copy_notes:
+          type: boolean
+          default: true
+          description: Copy notes from the original item
       required:
       - original
     Config:
@@ -28389,6 +29673,7 @@ components:
         notes:
           type: string
           description: Optional note field
+          maxLength: 512
       required:
       - items
       - quantity
@@ -28650,6 +29935,14 @@ components:
           allOf:
           - $ref: '#/components/schemas/BriefUserProfile'
           readOnly: true
+        tips:
+          type: array
+          items:
+            type: object
+            additionalProperties: {}
+          description: Return the user's known tip results, creating missing records
+            first.
+          readOnly: true
       required:
       - email
       - first_name
@@ -28657,6 +29950,7 @@ components:
       - last_name
       - pk
       - profile
+      - tips
       - username
     FailedTask:
       type: object
@@ -28896,6 +30190,10 @@ components:
           type: string
           readOnly: true
           nullable: true
+        model_filters:
+          type: object
+          additionalProperties: {}
+          readOnly: true
         api_url:
           type: string
           readOnly: true
@@ -28915,12 +30213,20 @@ components:
         confirm_text:
           type: string
           readOnly: true
+        flags:
+          type: array
+          items:
+            type: string
+          readOnly: true
+          description: Indicating behavior or purpose of setting.
       required:
       - choices
       - confirm
       - confirm_text
       - description
+      - flags
       - key
+      - model_filters
       - name
       - pk
       - read_only
@@ -29190,6 +30496,8 @@ components:
           allOf:
           - $ref: '#/components/schemas/Settings'
           readOnly: true
+        system_state:
+          readOnly: true
       required:
       - active_plugins
       - apiVersion
@@ -29208,6 +30516,7 @@ components:
       - server
       - settings
       - system_health
+      - system_state
       - version
       - worker_count
       - worker_pending_tasks
@@ -29266,8 +30575,35 @@ components:
         note:
           type: string
           description: Add transaction note (optional)
+          maxLength: 512
       required:
       - stock_item
+    InstanceInfo:
+      type: object
+      description: |-
+        Serializer for aggregated per-instance counts (attachments, notes, parameters).
+
+        Backs a single generic lookup (see common.api.InstanceInfoView) that any
+        model instance's detail page can use to drive its Attachments/Notes/
+        Parameters tab notification dots from one request, instead of each tab
+        independently querying its own list endpoint just to read a count.
+      properties:
+        attachment_count:
+          type: integer
+          readOnly: true
+          description: Number of attachments associated with this instance
+        note_count:
+          type: integer
+          readOnly: true
+          description: Number of notes associated with this instance
+        parameter_count:
+          type: integer
+          readOnly: true
+          description: Number of parameters associated with this instance
+      required:
+      - attachment_count
+      - note_count
+      - parameter_count
     IsTrueEnum:
       type: boolean
       enum:
@@ -29917,6 +31253,12 @@ components:
         confirm_text:
           type: string
           readOnly: true
+        flags:
+          type: array
+          items:
+            type: string
+          readOnly: true
+          description: Indicating behavior or purpose of setting.
         config_type:
           allOf:
           - $ref: '#/components/schemas/ConfigTypeEnum'
@@ -29927,6 +31269,7 @@ components:
       - confirm
       - confirm_text
       - description
+      - flags
       - key
       - model_filters
       - name
@@ -30025,11 +31368,6 @@ components:
           type: string
           description: Unique hash of barcode data
           maxLength: 128
-        notes:
-          type: string
-          nullable: true
-          description: Markdown notes (optional)
-          maxLength: 50000
         tags:
           type: array
           items:
@@ -30059,6 +31397,10 @@ components:
           type: boolean
           default: true
           description: Copy parameters from the original item
+        copy_notes:
+          type: boolean
+          default: true
+          description: Copy notes from the original item
       required:
       - original
     MeUser:
@@ -30109,11 +31451,20 @@ components:
           allOf:
           - $ref: '#/components/schemas/UserProfile'
           readOnly: true
+        tips:
+          type: array
+          items:
+            type: object
+            additionalProperties: {}
+          description: Return the user's known tip results, creating missing records
+            first.
+          readOnly: true
         roles:
           type: object
           additionalProperties: {}
           description: Roles associated with the user.
           readOnly: true
+          nullable: true
         permissions:
           type: object
           additionalProperties: {}
@@ -30130,7 +31481,7 @@ components:
       - last_name
       - pk
       - profile
-      - roles
+      - tips
       - username
     Metadata:
       type: object
@@ -30232,6 +31583,94 @@ components:
       - read
       - summary
       - title
+    Note:
+      type: object
+      description: Serializer for the Note model.
+      properties:
+        pk:
+          type: integer
+          readOnly: true
+          title: ID
+        template:
+          type: boolean
+          default: false
+          description: Is this note a template (not linked to a specific model instance)?
+        model_type:
+          nullable: true
+          oneOf:
+          - $ref: '#/components/schemas/NoteModelTypeEnum'
+          - $ref: '#/components/schemas/BlankEnum'
+          - $ref: '#/components/schemas/NullEnum'
+        model_id:
+          type: integer
+          maximum: 9223372036854775807
+          minimum: 0
+          format: int64
+          nullable: true
+          description: Target model instance ID for this note
+        primary:
+          type: boolean
+          default: false
+          description: Is this the primary note for the associated model?
+        title:
+          type: string
+          description: Note title
+          maxLength: 100
+        description:
+          type: string
+          description: Optional description field
+          maxLength: 250
+        content:
+          type: string
+          description: Note content
+          maxLength: 50000
+        updated:
+          type: string
+          format: date-time
+          readOnly: true
+          nullable: true
+          description: Timestamp of last update
+        updated_by:
+          type: integer
+          readOnly: true
+          nullable: true
+          title: Update By
+          description: User who last updated this object
+        updated_by_detail:
+          allOf:
+          - $ref: '#/components/schemas/User'
+          readOnly: true
+          nullable: true
+      required:
+      - pk
+      - title
+    NoteModelTypeEnum:
+      enum:
+      - build.build
+      - company.company
+      - company.manufacturerpart
+      - company.supplierpart
+      - order.purchaseorder
+      - order.returnorder
+      - order.salesorder
+      - order.salesordershipment
+      - order.transferorder
+      - part.part
+      - stock.stockitem
+      type: string
+      description: |-
+        * `` - ---------
+        * `build.build` - Build Order
+        * `company.company` - Company
+        * `company.manufacturerpart` - Manufacturer Part
+        * `company.supplierpart` - Supplier Part
+        * `order.purchaseorder` - Purchase Order
+        * `order.returnorder` - Return Order
+        * `order.salesorder` - Sales Order
+        * `order.salesordershipment` - Sales Order Shipment
+        * `order.transferorder` - Transfer Order
+        * `part.part` - Part
+        * `stock.stockitem` - Stock Item
     NotesImage:
       type: object
       description: Serializer for the NotesImage model.
@@ -30251,21 +31690,12 @@ components:
           type: string
           format: date-time
           readOnly: true
-        model_type:
-          type: string
-          nullable: true
-          description: Target model type for this image
-          maxLength: 100
-        model_id:
+        note:
           type: integer
-          maximum: 9223372036854775807
-          minimum: -9223372036854775808
-          format: int64
-          nullable: true
-          description: Target model ID for this image
       required:
       - date
       - image
+      - note
       - pk
     NotificationMessage:
       type: object
@@ -30326,6 +31756,49 @@ components:
     NullEnum:
       enum:
       - null
+    OAuth2Application:
+      type: object
+      description: Serializer for OAuth2 application records.
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        client_id:
+          type: string
+          readOnly: true
+        client_secret:
+          type: string
+          readOnly: true
+          nullable: true
+          description: Client secret for authentication
+        name:
+          type: string
+          maxLength: 255
+        client_type:
+          $ref: '#/components/schemas/ClientTypeEnum'
+        authorization_grant_type:
+          $ref: '#/components/schemas/AuthorizationGrantTypeEnum'
+        redirect_uris:
+          type: string
+          description: Allowed URIs list, space separated
+        post_logout_redirect_uris:
+          type: string
+          description: Allowed Post Logout URIs list, space separated
+        skip_authorization:
+          type: boolean
+        algorithm:
+          oneOf:
+          - $ref: '#/components/schemas/AlgorithmEnum'
+          - $ref: '#/components/schemas/BlankEnum'
+        is_builtin:
+          type: boolean
+          readOnly: true
+      required:
+      - authorization_grant_type
+      - client_id
+      - client_type
+      - id
+      - is_builtin
     ObservabilityEnd:
       type: object
       description: Serializer for observability end endpoint.
@@ -31156,6 +32629,29 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/NewsFeedEntry'
+    PaginatedNoteList:
+      type: object
+      required:
+      - count
+      - results
+      properties:
+        count:
+          type: integer
+          example: 123
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?offset=400&limit=100
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?offset=200&limit=100
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/Note'
     PaginatedNotesImageList:
       type: object
       required:
@@ -31202,6 +32698,29 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/NotificationMessage'
+    PaginatedOAuth2ApplicationList:
+      type: object
+      required:
+      - count
+      - results
+      properties:
+        count:
+          type: integer
+          example: 123
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?offset=400&limit=100
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?offset=200&limit=100
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/OAuth2Application'
     PaginatedOwnerList:
       type: object
       required:
@@ -31892,6 +33411,29 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/ScheduledTask'
+    PaginatedScimConfigurationList:
+      type: object
+      required:
+      - count
+      - results
+      properties:
+        count:
+          type: integer
+          example: 123
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?offset=400&limit=100
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?offset=200&limit=100
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/ScimConfiguration'
     PaginatedSelectionEntryList:
       type: object
       required:
@@ -31938,6 +33480,29 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/SelectionList'
+    PaginatedSocialAppList:
+      type: object
+      required:
+      - count
+      - results
+      properties:
+        count:
+          type: integer
+          example: 123
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?offset=400&limit=100
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?offset=200&limit=100
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/SocialApp'
     PaginatedStockItemList:
       type: object
       required:
@@ -32445,11 +34010,6 @@ components:
           type: string
           description: Part name
           maxLength: 100
-        notes:
-          type: string
-          nullable: true
-          description: Markdown notes (optional)
-          maxLength: 50000
         parameters:
           type: array
           items:
@@ -33465,6 +35025,19 @@ components:
           type: string
           description: Address country
           maxLength: 50
+        phone:
+          type: string
+          title: Phone number
+          description: Phone number for this address
+          maxLength: 50
+        email:
+          description: Email address for this address
+          oneOf:
+          - type: string
+            format: email
+            maxLength: 254
+          - type: string
+            maxLength: 0
         shipping_notes:
           type: string
           title: Courier shipping notes
@@ -33570,6 +35143,11 @@ components:
         quantity:
           type: number
           format: double
+        piece_count:
+          type: integer
+          default: 1
+          description: Number of pieces required (for cut-to-length items). Total
+            material = quantity x piece_count.
         allow_variants:
           type: boolean
           description: Stock items for variant parts can be used for this BOM item
@@ -33862,11 +35440,6 @@ components:
           title: Source Location
           description: Select location to take stock from for this build (leave blank
             to take from any stock location)
-        notes:
-          type: string
-          nullable: true
-          description: Markdown notes (optional)
-          maxLength: 50000
         link:
           title: External Link
           description: Link to external URL
@@ -34290,11 +35863,9 @@ components:
         is_supplier:
           type: boolean
           description: Do you purchase items from this company?
-        notes:
-          type: string
-          nullable: true
-          description: Markdown notes (optional)
-          maxLength: 50000
+        is_internal:
+          type: boolean
+          description: Does this company represent your own organization?
         parts_supplied:
           type: integer
           readOnly: true
@@ -34632,6 +36203,14 @@ components:
           allOf:
           - $ref: '#/components/schemas/BriefUserProfile'
           readOnly: true
+        tips:
+          type: array
+          items:
+            type: object
+            additionalProperties: {}
+          description: Return the user's known tip results, creating missing records
+            first.
+          readOnly: true
     PatchedGlobalSettings:
       type: object
       description: Serializer for the InvenTreeSetting model.
@@ -34667,6 +36246,10 @@ components:
           type: string
           readOnly: true
           nullable: true
+        model_filters:
+          type: object
+          additionalProperties: {}
+          readOnly: true
         api_url:
           type: string
           readOnly: true
@@ -34686,6 +36269,12 @@ components:
         confirm_text:
           type: string
           readOnly: true
+        flags:
+          type: array
+          items:
+            type: string
+          readOnly: true
+          description: Indicating behavior or purpose of setting.
     PatchedGroup:
       type: object
       description: Serializer for a 'Group'.
@@ -34984,6 +36573,12 @@ components:
         confirm_text:
           type: string
           readOnly: true
+        flags:
+          type: array
+          items:
+            type: string
+          readOnly: true
+          description: Indicating behavior or purpose of setting.
         config_type:
           allOf:
           - $ref: '#/components/schemas/ConfigTypeEnum'
@@ -35045,11 +36640,6 @@ components:
           type: string
           description: Unique hash of barcode data
           maxLength: 128
-        notes:
-          type: string
-          nullable: true
-          description: Markdown notes (optional)
-          maxLength: 50000
         tags:
           type: array
           items:
@@ -35108,11 +36698,20 @@ components:
           allOf:
           - $ref: '#/components/schemas/UserProfile'
           readOnly: true
+        tips:
+          type: array
+          items:
+            type: object
+            additionalProperties: {}
+          description: Return the user's known tip results, creating missing records
+            first.
+          readOnly: true
         roles:
           type: object
           additionalProperties: {}
           description: Roles associated with the user.
           readOnly: true
+          nullable: true
         permissions:
           type: object
           additionalProperties: {}
@@ -35154,6 +36753,64 @@ components:
           maxLength: 250
         read:
           type: boolean
+    PatchedNote:
+      type: object
+      description: Serializer for the Note model.
+      properties:
+        pk:
+          type: integer
+          readOnly: true
+          title: ID
+        template:
+          type: boolean
+          default: false
+          description: Is this note a template (not linked to a specific model instance)?
+        model_type:
+          nullable: true
+          oneOf:
+          - $ref: '#/components/schemas/NoteModelTypeEnum'
+          - $ref: '#/components/schemas/BlankEnum'
+          - $ref: '#/components/schemas/NullEnum'
+        model_id:
+          type: integer
+          maximum: 9223372036854775807
+          minimum: 0
+          format: int64
+          nullable: true
+          description: Target model instance ID for this note
+        primary:
+          type: boolean
+          default: false
+          description: Is this the primary note for the associated model?
+        title:
+          type: string
+          description: Note title
+          maxLength: 100
+        description:
+          type: string
+          description: Optional description field
+          maxLength: 250
+        content:
+          type: string
+          description: Note content
+          maxLength: 50000
+        updated:
+          type: string
+          format: date-time
+          readOnly: true
+          nullable: true
+          description: Timestamp of last update
+        updated_by:
+          type: integer
+          readOnly: true
+          nullable: true
+          title: Update By
+          description: User who last updated this object
+        updated_by_detail:
+          allOf:
+          - $ref: '#/components/schemas/User'
+          readOnly: true
+          nullable: true
     PatchedNotificationMessage:
       type: object
       description: Serializer for the InvenTreeUserSetting model.
@@ -35199,6 +36856,43 @@ components:
           readOnly: true
         read:
           type: boolean
+    PatchedOAuth2Application:
+      type: object
+      description: Serializer for OAuth2 application records.
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        client_id:
+          type: string
+          readOnly: true
+        client_secret:
+          type: string
+          readOnly: true
+          nullable: true
+          description: Client secret for authentication
+        name:
+          type: string
+          maxLength: 255
+        client_type:
+          $ref: '#/components/schemas/ClientTypeEnum'
+        authorization_grant_type:
+          $ref: '#/components/schemas/AuthorizationGrantTypeEnum'
+        redirect_uris:
+          type: string
+          description: Allowed URIs list, space separated
+        post_logout_redirect_uris:
+          type: string
+          description: Allowed Post Logout URIs list, space separated
+        skip_authorization:
+          type: boolean
+        algorithm:
+          oneOf:
+          - $ref: '#/components/schemas/AlgorithmEnum'
+          - $ref: '#/components/schemas/BlankEnum'
+        is_builtin:
+          type: boolean
+          readOnly: true
     PatchedParameter:
       type: object
       description: Serializer for the Parameter model.
@@ -35421,11 +37115,6 @@ components:
           type: string
           description: Part name
           maxLength: 100
-        notes:
-          type: string
-          nullable: true
-          description: Markdown notes (optional)
-          maxLength: 50000
         parameters:
           type: array
           items:
@@ -36113,6 +37802,12 @@ components:
         confirm_text:
           type: string
           readOnly: true
+        flags:
+          type: array
+          items:
+            type: string
+          readOnly: true
+          description: Indicating behavior or purpose of setting.
         plugin:
           type: string
           readOnly: true
@@ -36186,6 +37881,12 @@ components:
         confirm_text:
           type: string
           readOnly: true
+        flags:
+          type: array
+          items:
+            type: string
+          readOnly: true
+          description: Indicating behavior or purpose of setting.
         plugin:
           type: string
           readOnly: true
@@ -36292,7 +37993,8 @@ components:
         address:
           type: integer
           nullable: true
-          description: Company address for this order
+          title: Supplier Address
+          description: Supplier address for this order
         status:
           type: integer
           readOnly: true
@@ -36306,11 +38008,6 @@ components:
           nullable: true
           title: Custom Status Key
           description: Update order status to a custom value for this logical value
-        notes:
-          type: string
-          nullable: true
-          description: Markdown notes (optional)
-          maxLength: 50000
         barcode_hash:
           type: string
           readOnly: true
@@ -36408,6 +38105,24 @@ components:
           type: integer
           nullable: true
           description: Destination for received items
+        receiving_company:
+          type: integer
+          nullable: true
+          description: Internal company which is receiving the items
+        receiving_company_detail:
+          allOf:
+          - $ref: '#/components/schemas/CompanyBrief'
+          readOnly: true
+          nullable: true
+        delivery_address:
+          type: integer
+          nullable: true
+          description: Delivery address for this order
+        delivery_address_detail:
+          allOf:
+          - $ref: '#/components/schemas/AddressBrief'
+          readOnly: true
+          nullable: true
         updated_at:
           type: string
           format: date-time
@@ -36844,11 +38559,6 @@ components:
           nullable: true
           title: Custom Status Key
           description: Update order status to a custom value for this logical value
-        notes:
-          type: string
-          nullable: true
-          description: Markdown notes (optional)
-          maxLength: 50000
         barcode_hash:
           type: string
           readOnly: true
@@ -37284,11 +38994,6 @@ components:
           nullable: true
           title: Custom Status Key
           description: Update order status to a custom value for this logical value
-        notes:
-          type: string
-          nullable: true
-          description: Markdown notes (optional)
-          maxLength: 50000
         barcode_hash:
           type: string
           readOnly: true
@@ -37706,6 +39411,10 @@ components:
           nullable: true
           title: Address
           description: Shipping address for this shipment
+        contact:
+          type: integer
+          nullable: true
+          description: Point of contact for this shipment
         delivery_date:
           type: string
           format: date
@@ -37747,11 +39456,6 @@ components:
             maxLength: 2000
           - type: string
             maxLength: 0
-        notes:
-          type: string
-          nullable: true
-          description: Markdown notes (optional)
-          maxLength: 50000
         parameters:
           type: array
           items:
@@ -37761,6 +39465,11 @@ components:
         checked_by_detail:
           allOf:
           - $ref: '#/components/schemas/User'
+          readOnly: true
+          nullable: true
+        contact_detail:
+          allOf:
+          - $ref: '#/components/schemas/Contact'
           readOnly: true
           nullable: true
         customer_detail:
@@ -37862,6 +39571,33 @@ components:
           items:
             $ref: '#/components/schemas/SelectionEntry'
           readOnly: true
+    PatchedSocialApp:
+      type: object
+      description: Serializer for SocialApp records.
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        name:
+          type: string
+          description: Human friendly name for the application - will be displayed
+            to users
+        provider:
+          $ref: '#/components/schemas/ProviderEnum'
+        provider_id:
+          type: string
+          description: Unique identifier - required for generic providers that can
+            be configured multiple times such as SAML or OpenID Connect
+        client_id:
+          type: string
+          description: App ID, or consumer key
+          maxLength: 191
+        secret:
+          type: string
+          title: Secret key
+          description: API secret, client secret, or consumer secret
+          maxLength: 191
+        settings: {}
     PatchedStockItem:
       type: object
       description: |-
@@ -37938,11 +39674,6 @@ components:
             maxLength: 2000
           - type: string
             maxLength: 0
-        notes:
-          type: string
-          nullable: true
-          description: Markdown notes (optional)
-          maxLength: 50000
         owner:
           type: integer
           nullable: true
@@ -38069,6 +39800,12 @@ components:
           writeOnly: true
           nullable: true
           description: Enter serial numbers for new items
+        duplicate:
+          allOf:
+          - $ref: '#/components/schemas/StockItemDuplicateOptions'
+          writeOnly: true
+          title: Duplicate Stock Item
+          description: Copy initial data from another stock item
         allocated:
           type: number
           format: double
@@ -38339,11 +40076,6 @@ components:
           format: date-time
           readOnly: true
           nullable: true
-        notes:
-          type: string
-          nullable: true
-          description: Markdown notes (optional)
-          maxLength: 50000
         part_detail:
           allOf:
           - $ref: '#/components/schemas/PartBrief'
@@ -38438,6 +40170,29 @@ components:
           type: string
           readOnly: true
           pattern: ^[-\w]+$
+    PatchedTipResult:
+      type: object
+      description: Serializer for the TipResult model.
+      properties:
+        pk:
+          type: integer
+          readOnly: true
+          title: ID
+        tip_id:
+          type: string
+          readOnly: true
+          title: Tip ID/Name
+        shown:
+          type: boolean
+          description: Was this tip shown?
+        finished:
+          type: boolean
+          description: Was this tip finished?
+        updated:
+          type: string
+          format: date-time
+          readOnly: true
+          description: The last time this tip result was updated
     PatchedTransferOrder:
       type: object
       description: Serializer for a TransferOrder object.
@@ -38521,11 +40276,6 @@ components:
           nullable: true
           title: Custom Status Key
           description: Update order status to a custom value for this logical value
-        notes:
-          type: string
-          nullable: true
-          description: Markdown notes (optional)
-          maxLength: 50000
         barcode_hash:
           type: string
           readOnly: true
@@ -38866,6 +40616,10 @@ components:
           type: string
           readOnly: true
           nullable: true
+        model_filters:
+          type: object
+          additionalProperties: {}
+          readOnly: true
         api_url:
           type: string
           readOnly: true
@@ -38880,6 +40634,12 @@ components:
         confirm_text:
           type: string
           readOnly: true
+        flags:
+          type: array
+          items:
+            type: string
+          readOnly: true
+          description: Indicating behavior or purpose of setting.
     PendingTask:
       type: object
       description: Serializer for an individual pending task object.
@@ -39139,6 +40899,12 @@ components:
         confirm_text:
           type: string
           readOnly: true
+        flags:
+          type: array
+          items:
+            type: string
+          readOnly: true
+          description: Indicating behavior or purpose of setting.
         plugin:
           type: string
           readOnly: true
@@ -39152,6 +40918,7 @@ components:
       - confirm
       - confirm_text
       - description
+      - flags
       - key
       - model_filters
       - name
@@ -39263,6 +41030,12 @@ components:
         confirm_text:
           type: string
           readOnly: true
+        flags:
+          type: array
+          items:
+            type: string
+          readOnly: true
+          description: Indicating behavior or purpose of setting.
         plugin:
           type: string
           readOnly: true
@@ -39275,6 +41048,7 @@ components:
       - confirm
       - confirm_text
       - description
+      - flags
       - key
       - model_filters
       - name
@@ -39334,6 +41108,14 @@ components:
       required:
       - code
       - pk
+    ProviderEnum:
+      enum:
+      - saml
+      - openid_connect
+      type: string
+      description: |-
+        * `saml` - SAML
+        * `openid_connect` - OpenID Connect
     PurchaseOrder:
       type: object
       description: Serializer for a PurchaseOrder object.
@@ -39404,7 +41186,8 @@ components:
         address:
           type: integer
           nullable: true
-          description: Company address for this order
+          title: Supplier Address
+          description: Supplier address for this order
         status:
           type: integer
           readOnly: true
@@ -39418,11 +41201,6 @@ components:
           nullable: true
           title: Custom Status Key
           description: Update order status to a custom value for this logical value
-        notes:
-          type: string
-          nullable: true
-          description: Markdown notes (optional)
-          maxLength: 50000
         barcode_hash:
           type: string
           readOnly: true
@@ -39520,6 +41298,24 @@ components:
           type: integer
           nullable: true
           description: Destination for received items
+        receiving_company:
+          type: integer
+          nullable: true
+          description: Internal company which is receiving the items
+        receiving_company_detail:
+          allOf:
+          - $ref: '#/components/schemas/CompanyBrief'
+          readOnly: true
+          nullable: true
+        delivery_address:
+          type: integer
+          nullable: true
+          description: Delivery address for this order
+        delivery_address_detail:
+          allOf:
+          - $ref: '#/components/schemas/AddressBrief'
+          readOnly: true
+          nullable: true
         updated_at:
           type: string
           format: date-time
@@ -39557,6 +41353,10 @@ components:
           type: boolean
           default: true
           description: Copy parameters from the original item
+        copy_notes:
+          type: boolean
+          default: true
+          description: Copy notes from the original item
         copy_lines:
           type: boolean
           default: true
@@ -39850,6 +41650,7 @@ components:
           type: string
           default: ''
           description: Enter batch code for incoming stock items
+          maxLength: 100
         expiry_date:
           type: string
           format: date
@@ -39889,15 +41690,18 @@ components:
           type: string
           default: ''
           description: Override packaging information for incoming stock items
+          maxLength: 50
         note:
           type: string
           default: ''
           description: Additional note for incoming stock items
+          maxLength: 512
         barcode:
           type: string
           nullable: true
           default: ''
           description: Scanned barcode
+          maxLength: 500
       required:
       - line_item
       - quantity
@@ -39913,6 +41717,12 @@ components:
           type: integer
           nullable: true
           description: Select destination location for received items
+        batch_code:
+          type: string
+          default: ''
+          description: Enter batch code for incoming stock items - applied to any
+            line item which does not specify its own batch code
+          maxLength: 100
       required:
       - items
     ReferenceStatusEnum:
@@ -40147,11 +41957,6 @@ components:
           nullable: true
           title: Custom Status Key
           description: Update order status to a custom value for this logical value
-        notes:
-          type: string
-          nullable: true
-          description: Markdown notes (optional)
-          maxLength: 50000
         barcode_hash:
           type: string
           readOnly: true
@@ -40268,6 +42073,10 @@ components:
           type: boolean
           default: true
           description: Copy parameters from the original item
+        copy_notes:
+          type: boolean
+          default: true
+          description: Copy notes from the original item
         copy_extra_lines:
           type: boolean
           default: true
@@ -40540,6 +42349,7 @@ components:
           type: string
           default: ''
           description: Additional note for incoming stock items
+          maxLength: 512
       required:
       - items
       - location
@@ -40717,11 +42527,6 @@ components:
           nullable: true
           title: Custom Status Key
           description: Update order status to a custom value for this logical value
-        notes:
-          type: string
-          nullable: true
-          description: Markdown notes (optional)
-          maxLength: 50000
         barcode_hash:
           type: string
           readOnly: true
@@ -40988,6 +42793,10 @@ components:
           type: boolean
           default: true
           description: Copy parameters from the original item
+        copy_notes:
+          type: boolean
+          default: true
+          description: Copy notes from the original item
         copy_lines:
           type: boolean
           default: true
@@ -41274,6 +43083,10 @@ components:
           nullable: true
           title: Address
           description: Shipping address for this shipment
+        contact:
+          type: integer
+          nullable: true
+          description: Point of contact for this shipment
         delivery_date:
           type: string
           format: date
@@ -41315,11 +43128,6 @@ components:
             maxLength: 2000
           - type: string
             maxLength: 0
-        notes:
-          type: string
-          nullable: true
-          description: Markdown notes (optional)
-          maxLength: 50000
         parameters:
           type: array
           items:
@@ -41329,6 +43137,11 @@ components:
         checked_by_detail:
           allOf:
           - $ref: '#/components/schemas/User'
+          readOnly: true
+          nullable: true
+        contact_detail:
+          allOf:
+          - $ref: '#/components/schemas/Contact'
           readOnly: true
           nullable: true
         customer_detail:
@@ -41430,6 +43243,10 @@ components:
           type: boolean
           default: true
           description: Copy parameters from the original item
+        copy_notes:
+          type: boolean
+          default: true
+          description: Copy notes from the original item
       required:
       - original
     ScheduleTypeEnum:
@@ -41530,6 +43347,55 @@ components:
       - last_run
       - pk
       - success
+    ScimConfiguration:
+      type: object
+      description: Serializer for the (read-only, status-only) SCIM configuration.
+      properties:
+        enabled:
+          type: boolean
+          readOnly: true
+          description: Enable the SCIM provisioning endpoint
+        has_secret:
+          type: boolean
+          readOnly: true
+        secret_generated:
+          type: string
+          format: date-time
+          readOnly: true
+          nullable: true
+        last_used:
+          type: string
+          format: date-time
+          readOnly: true
+          nullable: true
+        base_url:
+          type: string
+          description: Return the absolute base URL that should be configured in the
+            Identity Provider.
+          readOnly: true
+      required:
+      - base_url
+      - enabled
+      - has_secret
+    ScimSecret:
+      type: object
+      description: |-
+        Serializer for a freshly (re)generated SCIM bearer secret.
+
+        This is the *only* place the raw secret is ever exposed - it cannot be
+        retrieved again afterwards.
+      properties:
+        secret:
+          type: string
+          readOnly: true
+        base_url:
+          type: string
+          description: Return the absolute base URL that should be configured in the
+            Identity Provider.
+          readOnly: true
+      required:
+      - base_url
+      - secret
     SearchResult:
       type: object
       description: Serializer for a search result.
@@ -41681,6 +43547,7 @@ components:
         notes:
           type: string
           description: Optional note field
+          maxLength: 512
       required:
       - destination
       - quantity
@@ -41699,6 +43566,8 @@ components:
       type: object
       description: Serializer for InfoApiSerializer.
       properties:
+        sso_enabled:
+          type: boolean
         sso_registration:
           type: boolean
         registration_enabled:
@@ -41708,7 +43577,40 @@ components:
       required:
       - password_forgotten_enabled
       - registration_enabled
+      - sso_enabled
       - sso_registration
+    SocialApp:
+      type: object
+      description: Serializer for SocialApp records.
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        name:
+          type: string
+          description: Human friendly name for the application - will be displayed
+            to users
+        provider:
+          $ref: '#/components/schemas/ProviderEnum'
+        provider_id:
+          type: string
+          description: Unique identifier - required for generic providers that can
+            be configured multiple times such as SAML or OpenID Connect
+        client_id:
+          type: string
+          description: App ID, or consumer key
+          maxLength: 191
+        secret:
+          type: string
+          title: Secret key
+          description: API secret, client secret, or consumer secret
+          maxLength: 191
+        settings: {}
+      required:
+      - client_id
+      - id
+      - name
+      - provider
     Status2a7Enum:
       enum:
       - 10
@@ -41782,6 +43684,7 @@ components:
         notes:
           type: string
           description: Stock transaction notes
+          maxLength: 512
       required:
       - items
     StockAdjustmentItem:
@@ -41871,6 +43774,7 @@ components:
         notes:
           type: string
           description: Stock assignment notes
+          maxLength: 512
       required:
       - customer
       - items
@@ -41930,6 +43834,7 @@ components:
           type: string
           title: Notes
           description: Add transaction note (optional)
+          maxLength: 512
       required:
       - items
     StockCount:
@@ -41943,6 +43848,7 @@ components:
         notes:
           type: string
           description: Stock transaction notes
+          maxLength: 512
         location:
           type: integer
           nullable: true
@@ -42025,11 +43931,6 @@ components:
             maxLength: 2000
           - type: string
             maxLength: 0
-        notes:
-          type: string
-          nullable: true
-          description: Markdown notes (optional)
-          maxLength: 50000
         owner:
           type: integer
           nullable: true
@@ -42156,6 +44057,12 @@ components:
           writeOnly: true
           nullable: true
           description: Enter serial numbers for new items
+        duplicate:
+          allOf:
+          - $ref: '#/components/schemas/StockItemDuplicateOptions'
+          writeOnly: true
+          title: Duplicate Stock Item
+          description: Copy initial data from another stock item
         allocated:
           type: number
           format: double
@@ -42222,6 +44129,32 @@ components:
       - part
       - pk
       - quantity
+    StockItemDuplicateOptions:
+      type: object
+      description: |-
+        Generic serializer for specifying copy options when duplicating a model instance.
+
+        Builds its fields dynamically at instantiation time so the same class can be
+        reused for any model without subclassing.
+      properties:
+        original:
+          type: integer
+          description: Select instance to duplicate
+        copy_tests:
+          type: boolean
+          default: false
+          title: Copy Test Results
+          description: Copy test results from the original stock item
+        copy_history:
+          type: boolean
+          default: false
+          description: Copy stock history from the original stock item
+        copy_notes:
+          type: boolean
+          default: true
+          description: Copy notes from the original item
+      required:
+      - original
     StockItemSerialNumbers:
       type: object
       description: Serializer for extra serial number information about a stock item.
@@ -42349,6 +44282,7 @@ components:
         notes:
           type: string
           description: Stock merging notes
+          maxLength: 512
         allow_mismatched_suppliers:
           type: boolean
           description: Allow stock items with different supplier parts to be merged
@@ -42381,6 +44315,7 @@ components:
         notes:
           type: string
           description: Stock transaction notes
+          maxLength: 512
       required:
       - items
     StockReturn:
@@ -42394,6 +44329,7 @@ components:
         notes:
           type: string
           description: Stock transaction notes
+          maxLength: 512
         location:
           type: integer
           description: Destination stock location
@@ -42487,6 +44423,7 @@ components:
         notes:
           type: string
           description: Stock transaction notes
+          maxLength: 512
         location:
           type: integer
           description: Destination stock location
@@ -42628,11 +44565,6 @@ components:
           format: date-time
           readOnly: true
           nullable: true
-        notes:
-          type: string
-          nullable: true
-          description: Markdown notes (optional)
-          maxLength: 50000
         part_detail:
           allOf:
           - $ref: '#/components/schemas/PartBrief'
@@ -42677,6 +44609,10 @@ components:
           type: boolean
           default: true
           description: Copy parameters from the original item
+        copy_notes:
+          type: boolean
+          default: true
+          description: Copy notes from the original item
       required:
       - original
     SupplierPriceBreak:
@@ -42903,6 +44839,33 @@ components:
           format: email
       required:
       - email
+    TipResult:
+      type: object
+      description: Serializer for the TipResult model.
+      properties:
+        pk:
+          type: integer
+          readOnly: true
+          title: ID
+        tip_id:
+          type: string
+          readOnly: true
+          title: Tip ID/Name
+        shown:
+          type: boolean
+          description: Was this tip shown?
+        finished:
+          type: boolean
+          description: Was this tip finished?
+        updated:
+          type: string
+          format: date-time
+          readOnly: true
+          description: The last time this tip result was updated
+      required:
+      - pk
+      - tip_id
+      - updated
     TransferOrder:
       type: object
       description: Serializer for a TransferOrder object.
@@ -42986,11 +44949,6 @@ components:
           nullable: true
           title: Custom Status Key
           description: Update order status to a custom value for this logical value
-        notes:
-          type: string
-          nullable: true
-          description: Markdown notes (optional)
-          maxLength: 50000
         barcode_hash:
           type: string
           readOnly: true
@@ -43177,6 +45135,10 @@ components:
           type: boolean
           default: true
           description: Copy parameters from the original item
+        copy_notes:
+          type: boolean
+          default: true
+          description: Copy notes from the original item
         copy_lines:
           type: boolean
           default: true
@@ -43349,6 +45311,7 @@ components:
           type: string
           title: Notes
           description: Add transaction note (optional)
+          maxLength: 512
       required:
       - location
     UniqueEnum:
@@ -43461,6 +45424,14 @@ components:
           allOf:
           - $ref: '#/components/schemas/BriefUserProfile'
           readOnly: true
+        tips:
+          type: array
+          items:
+            type: object
+            additionalProperties: {}
+          description: Return the user's known tip results, creating missing records
+            first.
+          readOnly: true
       required:
       - email
       - first_name
@@ -43468,6 +45439,7 @@ components:
       - last_name
       - pk
       - profile
+      - tips
       - username
     UserProfile:
       type: object
@@ -43585,6 +45557,10 @@ components:
           type: string
           readOnly: true
           nullable: true
+        model_filters:
+          type: object
+          additionalProperties: {}
+          readOnly: true
         api_url:
           type: string
           readOnly: true
@@ -43599,12 +45575,20 @@ components:
         confirm_text:
           type: string
           readOnly: true
+        flags:
+          type: array
+          items:
+            type: string
+          readOnly: true
+          description: Indicating behavior or purpose of setting.
       required:
       - choices
       - confirm
       - confirm_text
       - description
+      - flags
       - key
+      - model_filters
       - name
       - pk
       - typ

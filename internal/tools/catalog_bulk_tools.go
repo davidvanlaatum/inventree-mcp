@@ -288,8 +288,6 @@ type BulkUpdatePartItem struct {
 	ClearRevision   bool     `json:"clear_revision,omitempty" jsonschema:"Explicitly PATCH revision to null; mutually exclusive with revision."`
 	Salable         *bool    `json:"salable,omitempty" jsonschema:"Optional explicit salable flag."`
 	Testable        *bool    `json:"testable,omitempty" jsonschema:"Optional explicit testable flag."`
-	Notes           *string  `json:"notes,omitempty" jsonschema:"Replacement markdown notes."`
-	ClearNotes      bool     `json:"clear_notes,omitempty" jsonschema:"Explicitly PATCH notes to null; mutually exclusive with notes."`
 }
 
 type BulkUpdatePartsInput struct {
@@ -326,8 +324,7 @@ func partValues(record inventree.PartDetail) map[string]any {
 		"default_location": record.DefaultLocation, "consumable": record.Consumable, "default_expiry": record.DefaultExpiry,
 		"is_template": record.IsTemplate, "keywords": record.Keywords, "link": record.Link, "locked": record.Locked,
 		"minimum_stock": record.MinimumStock, "maximum_stock": record.MaximumStock, "revision": record.Revision,
-		"salable": record.Salable, "testable": record.Testable, "notes": record.Notes,
-	}
+		"salable": record.Salable, "testable": record.Testable}
 }
 
 func buildPartBulkPlan(ctx context.Context, client PartWriteClient, items []BulkUpdatePartItem) partBulkPlan {
@@ -370,8 +367,7 @@ func buildPartBulkPlanItem(ctx context.Context, client PartWriteClient, item Bul
 		ClearKeywords: item.ClearKeywords, Link: item.Link, ClearLink: item.ClearLink,
 		Locked: item.Locked, MinimumStock: item.MinimumStock, MaximumStock: item.MaximumStock,
 		Revision: item.Revision, ClearRevision: item.ClearRevision, Salable: item.Salable,
-		Testable: item.Testable, Notes: item.Notes, ClearNotes: item.ClearNotes,
-	}, before)
+		Testable: item.Testable}, before)
 	if err != nil {
 		return partBulkPlanItem{bulkPlanItemBase: bulkPlanItemBase{ID: item.ID, FailReason: err.Error()}, Before: before}
 	}
@@ -486,8 +482,6 @@ type BulkUpdateCompanyItem struct {
 	Active         *bool   `json:"active,omitempty"`
 	IsSupplier     *bool   `json:"is_supplier,omitempty" jsonschema:"May only be set true here. Removing the supplier role requires update_company's guarded review."`
 	IsManufacturer *bool   `json:"is_manufacturer,omitempty" jsonschema:"May only be set true here. Removing the manufacturer role requires update_company's guarded review."`
-	Notes          *string `json:"notes,omitempty" jsonschema:"Replacement markdown notes."`
-	ClearNotes     bool    `json:"clear_notes,omitempty" jsonschema:"Explicitly PATCH notes to null; mutually exclusive with notes."`
 }
 
 type BulkUpdateCompaniesInput struct {
@@ -548,7 +542,6 @@ func buildCompanyBulkPlanItem(ctx context.Context, client CompanyAdminClient, it
 		ID: item.ID, Name: item.Name, Description: item.Description, Website: item.Website, Phone: item.Phone,
 		Email: item.Email, ClearEmail: item.ClearEmail, Contact: item.Contact, TaxID: item.TaxID, Link: item.Link,
 		Currency: item.Currency, Active: item.Active, IsSupplier: item.IsSupplier, IsManufacturer: item.IsManufacturer,
-		Notes: item.Notes, ClearNotes: item.ClearNotes,
 	}
 	fields, err := companyPatch(mapped)
 	if err != nil {
@@ -890,8 +883,6 @@ type BulkUpdateSupplierPartItem struct {
 	PackQuantity     *string  `json:"pack_quantity,omitempty"`
 	Note             *string  `json:"note,omitempty"`
 	ClearNote        bool     `json:"clear_note,omitempty"`
-	Notes            *string  `json:"notes,omitempty" jsonschema:"Replacement long Markdown notes, distinct from the short note field."`
-	ClearNotes       bool     `json:"clear_notes,omitempty"`
 	Available        *float64 `json:"available,omitempty" jsonschema:"Replacement upstream availability quantity. Explicit zero is preserved."`
 }
 
@@ -947,8 +938,7 @@ func buildSupplierPartBulkPlanItem(ctx context.Context, client CompanyAdminClien
 		ID: item.ID, SKU: item.SKU, Description: item.Description, ClearDescription: item.ClearDescription,
 		Link: item.Link, ClearLink: item.ClearLink, Active: item.Active, Primary: item.Primary,
 		Packaging: item.Packaging, ClearPackaging: item.ClearPackaging, PackQuantity: item.PackQuantity,
-		Note: item.Note, ClearNote: item.ClearNote, Notes: item.Notes, ClearNotes: item.ClearNotes,
-		Available: item.Available,
+		Note: item.Note, ClearNote: item.ClearNote, Available: item.Available,
 	}
 	fields, target, err := supplierPartPatch(mapped, before)
 	if err != nil {
@@ -1075,8 +1065,6 @@ type BulkUpdateManufacturerPartItem struct {
 	ClearDescription bool    `json:"clear_description,omitempty"`
 	Link             *string `json:"link,omitempty" jsonschema:"Complete HTTP(S) manufacturer-part URL without userinfo."`
 	ClearLink        bool    `json:"clear_link,omitempty"`
-	Notes            *string `json:"notes,omitempty" jsonschema:"Replacement long Markdown notes."`
-	ClearNotes       bool    `json:"clear_notes,omitempty"`
 }
 
 type BulkUpdateManufacturerPartsInput struct {
@@ -1130,7 +1118,6 @@ func buildManufacturerPartBulkPlanItem(ctx context.Context, client CompanyAdminC
 	mapped := UpdateManufacturerPartInput{
 		ID: item.ID, MPN: item.MPN, ClearMPN: item.ClearMPN, Description: item.Description,
 		ClearDescription: item.ClearDescription, Link: item.Link, ClearLink: item.ClearLink,
-		Notes: item.Notes, ClearNotes: item.ClearNotes,
 	}
 	fields, target, err := manufacturerPartPatch(mapped, before)
 	if err != nil {

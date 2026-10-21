@@ -87,7 +87,9 @@ jobs:
           ignore-pattern: |
             ^github\.com/davidvanlaatum/inventree-mcp/cmd/generate-render-samples/
             ^github\.com/davidvanlaatum/inventree-mcp/cmd/generate-tool-manifest/
-          test-args: '["-v", "-race"]'
+          # Startup may consume testenv's 10-minute allowance; leave room
+          # for the blocking API exercises and bounded Docker cleanup.
+          test-args: '["-v", "-race", "-timeout=20m"]'
           notes-ref: gocoverage-stable
 
       - name: Update coverage badge

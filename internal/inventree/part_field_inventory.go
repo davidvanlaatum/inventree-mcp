@@ -1,7 +1,7 @@
 package inventree
 
 // PartFieldClass records the approved handling for every field in the pinned
-// API 530 Part serializer. The inventory is intentionally exhaustive so schema
+// API 560 Part serializer. The inventory is intentionally exhaustive so schema
 // drift cannot silently widen exact part output or mutation inputs.
 type PartFieldClass string
 
@@ -53,7 +53,6 @@ var PartFieldInventory = map[string]PartFieldClass{
 	"maximum_stock":             PartFieldExposed,
 	"minimum_stock":             PartFieldExposed,
 	"name":                      PartFieldExposed,
-	"notes":                     PartFieldExposed,
 	"ordering":                  PartFieldExposed,
 	"parameters":                PartFieldSeparateLookup,
 	"pk":                        PartFieldExposed,

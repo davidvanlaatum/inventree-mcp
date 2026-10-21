@@ -14,6 +14,7 @@ import (
 var ErrLookupClientUnavailable = errors.New("InvenTree lookup client unavailable")
 
 type Dependencies struct {
+	notePlanStore       *batch.Store[notePlan]
 	ClientFromContext   func(context.Context) (any, error)
 	EnableWriteTools    bool
 	AuthorizationMode   AuthorizationMode

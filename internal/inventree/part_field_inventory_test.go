@@ -62,7 +62,6 @@ func TestPartDetailPreservesNullableScalarsAndOmitsUnapprovedFields(t *testing.T
 	r.NoError(json.Unmarshal(raw, &detail))
 	for field, expected := range map[string]inventree.PartFieldClass{
 		"pk":              inventree.PartFieldExposed,
-		"notes":           inventree.PartFieldExposed,
 		"pricing_min":     inventree.PartFieldExposed,
 		"barcode_hash":    inventree.PartFieldExcluded,
 		"category_detail": inventree.PartFieldSeparateLookup,
@@ -72,7 +71,6 @@ func TestPartDetailPreservesNullableScalarsAndOmitsUnapprovedFields(t *testing.T
 	}
 	a.Equal(10, detail.PK)
 	a.Equal("R-10K", detail.IPN)
-	a.Nil(detail.Notes)
 	a.Nil(detail.PricingMin)
 	r.NotNil(detail.PricingMax)
 	a.Equal(inventree.DecimalString("2.500000"), *detail.PricingMax)

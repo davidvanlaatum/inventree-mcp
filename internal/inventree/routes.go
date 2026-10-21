@@ -44,6 +44,12 @@ type clientRoute struct {
 // identifies these four via an explicit requestctx marker each method sets
 // itself, since the destination URL carries no distinguishing information.
 var clientMethodRoutes = map[string]clientRoute{
+	"SearchNotesPage": {Method: "GET", Path: "/api/note/", Family: RequestFamilyJSONAPI, ManifestID: "search_notes"},
+	"GetNote":         {Method: "GET", Path: "/api/note/{id}/", Family: RequestFamilyJSONAPI, ManifestID: "get_note"},
+	"CreateNote":      {Method: "POST", Path: "/api/note/", Family: RequestFamilyJSONAPI, ManifestID: "create_note"},
+	"UpdateNote":      {Method: "PATCH", Path: "/api/note/{id}/", Family: RequestFamilyJSONAPI, ManifestID: "update_note"},
+	"DeleteNote":      {Method: "DELETE", Path: "/api/note/{id}/", Family: RequestFamilyJSONAPI, ManifestID: "delete_note"},
+
 	// from read_methods.go
 	"SearchParts":                           {Method: "GET", Path: "/api/part/", Family: RequestFamilyJSONAPI, ManifestID: "search_parts"},
 	"SearchPartsPage":                       {Method: "GET", Path: "/api/part/", Family: RequestFamilyJSONAPI, ManifestID: "search_parts"},

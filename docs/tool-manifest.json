@@ -218,6 +218,29 @@
       ]
     },
     {
+      "name": "bulk_create_notes",
+      "milestone_status": "milestone_1",
+      "mutation_class": "write",
+      "scopes": [
+        "inventree.read",
+        "inventree.write"
+      ],
+      "annotations": {
+        "read_only": false,
+        "destructive": false,
+        "idempotent": false,
+        "open_world": false
+      },
+      "upload_sources": null,
+      "http_registration": "registered_with_oauth_scope_guard",
+      "icons": [
+        {
+          "src": "https://docs.inventree.org/en/latest/assets/logo.png",
+          "mimeType": "image/png"
+        }
+      ]
+    },
+    {
       "name": "bulk_propagate_part_parameters",
       "milestone_status": "milestone_1",
       "mutation_class": "destructive",
@@ -351,6 +374,29 @@
         "read_only": false,
         "destructive": false,
         "idempotent": true,
+        "open_world": false
+      },
+      "upload_sources": null,
+      "http_registration": "registered_with_oauth_scope_guard",
+      "icons": [
+        {
+          "src": "https://docs.inventree.org/en/latest/assets/logo.png",
+          "mimeType": "image/png"
+        }
+      ]
+    },
+    {
+      "name": "bulk_update_notes",
+      "milestone_status": "milestone_1",
+      "mutation_class": "write",
+      "scopes": [
+        "inventree.read",
+        "inventree.write"
+      ],
+      "annotations": {
+        "read_only": false,
+        "destructive": false,
+        "idempotent": false,
         "open_world": false
       },
       "upload_sources": null,
@@ -768,6 +814,29 @@
       ]
     },
     {
+      "name": "create_note",
+      "milestone_status": "milestone_1",
+      "mutation_class": "write",
+      "scopes": [
+        "inventree.read",
+        "inventree.write"
+      ],
+      "annotations": {
+        "read_only": false,
+        "destructive": false,
+        "idempotent": false,
+        "open_world": false
+      },
+      "upload_sources": null,
+      "http_registration": "registered_with_oauth_scope_guard",
+      "icons": [
+        {
+          "src": "https://docs.inventree.org/en/latest/assets/logo.png",
+          "mimeType": "image/png"
+        }
+      ]
+    },
+    {
       "name": "create_object_parameter",
       "milestone_status": "milestone_1",
       "mutation_class": "write",
@@ -1147,6 +1216,30 @@
       "annotations": {
         "read_only": false,
         "destructive": false,
+        "idempotent": false,
+        "open_world": false
+      },
+      "upload_sources": null,
+      "http_registration": "registered_with_oauth_scope_guard",
+      "icons": [
+        {
+          "src": "https://docs.inventree.org/en/latest/assets/logo.png",
+          "mimeType": "image/png"
+        }
+      ]
+    },
+    {
+      "name": "delete_note",
+      "milestone_status": "milestone_1",
+      "mutation_class": "destructive",
+      "scopes": [
+        "inventree.read",
+        "inventree.write",
+        "inventree.destructive"
+      ],
+      "annotations": {
+        "read_only": false,
+        "destructive": true,
         "idempotent": false,
         "open_world": false
       },
@@ -1716,6 +1809,28 @@
     },
     {
       "name": "get_manufacturer_part",
+      "milestone_status": "milestone_1",
+      "mutation_class": "read_only",
+      "scopes": [
+        "inventree.read"
+      ],
+      "annotations": {
+        "read_only": true,
+        "destructive": false,
+        "idempotent": true,
+        "open_world": false
+      },
+      "upload_sources": null,
+      "http_registration": "registered",
+      "icons": [
+        {
+          "src": "https://docs.inventree.org/en/latest/assets/logo.png",
+          "mimeType": "image/png"
+        }
+      ]
+    },
+    {
+      "name": "get_note",
       "milestone_status": "milestone_1",
       "mutation_class": "read_only",
       "scopes": [
@@ -2836,6 +2951,28 @@
       ]
     },
     {
+      "name": "search_notes",
+      "milestone_status": "milestone_1",
+      "mutation_class": "read_only",
+      "scopes": [
+        "inventree.read"
+      ],
+      "annotations": {
+        "read_only": true,
+        "destructive": false,
+        "idempotent": true,
+        "open_world": false
+      },
+      "upload_sources": null,
+      "http_registration": "registered",
+      "icons": [
+        {
+          "src": "https://docs.inventree.org/en/latest/assets/logo.png",
+          "mimeType": "image/png"
+        }
+      ]
+    },
+    {
       "name": "search_object_parameters",
       "milestone_status": "milestone_1",
       "mutation_class": "read_only",
@@ -3693,6 +3830,29 @@
         "read_only": false,
         "destructive": false,
         "idempotent": true,
+        "open_world": false
+      },
+      "upload_sources": null,
+      "http_registration": "registered_with_oauth_scope_guard",
+      "icons": [
+        {
+          "src": "https://docs.inventree.org/en/latest/assets/logo.png",
+          "mimeType": "image/png"
+        }
+      ]
+    },
+    {
+      "name": "update_note",
+      "milestone_status": "milestone_1",
+      "mutation_class": "write",
+      "scopes": [
+        "inventree.read",
+        "inventree.write"
+      ],
+      "annotations": {
+        "read_only": false,
+        "destructive": false,
+        "idempotent": false,
         "open_world": false
       },
       "upload_sources": null,

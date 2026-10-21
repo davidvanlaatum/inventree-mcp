@@ -49,7 +49,6 @@ func TestCompanyDetailPreservesNullableFieldsAndOmitsUnapprovedData(t *testing.T
 	r.NoError(json.Unmarshal([]byte(`{"pk":10,"name":"Acme","description":"","website":"","phone":"","email":null,"currency":"AUD","contact":"","link":"","image":null,"active":true,"is_customer":false,"is_manufacturer":false,"is_supplier":true,"notes":null,"parts_supplied":0,"parts_manufactured":0,"primary_address":null,"tax_id":"","parameters":[],"tags":[]}`), &company))
 	a.Equal(10, company.PK)
 	a.Nil(company.Email)
-	a.Nil(company.Notes)
 	a.Empty(company.Tags)
 	assertCompanyJSONOmits(t, company, "primary_address", "parameters")
 
@@ -60,8 +59,6 @@ func TestCompanyDetailPreservesNullableFieldsAndOmitsUnapprovedData(t *testing.T
 	a.Equal("ap@example.com", *populated.Email)
 	a.Equal("Jane Doe", populated.Contact)
 	a.Equal("ABN123", populated.TaxID)
-	r.NotNil(populated.Notes)
-	a.Equal("secret notes", *populated.Notes)
 	a.Equal([]string{"a"}, populated.Tags)
 	assertCompanyJSONOmits(t, populated, "primary_address", "parameters")
 }

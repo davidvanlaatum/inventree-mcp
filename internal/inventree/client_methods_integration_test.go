@@ -49,6 +49,8 @@ func TestClientMethodsAgainstInvenTree(t *testing.T) {
 		return shared.Close(context.WithoutCancel(ctx))
 	}))
 
+	t.Run("notes", func(t *testing.T) { runNoteClientCases(t, shared) })
+
 	t.Run("testing_and_requirements_discovery", func(t *testing.T) {
 		r := require.New(t)
 		ctx, _, _ := testhandler.SetupTestHandler(t)
@@ -355,7 +357,7 @@ func TestClientMethodsAgainstInvenTree(t *testing.T) {
 			Name: detailName, Category: &category.ID, Consumable: dvgoutils.Ptr(true), DefaultExpiry: dvgoutils.Ptr(30),
 			IsTemplate: dvgoutils.Ptr(false), Keywords: dvgoutils.Ptr("client detail"), Link: &link,
 			Locked: dvgoutils.Ptr(false), MinimumStock: dvgoutils.Ptr(2.5), MaximumStock: dvgoutils.Ptr(5.5),
-			Revision: dvgoutils.Ptr("A"), Salable: dvgoutils.Ptr(true), Testable: dvgoutils.Ptr(true), Notes: dvgoutils.Ptr("integration markdown"),
+			Revision: dvgoutils.Ptr("A"), Salable: dvgoutils.Ptr(true), Testable: dvgoutils.Ptr(true),
 		})
 		r.NoError(err)
 		detail, err := fixture.client.GetPartDetail(ctx, createdDetail.PK)
@@ -367,11 +369,10 @@ func TestClientMethodsAgainstInvenTree(t *testing.T) {
 		r.Equal(2.5, detail.MinimumStock)
 		r.Equal(5.5, detail.MaximumStock)
 		r.Equal("A", *detail.Revision)
-		r.Equal("integration markdown", *detail.Notes)
 		r.NotNil(detail.CreationUser)
 
 		_, err = fixture.client.UpdatePart(ctx, createdDetail.PK, inventree.PatchFields{
-			"keywords": inventree.Null(), "link": inventree.Null(), "revision": inventree.Null(), "notes": inventree.Null(),
+			"keywords": inventree.Null(), "link": inventree.Null(), "revision": inventree.Null(),
 			"default_expiry": inventree.Set(0), "minimum_stock": inventree.Set(3.0), "maximum_stock": inventree.Set(0.0),
 			"consumable": inventree.Set(false), "salable": inventree.Set(false), "testable": inventree.Set(false),
 		})
@@ -381,7 +382,6 @@ func TestClientMethodsAgainstInvenTree(t *testing.T) {
 		r.Nil(detail.Keywords)
 		r.Nil(detail.Link)
 		r.Nil(detail.Revision)
-		r.Nil(detail.Notes)
 		r.Zero(detail.DefaultExpiry)
 		r.Equal(3.0, detail.MinimumStock)
 		r.Zero(detail.MaximumStock)
@@ -503,14 +503,13 @@ func TestClientMethodsAgainstInvenTree(t *testing.T) {
 
 		sku, err := fixture.run.Name("sku")
 		r.NoError(err)
-		supplierNotes := "supplier **Markdown** notes"
 		available := 12.5
 		supplierPart, err := fixture.client.CreateSupplierPart(ctx, inventree.SupplierPartCreate{
-			Part:      part.PK,
-			Supplier:  supplier.PK,
-			SKU:       sku,
-			Active:    dvgoutils.Ptr(false),
-			Notes:     &supplierNotes,
+			Part:     part.PK,
+			Supplier: supplier.PK,
+			SKU:      sku,
+			Active:   dvgoutils.Ptr(false),
+
 			Available: &available,
 		})
 		r.NoError(err)
@@ -524,7 +523,6 @@ func TestClientMethodsAgainstInvenTree(t *testing.T) {
 		supplierPartDetail, err := fixture.client.GetSupplierPartDetail(ctx, supplierPart.PK)
 		r.NoError(err)
 		r.Equal(supplierPart.PK, supplierPartDetail.PK)
-		r.Equal(supplierNotes, *supplierPartDetail.Notes)
 		r.Equal(available, supplierPartDetail.Available)
 		r.NotNil(supplierPartDetail.AvailabilityUpdated)
 		r.NotNil(supplierPartDetail.Updated)
@@ -552,12 +550,10 @@ func TestClientMethodsAgainstInvenTree(t *testing.T) {
 
 		mpn, err := fixture.run.Name("mpn")
 		r.NoError(err)
-		manufacturerNotes := "manufacturer **Markdown** notes"
 		manufacturerPart, err := fixture.client.CreateManufacturerPart(ctx, inventree.ManufacturerPartCreate{
 			Part:         part.PK,
 			Manufacturer: manufacturer.PK,
 			MPN:          dvgoutils.Ptr(mpn),
-			Notes:        &manufacturerNotes,
 		})
 		r.NoError(err)
 		r.NotZero(manufacturerPart.PK)
@@ -570,7 +566,6 @@ func TestClientMethodsAgainstInvenTree(t *testing.T) {
 		manufacturerPartDetail, err := fixture.client.GetManufacturerPartDetail(ctx, manufacturerPart.PK)
 		r.NoError(err)
 		r.Equal(manufacturerPart.PK, manufacturerPartDetail.PK)
-		r.Equal(manufacturerNotes, *manufacturerPartDetail.Notes)
 		var manufacturerRawPlain map[string]any
 		plainManufacturerReq, err := fixture.client.NewRequest(ctx, "GET", fmt.Sprintf("/api/company/part/manufacturer/%d/", manufacturerPart.PK), nil, nil)
 		r.NoError(err)
@@ -593,7 +588,7 @@ func TestClientMethodsAgainstInvenTree(t *testing.T) {
 		r.NotNil(updatedManufacturerPart.Description)
 		r.Equal("updated manufacturer part", *updatedManufacturerPart.Description)
 
-		patchedSupplierPart, err := fixture.client.UpdateSupplierPart(ctx, supplierPart.PK, inventree.PatchFields{"manufacturer_part": inventree.Set(manufacturerPart.PK), "available": inventree.Set(0.0), "notes": inventree.Null()})
+		patchedSupplierPart, err := fixture.client.UpdateSupplierPart(ctx, supplierPart.PK, inventree.PatchFields{"manufacturer_part": inventree.Set(manufacturerPart.PK), "available": inventree.Set(0.0)})
 		r.NoError(err)
 		r.NotNil(patchedSupplierPart.MPN, "PATCH .../company/part/%d/ response should reflect MPN %q from newly linked manufacturer_part %d", supplierPart.PK, mpn, manufacturerPart.PK)
 		r.Equal(mpn, *patchedSupplierPart.MPN)
@@ -602,12 +597,10 @@ func TestClientMethodsAgainstInvenTree(t *testing.T) {
 		r.NotNil(supplierPartDetail.MPN, "GET .../company/part/%d/ should reflect MPN %q from manufacturer_part %d set moments earlier by PATCH", supplierPart.PK, mpn, manufacturerPart.PK)
 		r.Equal(mpn, *supplierPartDetail.MPN)
 		r.Zero(supplierPartDetail.Available)
-		r.Nil(supplierPartDetail.Notes)
-		_, err = fixture.client.UpdateManufacturerPart(ctx, manufacturerPart.PK, inventree.PatchFields{"notes": inventree.Null()})
+		_, err = fixture.client.UpdateManufacturerPart(ctx, manufacturerPart.PK, inventree.PatchFields{"description": inventree.Set("updated sourcing description")})
 		r.NoError(err)
 		manufacturerPartDetail, err = fixture.client.GetManufacturerPartDetail(ctx, manufacturerPart.PK)
 		r.NoError(err)
-		r.Nil(manufacturerPartDetail.Notes)
 
 		manufacturerParts, err := fixture.client.SearchManufacturerParts(ctx, inventree.ManufacturerPartQuery{
 			Part:         part.PK,
@@ -833,12 +826,11 @@ func TestClientMethodsAgainstInvenTree(t *testing.T) {
 
 		stock, err := fixture.client.CreateStockItem(ctx, inventree.StockItemCreate{Part: part.ID, Location: created.PK, Quantity: 2})
 		r.NoError(err)
-		stock, err = fixture.client.UpdateStockItem(ctx, stock.PK, inventree.PatchFields{"batch": inventree.Set("F-S21-BATCH"), "expiry_date": inventree.Set("2027-01-02"), "packaging": inventree.Set("tray"), "notes": inventree.Set("F-S21 metadata"), "link": inventree.Set("https://example.test/stock")})
+		stock, err = fixture.client.UpdateStockItem(ctx, stock.PK, inventree.PatchFields{"batch": inventree.Set("F-S21-BATCH"), "expiry_date": inventree.Set("2027-01-02"), "packaging": inventree.Set("tray"), "link": inventree.Set("https://example.test/stock")})
 		r.NoError(err)
 		r.Equal("F-S21-BATCH", *stock.Batch)
 		r.Equal("2027-01-02", *stock.ExpiryDate)
 		r.Equal("tray", *stock.Packaging)
-		r.Equal("F-S21 metadata", *stock.Notes)
 		r.Equal("https://example.test/stock", stock.Link)
 	})
 
@@ -1448,15 +1440,15 @@ func TestClientMethodsAgainstInvenTree(t *testing.T) {
 		a.Contains(rawPartIDs(byName), float64(part.ID))
 
 		// The undocumented boolean "tags" list filter on /api/part/ is NOT a
-		// has-tags presence filter: both true and false exclude every part,
-		// including our known-tagged part, while an unfiltered list finds it.
+		// has-tags presence filter: API 560 ignores both true and false and
+		// returns our known-tagged part in each result.
 		// Pinned so an MCP presence design does not rely on this filter.
 		byPresenceTrue := searchPartsRaw(t, ctx, fixture.client, url.Values{"tags": []string{"true"}})
 		byPresenceFalse := searchPartsRaw(t, ctx, fixture.client, url.Values{"tags": []string{"false"}})
 		byPresenceNone := searchPartsRaw(t, ctx, fixture.client, nil)
 		t.Logf("/api/part/?tags=true: %v, ?tags=false: %v, unfiltered: %v", rawPartIDs(byPresenceTrue), rawPartIDs(byPresenceFalse), rawPartIDs(byPresenceNone))
-		a.Empty(byPresenceTrue, "pinned InvenTree 1.5.2 characterization: the tags=true list filter unexpectedly excludes every part")
-		a.Empty(byPresenceFalse, "pinned InvenTree 1.5.2 characterization: the tags=false list filter unexpectedly excludes every part")
+		a.Contains(rawPartIDs(byPresenceTrue), float64(part.ID), "API 560 ignores tags=true as a presence filter")
+		a.Contains(rawPartIDs(byPresenceFalse), float64(part.ID), "API 560 ignores tags=false as a presence filter")
 		a.Contains(rawPartIDs(byPresenceNone), float64(part.ID))
 
 		// Orphan behavior: drop every reference to tagOne and see whether the
@@ -2955,14 +2947,11 @@ func TestClientMethodsAgainstInvenTree(t *testing.T) {
 		r.Equal("updated client-method integration order", updatedOrder.Description)
 
 		orderLink := "https://example.com/po/" + supplierReference
-		updatedOrderDetail, err := fixture.client.UpdatePurchaseOrderDetail(ctx, order.PK, inventree.PatchFields{"notes": inventree.Set("updated via client-method integration"), "link": inventree.Set(orderLink)})
+		updatedOrderDetail, err := fixture.client.UpdatePurchaseOrderDetail(ctx, order.PK, inventree.PatchFields{"link": inventree.Set(orderLink)})
 		r.NoError(err)
-		r.NotNil(updatedOrderDetail.Notes)
-		r.Equal("updated via client-method integration", *updatedOrderDetail.Notes)
 		r.Equal(orderLink, updatedOrderDetail.Link)
-		clearedOrderDetail, err := fixture.client.UpdatePurchaseOrderDetail(ctx, order.PK, inventree.PatchFields{"notes": inventree.Null()})
+		_, err = fixture.client.UpdatePurchaseOrderDetail(ctx, order.PK, inventree.PatchFields{"description": inventree.Set("updated sourcing description")})
 		r.NoError(err)
-		r.Nil(clearedOrderDetail.Notes, "an explicit null PATCH must clear notes rather than storing an empty string")
 
 		withDatesAndDestination, err := fixture.client.UpdatePurchaseOrderDetail(ctx, order.PK, inventree.PatchFields{"creation_date": inventree.Set("2026-01-01"), "start_date": inventree.Set("2026-01-02"), "target_date": inventree.Set("2026-01-03"), "destination": inventree.Set(destination.ID)})
 		r.NoError(err)
@@ -2990,11 +2979,9 @@ func TestClientMethodsAgainstInvenTree(t *testing.T) {
 		r.Equal("https://example.com/line/"+lineReference, updatedLine.Link)
 		r.Equal(10.0, updatedLine.Discount)
 		r.Equal(4.0, updatedLine.Quantity)
-		// InvenTree 1.5.0's DELETE /api/order/po-line/{id}/ does not itself
-		// restrict deletion by order status or by received quantity; the
-		// tools package layers its own zero-received/no-linked-stock guard
-		// on top of this permissive upstream behavior. These client-method
-		// assertions pin the exact upstream contract the tool relies on.
+		// API 560 permits deleting unreceived lines on pending or placed orders,
+		// but rejects deletion after receiving stock. The tool also preflights
+		// received quantity and linked stock before attempting deletion.
 		pendingDeleteReference, err := fixture.run.Name("po-line-delete-pending")
 		r.NoError(err)
 		lineDeletedWhilePending, err := fixture.client.CreatePurchaseOrderLine(ctx, inventree.PurchaseOrderLineCreate{Order: order.PK, SupplierPart: supplierPart.ID, Reference: &pendingDeleteReference, Quantity: 1})
@@ -3029,16 +3016,20 @@ func TestClientMethodsAgainstInvenTree(t *testing.T) {
 		r.Len(stockBeforeDelete, 1)
 		receivedStockItemPK := stockBeforeDelete[0].PK
 
-		r.NoError(fixture.client.DeletePurchaseOrderLine(ctx, line.PK), "InvenTree does not itself refuse to delete a line with received quantity")
-		_, err = fixture.client.GetPurchaseOrderLine(ctx, line.PK)
-		r.Error(err)
+		err = fixture.client.DeletePurchaseOrderLine(ctx, line.PK)
+		var deleteErr *inventree.APIError
+		r.ErrorAs(err, &deleteErr)
+		r.Equal(http.StatusBadRequest, deleteErr.StatusCode)
+		preservedLine, err := fixture.client.GetPurchaseOrderLine(ctx, line.PK)
+		r.NoError(err)
+		r.Equal(lineAfterReceipt, preservedLine)
 
 		stockAfterDelete, err := fixture.client.SearchStockItems(ctx, inventree.StockItemQuery{PurchaseOrderID: order.PK})
 		r.NoError(err)
-		r.Len(stockAfterDelete, 1, "the previously received stock item must survive, now orphaned from its deleted line")
+		r.Len(stockAfterDelete, 1, "the received stock item must remain linked to its preserved line")
 		a := assert.New(t)
 		a.Equal(receivedStockItemPK, stockAfterDelete[0].PK)
-		a.Equal(1.5, stockAfterDelete[0].Quantity, "InvenTree does not adjust surviving stock quantity when its originating line is deleted")
+		a.Equal(1.5, stockAfterDelete[0].Quantity, "rejected deletion must preserve received stock quantity")
 
 		// Pin the explicit completion endpoint with upstream auto-completion
 		// disabled, including the non-overridable accept_incomplete:false body.
@@ -3080,17 +3071,10 @@ func TestClientMethodsAgainstInvenTree(t *testing.T) {
 		r.NoError(err)
 		r.Equal(inventree.PurchaseOrderStatusComplete, explicitlyCompleted.Status)
 
-		// F-S62: pin the exact hold/issue(resume)/cancel status codes and
-		// InvenTree 1.5.1/API 530's permissive transition behavior at the
-		// client layer. InvenTree validates almost none of these
-		// transitions itself: hold/issue succeed unconditionally from
-		// PENDING or PLACED, are silent no-ops on a CANCELLED order despite
-		// returning success, and cancel is refused only from COMPLETE (even
-		// a partially received PLACED order can be cancelled, leaving the
-		// received stock orphaned but still order-linked). The tools
-		// package layers its own source-state and received-quantity guards
-		// on top of this permissive upstream contract; see
-		// purchase_order_lifecycle_tools.go.
+		// API 560 enforces native FSM source states: hold accepts pending/placed,
+		// issue accepts pending/on-hold, and cancel accepts open orders.
+		// Cancelled orders reject further transitions with HTTP 400. The MCP
+		// additionally refuses cancellation after any receipt.
 		lifecycleOrder, err := fixture.client.CreatePurchaseOrder(ctx, inventree.PurchaseOrderCreate{Supplier: supplier.ID})
 		r.NoError(err)
 		r.Equal(inventree.PurchaseOrderStatusPending, lifecycleOrder.Status)
@@ -3108,11 +3092,18 @@ func TestClientMethodsAgainstInvenTree(t *testing.T) {
 		r.NoError(err)
 		r.Equal(inventree.PurchaseOrderStatusCancelled, cancelledOrder.Status)
 
-		r.NoError(fixture.client.IssuePurchaseOrder(ctx, lifecycleOrder.PK), "InvenTree accepts issue on a CANCELLED order without an error")
-		r.NoError(fixture.client.HoldPurchaseOrder(ctx, lifecycleOrder.PK), "InvenTree accepts hold on a CANCELLED order without an error")
+		for _, transition := range []func() error{
+			func() error { return fixture.client.IssuePurchaseOrder(ctx, lifecycleOrder.PK) },
+			func() error { return fixture.client.HoldPurchaseOrder(ctx, lifecycleOrder.PK) },
+			func() error { return fixture.client.CancelPurchaseOrder(ctx, lifecycleOrder.PK) },
+		} {
+			var transitionErr *inventree.APIError
+			r.ErrorAs(transition(), &transitionErr)
+			r.Equal(http.StatusBadRequest, transitionErr.StatusCode)
+		}
 		stillCancelled, err := fixture.client.GetPurchaseOrder(ctx, lifecycleOrder.PK)
 		r.NoError(err)
-		r.Equal(inventree.PurchaseOrderStatusCancelled, stillCancelled.Status, "issue/hold on a CANCELLED order are silent no-ops despite returning success")
+		r.Equal(inventree.PurchaseOrderStatusCancelled, stillCancelled.Status, "rejected transitions must preserve the CANCELLED state")
 
 		cancelAfterCompleteErr := fixture.client.CancelPurchaseOrder(ctx, completionOrder.PK)
 		r.Error(cancelAfterCompleteErr, "InvenTree refuses to cancel a COMPLETE order")
@@ -4336,6 +4327,8 @@ func TestClientMethodsAgainstInvenTree(t *testing.T) {
 
 		t.Run("search_notes_gates_notes_only_matches", func(t *testing.T) {
 			r := require.New(t)
+			ctx, _, _ := testhandler.SetupTestHandler(t)
+			fixture := newClientMethodFixture(t, shared)
 			marker, err := fixture.run.Name("notesmarker")
 			r.NoError(err)
 			plainName, err := fixture.run.Name("plainnotescompany")
@@ -4343,9 +4336,7 @@ func TestClientMethodsAgainstInvenTree(t *testing.T) {
 			notesCompany, err := fixture.client.CreateCompany(ctx, inventree.CompanyCreate{Name: plainName, Currency: "USD", IsSupplier: true})
 			r.NoError(err)
 			r.NotZero(notesCompany.PK)
-			_, err = fixture.client.UpdateCompany(ctx, notesCompany.PK, inventree.PatchFields{
-				"notes": inventree.Set("contains " + marker + " marker"),
-			})
+			_, err = fixture.client.CreateNote(ctx, inventree.NoteCreate{ModelType: "company.company", ModelID: notesCompany.PK, Title: plainName, Content: "contains " + marker + " marker"})
 			r.NoError(err)
 
 			withoutNotes, err := fixture.client.GlobalSearch(ctx, inventree.GlobalSearchQuery{

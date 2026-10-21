@@ -1,7 +1,7 @@
 package inventree
 
 // SourcingPartFieldClass records the approved handling for every field in the
-// pinned API 530 SupplierPart and ManufacturerPart serializers. These
+// pinned API 560 SupplierPart and ManufacturerPart serializers. These
 // inventories are exhaustive so schema drift cannot silently widen exact
 // sourcing-link output or ordinary mutation inputs.
 type SourcingPartFieldClass string
@@ -40,7 +40,6 @@ var SupplierPartFieldInventory = map[string]SourcingPartFieldClass{
 	"supplier":                 SourcingPartFieldExposed,
 	"supplier_detail":          SourcingPartFieldSeparateLookup,
 	"updated":                  SourcingPartFieldExposed,
-	"notes":                    SourcingPartFieldExposed,
 	"part_detail":              SourcingPartFieldSeparateLookup,
 	"tags":                     SourcingPartFieldExposed,
 	"price_breaks":             SourcingPartFieldDeferred,
@@ -59,7 +58,6 @@ var ManufacturerPartFieldInventory = map[string]SourcingPartFieldClass{
 	"MPN":                 SourcingPartFieldExposed,
 	"link":                SourcingPartFieldExposed,
 	"barcode_hash":        SourcingPartFieldExcluded,
-	"notes":               SourcingPartFieldExposed,
 	"tags":                SourcingPartFieldExposed,
 	"parameters":          SourcingPartFieldSeparateLookup,
 }

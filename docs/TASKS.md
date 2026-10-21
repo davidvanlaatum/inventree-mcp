@@ -186,6 +186,8 @@ Before assigning a new story ID, inspect `git worktree list --porcelain`, search
 | [F-S101](#f-s101-bounded-part-requirements-visibility) | Add bounded read-only part-requirements visibility. | Done |
 | [F-S104](#f-s104-dedicated-user-lookup-tools) | Add correctly named bounded user lookup tools separate from owner/group lookup. | Done |
 | [F-S105](#f-s105-render-time-attach-to-part-primary-image) | Add render_and_attach_component_image so a rendered image can be attached (and optionally set primary) server-side, without the calling model relaying image bytes. | Done |
+| [F-S106](#f-s106-upgrade-to-inventree-160--api-560) | Upgrade to InvenTree 1.6.0/API 560 with generic notes CRUD/search, primary selection, and batch creation/editing. | Done |
+| [F-S107](#f-s107-investigate-images-embedded-in-notes) | Investigate safe upload, embedding, permissions, and lifecycle for images in notes after F-S106. | Ready |
 
 ## Milestone 0: Repository And Planning
 
@@ -3649,3 +3651,106 @@ Tasks:
   - Product also flagged (Medium, same root cause as Go's duplicate-attachment finding above) that the non-deduplicated retry behavior was accepted internally in this file's Residual risk note but never disclosed to the calling agent or operator. Resolved by the same fix: the behavior itself no longer creates a duplicate, and both tools' descriptions, `docs/operator-recipes.md`, and `docs/tool-reference.md` now describe the reuse-on-retry behavior explicitly.
   - Infosec found no blocking issues; confirmed the scope-to-registration mapping, the untouched `render_component_image` authorization entry, the non-injectable server-generated filename, and consistent error redaction end to end. Its one Low finding (the `SetPartPrimaryImage` failure path's discarded error bypassing outcome telemetry) is recorded in Residual risk above rather than fixed, since fixing it here alone would diverge from every existing `StatusPartialFailure` precedent elsewhere in this codebase rather than follow it -- worth revisiting repo-wide in a future story if that telemetry gap ever needs closing.
   - All fixes above were re-validated by rerunning the full local validation suite (build/vet/gofmt/lint, the full `no_integration_tests` suite, and a second full `GOFLAGS=-trimpath go test -race -p=1 ./...` including live Testcontainers) after applying them; focused re-review was not requested since every finding was either mechanically closed by a new passing test or resolved by an explicit design change (the `ListAttachments`-based reuse) that the reviewers' own reasoning directly motivated.
+
+### F-S106: Upgrade To InvenTree 1.6.0 / API 560
+
+- Status: `Done`
+- Issue: [#310](https://github.com/davidvanlaatum/inventree-mcp/issues/310)
+- Depends on: F-S61 (Done)
+- Progress: implemented on `codex/f-s106-inventree-1-6-upgrade` from `origin/main` at `1baeae4`; complete and reviewed; [PR #312](https://github.com/davidvanlaatum/inventree-mcp/pull/312) keeps #310 open until merge.
+
+Upgrade inventree-mcp's blocking integration baseline and implemented API contracts to InvenTree 1.6.0 / API 560. This is a compatibility migration, rather than a Docker-tag-only bump.
+
+Upstream release: https://github.com/inventree/InvenTree/releases/tag/1.6.0
+API changes: https://github.com/inventree/InvenTree/blob/1.6.0/src/backend/InvenTree/InvenTree/api_version.py
+
+#### Compatibility probe — 2026-10-21
+
+Tested repository revision `fd7e5a0abf36e56e76b664f45ab90fdd79b722ea` in a disposable source copy. Only `internal/buildinfo/buildinfo.go` and `internal/testenv/Dockerfile` were changed to 1.6.0/API 560; test expectations were preserved. Official image digest: `sha256:98e608cffe7fd679b9d5cdb6d65f198673ea617fa34e16a940754973bee4e023`.
+
+Command: `GOFLAGS=-trimpath go test -race -p=1 -json -count=1 ./...` — failed.
+Follow-up client runs used `go test -race -json -count=1 ./internal/inventree -run '^TestClientMethodsAgainstInvenTree$'`, progressively excluding only previously observed panicking subtests with `-skip`. The final run completed the remaining cases; skipped cases are still failures requiring fixes.
+
+Confirmed findings:
+- The API 560 schema removes inline `notes` from Part, Company, SupplierPart, ManufacturerPart, StockItem, and PurchaseOrder, replacing markdown notes with separately managed generic Note records.
+- Part-detail, supplier-part-detail, and stock-metadata integration tests panic when dereferencing absent notes; company-detail and purchase-order tests fail notes assertions. The MCP exact-part-detail integration test also panics on the missing notes field.
+- `global_search/search_notes_gates_notes_only_matches` fails: `search_notes:true` no longer finds the expected notes-only match with the existing write flow.
+- Historical `cross_object_tag_workflow_discovery` assertions for `tags=true/false` fail because the filter behavior changed. This is a discovery-characterization mismatch, not proof the public tag tool is broken: `cross_object_tag_search_and_assignment` passed. Audit the upstream `tags` → `tag_name` rename against actual client usage.
+- README/runtime/schema guards fail as expected when only temporary pins change; checked-in schema and compatibility documentation still describe API 530.
+- OAuth, token/basic bootstrap, shared Testcontainers startup/isolation, current-user/token handling, basic stock, part-test templates/results, and the basic catalog/stock/supplier/purchase-preview MCP workflow passed.
+- Notes-related panics prevented the entire client and MCP workflow suites from completing in their original run; successful checks do not establish full compatibility. No live inventory was upgraded.
+
+At issue creation, refreshed main is `1baeae4` and targets 1.5.7/API 530, with a dependency update after the tested revision. Repeat validation from current main during implementation; the probe above does not claim to test that newer revision.
+
+#### Approved decisions — 2026-10-21
+
+- Drop InvenTree 1.5.x runtime compatibility; target InvenTree 1.6.0/API 560.
+- Use shared notes tools that select the target by object type and object ID, rather than separate tool families for each object type. Individual notes have stable IDs for exact reads, edits, and deletion.
+- Replace the obsolete inline markdown-notes contract with dedicated notes operations. This applies to fields removed upstream, not unrelated transaction/history notes that remain supported.
+- The generic API exposes `model_type` and `model_id`; public object-type choices must remain bounded to approved MCP domains and must be validated against the notes endpoint's own model vocabulary and live parent-object permissions.
+
+#### Final scope decisions — 2026-10-21
+
+The operator approved the following choices; no outstanding product blocker remains for planning this task.
+
+- Initial dedicated notes tools support ordinary object-linked text/Markdown notes and explicit primary-note selection. Reusable templates are deferred; embedded images are tracked separately in F-S107 (#311).
+- Retain notes-content matching through `global_search(search_notes:true)` and provide dedicated notes search.
+- Include batch note creation and editing from the start, using the existing shared batch framework with per-record preflight, verification, and explicit partial outcomes.
+- New notes require explicit creation; existing notes are read, edited, and deleted by stable note ID. Remove obsolete inline markdown-notes fields rather than silently selecting, concatenating, overwriting, or deleting notes. Existing transaction/history-note fields that remain supported upstream are unaffected.
+
+Bulk assessment: independent creation/editing is practical within the shared framework. Implementation must cover duplicate/retry behavior and ambiguous-write recovery. Explicit primary-note changes for the same parent object require ordered handling or rejection of conflicting entries; do not assume independence. Bulk deletion is outside this initial batch scope because destructive confirmation and dependency semantics need a separate workflow. Single-note deletion retains the existing destructive-operation confirmation and authorization conventions.
+
+Follow-up: [F-S107 — Investigate images embedded in notes](https://github.com/davidvanlaatum/inventree-mcp/issues/311) follows this upgrade and is not a prerequisite for F-S106.
+
+#### Acceptance criteria
+
+- [x] Resolve and record the notes-workflow and supported-version decisions.
+- [x] Audit every implemented endpoint/field/filter/status/auth/media contract against API 560 and 1.6.0; address notes, notes search, tags, and any workflow-transition drift without silently dropping writes.
+- [x] Refresh the schema from immutable verified provenance, endpoint manifest, field inventories, frontend-route evidence where affected, Testcontainers pins, and build-info baseline.
+- [x] Deliver generic notes CRUD/search, primary-note selection, global notes-content search, and batch creation/editing; keep templates, embedded-image uploads, and bulk deletion outside this initial scope.
+- [x] Update typed clients, MCP behavior, unit tests, and default-on live client-method integration coverage; replace nil-dereference test assumptions with meaningful assertions.
+- [x] Align docs/PLAN.md, docs/TASKS.md, docs/api-schema.md, tool references, operator recipes, web-link docs where affected, and the README compatibility table under the pin-change policy.
+- [x] Pass the complete race-enabled default suite on the final diff without compatibility-case skips; compare per-package coverage to the current base and document any unrecovered reduction.
+- [x] Complete Go, QA, product, and infosec reviews and required reruns; keep task, issue, and PR scope/status/validation synchronized.
+
+Out of scope: unrelated new 1.6 features, sales/customer workflow expansion, release tags, package deployment, and production InvenTree upgrades. Release/version and deployment actions need their own operator authorization.
+
+
+#### Implementation and handoff evidence
+
+- Seven dedicated tools cover bounded notes search/exact reads, create/update/delete, and bulk create/update across the six approved parent types. Existing inline fields are removed; short supplier and transaction/line notes are retained. Primary promotion verifies sibling demotion; one item per parent per batch avoids conflicting writes. All note mutations use principal-bound single-use preview tokens, with explicit independent outcomes and no blind create retry.
+- Validation: `go test -tags no_integration_tests -race -p=1 -covermode=atomic -coverprofile=coverage.out ./...` passed. Compared with base `1baeae4`, client-package coverage increased from 80.8596% to 81.5025%, tools from 85.2908% to 85.3089%; every other package is unchanged (both revisions rechecked with Go 1.27.3). `go vet ./...` passed. `GOFLAGS=-trimpath go test -race -p=1 -json ./...` passed all 23 packages with no compatibility-case skips; all six note parent types, no-view/view-only permissions, template boundaries, notes search, MCP/bulk workflows, and revised native PO refusals passed. `golangci-lint run` and `git diff --check` passed.
+- Review: Senior Go Developer, Senior QA / Test Architect, Senior Product Manager, and Senior Infosec Engineer reviewed the workspace read-only by instruction. Follow-up reviews found no unresolved actionable findings after correcting obsolete inline-note docs/prompt, native received-line deletion/FSM characterization, stale recovery expectation, and raw-error logging. Captured-log regression tests cover preflight, mutation, and verification errors. Final import-group and source-attribution typo corrections did not require another review.
+- CI follow-up: GitHub selected golangci-lint 2.15.0 while the initial local installation was 2.13.2. Reproduced the complete failing lint suite with 2.15.0; its new error-channel checks exposed 17 ignored MCP server-shutdown results in existing tests. Tests now accept only clean shutdown or expected context cancellation. The complete untruncated 2.15.0 lint suite passes, and focused Go/QA/product follow-up reviews have no actionable findings. The first CI coverage attempt also exhausted Go's default 10-minute package timeout during Docker cleanup after slow startup, with no assertion failure. CI now allows 20 minutes per package, preserving the complete verbose/race/coverage suite and leaving time beyond testenv's 10-minute startup allowance for API exercises and bounded cleanup. The complete failing CI command was rerun locally with its original default timeout: `GOFLAGS=-trimpath go test -v -race -covermode atomic -coverprofile coverage.out -coverpkg ./... ./...` passed all 23 packages under Go 1.27.3 (86.8% total coverage), including the shutdown checks; this also satisfies the full default-suite pre-commit gate. Focused Go/QA/product/infosec reviews cleared the CI budget change.
+- Test stability follow-up: repeated race-enabled validation exposed an existing progress test that assumed concurrent callbacks arrived in counter order. Reproduced with 1,000 targeted iterations; it now checks the complete set of completion-count/total pairs under a mutex, matching the executor's documented unordered concurrent-callback contract without changing production behavior.
+- Pre-merge coverage follow-up: the CI bot reported full-mode client coverage of 93.6% to 93.5%, despite the positive matched unit comparison. A matched full-client comparison with Go 1.27.3 passed on both revisions and improved from 93.2841% (1389/1489 statements) on base to 93.3712% (1479/1584) on the head before the additional tests; the bot comparison uses a different baseline. Investigation also identified practical uncovered Note defensive guards. Added focused tests rejecting malformed successful create/PATCH responses (missing identity, templates, different model/parent) without returning a record or retrying, and failing scoped/unscoped notes search closed after parent permission denial. Go, QA, product, and infosec follow-up reviews found no actionable issues; the complete race/coverage suite and current-head CI remain required before merge.
+- Residual risk: sibling scans, preflight, mutation, and verification are separate native operations. External concurrent writers can race; no atomic snapshot, conditional-write guarantee, cross-call serialization, or cross-item rollback is claimed. Ambiguous creation requires inspecting the parent notes before a fresh plan. API 560 still has the known raw PartStocktake POST failure; the supported generation workflow remains separately tested. No production inventory, release, or deployment was changed.
+
+### F-S107: Investigate Images Embedded In Notes
+
+- Status: `Ready`
+- Issue: [#311](https://github.com/davidvanlaatum/inventree-mcp/issues/311)
+- Depends on: F-S106 (#310, Done; implementing PR pending merge)
+
+#### Scope
+
+Investigate safe MCP support for images embedded in InvenTree notes as a follow-up to the 1.6.0/API 560 upgrade. The operator approved this investigation on 2026-10-21 while confirming that F-S106 should initially deliver Markdown notes, primary-note selection, dedicated and global notes search, and batch note creation/editing. Embedded-image support and reusable templates remain outside F-S106.
+
+The official API 560 schema exposes GET/POST `/api/note/image/` and a `NotesImage` record linked to a note ID. That establishes an API surface, but does not establish a working upload format, Markdown embedding format, authorization boundary, or safe lifecycle.
+
+#### Investigation checklist
+
+- [ ] Verify 1.6.0 source, schema, and disposable live behavior for image upload/list/read, supported media types and limits, and how returned image URLs are embedded in Markdown and rendered in InvenTree.
+- [ ] Determine whether image creation and note-content updates require separate writes; document partial-failure recovery, idempotency/duplicate handling, and concurrent-edit risks.
+- [ ] Verify image readability and mutation permissions against the owning note and parent object, including deleted/unreadable notes, cross-user access, supported model types, and primary-note behavior.
+- [ ] Investigate image replacement, deletion, orphan cleanup, note deletion, retained references, and upstream migration behavior for existing embedded images.
+- [ ] Assess practical bulk upload/association using the shared batch framework; explain any ordering/dependency or partial-failure reason to defer it.
+- [ ] Propose a bounded tool contract with explicit upload scopes and existing transport rules: inline bytes, STDIO allowlisted local paths, separate URL-upload handling if proposed, same-instance bounded downloads, redirect/SSRF controls, and redacted logs/errors.
+- [ ] Assess reuse of existing image-rendering/upload workflows without requiring the model to relay large image blobs.
+- [ ] Record findings, executable validation evidence, unresolved product decisions, and recommended implementation scope. Obtain operator decisions before implementing new tools.
+
+#### Completion criteria
+
+A documented, evidence-backed feasibility and workflow recommendation, with a proposed implementation task or explicit reason to defer. Complete Go, QA, product, and infosec review for any resulting upload/tool-surface contract before implementation handoff, and update the applicable schema notes, tool references, recipes, and planning records as the approved scope requires.
+
+Out of scope: implementation or live deployment of notes-image tools, generic note templates, new sales/build workflows, and unrelated image features. Use disposable fixtures rather than production inventory for investigation.
