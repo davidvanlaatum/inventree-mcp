@@ -176,3 +176,92 @@ func TestNotesReadEverySupportedParentAndRejectBadListResponses(t *testing.T) {
 		})
 	}
 }
+
+func TestNoteWritesRejectMalformedSuccessfulResponses(t *testing.T) {
+	t.Parallel()
+	for _, action := range []string{"create", "update"} {
+		for _, tc := range []struct {
+			name string
+			note Note
+		}{
+			{"missing identity", Note{ModelType: "part.part", ModelID: 1}},
+			{"template", Note{PK: 2, Template: true, ModelType: "part.part", ModelID: 1}},
+			{"different model", Note{PK: 2, ModelType: "company.company", ModelID: 1}},
+			{"different parent", Note{PK: 2, ModelType: "part.part", ModelID: 3}},
+		} {
+			t.Run(action+"/"+tc.name, func(t *testing.T) {
+				r := require.New(t)
+				ctx, _, _ := testhandler.SetupTestHandler(t)
+				writes := 0
+				c, err := NewClient(Config{BaseURL: "https://inventory.example.test", Credential: Credential{Scheme: AuthSchemeToken, Token: "secret"}, HTTPClient: &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+					if req.URL.Path == "/api/part/1/" {
+						return jsonResponse(req, 200, `{"pk":1}`), nil
+					}
+					if req.Method == http.MethodGet {
+						r.Equal("/api/note/2/", req.URL.Path)
+						return jsonResponse(req, 200, `{"pk":2,"model_type":"part.part","model_id":1,"title":"Before"}`), nil
+					}
+					writes++
+					if action == "create" {
+						r.Equal(http.MethodPost, req.Method)
+						r.Equal("/api/note/", req.URL.Path)
+					} else {
+						r.Equal(http.MethodPatch, req.Method)
+						r.Equal("/api/note/2/", req.URL.Path)
+					}
+					body, err := json.Marshal(tc.note)
+					r.NoError(err)
+					return jsonResponse(req, 200, string(body)), nil
+				})}})
+				r.NoError(err)
+				var result Note
+				if action == "create" {
+					result, err = c.CreateNote(ctx, NoteCreate{ModelType: "part.part", ModelID: 1, Title: "Requested"})
+				} else {
+					result, err = c.UpdateNote(ctx, 2, PatchFields{"title": Set("Requested")})
+				}
+				r.ErrorIs(err, ErrNoteOutOfScope)
+				r.Equal(Note{}, result, "a malformed successful response must not become an approved note record")
+				r.Equal(1, writes, "an acknowledged write with invalid identity must never be retried blindly")
+			})
+		}
+	}
+}
+
+func TestNoteSearchRejectsUnreadableParents(t *testing.T) {
+	t.Parallel()
+	for _, scoped := range []bool{true, false} {
+		name := "result parent"
+		if scoped {
+			name = "requested parent"
+		}
+		t.Run(name, func(t *testing.T) {
+			r := require.New(t)
+			ctx, _, _ := testhandler.SetupTestHandler(t)
+			listCalls := 0
+			c, err := NewClient(Config{BaseURL: "https://inventory.example.test", Credential: Credential{Scheme: AuthSchemeToken, Token: "secret"}, HTTPClient: &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+				if req.URL.Path == "/api/part/1/" {
+					return jsonResponse(req, http.StatusForbidden, `{"detail":"not permitted"}`), nil
+				}
+				r.Equal("/api/note/", req.URL.Path)
+				listCalls++
+				return jsonResponse(req, 200, `{"count":1,"results":[{"pk":2,"model_type":"part.part","model_id":1,"title":"Private"}]}`), nil
+			})}})
+			r.NoError(err)
+			query := NoteQuery{ModelType: "part.part", Limit: 20}
+			if scoped {
+				query.ModelID = 1
+			}
+			page, err := c.SearchNotesPage(ctx, query)
+			var apiErr *APIError
+			r.ErrorAs(err, &apiErr)
+			r.Equal(http.StatusForbidden, apiErr.StatusCode)
+			r.Equal(Page[Note]{}, page, "no partial note content may escape after a parent permission failure")
+			if scoped {
+				r.Zero(listCalls, "reject an unreadable requested parent before listing its notes")
+			} else {
+				r.Equal(1, listCalls)
+			}
+		})
+	}
+}
