@@ -150,6 +150,8 @@ func plannedChangesSession(t *testing.T, ctx context.Context, client any) (*mcp.
 	return session, func() {
 		r.NoError(session.Close())
 		cancel()
-		<-serverDone
+		if err := <-serverDone; err != nil {
+			r.ErrorIs(err, context.Canceled)
+		}
 	}
 }

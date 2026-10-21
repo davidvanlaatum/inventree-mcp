@@ -100,7 +100,9 @@ func TestStdioServerCanInitializeAndListTools(t *testing.T) {
 	}
 
 	cancel()
-	<-serverDone
+	if err := <-serverDone; err != nil {
+		r.ErrorIs(err, context.Canceled)
+	}
 }
 
 func TestHTTPMuxExposesConfiguredPrometheusMetricsPath(t *testing.T) {
@@ -161,7 +163,9 @@ func TestTrafficLogCapturesStdioJSONRPCMessages(t *testing.T) {
 	r.NoError(err)
 	r.NoError(session.Close())
 	cancel()
-	<-serverDone
+	if err := <-serverDone; err != nil {
+		r.ErrorIs(err, context.Canceled)
+	}
 
 	var methods []string
 	var outboundCount int
@@ -262,7 +266,9 @@ func TestStdioLegacyInitializePublishesServerInstructions(t *testing.T) {
 	a.Equal(serverInstructions, initializeResult.Instructions)
 	r.NoError(session.Close())
 	cancel()
-	<-serverDone
+	if err := <-serverDone; err != nil {
+		r.ErrorIs(err, context.Canceled)
+	}
 
 	var foundInitializeRequest bool
 	var foundInitializeResult bool
@@ -387,7 +393,9 @@ func TestStdioServerListsOnlyMilestonePrompts(t *testing.T) {
 	}
 
 	cancel()
-	<-serverDone
+	if err := <-serverDone; err != nil {
+		r.ErrorIs(err, context.Canceled)
+	}
 }
 
 func expectedToolNames(includeWrites bool) map[string]bool {
@@ -460,7 +468,9 @@ func TestServerListsWriteToolsOnlyWhenEnabled(t *testing.T) {
 	}
 
 	cancel()
-	<-serverDone
+	if err := <-serverDone; err != nil {
+		r.ErrorIs(err, context.Canceled)
+	}
 }
 
 func TestRunRejectsHTTPWriteToolsBeforeOAuthScopeEnforcement(t *testing.T) {
@@ -509,7 +519,9 @@ func TestHealthVersionToolReturnsReadOnlyStatus(t *testing.T) {
 	a.Equal("unknown", structured["date"])
 
 	cancel()
-	<-serverDone
+	if err := <-serverDone; err != nil {
+		r.ErrorIs(err, context.Canceled)
+	}
 }
 
 func TestHTTPHandlerUsesStatelessStreamableServer(t *testing.T) {

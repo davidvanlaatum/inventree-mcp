@@ -113,7 +113,9 @@ func TestGetPartNotFoundOmitsRecordThroughTypedMCPBoundary(t *testing.T) {
 	defer func() {
 		r.NoError(session.Close())
 		cancel()
-		<-serverDone
+		if err := <-serverDone; err != nil {
+			r.ErrorIs(err, context.Canceled)
+		}
 	}()
 
 	result, err := session.CallTool(ctx, &mcp.CallToolParams{Name: GetPartToolName, Arguments: map[string]any{"id": 404}})

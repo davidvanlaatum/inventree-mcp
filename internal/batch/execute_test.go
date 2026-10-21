@@ -394,20 +394,19 @@ func TestExecuteOnProgressCountsNotAttemptedCancelledItems(t *testing.T) {
 	items := []itemPlan{{id: 0}, {id: 1}}
 	adapter := &recordingAdapter{}
 
-	var progressCalls atomic.Int64
-	var lastDone, lastTotal atomic.Int64
+	var mu sync.Mutex
+	var calls [][2]int
 	onProgress := func(done, total int) {
-		progressCalls.Add(1)
-		lastDone.Store(int64(done))
-		lastTotal.Store(int64(total))
+		mu.Lock()
+		defer mu.Unlock()
+		calls = append(calls, [2]int{done, total})
 	}
-
 	results, _ := batch.Execute(ctx, items, adapter, batch.ExecuteOptions{Concurrency: 2, OnProgress: onProgress})
 
 	r.Len(results, 2)
-	r.Equal(int64(2), progressCalls.Load(), "not-attempted items under an already-cancelled context must still be counted")
-	r.Equal(int64(2), lastDone.Load())
-	r.Equal(int64(2), lastTotal.Load())
+	// Callbacks may arrive concurrently in either order. Every cancelled
+	// item must still report its distinct completion count and full total.
+	r.ElementsMatch([][2]int{{1, 2}, {2, 2}}, calls)
 }
 
 func TestExecuteTimingSeparatesOrchestrationFromUpstream(t *testing.T) {

@@ -97,7 +97,9 @@ func bulkProgressSession(t *testing.T, ctx context.Context, onProgress func(mess
 	return serverSession, clientSession, func() {
 		r.NoError(clientSession.Close())
 		cancel()
-		<-serverDone
+		if err := <-serverDone; err != nil {
+			r.ErrorIs(err, context.Canceled)
+		}
 	}
 }
 
@@ -187,7 +189,9 @@ func TestBulkUpdatePartsEmitsProgressNotificationsOverRealMCPSession(t *testing.
 	defer func() {
 		r.NoError(session.Close())
 		cancel()
-		<-serverDone
+		if err := <-serverDone; err != nil {
+			r.ErrorIs(err, context.Canceled)
+		}
 	}()
 
 	items := []BulkUpdatePartItem{
@@ -246,7 +250,9 @@ func TestBulkUpdatePartsOmitsProgressNotificationsWithoutToken(t *testing.T) {
 	defer func() {
 		r.NoError(session.Close())
 		cancel()
-		<-serverDone
+		if err := <-serverDone; err != nil {
+			r.ErrorIs(err, context.Canceled)
+		}
 	}()
 
 	items := []BulkUpdatePartItem{{ID: 1, Active: dvgoutils.Ptr(false)}}
