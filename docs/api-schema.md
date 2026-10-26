@@ -5,28 +5,30 @@ The local OpenAPI schema is stored at `docs/api-schema.yaml`. Endpoint coverage 
 Source:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/inventree/schema/9e30d33c905c34bc565364841ae9eb7721679bd6/export/560/api.yaml -o docs/api-schema.yaml
-printf '%s  %s\n' bd00f78f27c095a225130a83ba337e993cd3a062fa7b09d5be06bd4dd62a8426 docs/api-schema.yaml | shasum -a 256 -c -
+curl -fsSL https://raw.githubusercontent.com/inventree/schema/009157ab24b7990477b892427afbc6d8cf13f305/export/561/api.yaml -o docs/api-schema.yaml
+printf '%s  %s\n' 41899455ce19610a8037566e9243b1150b51fbc6418a1613d98ffb50502bda8b docs/api-schema.yaml | shasum -a 256 -c -
 ```
 
 Current fetched schema:
 
 - OpenAPI: `3.0.3`
 - API title: `InvenTree API`
-- API version: `560`
-- Runtime InvenTree version: `1.6.0`
-- Release ref: `4d05a10ade57554883e26cc2cc10b962934b8c31` (`commit`, official `1.6.0` tag)
-- Fetched at: `2026-10-21`
-- Source: official `inventree/schema` API 560 export
-- Schema repository commit: `9e30d33c905c34bc565364841ae9eb7721679bd6`
-- Schema repository blob: `97df64b691c1f52f504785d954941257e65e52be`
-- Generating InvenTree commit recorded by the schema export commit message: `6d4e0f51c41e2e925121aaf1f6cbaca225bb7ea4`
+- API version: `561`
+- Runtime InvenTree version: `1.6.1`
+- Release ref: `be488919e4928cf16140b85d77058115a89cb4ef` (`commit`, official `1.6.1` tag)
+- Fetched at: `2026-10-26`
+- Source: official `inventree/schema` API 561 export
+- Schema repository commit: `009157ab24b7990477b892427afbc6d8cf13f305`
+- Schema repository blob: `70fe0c388dc072529720e2590d4f203058e20695`
+- Generating InvenTree commit recorded by the schema export commit message: `a91f0795300110a601fe7391b7e9796dfb33b2a8`
 - Authentication used for schema fetch: none
-- SHA256: `bd00f78f27c095a225130a83ba337e993cd3a062fa7b09d5be06bd4dd62a8426`
-- Runtime evidence: the disposable compatibility probe confirmed InvenTree `1.6.0` reports API `560`; its notes-related failures motivated F-S106. Full migration validation is recorded in the task and implementing PR.
+- SHA256: `41899455ce19610a8037566e9243b1150b51fbc6418a1613d98ffb50502bda8b`
+- Runtime evidence: the full race-enabled Docker suite passed on `2026-10-26`, confirming InvenTree `1.6.1` reports API `561` and satisfies exercised client/server/tool contracts. Validation is recorded under M1H-S01 in `docs/TASKS.md`. Historical 1.6.0 migration evidence remains under F-S106.
 
 When `docs/api-schema.yaml` changes, update this provenance block and any endpoint capability tables in the same change.
-The manifest stores the same schema SHA256 and API version; schema drift tests fail until both this provenance block and `docs/endpoint-manifest.yaml` are updated. The blocking Testcontainers suite pins `inventree/inventree:1.6.0` and fails if the runtime API version differs from this provenance. Docker-backed validation on `2026-08-15` confirmed InvenTree `1.5.0` reports API version `530` and passes the complete race-enabled integration suite against the existing client and tool contracts; a `2026-08-19` maintenance Docker-backed validation confirmed the patch release InvenTree `1.5.1` still reports API version `530` and passes the same suite; a `2026-08-27` maintenance Docker-backed validation confirmed the patch release InvenTree `1.5.2` still reports API version `530` and passes the same suite; a `2026-09-09` maintenance Docker-backed validation confirmed the patch release InvenTree `1.5.4` still reports API version `530` and passes the same suite; a `2026-09-17` maintenance Docker-backed validation confirmed the patch release InvenTree `1.5.5` still reports API version `530` and passes the same suite; a `2026-10-03` maintenance Docker-backed validation confirmed the patch release InvenTree `1.5.6` still reports API version `530` and passes the same suite. A `2026-10-14` maintenance Docker-backed validation confirmed the patch release InvenTree `1.5.7` still reports API version `530` and passes the same suite. This pin does not establish the minimum supported InvenTree version.
+The manifest stores the same schema SHA256 and API version; schema drift tests fail until both this provenance block and `docs/endpoint-manifest.yaml` are updated. The blocking Testcontainers suite pins `inventree/inventree:1.6.1` and fails if the runtime API version differs from this provenance. Docker-backed validation on `2026-08-15` confirmed InvenTree `1.5.0` reports API version `530` and passes the complete race-enabled integration suite against the existing client and tool contracts; a `2026-08-19` maintenance Docker-backed validation confirmed the patch release InvenTree `1.5.1` still reports API version `530` and passes the same suite; a `2026-08-27` maintenance Docker-backed validation confirmed the patch release InvenTree `1.5.2` still reports API version `530` and passes the same suite; a `2026-09-09` maintenance Docker-backed validation confirmed the patch release InvenTree `1.5.4` still reports API version `530` and passes the same suite; a `2026-09-17` maintenance Docker-backed validation confirmed the patch release InvenTree `1.5.5` still reports API version `530` and passes the same suite; a `2026-10-03` maintenance Docker-backed validation confirmed the patch release InvenTree `1.5.6` still reports API version `530` and passes the same suite. A `2026-10-14` maintenance Docker-backed validation confirmed the patch release InvenTree `1.5.7` still reports API version `530` and passes the same suite. This pin does not establish the minimum supported InvenTree version.
+The API 560 to 561 export diff changes only the API version and the ordering of the `ProviderEnum` values/descriptions (`openid_connect`, `saml`). No paths, operations, fields, required properties, filters, or response contracts changed. Implemented endpoint capability tables and field inventories remain applicable; no MCP tool or operator workflow changes are required.
+
 Patch-only pin bumps that carry no API/schema change do not require rewriting every prose reference to the prior point version across `docs/operator-recipes.md` and `docs/tool-reference.md`; those describe verified behavior evidence tied to the API/behavior that produced it, and remain accurate until a specific behavior is found to differ on the new pin.
 
 The F-S61 API 511 to 530 audit revalidated every manifest path, method, operation ID, request schema, response schema, required query parameter, and response status. No manifest-referenced schema property was removed and no new required property was introduced; `PurchaseOrderLineItem.total_price` instead became optional, nullable decimal text. API 530 adds optional detail, tag, parameter, uniqueness, availability, pricing, and ordering fields; changes several generic IDs from 32-bit to 64-bit bounds; represents URL-or-empty fields with `oneOf`; and describes multipart image/file fields as binary. It removes the unused stock-list `ancestor` and `exclude_tree` filters and purchase-order `total_price` ordering. The MCP does not use those removed filters/orderings or automatically expose newly added fields; each exposure is a separate operator-approved story. F-S47 is the first to expose API 530's added purchase-order-line `discount`/nullable `total_price` and purchase-order extra-line `discount`/`total_price`, alongside completing the previously deferred order and line detail-completeness fields. Pinned live coverage continues to prove that readable attachment, thumbnail, part-image, and company-image values are returned as same-instance URL strings even where shared write schemas use binary format.
