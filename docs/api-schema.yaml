@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: InvenTree API
-  version: '560'
+  version: '561'
   description: API for InvenTree - the intuitive open source inventory management
     system
   license:
@@ -41110,12 +41110,12 @@ components:
       - pk
     ProviderEnum:
       enum:
-      - saml
       - openid_connect
+      - saml
       type: string
       description: |-
-        * `saml` - SAML
         * `openid_connect` - OpenID Connect
+        * `saml` - SAML
     PurchaseOrder:
       type: object
       description: Serializer for a PurchaseOrder object.

@@ -1,8 +1,8 @@
 schema:
   path: docs/api-schema.yaml
-  sha256: bd00f78f27c095a225130a83ba337e993cd3a062fa7b09d5be06bd4dd62a8426
+  sha256: 41899455ce19610a8037566e9243b1150b51fbc6418a1613d98ffb50502bda8b
   openapi: 3.0.3
-  api_version: "560"
+  api_version: "561"
 
 coverage_areas:
   - tags
