@@ -17,7 +17,7 @@ var idInputToolNames = []string{
 	GetContactToolName, GetPartToolName, GetPartCategoryToolName, GetStockLocationToolName,
 	GetStockLocationTypeToolName, GetStockItemToolName, GetAttachmentMetadataToolName, GetOwnerToolName,
 	GetProjectCodeToolName, GetPartRelationToolName, GetPurchaseOrderExtraLineToolName, GetPurchaseOrderToolName,
-	GetPurchaseOrderLineToolName, GetStockTrackingEntryToolName, GetPartStocktakeToolName,
+	GetPurchaseOrderLineToolName, GetAuditEntryToolName, GetPartStocktakeToolName,
 }
 
 // searchInputToolNames lists every tool whose input is the shared

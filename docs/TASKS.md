@@ -188,6 +188,13 @@ Before assigning a new story ID, inspect `git worktree list --porcelain`, search
 | [F-S105](#f-s105-render-time-attach-to-part-primary-image) | Add render_and_attach_component_image so a rendered image can be attached (and optionally set primary) server-side, without the calling model relaying image bytes. | Done |
 | [F-S106](#f-s106-upgrade-to-inventree-160--api-560) | Upgrade to InvenTree 1.6.0/API 560 with generic notes CRUD/search, primary selection, and batch creation/editing. | Done |
 | [F-S107](#f-s107-investigate-images-embedded-in-notes) | Investigate safe upload, embedding, permissions, and lifecycle for images in notes after F-S106. | Ready |
+| [F-S108](#f-s108-upgrade-to-inventree-171--api-570) | Migrate stock history, pricing and supported contracts to InvenTree 1.7.1/API 570. | Active |
+| [F-S109](#f-s109-audit-history-for-categories-and-project-codes) | Audit history for categories and project codes. | Future |
+| [F-S110](#f-s110-audit-history-for-purchase-order-lines) | Audit history for purchase-order lines. | Future |
+| [F-S111](#f-s111-audit-history-for-pricing-records) | Audit history for pricing records. | Future |
+| [F-S112](#f-s112-audit-history-for-parameters-and-templates) | Audit history for parameters and templates. | Future |
+| [F-S113](#f-s113-audit-history-for-company-contacts-and-addresses) | Audit history for company contacts and addresses. | Future |
+| [F-S114](#f-s114-audit-history-for-attachments) | Audit history for attachments. | Future |
 
 ## Milestone 0: Repository And Planning
 
@@ -3765,3 +3772,140 @@ The official API 560 schema exposes GET/POST `/api/note/image/` and a `NotesImag
 A documented, evidence-backed feasibility and workflow recommendation, with a proposed implementation task or explicit reason to defer. Complete Go, QA, product, and infosec review for any resulting upload/tool-surface contract before implementation handoff, and update the applicable schema notes, tool references, recipes, and planning records as the approved scope requires.
 
 Out of scope: implementation or live deployment of notes-image tools, generic note templates, new sales/build workflows, and unrelated image features. Use disposable fixtures rather than production inventory for investigation.
+
+
+### F-S108: Upgrade To InvenTree 1.7.1 / API 570
+
+- Status: `Active`
+- Issue: https://github.com/davidvanlaatum/inventree-mcp/issues/319
+- Depends on: F-S106, M1H-S01 (Done)
+- Scope: migrate the supported baseline from 1.6.3/API 561 to 1.7.1/API 570 in PR #318, replacing legacy tracking tools with generic six-type scoped audit tools and migrating pricing routes. Audit all other implemented contracts, permissions, token issuance, field inventories, schema provenance, pins and documentation.
+- Approved decisions (2026-11-08): target 1.7.1, replace stock-history tools with generic audit reads, make 1.7.x the supported baseline, and create the linked tracking issue. No release/deployment.
+- Implementation plan: update `internal/buildinfo`, `internal/testenv`, schema/provenance and manifest first; adapt typed pricing and stock-history clients plus field inventories; exercise real scoped history and token refusal behavior; align tool/recipe/README/plan/generated contracts; run full race tests, compare package coverage, complete the four-role review and latest-head CI before merge.
+- Evidence: upstream stock-history removal is explicit in inventree/InvenTree#13101 (merged commit `c4280c2a03dec87afda9478957dba328f82ae4b6`), which is included in the 1.7.1 source. The generated 1.7.0 release-note breaking-change list omits it; source/schema evidence takes precedence. The operator subsequently approved generic `list_audit_entries`/`get_audit_entry` across the same six types as notes (parts, companies, supplier parts, manufacturer parts, stock items and purchase orders), with qualified model type/object ID, audit IDs, approved bounded/redacted field changes, and child reads limited to the same six types. Other audited models are follow-ups.
+- Bulk assessment: no new mutation capability planned; existing pricing tools retain their established single/batch semantics. Reassess before introducing any new mutating workflow.
+- Acceptance:
+  - [ ] Audit API 570 and exact 1.7.1 source; document identity/filter/permission migration.
+  - [ ] Replace legacy stock-history names with generic six-type audit tools; require scope, enforce bounded/redacted projections and exclude unscoped/staff-domain audit access.
+  - [ ] Migrate pricing routes and other affected implemented fields/contracts without weakening write safety.
+  - [ ] Verify credential and dedicated-token behavior without bypassing upstream OAuth restrictions.
+  - [ ] Align schema/manifest, pins, compatibility history, plan, tool reference, recipes and generated metadata.
+  - [ ] Pass full local Docker race suite, package coverage comparison and latest-head CI.
+  - [ ] Complete Go, QA, product and infosec reviews and resolve actionable findings.
+- Validation: pending.
+- Review: pending.
+- Residual risk: per-model live tests prove superuser success and no-permission denial; granular non-staff single-role permission separation remains source-verified rather than independently isolated. The schema and tagged GroupSerializer expose roles/permissions read-only, so no out-of-scope role-grant mechanism is added for test setup. Historical free text remains operator-sensitive; unexercised upstream behavior and readable image-tag republishing remain limitations.
+
+
+### F-S109: Audit history for categories and project codes
+
+- Status: `Future`
+- Issue: https://github.com/davidvanlaatum/inventree-mcp/issues/320
+- Depends on: F-S108
+- Scope: extend the generic audit tools to `part.partcategory`, `common.projectcode`. Existing implemented workflows: search_part_categories/get_part_category and search_project_codes/get_project_code/assign_project_code.
+- Model-specific requirements: Use existing category/project-code detail-field policies. Verify tree/category and project-code permissions, deleted-record history and any actual parent linkage; do not infer stock-location auditing.
+- Bulk assessment: read-only history extension; no new mutation or bulk mutation counterpart.
+- Acceptance:
+  - [ ] Verify exact audited model names, actual history fields/events, parent relations and permissions against the pinned schema/source and real API.
+  - [ ] Extend the generic model registry/enum, scoped list/exact reads and parent-child handling without exposing unrelated or administrative history.
+  - [ ] Define explicit per-model old/new field and event-data projections; retain bounds and prevent sensitive expansions or permission bypass.
+  - [ ] Add isolated real-API list/detail, permission, child-scope and redaction coverage; run full race tests and compare package coverage.
+  - [ ] Align tool reference, recipes, plan, schema notes and generated metadata; complete Go, QA, product and infosec review.
+- Validation: not started; backlog planning only.
+- Review: implementation review required when selected.
+- Residual risk: actual per-model audited fields and permission boundaries require verification; an enum change alone is insufficient.
+
+
+### F-S110: Audit history for purchase-order lines
+
+- Status: `Future`
+- Issue: https://github.com/davidvanlaatum/inventree-mcp/issues/321
+- Depends on: F-S108
+- Scope: extend the generic audit tools to `order.purchaseorderlineitem`, `order.purchaseorderextraline`. Existing implemented workflows: purchase-order line and extra-line lookup/write workflows.
+- Model-specific requirements: Support direct line reads and explicit purchase-order parent/child history without bypassing parent permissions. Preserve decimal price/quantity values and approved free-text boundaries.
+- Bulk assessment: read-only history extension; no new mutation or bulk mutation counterpart.
+- Acceptance:
+  - [ ] Verify exact audited model names, actual history fields/events, parent relations and permissions against the pinned schema/source and real API.
+  - [ ] Extend the generic model registry/enum, scoped list/exact reads and parent-child handling without exposing unrelated or administrative history.
+  - [ ] Define explicit per-model old/new field and event-data projections; retain bounds and prevent sensitive expansions or permission bypass.
+  - [ ] Add isolated real-API list/detail, permission, child-scope and redaction coverage; run full race tests and compare package coverage.
+  - [ ] Align tool reference, recipes, plan, schema notes and generated metadata; complete Go, QA, product and infosec review.
+- Validation: not started; backlog planning only.
+- Review: implementation review required when selected.
+- Residual risk: actual per-model audited fields and permission boundaries require verification; an enum change alone is insufficient.
+
+
+### F-S111: Audit history for pricing records
+
+- Status: `Future`
+- Issue: https://github.com/davidvanlaatum/inventree-mcp/issues/322
+- Depends on: F-S108
+- Scope: extend the generic audit tools to `company.supplierpricebreak`, `pricing.partinternalpricebreak`, `pricing.partsellpricebreak`, `pricing.partpricing`. Existing implemented workflows: internal, sale and supplier price-break tools plus get_part_pricing, update_part_pricing_override and refresh_part_pricing.
+- Model-specific requirements: Verify actual audited fields (including which calculated-pricing fields are recorded) and enforce the dedicated pricing role versus supplier purchase-order permissions. Keep historical decimal/currency values exact.
+- Bulk assessment: read-only history extension; no new mutation or bulk mutation counterpart.
+- Acceptance:
+  - [ ] Verify exact audited model names, actual history fields/events, parent relations and permissions against the pinned schema/source and real API.
+  - [ ] Extend the generic model registry/enum, scoped list/exact reads and parent-child handling without exposing unrelated or administrative history.
+  - [ ] Define explicit per-model old/new field and event-data projections; retain bounds and prevent sensitive expansions or permission bypass.
+  - [ ] Add isolated real-API list/detail, permission, child-scope and redaction coverage; run full race tests and compare package coverage.
+  - [ ] Align tool reference, recipes, plan, schema notes and generated metadata; complete Go, QA, product and infosec review.
+- Validation: not started; backlog planning only.
+- Review: implementation review required when selected.
+- Residual risk: actual per-model audited fields and permission boundaries require verification; an enum change alone is insufficient.
+
+
+### F-S112: Audit history for parameters and templates
+
+- Status: `Future`
+- Issue: https://github.com/davidvanlaatum/inventree-mcp/issues/323
+- Depends on: F-S108
+- Scope: extend the generic audit tools to `common.parameter`, `common.parametertemplate`. Existing implemented workflows: part/object parameter and parameter-template lookup/administration tools.
+- Model-specific requirements: Inventory parameter-value and template-definition history. Validate parent types and parent permissions explicitly; do not infer new domain access from a generic parameter model or expose unrelated parent records.
+- Bulk assessment: read-only history extension; no new mutation or bulk mutation counterpart.
+- Acceptance:
+  - [ ] Verify exact audited model names, actual history fields/events, parent relations and permissions against the pinned schema/source and real API.
+  - [ ] Extend the generic model registry/enum, scoped list/exact reads and parent-child handling without exposing unrelated or administrative history.
+  - [ ] Define explicit per-model old/new field and event-data projections; retain bounds and prevent sensitive expansions or permission bypass.
+  - [ ] Add isolated real-API list/detail, permission, child-scope and redaction coverage; run full race tests and compare package coverage.
+  - [ ] Align tool reference, recipes, plan, schema notes and generated metadata; complete Go, QA, product and infosec review.
+- Validation: not started; backlog planning only.
+- Review: implementation review required when selected.
+- Residual risk: actual per-model audited fields and permission boundaries require verification; an enum change alone is insufficient.
+
+
+### F-S113: Audit history for company contacts and addresses
+
+- Status: `Future`
+- Issue: https://github.com/davidvanlaatum/inventree-mcp/issues/324
+- Depends on: F-S108
+- Scope: extend the generic audit tools to `company.contact`, `company.address`. Existing implemented workflows: contact/address lookup and assignment workflows.
+- Model-specific requirements: Preserve existing approved contact/address projections and company-parent permissions. Historical contact email/phone and street/postal details remain omitted; expanding them requires an explicit operator decision.
+- Bulk assessment: read-only history extension; no new mutation or bulk mutation counterpart.
+- Acceptance:
+  - [ ] Verify exact audited model names, actual history fields/events, parent relations and permissions against the pinned schema/source and real API.
+  - [ ] Extend the generic model registry/enum, scoped list/exact reads and parent-child handling without exposing unrelated or administrative history.
+  - [ ] Define explicit per-model old/new field and event-data projections; retain bounds and prevent sensitive expansions or permission bypass.
+  - [ ] Add isolated real-API list/detail, permission, child-scope and redaction coverage; run full race tests and compare package coverage.
+  - [ ] Align tool reference, recipes, plan, schema notes and generated metadata; complete Go, QA, product and infosec review.
+- Validation: not started; backlog planning only.
+- Review: implementation review required when selected.
+- Residual risk: actual per-model audited fields and permission boundaries require verification; an enum change alone is insufficient.
+
+
+### F-S114: Audit history for attachments
+
+- Status: `Future`
+- Issue: https://github.com/davidvanlaatum/inventree-mcp/issues/325
+- Depends on: F-S108
+- Scope: extend the generic audit tools to `common.attachment`. Existing implemented workflows: attachment metadata/list/download/link/upload workflows.
+- Model-specific requirements: Enforce attachment parent-model permission requirements and the existing supported attachment-parent allowlist. Do not fetch historical files, follow URLs, expose credentialed media paths, or return file bytes from audit tools.
+- Bulk assessment: read-only history extension; no new mutation or bulk mutation counterpart.
+- Acceptance:
+  - [ ] Verify exact audited model names, actual history fields/events, parent relations and permissions against the pinned schema/source and real API.
+  - [ ] Extend the generic model registry/enum, scoped list/exact reads and parent-child handling without exposing unrelated or administrative history.
+  - [ ] Define explicit per-model old/new field and event-data projections; retain bounds and prevent sensitive expansions or permission bypass.
+  - [ ] Add isolated real-API list/detail, permission, child-scope and redaction coverage; run full race tests and compare package coverage.
+  - [ ] Align tool reference, recipes, plan, schema notes and generated metadata; complete Go, QA, product and infosec review.
+- Validation: not started; backlog planning only.
+- Review: implementation review required when selected.
+- Residual risk: actual per-model audited fields and permission boundaries require verification; an enum change alone is insufficient.

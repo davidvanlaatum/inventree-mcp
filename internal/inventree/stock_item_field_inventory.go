@@ -1,7 +1,7 @@
 package inventree
 
 // StockItemFieldClass records the approved handling for every field in the
-// pinned API 560 StockItem serializer. The inventory is intentionally
+// pinned API 570 StockItem serializer. The inventory is intentionally
 // exhaustive so schema drift cannot silently widen exact stock-item output.
 type StockItemFieldClass string
 
@@ -69,6 +69,5 @@ var StockItemFieldInventory = map[string]StockItemFieldClass{
 	// get_stock_item_test_result tools instead of embedding it here, the
 	// same separate_lookup treatment as location_detail/part_detail/
 	// supplier_part_detail above.
-	"tests":          StockItemFieldSeparateLookup,
-	"tracking_items": StockItemFieldExposed,
+	"tests": StockItemFieldSeparateLookup,
 }

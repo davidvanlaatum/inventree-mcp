@@ -246,6 +246,55 @@ func TestClientMethodsAgainstInvenTree(t *testing.T) {
 		r.ErrorIs(err, inventree.ErrStockItemTestResultAttachmentMissing)
 	})
 
+	t.Run("oauth_credential_cannot_issue_api_tokens", func(t *testing.T) {
+		r := require.New(t)
+		ctx, _, _ := testhandler.SetupTestHandler(t)
+		fixture := newClientMethodFixture(t, shared)
+		name, err := fixture.run.Name("oauth-application")
+		r.NoError(err)
+		var application struct {
+			ClientID     string `json:"client_id"`
+			ClientSecret string `json:"client_secret"`
+		}
+		req, err := fixture.client.NewRequest(ctx, http.MethodPost, "/api/admin/oauth2/", nil, map[string]any{
+			"name": name, "client_type": "confidential", "authorization_grant_type": "password",
+		})
+		r.NoError(err)
+		r.NoError(fixture.client.DoJSON(req, &application))
+		r.NotEmpty(application.ClientID)
+		r.NotEmpty(application.ClientSecret)
+		form := url.Values{"grant_type": {"password"}, "username": {fixture.account.Username}, "password": {fixture.account.Password}, "scope": {"g:read"}}
+		tokenReq, err := http.NewRequestWithContext(ctx, http.MethodPost, shared.Environment().BaseURL+"/o/token/", strings.NewReader(form.Encode()))
+		r.NoError(err)
+		tokenReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		tokenReq.SetBasicAuth(application.ClientID, application.ClientSecret)
+		httpClient := &http.Client{Timeout: 30 * time.Second}
+		response, err := httpClient.Do(tokenReq)
+		r.NoError(err)
+		defer func() { r.NoError(response.Body.Close()) }()
+		r.Equal(http.StatusOK, response.StatusCode)
+		var token struct {
+			AccessToken string `json:"access_token"`
+		}
+		r.NoError(json.NewDecoder(io.LimitReader(response.Body, 65536)).Decode(&token))
+		r.NotEmpty(token.AccessToken)
+		bearerClient, err := inventree.NewClient(inventree.Config{
+			BaseURL:    shared.Environment().BaseURL,
+			Credential: inventree.Credential{Scheme: inventree.AuthSchemeBearer, Token: token.AccessToken},
+			HTTPClient: httpClient,
+		})
+		r.NoError(err)
+		user, err := bearerClient.GetCurrentUser(ctx)
+		r.NoError(err)
+		r.Equal(fixture.account.Username, user.Username)
+		_, err = bearerClient.CreateCurrentUserToken(ctx, name)
+		var apiErr *inventree.APIError
+		r.ErrorAs(err, &apiErr)
+		r.Equal(http.StatusForbidden, apiErr.StatusCode, "API 570 must reject OAuth credentials issuing API tokens")
+	})
+
+	t.Run("generic_audit_history", func(t *testing.T) { testGenericAuditHistory(t, shared) })
+
 	t.Run("current_user_and_connector_token", func(t *testing.T) {
 		r := require.New(t)
 		ctx, _, _ := testhandler.SetupTestHandler(t)
@@ -1590,7 +1639,7 @@ func TestClientMethodsAgainstInvenTree(t *testing.T) {
 			deadline := time.Now().Add(timeout)
 			var latest map[string]any
 			for time.Now().Before(deadline) {
-				latest = getJSON(fmt.Sprintf("/api/part/%d/pricing/", part.ID), nil)
+				latest = getJSON(fmt.Sprintf("/api/pricing/part/%d/", part.ID), nil)
 				if scheduled, ok := latest["scheduled_for_update"].(bool); ok && !scheduled {
 					return latest, true
 				}
@@ -1603,7 +1652,7 @@ func TestClientMethodsAgainstInvenTree(t *testing.T) {
 		// data at all: every computed min/max field is null. Creating the
 		// SupplierPart fixture above independently schedules a pricing
 		// recalculation, so scheduled_for_update is not asserted here.
-		baseline := getJSON(fmt.Sprintf("/api/part/%d/pricing/", part.ID), nil)
+		baseline := getJSON(fmt.Sprintf("/api/pricing/part/%d/", part.ID), nil)
 		t.Logf("baseline part pricing (scheduled_for_update=%v): %v", baseline["scheduled_for_update"], baseline)
 		a.Nil(baseline["overall_min"])
 		a.Nil(baseline["overall_max"])
@@ -1616,43 +1665,43 @@ func TestClientMethodsAgainstInvenTree(t *testing.T) {
 		// acceptance (the schema's decimal pattern syntactically allows a
 		// leading "-", but does not say whether InvenTree's serializer
 		// enforces a business-level minimum).
-		internalOne, err := postJSON("/api/part/internal-price/", map[string]any{
+		internalOne, err := postJSON("/api/pricing/internal-price/", map[string]any{
 			"part": part.ID, "quantity": 1, "price": "10.00", "price_currency": "USD",
 		})
 		r.NoError(err)
 		t.Logf("created internal price break: %v", internalOne)
-		internalTwo, err := postJSON("/api/part/internal-price/", map[string]any{
+		internalTwo, err := postJSON("/api/pricing/internal-price/", map[string]any{
 			"part": part.ID, "quantity": 5, "price": "8.00", "price_currency": "USD",
 		})
 		r.NoError(err)
 		internalTwoPK := internalTwo["pk"]
 
-		_, dupErr := postJSON("/api/part/internal-price/", map[string]any{
+		_, dupErr := postJSON("/api/pricing/internal-price/", map[string]any{
 			"part": part.ID, "quantity": 1, "price": "11.00", "price_currency": "USD",
 		})
 		requireRejected(dupErr, http.StatusBadRequest)
 		t.Logf("pinned characterization: a second PartInternalPriceBreak at the same (part, quantity) is REJECTED: %s", describeErr(dupErr))
 
-		zeroPriceOut, zeroPriceErr := postJSON("/api/part/internal-price/", map[string]any{
+		zeroPriceOut, zeroPriceErr := postJSON("/api/pricing/internal-price/", map[string]any{
 			"part": part.ID, "quantity": 100, "price": "0.00", "price_currency": "USD",
 		})
 		r.NoError(zeroPriceErr, "a zero-price PartInternalPriceBreak is expected to be allowed")
 		t.Logf("pinned characterization: a zero-price PartInternalPriceBreak is ALLOWED: %v", zeroPriceOut)
 
-		_, negativePriceErr := postJSON("/api/part/internal-price/", map[string]any{
+		_, negativePriceErr := postJSON("/api/pricing/internal-price/", map[string]any{
 			"part": part.ID, "quantity": 200, "price": "-1.00", "price_currency": "USD",
 		})
 		requireRejected(negativePriceErr, http.StatusBadRequest)
 		t.Logf("pinned characterization: a negative-price PartInternalPriceBreak is REJECTED: %s", describeErr(negativePriceErr))
 
-		internalRows := listJSON("/api/part/internal-price/", url.Values{"part": []string{strconv.Itoa(part.ID)}, "ordering": []string{"quantity"}})
+		internalRows := listJSON("/api/pricing/internal-price/", url.Values{"part": []string{strconv.Itoa(part.ID)}, "ordering": []string{"quantity"}})
 		t.Logf("internal price rows for part %d ordered by quantity: %v", part.ID, internalRows)
 		r.GreaterOrEqual(len(internalRows), 2)
 		a.InDelta(1, internalRows[0]["quantity"], 0.0001)
 		a.InDelta(5, internalRows[1]["quantity"], 0.0001)
 
-		r.NoError(deleteRow(fmt.Sprintf("/api/part/internal-price/%v/", internalTwoPK)))
-		afterDeleteReq, err := fixture.client.NewRequest(ctx, http.MethodGet, fmt.Sprintf("/api/part/internal-price/%v/", internalTwoPK), nil, nil)
+		r.NoError(deleteRow(fmt.Sprintf("/api/pricing/internal-price/%v/", internalTwoPK)))
+		afterDeleteReq, err := fixture.client.NewRequest(ctx, http.MethodGet, fmt.Sprintf("/api/pricing/internal-price/%v/", internalTwoPK), nil, nil)
 		r.NoError(err)
 		var afterDeleteOut map[string]any
 		afterDeleteErr := fixture.client.DoJSON(afterDeleteReq, &afterDeleteOut)
@@ -1667,26 +1716,26 @@ func TestClientMethodsAgainstInvenTree(t *testing.T) {
 		// does not exist" on create, "not one of the available choices" on
 		// the list filter) -- then flip the part salable and retry to
 		// exercise the ordinary CRUD/list shape.
-		_, saleCreateOnNonSalableErr := postJSON("/api/part/sale-price/", map[string]any{
+		_, saleCreateOnNonSalableErr := postJSON("/api/pricing/sale-price/", map[string]any{
 			"part": part.ID, "quantity": 1, "price": "20.00", "price_currency": "USD",
 		})
 		r.Error(saleCreateOnNonSalableErr, "creating a PartSalePriceBreak against a non-salable part is expected to be rejected")
 		t.Logf("pinned characterization: creating a PartSalePriceBreak on a non-salable part is REJECTED: %s", describeErr(saleCreateOnNonSalableErr))
 
-		saleListReq, err := fixture.client.NewRequest(ctx, http.MethodGet, "/api/part/sale-price/", url.Values{"part": []string{strconv.Itoa(part.ID)}, "limit": []string{"100"}}, nil)
+		saleListReq, err := fixture.client.NewRequest(ctx, http.MethodGet, "/api/pricing/sale-price/", url.Values{"part": []string{strconv.Itoa(part.ID)}, "limit": []string{"100"}}, nil)
 		r.NoError(err)
 		saleListOnNonSalableErr := fixture.client.DoJSON(saleListReq, nil)
 		r.Error(saleListOnNonSalableErr, "the sale-price list part filter is expected to reject a non-salable part id the same way")
-		t.Logf("pinned characterization: GET /api/part/sale-price/?part=%d is REJECTED: %s", part.ID, describeErr(saleListOnNonSalableErr))
+		t.Logf("pinned characterization: GET /api/pricing/sale-price/?part=%d is REJECTED: %s", part.ID, describeErr(saleListOnNonSalableErr))
 
 		_, err = fixture.client.UpdatePart(ctx, part.ID, inventree.PatchFields{"salable": inventree.Set(true)})
 		r.NoError(err)
-		saleOne, err := postJSON("/api/part/sale-price/", map[string]any{
+		saleOne, err := postJSON("/api/pricing/sale-price/", map[string]any{
 			"part": part.ID, "quantity": 1, "price": "20.00", "price_currency": "USD",
 		})
 		r.NoError(err, "creating a PartSalePriceBreak against a salable part is expected to succeed")
 		t.Logf("created sale price break on a now-salable part: %v", saleOne)
-		saleRowsReq, err := fixture.client.NewRequest(ctx, http.MethodGet, "/api/part/sale-price/", url.Values{"part": []string{strconv.Itoa(part.ID)}, "limit": []string{"100"}}, nil)
+		saleRowsReq, err := fixture.client.NewRequest(ctx, http.MethodGet, "/api/pricing/sale-price/", url.Values{"part": []string{strconv.Itoa(part.ID)}, "limit": []string{"100"}}, nil)
 		r.NoError(err)
 		var saleRowsOut struct {
 			Results []map[string]any `json:"results"`
@@ -1724,7 +1773,7 @@ func TestClientMethodsAgainstInvenTree(t *testing.T) {
 		// overall_max are documented read-only computed fields; override_min
 		// / override_max / override_min_currency / override_max_currency are
 		// the only writable fields besides the write-only "update" trigger.
-		overridden := patchJSON(fmt.Sprintf("/api/part/%d/pricing/", part.ID), map[string]any{
+		overridden := patchJSON(fmt.Sprintf("/api/pricing/part/%d/", part.ID), map[string]any{
 			"override_min": "3.00", "override_min_currency": "USD",
 			"override_max": "300.00", "override_max_currency": "USD",
 		})
@@ -1732,7 +1781,7 @@ func TestClientMethodsAgainstInvenTree(t *testing.T) {
 		a.InDelta(3.00, decimal(overridden["override_min"]), 0.0001)
 		a.InDelta(300.00, decimal(overridden["override_max"]), 0.0001)
 
-		triggered := patchJSON(fmt.Sprintf("/api/part/%d/pricing/", part.ID), map[string]any{"update": true})
+		triggered := patchJSON(fmt.Sprintf("/api/pricing/part/%d/", part.ID), map[string]any{"update": true})
 		t.Logf("part pricing immediately after PATCH update:true: %v", triggered)
 
 		final, reachedTerminal := pollUntilSettled(30 * time.Second)
@@ -1776,12 +1825,12 @@ func TestClientMethodsAgainstInvenTree(t *testing.T) {
 		// and re-trigger recalculation to see whether mixed-currency
 		// price-break inputs convert cleanly into the single computed
 		// currency or surface a conversion error/omission.
-		_, err = postJSON("/api/part/internal-price/", map[string]any{
+		_, err = postJSON("/api/pricing/internal-price/", map[string]any{
 			"part": part.ID, "quantity": 10, "price": "6.00", "price_currency": "EUR",
 		})
 		r.NoError(err)
 		patchJSON("/api/settings/global/PART_INTERNAL_PRICE/", map[string]any{"value": "True"})
-		patchJSON(fmt.Sprintf("/api/part/%d/pricing/", part.ID), map[string]any{"update": true})
+		patchJSON(fmt.Sprintf("/api/pricing/part/%d/", part.ID), map[string]any{"update": true})
 		afterMixedCurrency, mixedReachedTerminal := pollUntilSettled(30 * time.Second)
 		t.Logf("part pricing after enabling PART_INTERNAL_PRICE, adding a EUR internal price break, and re-triggering update (reached=%t): %v", mixedReachedTerminal, afterMixedCurrency)
 		if mixedReachedTerminal {
@@ -3493,24 +3542,15 @@ func TestClientMethodsAgainstInvenTree(t *testing.T) {
 		r.Equal(stock.PurchasePrice, transferred.PurchasePrice)
 		r.Equal(stock.PurchasePriceCurrency, transferred.PurchasePriceCurrency)
 
-		var tracking struct {
-			Results []struct {
-				PK           int     `json:"pk"`
-				Item         *int    `json:"item"`
-				Notes        *string `json:"notes"`
-				TrackingType int     `json:"tracking_type"`
-			} `json:"results"`
-		}
-		req, err := fixture.client.NewRequest(ctx, http.MethodGet, "/api/stock/track/", url.Values{"item": []string{strconv.Itoa(stock.PK)}, "limit": []string{"100"}, "ordering": []string{"-date"}}, nil)
+		tracking, err := fixture.client.SearchStockAuditPage(ctx, inventree.StockAuditQuery{ItemID: stock.PK, Limit: 100})
 		r.NoError(err)
-		r.NoError(fixture.client.DoJSON(req, &tracking))
 		r.NotEmpty(tracking.Results)
 		foundTransfer := false
 		for _, entry := range tracking.Results {
-			if entry.Item != nil && *entry.Item == stock.PK && entry.Notes != nil && *entry.Notes == "integration full transfer" {
+			if entry.Item != nil && *entry.Item == stock.PK && entry.Notes == "integration full transfer" {
 				foundTransfer = true
 				r.NotZero(entry.PK)
-				r.NotZero(entry.TrackingType)
+				r.NotNil(entry.EventType)
 			}
 		}
 		r.True(foundTransfer, "native full transfer should record an exact-item tracking entry with the audit reason")
@@ -3566,23 +3606,14 @@ func TestClientMethodsAgainstInvenTree(t *testing.T) {
 			r.Equal(partial.PurchasePrice, destination.PurchasePrice)
 			r.Equal(partial.PurchasePriceCurrency, destination.PurchasePriceCurrency)
 
-			var tracking struct {
-				Results []struct {
-					PK           int     `json:"pk"`
-					Item         *int    `json:"item"`
-					Notes        *string `json:"notes"`
-					TrackingType int     `json:"tracking_type"`
-				} `json:"results"`
-			}
-			req, err := fixture.client.NewRequest(ctx, http.MethodGet, "/api/stock/track/", url.Values{"part": []string{strconv.Itoa(part.ID)}, "limit": []string{"100"}, "ordering": []string{"-date"}}, nil)
+			tracking, err := fixture.client.SearchStockAuditPage(ctx, inventree.StockAuditQuery{PartID: part.ID, Limit: 100})
 			r.NoError(err)
-			r.NoError(fixture.client.DoJSON(req, &tracking))
 			foundPartial := false
 			for _, entry := range tracking.Results {
-				if entry.Notes != nil && *entry.Notes == "integration partial transfer" {
+				if entry.Notes == "integration partial transfer" {
 					foundPartial = true
 					r.NotZero(entry.PK)
-					r.NotZero(entry.TrackingType)
+					r.NotNil(entry.EventType)
 					r.NotNil(entry.Item)
 				}
 			}
@@ -3867,12 +3898,12 @@ func TestClientMethodsAgainstInvenTree(t *testing.T) {
 		// child, 35 "Installed component item" on the parent) rather than
 		// leaving either side's install unaudited. F-S54's acceptance
 		// criteria call out "tracking events"/"history behavior" explicitly.
-		childTrackingAfterInstall, err := fixture.client.SearchStockTrackingPage(ctx, inventree.StockTrackingQuery{ItemID: childStock.PK, Limit: 100})
+		childTrackingAfterInstall, err := fixture.client.SearchStockAuditPage(ctx, inventree.StockAuditQuery{ItemID: childStock.PK, Limit: 100})
 		r.NoError(err)
-		a.True(hasStockTrackingType(childTrackingAfterInstall.Results, 30), "install must record a native tracking event on the child stock item")
-		parentTrackingAfterInstall, err := fixture.client.SearchStockTrackingPage(ctx, inventree.StockTrackingQuery{ItemID: parentStock.PK, Limit: 100})
+		a.True(hasStockAuditType(childTrackingAfterInstall.Results, 30), "install must record a native tracking event on the child stock item")
+		parentTrackingAfterInstall, err := fixture.client.SearchStockAuditPage(ctx, inventree.StockAuditQuery{ItemID: parentStock.PK, Limit: 100})
 		r.NoError(err)
-		a.True(hasStockTrackingType(parentTrackingAfterInstall.Results, 35), "install must record a native tracking event on the parent stock item")
+		a.True(hasStockAuditType(parentTrackingAfterInstall.Results, 35), "install must record a native tracking event on the parent stock item")
 
 		// A now-unavailable (installed) child cannot be installed again;
 		// InvenTree reports this as an availability error, not a
@@ -3930,10 +3961,10 @@ func TestClientMethodsAgainstInvenTree(t *testing.T) {
 		// Pin uninstall's own tracking event (31 "Removed from assembly"),
 		// alongside the install event (30) still present in the same
 		// item's history.
-		childTrackingAfterUninstall, err := fixture.client.SearchStockTrackingPage(ctx, inventree.StockTrackingQuery{ItemID: childStock.PK, Limit: 100})
+		childTrackingAfterUninstall, err := fixture.client.SearchStockAuditPage(ctx, inventree.StockAuditQuery{ItemID: childStock.PK, Limit: 100})
 		r.NoError(err)
-		a.True(hasStockTrackingType(childTrackingAfterUninstall.Results, 31), "uninstall must record a native tracking event on the child stock item")
-		a.True(hasStockTrackingType(childTrackingAfterUninstall.Results, 30), "the earlier install tracking event must remain in history")
+		a.True(hasStockAuditType(childTrackingAfterUninstall.Results, 31), "uninstall must record a native tracking event on the child stock item")
+		a.True(hasStockAuditType(childTrackingAfterUninstall.Results, 30), "the earlier install tracking event must remain in history")
 
 		// InvenTree does not itself reject uninstalling an item that was
 		// never installed anywhere (belongs_to already nil) -- it silently
@@ -3985,7 +4016,7 @@ func TestClientMethodsAgainstInvenTree(t *testing.T) {
 		a.True(inventree.IsOmittableFetchError(err), "a missing global setting key must classify as omittable so the instance-info tool omits it instead of failing the call")
 	})
 
-	t.Run("stock_tracking_and_stocktake_history", func(t *testing.T) {
+	t.Run("stock_audit_and_stocktake_history", func(t *testing.T) {
 		r := require.New(t)
 		a := assert.New(t)
 		ctx, _, _ := testhandler.SetupTestHandler(t)
@@ -3996,9 +4027,9 @@ func TestClientMethodsAgainstInvenTree(t *testing.T) {
 		// empty-history assertion must run first, before any stock item
 		// exists for it.
 		part := fixture.ensure(t, testenv.FixturePart)
-		emptyPage, err := fixture.client.SearchStockTrackingPage(ctx, inventree.StockTrackingQuery{PartID: part.ID, Limit: 100})
+		emptyPage, err := fixture.client.SearchStockAuditPage(ctx, inventree.StockAuditQuery{PartID: part.ID, Limit: 100})
 		r.NoError(err)
-		a.Zero(emptyPage.Count, "a part with no stock items must report empty tracking history rather than erroring")
+		a.Empty(emptyPage.Results, "part-owned audit events must not appear as stock history")
 		a.Empty(emptyPage.Results)
 
 		location := fixture.ensure(t, testenv.FixtureLocation)
@@ -4013,14 +4044,14 @@ func TestClientMethodsAgainstInvenTree(t *testing.T) {
 		r.NoError(fixture.client.AddStock(ctx, inventree.StockAdjustment{Items: []inventree.StockAdjustmentItem{{PK: stockItem.PK, Quantity: "2"}}, Notes: "track-add"}))
 		r.NoError(fixture.client.TransferStock(ctx, inventree.StockTransfer{Items: []inventree.StockAdjustmentItem{{PK: stockItem.PK, Quantity: "12"}}, Notes: "track-transfer", Location: secondLocation.PK}))
 
-		byItem, err := fixture.client.SearchStockTrackingPage(ctx, inventree.StockTrackingQuery{ItemID: stockItem.PK, Limit: 100})
+		byItem, err := fixture.client.SearchStockAuditPage(ctx, inventree.StockAuditQuery{ItemID: stockItem.PK, Limit: 100})
 		r.NoError(err)
 		r.GreaterOrEqual(byItem.Count, 3, "creation plus the two triggered adjustments must all be recorded")
-		byPart, err := fixture.client.SearchStockTrackingPage(ctx, inventree.StockTrackingQuery{PartID: part.ID, Limit: 100})
+		byPart, err := fixture.client.SearchStockAuditPage(ctx, inventree.StockAuditQuery{PartID: part.ID, Limit: 100})
 		r.NoError(err)
-		a.Equal(byItem.Count, byPart.Count, "the item and part filters must agree for a part with exactly one stock item")
+		a.Equal(byItem.Results, byPart.Results, "item and part scopes must return the same stock entries for one stock item; upstream raw audit counts can differ")
 
-		var created, added, transferred inventree.StockTracking
+		var created, added, transferred inventree.StockAudit
 		for _, entry := range byItem.Results {
 			r.NotNil(entry.Item)
 			a.Equal(stockItem.PK, *entry.Item)
@@ -4041,7 +4072,7 @@ func TestClientMethodsAgainstInvenTree(t *testing.T) {
 		r.NotZero(added.PK, "the manual add event must be present")
 		r.NotZero(transferred.PK, "the transfer event must be present")
 
-		exactAdded, err := fixture.client.GetStockTrackingEntry(ctx, added.PK)
+		exactAdded, err := fixture.client.GetStockAuditEntry(ctx, added.PK)
 		r.NoError(err)
 		a.Equal("track-add", exactAdded.Notes)
 		a.Equal(added.PK, exactAdded.PK)
@@ -4051,11 +4082,11 @@ func TestClientMethodsAgainstInvenTree(t *testing.T) {
 		// unconditionally embeds a full location_detail record. Confirm the
 		// client-layer sanitizer strips it while preserving the stable
 		// location ID sibling key.
-		a.Contains(transferred.Deltas, "location")
+		a.Contains(transferred.Changes, "location")
 		a.NotContains(transferred.Deltas, "location_detail", "nested location detail must be redacted from deltas")
-		a.EqualValues(secondLocation.PK, transferred.Deltas["location"])
+		a.Equal([]any{float64(location.ID), float64(secondLocation.PK)}, transferred.Changes["location"])
 
-		_, err = fixture.client.GetStockTrackingEntry(ctx, 0)
+		_, err = fixture.client.GetStockAuditEntry(ctx, 0)
 		r.Error(err, "a non-existent tracking-event ID must fail rather than silently succeed")
 
 		// Pinned 2026-08-18 spike finding: a purchase-order receipt event
@@ -4075,7 +4106,7 @@ func TestClientMethodsAgainstInvenTree(t *testing.T) {
 		r.NoError(err)
 		r.NotEmpty(received)
 
-		receivedHistory, err := fixture.client.SearchStockTrackingPage(ctx, inventree.StockTrackingQuery{ItemID: received[0].PK, Limit: 100})
+		receivedHistory, err := fixture.client.SearchStockAuditPage(ctx, inventree.StockAuditQuery{ItemID: received[0].PK, Limit: 100})
 		r.NoError(err)
 		r.NotEmpty(receivedHistory.Results)
 		receiptEntry := receivedHistory.Results[0]
@@ -4763,9 +4794,9 @@ func stockLocationTypeIDs(types []inventree.StockLocationType) []int {
 	return ids
 }
 
-func hasStockTrackingType(entries []inventree.StockTracking, trackingType int) bool {
+func hasStockAuditType(entries []inventree.StockAudit, trackingType int) bool {
 	for _, entry := range entries {
-		if entry.TrackingType == trackingType {
+		if entry.EventType != nil && *entry.EventType == trackingType {
 			return true
 		}
 	}

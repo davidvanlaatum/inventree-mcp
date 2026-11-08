@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: InvenTree API
-  version: '561'
+  version: '570'
   description: API for InvenTree - the intuitive open source inventory management
     system
   license:
@@ -12,6 +12,12 @@ paths:
     get:
       operationId: root_retrieve
       description: Serve current server information.
+      parameters:
+      - in: query
+        name: link_nonce
+        schema:
+          type: string
+        description: Nonce for short-term identity proof
       security:
       - tokenAuth: []
       - basicAuth: []
@@ -49,7 +55,7 @@ paths:
       - basicAuth: []
       - cookieAuth: []
       - oauth2:
-        - g:read
+        - g:write
       responses:
         '200':
           content:
@@ -872,7 +878,7 @@ paths:
       - basicAuth: []
       - cookieAuth: []
       - oauth2:
-        - g:read
+        - g:write
       responses:
         '201':
           content:
@@ -894,7 +900,7 @@ paths:
       - basicAuth: []
       - cookieAuth: []
       - oauth2:
-        - g:read
+        - g:write
       responses:
         '204':
           description: No response body
@@ -963,7 +969,7 @@ paths:
       - basicAuth: []
       - cookieAuth: []
       - oauth2:
-        - g:read
+        - g:write
       responses:
         '200':
           content:
@@ -998,7 +1004,7 @@ paths:
       - basicAuth: []
       - cookieAuth: []
       - oauth2:
-        - g:read
+        - g:write
       responses:
         '200':
           content:
@@ -1022,10 +1028,147 @@ paths:
       - basicAuth: []
       - cookieAuth: []
       - oauth2:
-        - g:read
+        - g:write
       responses:
         '204':
           description: No response body
+  /api/audit/:
+    get:
+      operationId: audit_list
+      description: |-
+        API endpoint for audit log entries (read-only).
+
+        - GET (list): Return a list of audit log entries
+        - GET (detail): Return a single audit log entry
+      parameters:
+      - in: query
+        name: action
+        schema:
+          type: integer
+          enum:
+          - 0
+          - 1
+          - 2
+          - 3
+        description: |-
+          * `0` - create
+          * `1` - update
+          * `2` - delete
+          * `3` - access
+      - in: query
+        name: actor
+        schema:
+          type: integer
+      - in: query
+        name: cid
+        schema:
+          type: string
+      - in: query
+        name: event_type
+        schema:
+          type: integer
+      - in: query
+        name: include_children
+        schema:
+          type: boolean
+        description: Include entries for child objects (default = true)
+      - name: limit
+        required: true
+        in: query
+        description: Number of results to return per page.
+        schema:
+          type: integer
+      - in: query
+        name: max_date
+        schema:
+          type: string
+          format: date
+        description: Max Date
+      - in: query
+        name: min_date
+        schema:
+          type: string
+          format: date
+        description: Min Date
+      - in: query
+        name: model_id
+        schema:
+          type: string
+        description: Primary key of the object (requires model_type)
+      - in: query
+        name: model_type
+        schema:
+          type: string
+      - name: offset
+        required: false
+        in: query
+        description: The initial index from which to return the results.
+        schema:
+          type: integer
+      - name: ordering
+        required: false
+        in: query
+        description: Which field to use when ordering the results.
+        schema:
+          type: string
+          enum:
+          - timestamp
+          - -timestamp
+          - action
+          - -action
+          - actor
+          - -actor
+      - name: search
+        required: false
+        in: query
+        description: 'A search term. Searched fields: actor__username, object_repr.'
+        schema:
+          type: string
+      tags:
+      - audit
+      security:
+      - tokenAuth: []
+      - basicAuth: []
+      - cookieAuth: []
+      - oauth2:
+        - g:read
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedAuditLogEntryList'
+          description: ''
+  /api/audit/{id}/:
+    get:
+      operationId: audit_retrieve
+      description: |-
+        API endpoint for audit log entries (read-only).
+
+        - GET (list): Return a list of audit log entries
+        - GET (detail): Return a single audit log entry
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this Audit Log Entry.
+        required: true
+      tags:
+      - audit
+      security:
+      - tokenAuth: []
+      - basicAuth: []
+      - cookieAuth: []
+      - oauth2:
+        - g:read
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuditLogEntry'
+          description: ''
   /api/background-task/:
     get:
       operationId: background_task_overview
@@ -1138,7 +1281,7 @@ paths:
       - basicAuth: []
       - cookieAuth: []
       - oauth2:
-        - g:read
+        - g:write
       responses:
         '204':
           description: No response body
@@ -1200,7 +1343,7 @@ paths:
       - basicAuth: []
       - cookieAuth: []
       - oauth2:
-        - g:read
+        - g:write
       responses:
         '204':
           description: No response body
@@ -1299,7 +1442,7 @@ paths:
       - basicAuth: []
       - cookieAuth: []
       - oauth2:
-        - g:read
+        - g:write
       responses:
         '201':
           content:
@@ -1333,7 +1476,7 @@ paths:
       - basicAuth: []
       - cookieAuth: []
       - oauth2:
-        - g:read
+        - g:write
       responses:
         '200':
           content:
@@ -1504,7 +1647,7 @@ paths:
       - basicAuth: []
       - cookieAuth: []
       - oauth2:
-        - g:read
+        - g:write
       responses:
         '201':
           content:
@@ -1542,7 +1685,7 @@ paths:
       - basicAuth: []
       - cookieAuth: []
       - oauth2:
-        - g:read
+        - g:write
       responses:
         '201':
           content:
@@ -1586,7 +1729,7 @@ paths:
       - basicAuth: []
       - cookieAuth: []
       - oauth2:
-        - g:read
+        - g:write
       responses:
         '201':
           content:
@@ -1627,7 +1770,7 @@ paths:
       - basicAuth: []
       - cookieAuth: []
       - oauth2:
-        - g:read
+        - g:write
       responses:
         '201':
           content:
@@ -1658,7 +1801,7 @@ paths:
       - basicAuth: []
       - cookieAuth: []
       - oauth2:
-        - g:read
+        - g:write
       responses:
         '201':
           content:
@@ -2184,7 +2327,8 @@ paths:
       - basicAuth: []
       - cookieAuth: []
       - oauth2:
-        - g:read
+        - r:change:bom
+        - r:change:build
       responses:
         '200':
           content:
@@ -2219,7 +2363,8 @@ paths:
       - basicAuth: []
       - cookieAuth: []
       - oauth2:
-        - g:read
+        - r:change:bom
+        - r:change:build
       responses:
         '200':
           content:
@@ -2869,7 +3014,7 @@ paths:
       - basicAuth: []
       - cookieAuth: []
       - oauth2:
-        - g:read
+        - r:add:build
       responses:
         '201':
           content:
@@ -2909,7 +3054,7 @@ paths:
       - basicAuth: []
       - cookieAuth: []
       - oauth2:
-        - g:read
+        - r:add:build
       responses:
         '200':
           content:
@@ -2945,7 +3090,7 @@ paths:
       - basicAuth: []
       - cookieAuth: []
       - oauth2:
-        - g:read
+        - r:add:build
       responses:
         '201':
           content:
@@ -2983,7 +3128,7 @@ paths:
       - basicAuth: []
       - cookieAuth: []
       - oauth2:
-        - g:read
+        - r:add:build
       responses:
         '200':
           content:
@@ -3023,7 +3168,7 @@ paths:
       - basicAuth: []
       - cookieAuth: []
       - oauth2:
-        - g:read
+        - r:add:build
       responses:
         '200':
           content:
@@ -3060,7 +3205,7 @@ paths:
       - basicAuth: []
       - cookieAuth: []
       - oauth2:
-        - g:read
+        - r:add:build
       responses:
         '201':
           content:
@@ -3100,7 +3245,7 @@ paths:
       - basicAuth: []
       - cookieAuth: []
       - oauth2:
-        - g:read
+        - r:add:build
       responses:
         '200':
           content:
@@ -3136,7 +3281,7 @@ paths:
       - basicAuth: []
       - cookieAuth: []
       - oauth2:
-        - g:read
+        - r:add:build
       responses:
         '201':
           content:
@@ -3161,7 +3306,7 @@ paths:
       - basicAuth: []
       - cookieAuth: []
       - oauth2:
-        - g:read
+        - r:add:build
       responses:
         '201':
           description: No response body
@@ -3182,7 +3327,7 @@ paths:
       - basicAuth: []
       - cookieAuth: []
       - oauth2:
-        - g:read
+        - r:add:build
       responses:
         '201':
           description: No response body
@@ -3215,7 +3360,7 @@ paths:
       - basicAuth: []
       - cookieAuth: []
       - oauth2:
-        - g:read
+        - r:add:build
       responses:
         '200':
           content:
@@ -3256,7 +3401,7 @@ paths:
       - basicAuth: []
       - cookieAuth: []
       - oauth2:
-        - g:read
+        - r:add:build
       responses:
         '201':
           content:
@@ -4768,6 +4913,11 @@ paths:
         description: The initial index from which to return the results.
         schema:
           type: integer
+      - in: query
+        name: on_order
+        schema:
+          type: boolean
+        description: On Order
       - name: ordering
         required: false
         in: query
@@ -4797,6 +4947,8 @@ paths:
           - -pack_quantity
           - in_stock
           - -in_stock
+          - on_order
+          - -on_order
           - updated
           - -updated
       - in: query
@@ -5794,7 +5946,7 @@ paths:
       - basicAuth: []
       - cookieAuth: []
       - oauth2:
-        - g:read
+        - g:write
       responses:
         '200':
           description: No response body
@@ -5872,7 +6024,7 @@ paths:
       - basicAuth: []
       - cookieAuth: []
       - oauth2:
-        - g:read
+        - g:write
       responses:
         '204':
           description: No response body
@@ -5931,7 +6083,7 @@ paths:
       - basicAuth: []
       - cookieAuth: []
       - oauth2:
-        - g:read
+        - g:write
       responses:
         '204':
           description: No response body
@@ -6028,7 +6180,7 @@ paths:
       - basicAuth: []
       - cookieAuth: []
       - oauth2:
-        - g:read
+        - g:write
       responses:
         '204':
           description: No response body
@@ -6098,7 +6250,7 @@ paths:
       - basicAuth: []
       - cookieAuth: []
       - oauth2:
-        - g:read
+        - g:write
       responses:
         '200':
           content:
@@ -6134,7 +6286,7 @@ paths:
       - basicAuth: []
       - cookieAuth: []
       - oauth2:
-        - g:read
+        - g:write
       responses:
         '200':
           content:
@@ -6159,7 +6311,7 @@ paths:
       - basicAuth: []
       - cookieAuth: []
       - oauth2:
-        - g:read
+        - g:write
       responses:
         '204':
           description: No response body
@@ -6231,7 +6383,7 @@ paths:
       - basicAuth: []
       - cookieAuth: []
       - oauth2:
-        - g:read
+        - g:write
       responses:
         '200':
           content:
@@ -6261,7 +6413,7 @@ paths:
       - basicAuth: []
       - cookieAuth: []
       - oauth2:
-        - g:read
+        - g:write
       responses:
         '200':
           content:
@@ -6656,7 +6808,19 @@ paths:
       - basicAuth: []
       - cookieAuth: []
       - oauth2:
-        - g:read
+        - g:write
+        - r:change:admin
+        - r:change:part_category
+        - r:change:part
+        - r:change:pricing
+        - r:change:stock_location
+        - r:change:stock
+        - r:change:bom
+        - r:change:build
+        - r:change:purchase_order
+        - r:change:sales_order
+        - r:change:return_order
+        - r:change:transfer_order
       responses:
         '200':
           content:
@@ -6691,7 +6855,19 @@ paths:
       - basicAuth: []
       - cookieAuth: []
       - oauth2:
-        - g:read
+        - g:write
+        - r:change:admin
+        - r:change:part_category
+        - r:change:part
+        - r:change:pricing
+        - r:change:stock_location
+        - r:change:stock
+        - r:change:bom
+        - r:change:build
+        - r:change:purchase_order
+        - r:change:sales_order
+        - r:change:return_order
+        - r:change:transfer_order
       responses:
         '200':
           content:
@@ -6797,7 +6973,19 @@ paths:
       - basicAuth: []
       - cookieAuth: []
       - oauth2:
-        - g:read
+        - g:write
+        - r:change:admin
+        - r:change:part_category
+        - r:change:part
+        - r:change:pricing
+        - r:change:stock_location
+        - r:change:stock
+        - r:change:bom
+        - r:change:build
+        - r:change:purchase_order
+        - r:change:sales_order
+        - r:change:return_order
+        - r:change:transfer_order
       responses:
         '204':
           description: No response body
@@ -6865,7 +7053,19 @@ paths:
       - basicAuth: []
       - cookieAuth: []
       - oauth2:
-        - g:read
+        - g:write
+        - r:change:admin
+        - r:change:part_category
+        - r:change:part
+        - r:change:pricing
+        - r:change:stock_location
+        - r:change:stock
+        - r:change:bom
+        - r:change:build
+        - r:change:purchase_order
+        - r:change:sales_order
+        - r:change:return_order
+        - r:change:transfer_order
       responses:
         '200':
           content:
@@ -6900,7 +7100,19 @@ paths:
       - basicAuth: []
       - cookieAuth: []
       - oauth2:
-        - g:read
+        - g:write
+        - r:change:admin
+        - r:change:part_category
+        - r:change:part
+        - r:change:pricing
+        - r:change:stock_location
+        - r:change:stock
+        - r:change:bom
+        - r:change:build
+        - r:change:purchase_order
+        - r:change:sales_order
+        - r:change:return_order
+        - r:change:transfer_order
       responses:
         '200':
           content:
@@ -6924,7 +7136,19 @@ paths:
       - basicAuth: []
       - cookieAuth: []
       - oauth2:
-        - g:read
+        - g:write
+        - r:change:admin
+        - r:change:part_category
+        - r:change:part
+        - r:change:pricing
+        - r:change:stock_location
+        - r:change:stock
+        - r:change:bom
+        - r:change:build
+        - r:change:purchase_order
+        - r:change:sales_order
+        - r:change:return_order
+        - r:change:transfer_order
       responses:
         '204':
           description: No response body
@@ -7030,6 +7254,7 @@ paths:
         - r:change:admin
         - r:change:part_category
         - r:change:part
+        - r:change:pricing
         - r:change:stock_location
         - r:change:stock
         - r:change:bom
@@ -7062,6 +7287,7 @@ paths:
         - r:change:admin
         - r:change:part_category
         - r:change:part
+        - r:change:pricing
         - r:change:stock_location
         - r:change:stock
         - r:change:bom
@@ -7141,6 +7367,7 @@ paths:
         - r:change:admin
         - r:change:part_category
         - r:change:part
+        - r:change:pricing
         - r:change:stock_location
         - r:change:stock
         - r:change:bom
@@ -7186,6 +7413,7 @@ paths:
         - r:change:admin
         - r:change:part_category
         - r:change:part
+        - r:change:pricing
         - r:change:stock_location
         - r:change:stock
         - r:change:bom
@@ -7220,6 +7448,7 @@ paths:
         - r:change:admin
         - r:change:part_category
         - r:change:part
+        - r:change:pricing
         - r:change:stock_location
         - r:change:stock
         - r:change:bom
@@ -7248,7 +7477,7 @@ paths:
       - basicAuth: []
       - cookieAuth: []
       - oauth2:
-        - g:read
+        - g:write
       responses:
         '200':
           content:
@@ -7285,7 +7514,19 @@ paths:
       - basicAuth: []
       - cookieAuth: []
       - oauth2:
-        - g:read
+        - g:write
+        - r:change:admin
+        - r:change:part_category
+        - r:change:part
+        - r:change:pricing
+        - r:change:stock_location
+        - r:change:stock
+        - r:change:bom
+        - r:change:build
+        - r:change:purchase_order
+        - r:change:sales_order
+        - r:change:return_order
+        - r:change:transfer_order
       responses:
         '201':
           content:
@@ -7347,7 +7588,7 @@ paths:
       - basicAuth: []
       - cookieAuth: []
       - oauth2:
-        - g:read
+        - g:write
       responses:
         '200':
           content:
@@ -7635,7 +7876,7 @@ paths:
       - basicAuth: []
       - cookieAuth: []
       - oauth2:
-        - g:read
+        - g:write
       responses:
         '200':
           content:
@@ -7935,6 +8176,7 @@ paths:
       - cookieAuth: []
       - oauth2:
         - g:read
+        - r:view:admin
       responses:
         '200':
           content:
@@ -8192,6 +8434,7 @@ paths:
         - r:view:admin
         - r:view:part_category
         - r:view:part
+        - r:view:pricing
         - r:view:stock_location
         - r:view:stock
         - r:view:bom
@@ -8249,6 +8492,7 @@ paths:
         - r:change:admin
         - r:change:part_category
         - r:change:part
+        - r:change:pricing
         - r:change:stock_location
         - r:change:stock
         - r:change:bom
@@ -8305,6 +8549,7 @@ paths:
         - r:change:admin
         - r:change:part_category
         - r:change:part
+        - r:change:pricing
         - r:change:stock_location
         - r:change:stock
         - r:change:bom
@@ -8345,6 +8590,7 @@ paths:
         - r:view:admin
         - r:view:part_category
         - r:view:part
+        - r:view:pricing
         - r:view:stock_location
         - r:view:stock
         - r:view:bom
@@ -8396,6 +8642,7 @@ paths:
         - r:change:admin
         - r:change:part_category
         - r:change:part
+        - r:change:pricing
         - r:change:stock_location
         - r:change:stock
         - r:change:bom
@@ -8447,6 +8694,7 @@ paths:
         - r:change:admin
         - r:change:part_category
         - r:change:part
+        - r:change:pricing
         - r:change:stock_location
         - r:change:stock
         - r:change:bom
@@ -8761,7 +9009,7 @@ paths:
       - basicAuth: []
       - cookieAuth: []
       - oauth2:
-        - g:read
+        - g:write
       responses:
         '201':
           content:
@@ -8822,7 +9070,7 @@ paths:
       - basicAuth: []
       - cookieAuth: []
       - oauth2:
-        - g:read
+        - g:write
       responses:
         '200':
           content:
@@ -8857,7 +9105,7 @@ paths:
       - basicAuth: []
       - cookieAuth: []
       - oauth2:
-        - g:read
+        - g:write
       responses:
         '200':
           content:
@@ -8881,7 +9129,7 @@ paths:
       - basicAuth: []
       - cookieAuth: []
       - oauth2:
-        - g:read
+        - g:write
       responses:
         '204':
           description: No response body
@@ -8969,7 +9217,7 @@ paths:
       - basicAuth: []
       - cookieAuth: []
       - oauth2:
-        - g:read
+        - g:write
       responses:
         '201':
           content:
@@ -9056,7 +9304,7 @@ paths:
       - basicAuth: []
       - cookieAuth: []
       - oauth2:
-        - g:read
+        - g:write
       responses:
         '204':
           description: No response body
@@ -9133,7 +9381,7 @@ paths:
       - basicAuth: []
       - cookieAuth: []
       - oauth2:
-        - g:read
+        - g:write
       responses:
         '200':
           content:
@@ -9172,7 +9420,7 @@ paths:
       - basicAuth: []
       - cookieAuth: []
       - oauth2:
-        - g:read
+        - g:write
       responses:
         '200':
           content:
@@ -9200,7 +9448,7 @@ paths:
       - basicAuth: []
       - cookieAuth: []
       - oauth2:
-        - g:read
+        - g:write
       responses:
         '204':
           description: No response body
@@ -9227,7 +9475,7 @@ paths:
       - basicAuth: []
       - cookieAuth: []
       - oauth2:
-        - g:read
+        - g:write
       responses:
         '200':
           content:
@@ -10276,7 +10524,7 @@ paths:
       - basicAuth: []
       - cookieAuth: []
       - oauth2:
-        - g:read
+        - r:view:purchase_order
       responses:
         '200':
           content:
@@ -10349,7 +10597,7 @@ paths:
       - basicAuth: []
       - cookieAuth: []
       - oauth2:
-        - g:read
+        - r:add:purchase_order
       responses:
         '201':
           content:
@@ -10455,7 +10703,7 @@ paths:
       - basicAuth: []
       - cookieAuth: []
       - oauth2:
-        - g:read
+        - r:add:purchase_order
       responses:
         '201':
           content:
@@ -11503,7 +11751,7 @@ paths:
       - basicAuth: []
       - cookieAuth: []
       - oauth2:
-        - g:read
+        - r:add:return_order
       responses:
         '201':
           description: No response body
@@ -11524,7 +11772,7 @@ paths:
       - basicAuth: []
       - cookieAuth: []
       - oauth2:
-        - g:read
+        - r:add:return_order
       responses:
         '201':
           description: No response body
@@ -11545,7 +11793,7 @@ paths:
       - basicAuth: []
       - cookieAuth: []
       - oauth2:
-        - g:read
+        - r:add:return_order
       responses:
         '201':
           description: No response body
@@ -11566,7 +11814,7 @@ paths:
       - basicAuth: []
       - cookieAuth: []
       - oauth2:
-        - g:read
+        - r:add:return_order
       responses:
         '201':
           description: No response body
@@ -11599,7 +11847,7 @@ paths:
       - basicAuth: []
       - cookieAuth: []
       - oauth2:
-        - g:read
+        - r:add:return_order
       responses:
         '201':
           content:
@@ -12955,7 +13203,7 @@ paths:
       - basicAuth: []
       - cookieAuth: []
       - oauth2:
-        - g:read
+        - r:add:sales_order
       responses:
         '201':
           content:
@@ -12993,7 +13241,7 @@ paths:
       - basicAuth: []
       - cookieAuth: []
       - oauth2:
-        - g:read
+        - r:add:sales_order
       responses:
         '201':
           content:
@@ -13030,7 +13278,7 @@ paths:
       - basicAuth: []
       - cookieAuth: []
       - oauth2:
-        - g:read
+        - r:add:sales_order
       responses:
         '200':
           content:
@@ -13055,7 +13303,7 @@ paths:
       - basicAuth: []
       - cookieAuth: []
       - oauth2:
-        - g:read
+        - r:add:sales_order
       responses:
         '201':
           description: No response body
@@ -13087,7 +13335,7 @@ paths:
       - basicAuth: []
       - cookieAuth: []
       - oauth2:
-        - g:read
+        - r:add:sales_order
       responses:
         '201':
           content:
@@ -13112,7 +13360,7 @@ paths:
       - basicAuth: []
       - cookieAuth: []
       - oauth2:
-        - g:read
+        - r:add:sales_order
       responses:
         '201':
           description: No response body
@@ -13133,7 +13381,7 @@ paths:
       - basicAuth: []
       - cookieAuth: []
       - oauth2:
-        - g:read
+        - r:add:sales_order
       responses:
         '201':
           description: No response body
@@ -14412,7 +14660,7 @@ paths:
       - basicAuth: []
       - cookieAuth: []
       - oauth2:
-        - g:read
+        - r:add:transfer_order
       responses:
         '201':
           content:
@@ -14450,7 +14698,7 @@ paths:
       - basicAuth: []
       - cookieAuth: []
       - oauth2:
-        - g:read
+        - r:add:transfer_order
       responses:
         '201':
           content:
@@ -14475,7 +14723,7 @@ paths:
       - basicAuth: []
       - cookieAuth: []
       - oauth2:
-        - g:read
+        - r:add:transfer_order
       responses:
         '201':
           description: No response body
@@ -14507,7 +14755,7 @@ paths:
       - basicAuth: []
       - cookieAuth: []
       - oauth2:
-        - g:read
+        - r:add:transfer_order
       responses:
         '201':
           content:
@@ -14532,7 +14780,7 @@ paths:
       - basicAuth: []
       - cookieAuth: []
       - oauth2:
-        - g:read
+        - r:add:transfer_order
       responses:
         '201':
           description: No response body
@@ -14553,7 +14801,7 @@ paths:
       - basicAuth: []
       - cookieAuth: []
       - oauth2:
-        - g:read
+        - r:add:transfer_order
       responses:
         '201':
           description: No response body
@@ -14659,7 +14907,7 @@ paths:
       - basicAuth: []
       - cookieAuth: []
       - oauth2:
-        - g:read
+        - g:write
       responses:
         '201':
           content:
@@ -14681,7 +14929,7 @@ paths:
       - basicAuth: []
       - cookieAuth: []
       - oauth2:
-        - g:read
+        - g:write
       responses:
         '204':
           description: No response body
@@ -14750,7 +14998,7 @@ paths:
       - basicAuth: []
       - cookieAuth: []
       - oauth2:
-        - g:read
+        - g:write
       responses:
         '200':
           content:
@@ -14785,7 +15033,7 @@ paths:
       - basicAuth: []
       - cookieAuth: []
       - oauth2:
-        - g:read
+        - g:write
       responses:
         '200':
           content:
@@ -14809,7 +15057,7 @@ paths:
       - basicAuth: []
       - cookieAuth: []
       - oauth2:
-        - g:read
+        - g:write
       responses:
         '204':
           description: No response body
@@ -15687,7 +15935,8 @@ paths:
       - basicAuth: []
       - cookieAuth: []
       - oauth2:
-        - g:read
+        - r:add:build
+        - r:add:part
       responses:
         '201':
           content:
@@ -15712,8 +15961,7 @@ paths:
       - basicAuth: []
       - cookieAuth: []
       - oauth2:
-        - r:view:build
-        - r:view:part
+        - r:view:bom
       responses:
         '200':
           content:
@@ -15748,8 +15996,7 @@ paths:
       - basicAuth: []
       - cookieAuth: []
       - oauth2:
-        - r:change:build
-        - r:change:part
+        - r:change:bom
       responses:
         '200':
           content:
@@ -15784,109 +16031,13 @@ paths:
       - basicAuth: []
       - cookieAuth: []
       - oauth2:
-        - r:change:build
-        - r:change:part
+        - r:change:bom
       responses:
         '200':
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/PartBomValidate'
-          description: ''
-  /api/part/{id}/pricing/:
-    get:
-      operationId: part_pricing_retrieve
-      description: API endpoint for viewing part pricing data.
-      parameters:
-      - in: path
-        name: id
-        schema:
-          type: integer
-        required: true
-      tags:
-      - part
-      security:
-      - tokenAuth: []
-      - basicAuth: []
-      - cookieAuth: []
-      - oauth2:
-        - r:view:part
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/PartPricing'
-          description: ''
-    put:
-      operationId: part_pricing_update
-      description: API endpoint for viewing part pricing data.
-      parameters:
-      - in: path
-        name: id
-        schema:
-          type: integer
-        required: true
-      tags:
-      - part
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/PartPricing'
-          application/x-www-form-urlencoded:
-            schema:
-              $ref: '#/components/schemas/PartPricing'
-          multipart/form-data:
-            schema:
-              $ref: '#/components/schemas/PartPricing'
-      security:
-      - tokenAuth: []
-      - basicAuth: []
-      - cookieAuth: []
-      - oauth2:
-        - r:change:part
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/PartPricing'
-          description: ''
-    patch:
-      operationId: part_pricing_partial_update
-      description: API endpoint for viewing part pricing data.
-      parameters:
-      - in: path
-        name: id
-        schema:
-          type: integer
-        required: true
-      tags:
-      - part
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/PatchedPartPricing'
-          application/x-www-form-urlencoded:
-            schema:
-              $ref: '#/components/schemas/PatchedPartPricing'
-          multipart/form-data:
-            schema:
-              $ref: '#/components/schemas/PatchedPartPricing'
-      security:
-      - tokenAuth: []
-      - basicAuth: []
-      - cookieAuth: []
-      - oauth2:
-        - r:change:part
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/PartPricing'
           description: ''
   /api/part/{id}/requirements/:
     get:
@@ -16537,205 +16688,6 @@ paths:
               schema:
                 $ref: '#/components/schemas/PaginatedCategoryTreeList'
           description: ''
-  /api/part/internal-price/:
-    get:
-      operationId: part_internal_price_list
-      description: API endpoint for list view of PartInternalPriceBreak model.
-      parameters:
-      - name: limit
-        required: true
-        in: query
-        description: Number of results to return per page.
-        schema:
-          type: integer
-      - name: offset
-        required: false
-        in: query
-        description: The initial index from which to return the results.
-        schema:
-          type: integer
-      - name: ordering
-        required: false
-        in: query
-        description: Which field to use when ordering the results.
-        schema:
-          type: string
-          enum:
-          - quantity
-          - -quantity
-          - price
-          - -price
-      - in: query
-        name: part
-        schema:
-          type: integer
-      - name: search
-        required: false
-        in: query
-        description: A search term.
-        schema:
-          type: string
-      tags:
-      - part
-      security:
-      - tokenAuth: []
-      - basicAuth: []
-      - cookieAuth: []
-      - oauth2:
-        - r:view:part
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/PaginatedPartInternalPriceList'
-          description: ''
-    post:
-      operationId: part_internal_price_create
-      description: API endpoint for list view of PartInternalPriceBreak model.
-      tags:
-      - part
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/PartInternalPrice'
-          application/x-www-form-urlencoded:
-            schema:
-              $ref: '#/components/schemas/PartInternalPrice'
-          multipart/form-data:
-            schema:
-              $ref: '#/components/schemas/PartInternalPrice'
-        required: true
-      security:
-      - tokenAuth: []
-      - basicAuth: []
-      - cookieAuth: []
-      - oauth2:
-        - r:add:part
-      responses:
-        '201':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/PartInternalPrice'
-          description: ''
-  /api/part/internal-price/{id}/:
-    get:
-      operationId: part_internal_price_retrieve
-      description: Detail endpoint for PartInternalPriceBreak model.
-      parameters:
-      - in: path
-        name: id
-        schema:
-          type: integer
-        required: true
-      tags:
-      - part
-      security:
-      - tokenAuth: []
-      - basicAuth: []
-      - cookieAuth: []
-      - oauth2:
-        - r:view:part
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/PartInternalPrice'
-          description: ''
-    put:
-      operationId: part_internal_price_update
-      description: Detail endpoint for PartInternalPriceBreak model.
-      parameters:
-      - in: path
-        name: id
-        schema:
-          type: integer
-        required: true
-      tags:
-      - part
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/PartInternalPrice'
-          application/x-www-form-urlencoded:
-            schema:
-              $ref: '#/components/schemas/PartInternalPrice'
-          multipart/form-data:
-            schema:
-              $ref: '#/components/schemas/PartInternalPrice'
-        required: true
-      security:
-      - tokenAuth: []
-      - basicAuth: []
-      - cookieAuth: []
-      - oauth2:
-        - r:change:part
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/PartInternalPrice'
-          description: ''
-    patch:
-      operationId: part_internal_price_partial_update
-      description: Detail endpoint for PartInternalPriceBreak model.
-      parameters:
-      - in: path
-        name: id
-        schema:
-          type: integer
-        required: true
-      tags:
-      - part
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/PatchedPartInternalPrice'
-          application/x-www-form-urlencoded:
-            schema:
-              $ref: '#/components/schemas/PatchedPartInternalPrice'
-          multipart/form-data:
-            schema:
-              $ref: '#/components/schemas/PatchedPartInternalPrice'
-      security:
-      - tokenAuth: []
-      - basicAuth: []
-      - cookieAuth: []
-      - oauth2:
-        - r:change:part
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/PartInternalPrice'
-          description: ''
-    delete:
-      operationId: part_internal_price_destroy
-      description: Detail endpoint for PartInternalPriceBreak model.
-      parameters:
-      - in: path
-        name: id
-        schema:
-          type: integer
-        required: true
-      tags:
-      - part
-      security:
-      - tokenAuth: []
-      - basicAuth: []
-      - cookieAuth: []
-      - oauth2:
-        - r:delete:part
-      responses:
-        '204':
-          description: No response body
   /api/part/related/:
     get:
       operationId: part_related_list
@@ -16922,205 +16874,6 @@ paths:
     delete:
       operationId: part_related_destroy
       description: API endpoint for accessing detail view of a PartRelated object.
-      parameters:
-      - in: path
-        name: id
-        schema:
-          type: integer
-        required: true
-      tags:
-      - part
-      security:
-      - tokenAuth: []
-      - basicAuth: []
-      - cookieAuth: []
-      - oauth2:
-        - r:delete:part
-      responses:
-        '204':
-          description: No response body
-  /api/part/sale-price/:
-    get:
-      operationId: part_sale_price_list
-      description: API endpoint for list view of PartSalePriceBreak model.
-      parameters:
-      - name: limit
-        required: true
-        in: query
-        description: Number of results to return per page.
-        schema:
-          type: integer
-      - name: offset
-        required: false
-        in: query
-        description: The initial index from which to return the results.
-        schema:
-          type: integer
-      - name: ordering
-        required: false
-        in: query
-        description: Which field to use when ordering the results.
-        schema:
-          type: string
-          enum:
-          - quantity
-          - -quantity
-          - price
-          - -price
-      - in: query
-        name: part
-        schema:
-          type: integer
-      - name: search
-        required: false
-        in: query
-        description: A search term.
-        schema:
-          type: string
-      tags:
-      - part
-      security:
-      - tokenAuth: []
-      - basicAuth: []
-      - cookieAuth: []
-      - oauth2:
-        - r:view:part
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/PaginatedPartSalePriceList'
-          description: ''
-    post:
-      operationId: part_sale_price_create
-      description: API endpoint for list view of PartSalePriceBreak model.
-      tags:
-      - part
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/PartSalePrice'
-          application/x-www-form-urlencoded:
-            schema:
-              $ref: '#/components/schemas/PartSalePrice'
-          multipart/form-data:
-            schema:
-              $ref: '#/components/schemas/PartSalePrice'
-        required: true
-      security:
-      - tokenAuth: []
-      - basicAuth: []
-      - cookieAuth: []
-      - oauth2:
-        - r:add:part
-      responses:
-        '201':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/PartSalePrice'
-          description: ''
-  /api/part/sale-price/{id}/:
-    get:
-      operationId: part_sale_price_retrieve
-      description: Detail endpoint for PartSellPriceBreak model.
-      parameters:
-      - in: path
-        name: id
-        schema:
-          type: integer
-        required: true
-      tags:
-      - part
-      security:
-      - tokenAuth: []
-      - basicAuth: []
-      - cookieAuth: []
-      - oauth2:
-        - r:view:part
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/PartSalePrice'
-          description: ''
-    put:
-      operationId: part_sale_price_update
-      description: Detail endpoint for PartSellPriceBreak model.
-      parameters:
-      - in: path
-        name: id
-        schema:
-          type: integer
-        required: true
-      tags:
-      - part
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/PartSalePrice'
-          application/x-www-form-urlencoded:
-            schema:
-              $ref: '#/components/schemas/PartSalePrice'
-          multipart/form-data:
-            schema:
-              $ref: '#/components/schemas/PartSalePrice'
-        required: true
-      security:
-      - tokenAuth: []
-      - basicAuth: []
-      - cookieAuth: []
-      - oauth2:
-        - r:change:part
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/PartSalePrice'
-          description: ''
-    patch:
-      operationId: part_sale_price_partial_update
-      description: Detail endpoint for PartSellPriceBreak model.
-      parameters:
-      - in: path
-        name: id
-        schema:
-          type: integer
-        required: true
-      tags:
-      - part
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/PatchedPartSalePrice'
-          application/x-www-form-urlencoded:
-            schema:
-              $ref: '#/components/schemas/PatchedPartSalePrice'
-          multipart/form-data:
-            schema:
-              $ref: '#/components/schemas/PatchedPartSalePrice'
-      security:
-      - tokenAuth: []
-      - basicAuth: []
-      - cookieAuth: []
-      - oauth2:
-        - r:change:part
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/PartSalePrice'
-          description: ''
-    delete:
-      operationId: part_sale_price_destroy
-      description: Detail endpoint for PartSellPriceBreak model.
       parameters:
       - in: path
         name: id
@@ -17403,7 +17156,7 @@ paths:
       - basicAuth: []
       - cookieAuth: []
       - oauth2:
-        - g:read
+        - r:add:part
       responses:
         '201':
           content:
@@ -17675,7 +17428,8 @@ paths:
       - basicAuth: []
       - cookieAuth: []
       - oauth2:
-        - g:read
+        - r:view:build
+        - r:view:part
       responses:
         '200':
           content:
@@ -18340,7 +18094,7 @@ paths:
       - basicAuth: []
       - cookieAuth: []
       - oauth2:
-        - g:read
+        - g:write
       responses:
         '200':
           content:
@@ -18381,7 +18135,7 @@ paths:
       - basicAuth: []
       - cookieAuth: []
       - oauth2:
-        - g:read
+        - g:write
       responses:
         '200':
           content:
@@ -18540,6 +18294,508 @@ paths:
                 items:
                   $ref: '#/components/schemas/PluginUIFeature'
           description: ''
+  /api/pricing/internal-price/:
+    get:
+      operationId: pricing_internal_price_list
+      description: API endpoint for list view of PartInternalPriceBreak model.
+      parameters:
+      - name: limit
+        required: true
+        in: query
+        description: Number of results to return per page.
+        schema:
+          type: integer
+      - name: offset
+        required: false
+        in: query
+        description: The initial index from which to return the results.
+        schema:
+          type: integer
+      - name: ordering
+        required: false
+        in: query
+        description: Which field to use when ordering the results.
+        schema:
+          type: string
+          enum:
+          - quantity
+          - -quantity
+          - price
+          - -price
+      - in: query
+        name: part
+        schema:
+          type: integer
+      - name: search
+        required: false
+        in: query
+        description: A search term.
+        schema:
+          type: string
+      tags:
+      - pricing
+      security:
+      - tokenAuth: []
+      - basicAuth: []
+      - cookieAuth: []
+      - oauth2:
+        - r:view:pricing
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedPartInternalPriceList'
+          description: ''
+    post:
+      operationId: pricing_internal_price_create
+      description: API endpoint for list view of PartInternalPriceBreak model.
+      tags:
+      - pricing
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PartInternalPrice'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PartInternalPrice'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PartInternalPrice'
+        required: true
+      security:
+      - tokenAuth: []
+      - basicAuth: []
+      - cookieAuth: []
+      - oauth2:
+        - r:add:pricing
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartInternalPrice'
+          description: ''
+  /api/pricing/internal-price/{id}/:
+    get:
+      operationId: pricing_internal_price_retrieve
+      description: Detail endpoint for PartInternalPriceBreak model.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - pricing
+      security:
+      - tokenAuth: []
+      - basicAuth: []
+      - cookieAuth: []
+      - oauth2:
+        - r:view:pricing
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartInternalPrice'
+          description: ''
+    put:
+      operationId: pricing_internal_price_update
+      description: Detail endpoint for PartInternalPriceBreak model.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - pricing
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PartInternalPrice'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PartInternalPrice'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PartInternalPrice'
+        required: true
+      security:
+      - tokenAuth: []
+      - basicAuth: []
+      - cookieAuth: []
+      - oauth2:
+        - r:change:pricing
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartInternalPrice'
+          description: ''
+    patch:
+      operationId: pricing_internal_price_partial_update
+      description: Detail endpoint for PartInternalPriceBreak model.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - pricing
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedPartInternalPrice'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedPartInternalPrice'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedPartInternalPrice'
+      security:
+      - tokenAuth: []
+      - basicAuth: []
+      - cookieAuth: []
+      - oauth2:
+        - r:change:pricing
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartInternalPrice'
+          description: ''
+    delete:
+      operationId: pricing_internal_price_destroy
+      description: Detail endpoint for PartInternalPriceBreak model.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - pricing
+      security:
+      - tokenAuth: []
+      - basicAuth: []
+      - cookieAuth: []
+      - oauth2:
+        - r:delete:pricing
+      responses:
+        '204':
+          description: No response body
+  /api/pricing/part/{id}/:
+    get:
+      operationId: pricing_part_retrieve
+      description: |-
+        API endpoint for viewing part pricing data.
+
+        Note: The URL 'pk' refers to the linked Part instance (not the PartPricing instance).
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - pricing
+      security:
+      - tokenAuth: []
+      - basicAuth: []
+      - cookieAuth: []
+      - oauth2:
+        - r:view:pricing
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartPricing'
+          description: ''
+    put:
+      operationId: pricing_part_update
+      description: |-
+        API endpoint for viewing part pricing data.
+
+        Note: The URL 'pk' refers to the linked Part instance (not the PartPricing instance).
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - pricing
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PartPricing'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PartPricing'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PartPricing'
+      security:
+      - tokenAuth: []
+      - basicAuth: []
+      - cookieAuth: []
+      - oauth2:
+        - r:change:pricing
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartPricing'
+          description: ''
+    patch:
+      operationId: pricing_part_partial_update
+      description: |-
+        API endpoint for viewing part pricing data.
+
+        Note: The URL 'pk' refers to the linked Part instance (not the PartPricing instance).
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - pricing
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedPartPricing'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedPartPricing'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedPartPricing'
+      security:
+      - tokenAuth: []
+      - basicAuth: []
+      - cookieAuth: []
+      - oauth2:
+        - r:change:pricing
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartPricing'
+          description: ''
+  /api/pricing/sale-price/:
+    get:
+      operationId: pricing_sale_price_list
+      description: API endpoint for list view of PartSalePriceBreak model.
+      parameters:
+      - name: limit
+        required: true
+        in: query
+        description: Number of results to return per page.
+        schema:
+          type: integer
+      - name: offset
+        required: false
+        in: query
+        description: The initial index from which to return the results.
+        schema:
+          type: integer
+      - name: ordering
+        required: false
+        in: query
+        description: Which field to use when ordering the results.
+        schema:
+          type: string
+          enum:
+          - quantity
+          - -quantity
+          - price
+          - -price
+      - in: query
+        name: part
+        schema:
+          type: integer
+      - name: search
+        required: false
+        in: query
+        description: A search term.
+        schema:
+          type: string
+      tags:
+      - pricing
+      security:
+      - tokenAuth: []
+      - basicAuth: []
+      - cookieAuth: []
+      - oauth2:
+        - r:view:pricing
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedPartSalePriceList'
+          description: ''
+    post:
+      operationId: pricing_sale_price_create
+      description: API endpoint for list view of PartSalePriceBreak model.
+      tags:
+      - pricing
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PartSalePrice'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PartSalePrice'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PartSalePrice'
+        required: true
+      security:
+      - tokenAuth: []
+      - basicAuth: []
+      - cookieAuth: []
+      - oauth2:
+        - r:add:pricing
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartSalePrice'
+          description: ''
+  /api/pricing/sale-price/{id}/:
+    get:
+      operationId: pricing_sale_price_retrieve
+      description: Detail endpoint for PartSellPriceBreak model.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - pricing
+      security:
+      - tokenAuth: []
+      - basicAuth: []
+      - cookieAuth: []
+      - oauth2:
+        - r:view:pricing
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartSalePrice'
+          description: ''
+    put:
+      operationId: pricing_sale_price_update
+      description: Detail endpoint for PartSellPriceBreak model.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - pricing
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PartSalePrice'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PartSalePrice'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PartSalePrice'
+        required: true
+      security:
+      - tokenAuth: []
+      - basicAuth: []
+      - cookieAuth: []
+      - oauth2:
+        - r:change:pricing
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartSalePrice'
+          description: ''
+    patch:
+      operationId: pricing_sale_price_partial_update
+      description: Detail endpoint for PartSellPriceBreak model.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - pricing
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedPartSalePrice'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedPartSalePrice'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedPartSalePrice'
+      security:
+      - tokenAuth: []
+      - basicAuth: []
+      - cookieAuth: []
+      - oauth2:
+        - r:change:pricing
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartSalePrice'
+          description: ''
+    delete:
+      operationId: pricing_sale_price_destroy
+      description: Detail endpoint for PartSellPriceBreak model.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - pricing
+      security:
+      - tokenAuth: []
+      - basicAuth: []
+      - cookieAuth: []
+      - oauth2:
+        - r:delete:pricing
+      responses:
+        '204':
+          description: No response body
   /api/project-code/:
     get:
       operationId: project_code_list
@@ -18953,7 +19209,7 @@ paths:
       - basicAuth: []
       - cookieAuth: []
       - oauth2:
-        - g:read
+        - g:write
       responses:
         '200':
           content:
@@ -19420,7 +19676,7 @@ paths:
       - basicAuth: []
       - cookieAuth: []
       - oauth2:
-        - g:read
+        - g:write
       responses:
         '200':
           content:
@@ -20144,7 +20400,7 @@ paths:
       - basicAuth: []
       - cookieAuth: []
       - oauth2:
-        - g:read
+        - g:write
       responses:
         '200':
           content:
@@ -20183,7 +20439,7 @@ paths:
       - basicAuth: []
       - cookieAuth: []
       - oauth2:
-        - g:read
+        - g:write
       responses:
         '200':
           content:
@@ -20939,7 +21195,7 @@ paths:
       - basicAuth: []
       - cookieAuth: []
       - oauth2:
-        - g:read
+        - r:change:stock
       responses:
         '201':
           content:
@@ -20980,7 +21236,7 @@ paths:
       - basicAuth: []
       - cookieAuth: []
       - oauth2:
-        - g:read
+        - r:change:stock
       responses:
         '201':
           content:
@@ -21024,7 +21280,7 @@ paths:
       - basicAuth: []
       - cookieAuth: []
       - oauth2:
-        - g:read
+        - r:change:stock
       responses:
         '201':
           content:
@@ -21091,7 +21347,7 @@ paths:
       - basicAuth: []
       - cookieAuth: []
       - oauth2:
-        - g:read
+        - r:change:stock
       responses:
         '201':
           content:
@@ -21130,7 +21386,7 @@ paths:
       - basicAuth: []
       - cookieAuth: []
       - oauth2:
-        - g:read
+        - r:change:stock
       responses:
         '201':
           content:
@@ -21161,7 +21417,8 @@ paths:
       - basicAuth: []
       - cookieAuth: []
       - oauth2:
-        - g:read
+        - r:add:build
+        - r:add:stock
       responses:
         '201':
           content:
@@ -21192,7 +21449,8 @@ paths:
       - basicAuth: []
       - cookieAuth: []
       - oauth2:
-        - g:read
+        - r:add:build
+        - r:add:stock
       responses:
         '201':
           content:
@@ -21223,7 +21481,8 @@ paths:
       - basicAuth: []
       - cookieAuth: []
       - oauth2:
-        - g:read
+        - r:add:build
+        - r:add:stock
       responses:
         '201':
           content:
@@ -21254,7 +21513,8 @@ paths:
       - basicAuth: []
       - cookieAuth: []
       - oauth2:
-        - g:read
+        - r:add:build
+        - r:add:stock
       responses:
         '201':
           content:
@@ -21930,7 +22190,8 @@ paths:
       - basicAuth: []
       - cookieAuth: []
       - oauth2:
-        - g:read
+        - r:add:build
+        - r:add:stock
       responses:
         '201':
           content:
@@ -21961,7 +22222,8 @@ paths:
       - basicAuth: []
       - cookieAuth: []
       - oauth2:
-        - g:read
+        - r:add:build
+        - r:add:stock
       responses:
         '201':
           content:
@@ -21997,7 +22259,8 @@ paths:
       - basicAuth: []
       - cookieAuth: []
       - oauth2:
-        - g:read
+        - r:add:build
+        - r:add:stock
       responses:
         '201':
           content:
@@ -22329,146 +22592,6 @@ paths:
       responses:
         '204':
           description: No response body
-  /api/stock/track/:
-    get:
-      operationId: stock_track_list
-      description: |-
-        API endpoint for list view of StockItemTracking objects.
-
-        StockItemTracking objects are read-only
-        (they are created by internal model functionality)
-
-        - GET: Return list of StockItemTracking objects
-      parameters:
-      - in: query
-        name: include_variants
-        schema:
-          type: boolean
-        description: Include Part Variants
-      - in: query
-        name: item
-        schema:
-          type: integer
-      - in: query
-        name: item_detail
-        schema:
-          type: boolean
-          default: false
-        description: Include detailed information about the item in the response
-      - name: limit
-        required: true
-        in: query
-        description: Number of results to return per page.
-        schema:
-          type: integer
-      - in: query
-        name: max_date
-        schema:
-          type: string
-          format: date
-        description: Date before
-      - in: query
-        name: min_date
-        schema:
-          type: string
-          format: date
-        description: Date after
-      - name: offset
-        required: false
-        in: query
-        description: The initial index from which to return the results.
-        schema:
-          type: integer
-      - name: ordering
-        required: false
-        in: query
-        description: Which field to use when ordering the results.
-        schema:
-          type: string
-          enum:
-          - date
-          - -date
-      - in: query
-        name: part
-        schema:
-          type: integer
-        description: Part
-      - name: search
-        required: false
-        in: query
-        description: 'A search term. Searched fields: notes.'
-        schema:
-          type: string
-      - in: query
-        name: user
-        schema:
-          type: integer
-      - in: query
-        name: user_detail
-        schema:
-          type: boolean
-          default: false
-      tags:
-      - stock
-      security:
-      - tokenAuth: []
-      - basicAuth: []
-      - cookieAuth: []
-      - oauth2:
-        - r:view:stock
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/PaginatedStockTrackingList'
-          description: ''
-  /api/stock/track/{id}/:
-    get:
-      operationId: stock_track_retrieve
-      description: Detail API endpoint for StockItemTracking model.
-      parameters:
-      - in: path
-        name: id
-        schema:
-          type: integer
-        required: true
-      tags:
-      - stock
-      security:
-      - tokenAuth: []
-      - basicAuth: []
-      - cookieAuth: []
-      - oauth2:
-        - r:view:stock
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/StockTracking'
-          description: ''
-  /api/stock/track/status/:
-    get:
-      operationId: stock_track_status_retrieve
-      description: Retrieve information about a specific status code
-      tags:
-      - stock
-      security:
-      - tokenAuth: []
-      - basicAuth: []
-      - cookieAuth: []
-      - oauth2:
-        - g:read
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/GenericStateClass'
-          description: ''
-        '400':
-          description: Invalid request
   /api/stock/transfer/:
     post:
       operationId: stock_transfer_create
@@ -22492,7 +22615,8 @@ paths:
       - basicAuth: []
       - cookieAuth: []
       - oauth2:
-        - g:read
+        - r:add:build
+        - r:add:stock
       responses:
         '201':
           content:
@@ -22523,7 +22647,8 @@ paths:
       - basicAuth: []
       - cookieAuth: []
       - oauth2:
-        - g:read
+        - g:write
+        - r:add:part
       responses:
         '200':
           content:
@@ -22543,6 +22668,7 @@ paths:
       - cookieAuth: []
       - oauth2:
         - g:read
+        - r:add:part
       responses:
         '200':
           content:
@@ -22583,6 +22709,7 @@ paths:
       - cookieAuth: []
       - oauth2:
         - g:read
+        - r:add:part
       responses:
         '200':
           content:
@@ -22615,7 +22742,7 @@ paths:
       - basicAuth: []
       - cookieAuth: []
       - oauth2:
-        - g:read
+        - g:write
       responses:
         '201':
           content:
@@ -23662,7 +23789,7 @@ paths:
       - basicAuth: []
       - cookieAuth: []
       - oauth2:
-        - g:read
+        - g:write
       responses:
         '200':
           content:
@@ -23696,7 +23823,7 @@ paths:
       - basicAuth: []
       - cookieAuth: []
       - oauth2:
-        - g:read
+        - g:write
       responses:
         '200':
           content:
@@ -23754,7 +23881,7 @@ paths:
       - basicAuth: []
       - cookieAuth: []
       - oauth2:
-        - g:read
+        - g:write
       responses:
         '200':
           content:
@@ -23788,7 +23915,7 @@ paths:
       - basicAuth: []
       - cookieAuth: []
       - oauth2:
-        - g:read
+        - g:write
       responses:
         '200':
           content:
@@ -23868,7 +23995,7 @@ paths:
       - basicAuth: []
       - cookieAuth: []
       - oauth2:
-        - g:read
+        - g:write
       responses:
         '200':
           content:
@@ -23903,7 +24030,7 @@ paths:
       - basicAuth: []
       - cookieAuth: []
       - oauth2:
-        - g:read
+        - g:write
       responses:
         '200':
           content:
@@ -23932,8 +24059,6 @@ paths:
       - tokenAuth: []
       - basicAuth: []
       - cookieAuth: []
-      - oauth2:
-        - g:read
       responses:
         '200':
           content:
@@ -24045,6 +24170,7 @@ paths:
           - build
           - part
           - part_category
+          - pricing
           - purchase_order
           - return_order
           - sales_order
@@ -24057,6 +24183,7 @@ paths:
           * `admin` - Admin
           * `part_category` - Part Categories
           * `part` - Parts
+          * `pricing` - Pricing
           * `bom` - Bills of Material
           * `stock_location` - Stock Locations
           * `stock` - Stock Items
@@ -24289,8 +24416,6 @@ paths:
       - tokenAuth: []
       - basicAuth: []
       - cookieAuth: []
-      - oauth2:
-        - g:read
       responses:
         '200':
           content:
@@ -24318,8 +24443,6 @@ paths:
       - tokenAuth: []
       - basicAuth: []
       - cookieAuth: []
-      - oauth2:
-        - g:read
       responses:
         '201':
           content:
@@ -24348,8 +24471,6 @@ paths:
       - tokenAuth: []
       - basicAuth: []
       - cookieAuth: []
-      - oauth2:
-        - g:read
       responses:
         '200':
           content:
@@ -24378,8 +24499,6 @@ paths:
       - tokenAuth: []
       - basicAuth: []
       - cookieAuth: []
-      - oauth2:
-        - g:read
       responses:
         '204':
           description: No response body
@@ -26935,6 +27054,18 @@ components:
         * `reject` - Not permitted
         * `accept` - Accept as consumed by this build order
         * `trim` - Deallocate before completing this build order
+    ActionEnum:
+      enum:
+      - 0
+      - 1
+      - 2
+      - 3
+      type: integer
+      description: |-
+        * `0` - create
+        * `1` - update
+        * `2` - delete
+        * `3` - access
     ActionPlugin:
       type: object
       description: Serializer for the ActionPluginView responses.
@@ -27177,6 +27308,7 @@ components:
         last_seen:
           type: string
           format: date
+          readOnly: true
           nullable: true
           description: Last time the token was used
         name:
@@ -27197,6 +27329,7 @@ components:
           readOnly: true
         revoked:
           type: boolean
+          readOnly: true
           description: Token has been revoked
         user:
           type: integer
@@ -27210,6 +27343,7 @@ components:
           readOnly: true
         revoked_by:
           type: integer
+          readOnly: true
           nullable: true
           description: User who revoked the token
         revoked_by_detail:
@@ -27219,6 +27353,7 @@ components:
           nullable: true
         issued_by:
           type: integer
+          readOnly: true
           nullable: true
           description: User who issued the token
         issued_by_detail:
@@ -27228,12 +27363,11 @@ components:
           nullable: true
         token_version:
           type: integer
-          maximum: 9223372036854775807
-          minimum: 0
-          format: int64
+          readOnly: true
           description: Version of the API token
         revocation_reason:
           type: string
+          readOnly: true
           nullable: true
           description: As entered by the user or action during revocation
       required:
@@ -27241,7 +27375,9 @@ components:
       - created
       - id
       - in_use
+      - revoked
       - token
+      - token_version
       - user_detail
     Attachment:
       type: object
@@ -27342,6 +27478,166 @@ components:
         * `transferorder` - Transfer Order
         * `part` - Part
         * `stockitem` - Stock Item
+    AuditChangeDetail:
+      type: object
+      description: Describes a single field change within an audit log entry.
+      properties:
+        field:
+          type: string
+        label:
+          type: string
+        type:
+          allOf:
+          - $ref: '#/components/schemas/AuditChangeDetailTypeEnum'
+          title: Change Type
+        old:
+          nullable: true
+        new:
+          nullable: true
+        old_display:
+          type: string
+          nullable: true
+        new_display:
+          type: string
+          nullable: true
+        model_type:
+          type: string
+          nullable: true
+          description: Related model (for FK fields)
+        operation:
+          type: string
+          nullable: true
+          description: M2M operation (add / delete)
+        objects:
+          type: array
+          items:
+            type: string
+          nullable: true
+        numeric:
+          type: boolean
+          description: The field holds a numeric value
+      required:
+      - field
+      - label
+      - type
+    AuditChangeDetailTypeEnum:
+      enum:
+      - value
+      - fk
+      - m2m
+      type: string
+      description: |-
+        * `value` - value
+        * `fk` - fk
+        * `m2m` - m2m
+    AuditLogEntry:
+      type: object
+      description: Serializer for the AuditLogEntry model (read-only).
+      properties:
+        pk:
+          type: integer
+          readOnly: true
+          title: ID
+        timestamp:
+          type: string
+          format: date-time
+          readOnly: true
+        action:
+          allOf:
+          - $ref: '#/components/schemas/ActionEnum'
+          readOnly: true
+        action_label:
+          type: string
+          readOnly: true
+          title: Action
+        actor:
+          type: integer
+          readOnly: true
+          nullable: true
+        actor_detail:
+          allOf:
+          - $ref: '#/components/schemas/User'
+          readOnly: true
+          nullable: true
+        actor_username:
+          type: string
+          readOnly: true
+          nullable: true
+        event_type:
+          type: integer
+          readOnly: true
+          nullable: true
+        event_label:
+          type: string
+          readOnly: true
+          nullable: true
+          title: Event
+        notes:
+          type: string
+          readOnly: true
+          nullable: true
+          description: Notes associated with this entry
+        deltas:
+          nullable: true
+          readOnly: true
+        model_type:
+          type: string
+          readOnly: true
+        model_label:
+          type: string
+          description: Return the human readable name of the audited model.
+          readOnly: true
+        object_pk:
+          type: string
+          readOnly: true
+        object_repr:
+          type: string
+          readOnly: true
+          title: Object representation
+        parent_model_type:
+          type: string
+          readOnly: true
+          nullable: true
+        parent_object_pk:
+          type: string
+          readOnly: true
+          nullable: true
+        changes:
+          readOnly: true
+        changes_detail:
+          type: array
+          items:
+            $ref: '#/components/schemas/AuditChangeDetail'
+          readOnly: true
+          title: Change Details
+        cid:
+          type: string
+          readOnly: true
+          nullable: true
+          title: Correlation ID
+        additional_data:
+          readOnly: true
+          nullable: true
+        remote_addr:
+          type: string
+          readOnly: true
+          nullable: true
+          title: Remote address
+        remote_port:
+          type: integer
+          readOnly: true
+          nullable: true
+      required:
+      - action
+      - action_label
+      - changes
+      - changes_detail
+      - model_label
+      - model_type
+      - object_pk
+      - object_repr
+      - pk
+      - timestamp
     AuthorizationGrantTypeEnum:
       enum:
       - authorization-code
@@ -29467,10 +29763,10 @@ components:
       - customunit
       - parametertemplate
       - parameter
-      - partcategory
-      - parttesttemplate
       - partsellpricebreak
       - partinternalpricebreak
+      - partcategory
+      - parttesttemplate
       - part
       - bomitem
       - partcategoryparametertemplate
@@ -29483,7 +29779,6 @@ components:
       - stockitemtestresult
       - stockitem
       - stocklocation
-      - stockitemtracking
       - purchaseorder
       - purchaseorderlineitem
       - purchaseorderextraline
@@ -29504,10 +29799,10 @@ components:
         * `customunit` - Custom Unit
         * `parametertemplate` - Parameter Template
         * `parameter` - Parameter
-        * `partcategory` - Part Category
-        * `parttesttemplate` - Part Test Template
         * `partsellpricebreak` - Part Sale Price Break
         * `partinternalpricebreak` - Part Internal Price Break
+        * `partcategory` - Part Category
+        * `parttesttemplate` - Part Test Template
         * `part` - Part
         * `bomitem` - BOM Item
         * `partcategoryparametertemplate` - Part Category Parameter Template
@@ -29520,7 +29815,6 @@ components:
         * `stockitemtestresult` - Stock Item Test Result
         * `stockitem` - Stock Item
         * `stocklocation` - Stock Location
-        * `stockitemtracking` - Stock Item Tracking
         * `purchaseorder` - Purchase Order
         * `purchaseorderlineitem` - Purchase Order Line Item
         * `purchaseorderextraline` - Purchase Order Extra Line
@@ -30143,10 +30437,14 @@ components:
           type: string
           format: date
           readOnly: true
+        warning:
+          type: string
+          readOnly: true
       required:
       - expiry
       - name
       - token
+      - warning
     GetSimpleLogin:
       type: object
       description: Serializer for the simple login view.
@@ -30431,6 +30729,11 @@ components:
           type: string
           readOnly: true
           nullable: true
+        link:
+          type: string
+          readOnly: true
+          nullable: true
+          description: Temporary identity proof
         version:
           type: string
           readOnly: true
@@ -31523,6 +31826,7 @@ components:
       - admin
       - part_category
       - part
+      - pricing
       - bom
       - stock_location
       - stock
@@ -31536,6 +31840,7 @@ components:
         * `admin` - Admin
         * `part_category` - Part Categories
         * `part` - Parts
+        * `pricing` - Pricing
         * `bom` - Bills of Material
         * `stock_location` - Stock Locations
         * `stock` - Stock Items
@@ -31939,6 +32244,29 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/Attachment'
+    PaginatedAuditLogEntryList:
+      type: object
+      required:
+      - count
+      - results
+      properties:
+        count:
+          type: integer
+          example: 123
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?offset=400&limit=100
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?offset=200&limit=100
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/AuditLogEntry'
     PaginatedBarcodeScanResultList:
       type: object
       required:
@@ -33572,29 +33900,6 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/StockLocationType'
-    PaginatedStockTrackingList:
-      type: object
-      required:
-      - count
-      - results
-      properties:
-        count:
-          type: integer
-          example: 123
-        next:
-          type: string
-          nullable: true
-          format: uri
-          example: http://api.example.org/accounts/?offset=400&limit=100
-        previous:
-          type: string
-          nullable: true
-          format: uri
-          example: http://api.example.org/accounts/?offset=200&limit=100
-        results:
-          type: array
-          items:
-            $ref: '#/components/schemas/StockTracking'
     PaginatedSupplierPartList:
       type: object
       required:
@@ -34439,7 +34744,7 @@ components:
           type: string
           title: Currency
           description: |-
-            Purchase currency of this stock item
+            Currency for this price break
 
             * `AUD` - AUD - Australian Dollar
             * `CAD` - CAD - Canadian Dollar
@@ -34747,7 +35052,7 @@ components:
           type: string
           title: Currency
           description: |-
-            Purchase currency of this stock item
+            Currency for this price break
 
             * `AUD` - AUD - Australian Dollar
             * `CAD` - CAD - Canadian Dollar
@@ -37353,7 +37658,7 @@ components:
           type: string
           title: Currency
           description: |-
-            Purchase currency of this stock item
+            Currency for this price break
 
             * `AUD` - AUD - Australian Dollar
             * `CAD` - CAD - Canadian Dollar
@@ -37591,7 +37896,7 @@ components:
           type: string
           title: Currency
           description: |-
-            Purchase currency of this stock item
+            Currency for this price break
 
             * `AUD` - AUD - Australian Dollar
             * `CAD` - CAD - Canadian Dollar
@@ -38879,6 +39184,7 @@ components:
             * `admin` - Admin
             * `part_category` - Part Categories
             * `part` - Parts
+            * `pricing` - Pricing
             * `bom` - Bills of Material
             * `stock_location` - Stock Locations
             * `stock` - Stock Items
@@ -39860,10 +40166,6 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/StockItemTestResult'
-          readOnly: true
-          nullable: true
-        tracking_items:
-          type: integer
           readOnly: true
           nullable: true
     PatchedStockItemTestResult:
@@ -42407,6 +42709,7 @@ components:
             * `admin` - Admin
             * `part_category` - Part Categories
             * `part` - Parts
+            * `pricing` - Pricing
             * `bom` - Bills of Material
             * `stock_location` - Stock Locations
             * `stock` - Stock Items
@@ -44119,10 +44422,6 @@ components:
             $ref: '#/components/schemas/StockItemTestResult'
           readOnly: true
           nullable: true
-        tracking_items:
-          type: integer
-          readOnly: true
-          nullable: true
       required:
       - barcode_hash
       - in_stock
@@ -44145,10 +44444,6 @@ components:
           default: false
           title: Copy Test Results
           description: Copy test results from the original stock item
-        copy_history:
-          type: boolean
-          default: false
-          description: Copy stock history from the original stock item
         copy_notes:
           type: boolean
           default: true
@@ -44355,63 +44650,6 @@ components:
         * `quantity` - Smallest quantity first
         * `-quantity` - Largest quantity first
         * `expiry_date` - Soonest expiry date first
-    StockTracking:
-      type: object
-      description: Serializer for StockItemTracking model.
-      properties:
-        pk:
-          type: integer
-          readOnly: true
-          title: ID
-        item:
-          type: integer
-          nullable: true
-        item_detail:
-          allOf:
-          - $ref: '#/components/schemas/StockItem'
-          readOnly: true
-          nullable: true
-        part:
-          type: integer
-          readOnly: true
-          nullable: true
-        part_detail:
-          allOf:
-          - $ref: '#/components/schemas/PartBrief'
-          readOnly: true
-          nullable: true
-        date:
-          type: string
-          format: date-time
-          readOnly: true
-        deltas:
-          readOnly: true
-        label:
-          type: string
-          readOnly: true
-        notes:
-          type: string
-          nullable: true
-          description: Entry notes
-          maxLength: 512
-        tracking_type:
-          type: integer
-          readOnly: true
-        user:
-          type: integer
-          readOnly: true
-          nullable: true
-        user_detail:
-          allOf:
-          - $ref: '#/components/schemas/User'
-          readOnly: true
-          nullable: true
-      required:
-      - date
-      - deltas
-      - label
-      - pk
-      - tracking_type
     StockTransfer:
       type: object
       description: Serializer for transferring (moving) stock item(s).
@@ -46716,12 +46954,14 @@ components:
           refreshUrl: /o/revoke_token/
           scopes:
             g:read: General Read scope
+            g:write: General Write scope
             openid: OpenID Connect scope
             a:staff: User Role Staff
             a:superuser: User Role Superuser
             r:view:admin: GET for Role Admin
             r:view:part_category: GET for Role Part Categories
             r:view:part: GET for Role Parts
+            r:view:pricing: GET for Role Pricing
             r:view:stock_location: GET for Role Stock Locations
             r:view:stock: GET for Role Stock Items
             r:view:bom: GET for Role Bills of Material
@@ -46733,6 +46973,7 @@ components:
             r:add:admin: POST for Role Admin
             r:add:part_category: POST for Role Part Categories
             r:add:part: POST for Role Parts
+            r:add:pricing: POST for Role Pricing
             r:add:stock_location: POST for Role Stock Locations
             r:add:stock: POST for Role Stock Items
             r:add:bom: POST for Role Bills of Material
@@ -46744,6 +46985,7 @@ components:
             r:change:admin: PUT / PATCH for Role Admin
             r:change:part_category: PUT / PATCH for Role Part Categories
             r:change:part: PUT / PATCH for Role Parts
+            r:change:pricing: PUT / PATCH for Role Pricing
             r:change:stock_location: PUT / PATCH for Role Stock Locations
             r:change:stock: PUT / PATCH for Role Stock Items
             r:change:bom: PUT / PATCH for Role Bills of Material
@@ -46755,6 +46997,7 @@ components:
             r:delete:admin: DELETE for Role Admin
             r:delete:part_category: DELETE for Role Part Categories
             r:delete:part: DELETE for Role Parts
+            r:delete:pricing: DELETE for Role Pricing
             r:delete:stock_location: DELETE for Role Stock Locations
             r:delete:stock: DELETE for Role Stock Items
             r:delete:bom: DELETE for Role Bills of Material
@@ -46768,12 +47011,14 @@ components:
           refreshUrl: /o/revoke_token/
           scopes:
             g:read: General Read scope
+            g:write: General Write scope
             openid: OpenID Connect scope
             a:staff: User Role Staff
             a:superuser: User Role Superuser
             r:view:admin: GET for Role Admin
             r:view:part_category: GET for Role Part Categories
             r:view:part: GET for Role Parts
+            r:view:pricing: GET for Role Pricing
             r:view:stock_location: GET for Role Stock Locations
             r:view:stock: GET for Role Stock Items
             r:view:bom: GET for Role Bills of Material
@@ -46785,6 +47030,7 @@ components:
             r:add:admin: POST for Role Admin
             r:add:part_category: POST for Role Part Categories
             r:add:part: POST for Role Parts
+            r:add:pricing: POST for Role Pricing
             r:add:stock_location: POST for Role Stock Locations
             r:add:stock: POST for Role Stock Items
             r:add:bom: POST for Role Bills of Material
@@ -46796,6 +47042,7 @@ components:
             r:change:admin: PUT / PATCH for Role Admin
             r:change:part_category: PUT / PATCH for Role Part Categories
             r:change:part: PUT / PATCH for Role Parts
+            r:change:pricing: PUT / PATCH for Role Pricing
             r:change:stock_location: PUT / PATCH for Role Stock Locations
             r:change:stock: PUT / PATCH for Role Stock Items
             r:change:bom: PUT / PATCH for Role Bills of Material
@@ -46807,6 +47054,7 @@ components:
             r:delete:admin: DELETE for Role Admin
             r:delete:part_category: DELETE for Role Part Categories
             r:delete:part: DELETE for Role Parts
+            r:delete:pricing: DELETE for Role Pricing
             r:delete:stock_location: DELETE for Role Stock Locations
             r:delete:stock: DELETE for Role Stock Items
             r:delete:bom: DELETE for Role Bills of Material

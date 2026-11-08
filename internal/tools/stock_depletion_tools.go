@@ -54,7 +54,7 @@ func stockDepletionContext(item inventree.StockItem) *StockDepletionContext {
 	return &StockDepletionContext{
 		InStock: item.InStock, Allocated: item.Allocated, IsBuilding: item.IsBuilding, BuildID: item.Build,
 		ConsumedByID: item.ConsumedBy, BelongsToID: item.BelongsTo, ParentID: item.Parent,
-		InstalledItems: item.InstalledItems, ChildItems: item.ChildItems, TrackingItems: item.TrackingItems,
+		InstalledItems: item.InstalledItems, ChildItems: item.ChildItems,
 		OwnerID: item.Owner, SupplierPartID: item.SupplierPart, PurchaseOrderID: item.PurchaseOrder, CustomerID: item.Customer, SalesOrderID: item.SalesOrder,
 	}
 }
