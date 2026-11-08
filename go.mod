@@ -4,7 +4,7 @@ go 1.27.0
 
 require (
 	github.com/coreos/go-systemd/v22 v22.7.0
-	github.com/davidvanlaatum/dvgoutils v0.0.1
+	github.com/davidvanlaatum/dvgoutils v0.1.1
 	github.com/fogleman/gg v1.3.0
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/golang/freetype v0.0.0-20170609003504-e2365dfdc4a0
