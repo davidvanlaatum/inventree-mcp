@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 )
 
 // AuditScope selects one ordinary business object. Child history is opt-in and
@@ -190,6 +191,9 @@ func sanitizeAuditChanges(model string, raw json.RawMessage) (map[string]any, er
 	allowed := map[string]json.RawMessage{}
 	for key, value := range fields {
 		if auditChangeFieldExposed(model, key) {
+			if key == "link" || key == "website" || key == "image" || key == "thumbnail" {
+				value = sanitizeAuditURLChange(key, value)
+			}
 			allowed[key] = value
 		}
 	}
@@ -198,6 +202,55 @@ func sanitizeAuditChanges(model string, raw json.RawMessage) (map[string]any, er
 		return nil, err
 	}
 	return sanitizeAuditObject(encoded, false)
+}
+
+// URL changes are old/new scalar pairs. Keep their positions, using null for
+// values which cannot be safely projected rather than exposing raw URLs.
+func sanitizeAuditURLChange(field string, raw json.RawMessage) json.RawMessage {
+	var pair []any
+	if err := json.Unmarshal(raw, &pair); err != nil || len(pair) != 2 {
+		return json.RawMessage("null")
+	}
+	for i, value := range pair {
+		pair[i] = sanitizeAuditURLValue(field, value)
+	}
+	encoded, _ := json.Marshal(pair) // Values are only strings or nil.
+	return encoded
+}
+
+func sanitizeAuditURLValue(field string, value any) any {
+	if value == nil {
+		return nil
+	}
+	raw, ok := value.(string)
+	if !ok {
+		return nil
+	}
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return ""
+	}
+	parsed, err := url.Parse(trimmed)
+	if err != nil {
+		return nil
+	}
+	if field == "image" || field == "thumbnail" {
+		if parsed.Opaque != "" || (parsed.Scheme != "" && parsed.Scheme != "http" && parsed.Scheme != "https") ||
+			(parsed.Scheme != "" && (parsed.Host == "" || parsed.Hostname() == "")) {
+			return nil
+		}
+		parsed.User = nil
+		parsed.RawQuery = ""
+		parsed.ForceQuery = false
+		parsed.Fragment = ""
+		parsed.RawFragment = ""
+		return parsed.String()
+	}
+	if !parsed.IsAbs() || parsed.Host == "" || parsed.Hostname() == "" ||
+		(parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.User != nil {
+		return nil
+	}
+	return parsed.String()
 }
 
 func (c *Client) getAuditWire(ctx context.Context, id int, wire *stockAuditWire) error {

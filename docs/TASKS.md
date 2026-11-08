@@ -3785,15 +3785,15 @@ Out of scope: implementation or live deployment of notes-image tools, generic no
 - Evidence: upstream stock-history removal is explicit in inventree/InvenTree#13101 (merged commit `c4280c2a03dec87afda9478957dba328f82ae4b6`), which is included in the 1.7.1 source. The generated 1.7.0 release-note breaking-change list omits it; source/schema evidence takes precedence. The operator subsequently approved generic `list_audit_entries`/`get_audit_entry` across the same six types as notes (parts, companies, supplier parts, manufacturer parts, stock items and purchase orders), with qualified model type/object ID, audit IDs, approved bounded/redacted field changes, and child reads limited to the same six types. Other audited models are follow-ups.
 - Bulk assessment: no new mutation capability planned; existing pricing tools retain their established single/batch semantics. Reassess before introducing any new mutating workflow.
 - Acceptance:
-  - [ ] Audit API 570 and exact 1.7.1 source; document identity/filter/permission migration.
-  - [ ] Replace legacy stock-history names with generic six-type audit tools; require scope, enforce bounded/redacted projections and exclude unscoped/staff-domain audit access.
-  - [ ] Migrate pricing routes and other affected implemented fields/contracts without weakening write safety.
-  - [ ] Verify credential and dedicated-token behavior without bypassing upstream OAuth restrictions.
-  - [ ] Align schema/manifest, pins, compatibility history, plan, tool reference, recipes and generated metadata.
+  - [x] Audit API 570 and exact 1.7.1 source; document identity/filter/permission migration.
+  - [x] Replace legacy stock-history names with generic six-type audit tools; require scope, enforce bounded/redacted projections and exclude unscoped/staff-domain audit access.
+  - [x] Migrate pricing routes and other affected implemented fields/contracts without weakening write safety.
+  - [x] Verify credential and dedicated-token behavior without bypassing upstream OAuth restrictions.
+  - [x] Align schema/manifest, pins, compatibility history, plan, tool reference, recipes and generated metadata.
   - [ ] Pass full local Docker race suite, package coverage comparison and latest-head CI.
-  - [ ] Complete Go, QA, product and infosec reviews and resolve actionable findings.
-- Validation: pending.
-- Review: pending.
+  - [x] Complete Go, QA, product and infosec reviews and resolve actionable findings.
+- Validation: `go test -race -timeout=20m -covermode=atomic -coverprofile=<profile> ./...` passed on the final staged implementation (including historical URL projection) with every default-on Docker suite against InvenTree 1.7.1/API 570. Matched `go test -tags no_integration_tests -race -p=1 -covermode=atomic -coverprofile=<profile> ./...` passed versus base `fd3f23b`: inventree 81.3763% to 83.7529%; oauth 84.6963% to 84.8131%; tools 85.3089% to 85.3378%; every other package unchanged. Real six-model list/detail, no-permission denial, allowed-child scope, MCP note boundaries, relocated pricing and OAuth refusal checks passed. `golangci-lint run ./...` reported 0 issues; `go mod tidy -diff` and `git diff --check` passed. Initial migration failures were fixture/reference and numeric-value assumptions plus a legacy no-history PATCH assertion; final tests prove the newly appended field-change entry and preservation of all previous audit entries. CI passed on initial implementation `bb2c5ae`; the reviewed URL follow-up requires fresh latest-head CI.
+- Review: Senior Go Developer, Senior QA / Test Architect, Senior Product Manager and Senior Infosec Reviewer completed workspace reviews read-only by instruction and focused reruns. Fixed nested-reference and identity-array redaction, malformed-reference handling, historical URL credential/metadata projection, accurate pagination clarification, stale migration/provenance instructions, pricing-role guidance and follow-up PII boundaries. No unresolved actionable findings or unexpected reviewer edits. The granular-role test limitation is explicitly documented below; no unsupported permission-grant fixture mechanism was added.
 - Residual risk: per-model live tests prove superuser success and no-permission denial; granular non-staff single-role permission separation remains source-verified rather than independently isolated. The schema and tagged GroupSerializer expose roles/permissions read-only, so no out-of-scope role-grant mechanism is added for test setup. Historical free text remains operator-sensitive; unexercised upstream behavior and readable image-tag republishing remain limitations.
 
 

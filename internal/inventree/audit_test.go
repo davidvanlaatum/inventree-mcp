@@ -48,6 +48,43 @@ func TestAuditChangesRejectsMalformedAndOversizedApprovedData(t *testing.T) {
 	}
 }
 
+func TestAuditChangesProjectsHistoricalURLs(t *testing.T) {
+	for _, model := range []string{"part.part", "company.company", "company.supplierpart", "company.manufacturerpart", "stock.stockitem", "order.purchaseorder"} {
+		t.Run(model, func(t *testing.T) {
+			r := require.New(t)
+			a := assert.New(t)
+			for _, invalid := range []string{"https://user:password@example.test/path", "ftp://example.test/file", "/relative", "https:///missing-host", "https://example.test/%zz"} {
+				raw, err := json.Marshal(map[string]any{"link": []any{invalid, " https://example.test/path?key=value#section "}})
+				r.NoError(err)
+				changes, err := sanitizeAuditChanges(model, raw)
+				r.NoError(err)
+				a.Equal([]any{nil, "https://example.test/path?key=value#section"}, changes["link"])
+			}
+		})
+	}
+	cases := []struct {
+		name, model, raw string
+		want             map[string]any
+	}{
+		{"company website", "company.company", `{"website":["https://user:password@example.test/","https://example.test/?q=ok#ok"]}`, map[string]any{"website": []any{nil, "https://example.test/?q=ok#ok"}}},
+		{"clears", "part.part", `{"link":[null,""]}`, map[string]any{"link": []any{nil, ""}}},
+		{"non scalar", "part.part", `{"link":[{"secret":"hidden"},12]}`, map[string]any{"link": []any{nil, nil}}},
+		{"malformed pair", "part.part", `{"link":{"secret":"hidden"}}`, map[string]any{"link": nil}},
+		{"wrong length", "part.part", `{"link":["hidden"]}`, map[string]any{"link": nil}},
+		{"company image", "company.company", `{"image":["https://user:password@example.test/image?token=hidden#hidden",null]}`, map[string]any{"image": []any{"https://example.test/image", nil}}},
+		{"part images", "part.part", `{"image":["/media/a.png?token=hidden#hidden",""],"thumbnail":["https://user:password@example.test/b.png?token=hidden#hidden","%zz"]}`, map[string]any{"image": []any{"/media/a.png", ""}, "thumbnail": []any{"https://example.test/b.png", nil}}},
+		{"opaque metadata", "part.part", `{"image":["https:user:password@example.test/image?token=hidden#hidden","data:secret"],"thumbnail":["ftp://example.test/file","https:///missing-host"]}`, map[string]any{"image": []any{nil, nil}, "thumbnail": []any{nil, nil}}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			r := require.New(t)
+			changes, err := sanitizeAuditChanges(tc.model, json.RawMessage(tc.raw))
+			r.NoError(err)
+			r.Equal(tc.want, changes)
+		})
+	}
+}
+
 func TestAuditClientRequiresScopeAndProjectsOnlySupportedRows(t *testing.T) {
 	ctx, _, _ := testhandler.SetupTestHandler(t)
 	r := require.New(t)
