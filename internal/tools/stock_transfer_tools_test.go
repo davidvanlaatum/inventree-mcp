@@ -583,7 +583,7 @@ func newFakeStockTransferClient() *fakeStockTransferClient {
 	return &fakeStockTransferClient{
 		item: inventree.StockItem{
 			PK: 50, Part: 5, Location: intPointer(10), Quantity: 3.5, Status: stockStatusOK, InStock: true,
-			Allocated: &zeroFloat, InstalledItems: &zeroInt, ChildItems: &zeroInt, TrackingItems: &zeroInt,
+			Allocated: &zeroFloat, InstalledItems: &zeroInt, ChildItems: &zeroInt,
 			Batch: stringPointer("B-1"), Packaging: stringPointer("reel"),
 		},
 		locations: map[int]inventree.StockLocation{

@@ -232,7 +232,6 @@ type StockDepletionContext struct {
 	ParentID        *int     `json:"parent_id,omitempty"`
 	InstalledItems  *int     `json:"installed_items,omitempty"`
 	ChildItems      *int     `json:"child_items,omitempty"`
-	TrackingItems   *int     `json:"tracking_items,omitempty"`
 	OwnerID         *int     `json:"owner_id,omitempty"`
 	SupplierPartID  *int     `json:"supplier_part_id,omitempty"`
 	PurchaseOrderID *int     `json:"purchase_order_id,omitempty"`

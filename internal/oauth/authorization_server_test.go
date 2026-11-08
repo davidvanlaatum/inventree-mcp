@@ -864,3 +864,33 @@ func postForm(handler http.Handler, path string, form url.Values) *httptest.Resp
 	handler.ServeHTTP(recorder, req)
 	return recorder
 }
+
+func TestInvenTreeCredentialBrokerPreservesOAuthTokenIssuanceRefusal(t *testing.T) {
+	t.Parallel()
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	r := require.New(t)
+	a := assert.New(t)
+	requests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		requests++
+		a.Equal("Bearer supplied-oauth-secret", req.Header.Get("Authorization"))
+		switch req.URL.Path {
+		case "/api/user/me/":
+			_ = json.NewEncoder(w).Encode(inventree.CurrentUser{PK: 7, Username: "operator"})
+		case "/api/user/me/token/":
+			http.Error(w, `{"detail":"OAuth credentials cannot issue API tokens"}`, http.StatusForbidden)
+		default:
+			http.NotFound(w, req)
+		}
+	}))
+	defer server.Close()
+	broker := InvenTreeCredentialBroker{BaseURL: server.URL, HTTPClient: server.Client()}
+	supplied := Credential{Scheme: inventree.AuthSchemeBearer, Token: "supplied-oauth-secret"}
+	_, err := broker.ValidateCredential(ctx, supplied)
+	r.NoError(err)
+	dedicated, err := broker.CreateDedicatedCredential(ctx, supplied, "connector-token")
+	r.ErrorIs(err, ErrDedicatedTokenUnavailable)
+	a.Empty(dedicated)
+	a.Equal(2, requests, "a refused OAuth request must not retry with another authentication scheme")
+	a.Equal("supplied-oauth-secret", supplied.Token)
+}

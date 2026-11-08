@@ -60,6 +60,7 @@ func TestMilestoneHappyPathToolsAgainstInvenTree(t *testing.T) {
 	}))
 
 	t.Run("notes", func(t *testing.T) { runNoteToolsIntegration(t, shared) })
+	t.Run("audit_history", func(t *testing.T) { runAuditToolsIntegration(t, shared) })
 
 	t.Run("catalog_stock_supplier_and_purchase_preview_happy_path", func(t *testing.T) {
 		r := require.New(t)
@@ -795,7 +796,7 @@ func TestMilestoneHappyPathToolsAgainstInvenTree(t *testing.T) {
 		a.Equal(StatusClarificationRequired, mismatch.Status)
 		a.Contains(mismatch.Clarification.Reason, "supplier")
 
-		trackingBefore, err := fixture.client.SearchStockTrackingPage(ctx, inventree.StockTrackingQuery{ItemID: stock.PK, Limit: 100})
+		trackingBefore, err := fixture.client.SearchStockAuditPage(ctx, inventree.StockAuditQuery{ItemID: stock.PK, Limit: 100})
 		r.NoError(err)
 		clearInput := UpdateStockItemProvenanceInput{StockItemID: stock.PK, ClearSupplierPart: true, ClearPurchaseOrder: true, ClearPurchasePrice: true, PurchasePriceCurrency: dvgoutils.Ptr("USD"), DryRun: true}
 		_, clearPlan, err := updateStockItemProvenance(fixture.deps())(ctx, &mcp.CallToolRequest{}, clearInput)
@@ -810,9 +811,30 @@ func TestMilestoneHappyPathToolsAgainstInvenTree(t *testing.T) {
 		a.Nil(cleared.Record.PurchaseOrder)
 		a.Nil(cleared.Record.PurchasePrice)
 		a.Equal("USD", cleared.Record.PurchasePriceCurrency)
-		trackingAfter, err := fixture.client.SearchStockTrackingPage(ctx, inventree.StockTrackingQuery{ItemID: stock.PK, Limit: 100})
+		trackingAfter, err := fixture.client.SearchStockAuditPage(ctx, inventree.StockAuditQuery{ItemID: stock.PK, Limit: 100})
 		r.NoError(err)
-		a.Len(trackingAfter.Results, len(trackingBefore.Results), "provenance PATCH must not imply a rewritten historical tracking event")
+		r.Len(trackingAfter.Results, len(trackingBefore.Results)+1, "API 570 records a new field-change entry for the provenance PATCH")
+		beforeByID := map[int]inventree.StockAudit{}
+		for _, entry := range trackingBefore.Results {
+			beforeByID[entry.PK] = entry
+		}
+		var appended []inventree.StockAudit
+		for _, entry := range trackingAfter.Results {
+			if before, existed := beforeByID[entry.PK]; existed {
+				a.Equal(before, entry, "prior audit records must remain unchanged")
+				delete(beforeByID, entry.PK)
+			} else {
+				appended = append(appended, entry)
+			}
+		}
+		a.Empty(beforeByID, "no prior audit entry may disappear")
+		r.Len(appended, 1)
+		a.Equal(1, appended[0].Action)
+		a.Nil(appended[0].EventType, "plain PATCH is a field-change entry, not a named stock event")
+		for _, field := range []string{"supplier_part", "purchase_order", "purchase_price", "purchase_price_currency"} {
+			a.Contains(appended[0].Changes, field)
+		}
+		a.Equal([]any{"AUD", "USD"}, appended[0].Changes["purchase_price_currency"])
 
 		ambiguousStock, err := fixture.client.CreateStockItem(ctx, inventree.StockItemCreate{Part: part.ID, Location: location.ID, Quantity: 1})
 		r.NoError(err)

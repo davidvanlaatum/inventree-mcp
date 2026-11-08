@@ -10,7 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestSanitizeStockTrackingDeltasStripsNestedDetailAndCreatedBy(t *testing.T) {
+func TestSanitizeAuditDeltasStripsNestedDetailAndCreatedBy(t *testing.T) {
 	t.Parallel()
 	r := require.New(t)
 	a := assert.New(t)
@@ -26,12 +26,12 @@ func TestSanitizeStockTrackingDeltasStripsNestedDetailAndCreatedBy(t *testing.T)
 		"quantity": 20
 	}`)
 
-	sanitized, err := SanitizeStockTrackingDeltas(raw)
+	sanitized, err := SanitizeAuditDeltas(raw)
 	r.NoError(err)
 	a.Equal(map[string]any{"location": 2.0, "purchaseorder": 1.0, "quantity": 20.0}, sanitized)
 }
 
-func TestSanitizeStockTrackingDeltasStripsUnnamedNestedIdentityRecords(t *testing.T) {
+func TestSanitizeAuditDeltasStripsUnnamedNestedIdentityRecords(t *testing.T) {
 	t.Parallel()
 	r := require.New(t)
 	a := assert.New(t)
@@ -45,36 +45,36 @@ func TestSanitizeStockTrackingDeltasStripsUnnamedNestedIdentityRecords(t *testin
 		"quantity": 5
 	}`)
 
-	sanitized, err := SanitizeStockTrackingDeltas(raw)
+	sanitized, err := SanitizeAuditDeltas(raw)
 	r.NoError(err)
 	a.Equal(map[string]any{"quantity": 5.0}, sanitized)
 }
 
-func TestSanitizeStockTrackingDeltasKeepsNestedObjectsWithoutIdentityFields(t *testing.T) {
+func TestSanitizeAuditDeltasKeepsNestedObjectsWithoutIdentityFields(t *testing.T) {
 	t.Parallel()
 	r := require.New(t)
 	a := assert.New(t)
 
 	raw := json.RawMessage(`{"batch_info": {"batch": "B-1", "count": 3}}`)
 
-	sanitized, err := SanitizeStockTrackingDeltas(raw)
+	sanitized, err := SanitizeAuditDeltas(raw)
 	r.NoError(err)
 	a.Equal(map[string]any{"batch_info": map[string]any{"batch": "B-1", "count": 3.0}}, sanitized)
 }
 
-func TestSanitizeStockTrackingDeltasStripsNestedCreatedByAtAnyDepth(t *testing.T) {
+func TestSanitizeAuditDeltasStripsNestedCreatedByAtAnyDepth(t *testing.T) {
 	t.Parallel()
 	r := require.New(t)
 	a := assert.New(t)
 
 	raw := json.RawMessage(`{"outer": {"created_by": {"email": "leak@example.test"}, "kept": 1}}`)
 
-	sanitized, err := SanitizeStockTrackingDeltas(raw)
+	sanitized, err := SanitizeAuditDeltas(raw)
 	r.NoError(err)
 	a.Equal(map[string]any{"outer": map[string]any{"kept": 1.0}}, sanitized)
 }
 
-func TestSanitizeStockTrackingDeltasHandlesFlatScalarShapes(t *testing.T) {
+func TestSanitizeAuditDeltasHandlesFlatScalarShapes(t *testing.T) {
 	t.Parallel()
 
 	for _, tc := range []struct {
@@ -90,43 +90,43 @@ func TestSanitizeStockTrackingDeltasHandlesFlatScalarShapes(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			sanitized, err := SanitizeStockTrackingDeltas(json.RawMessage(tc.raw))
+			sanitized, err := SanitizeAuditDeltas(json.RawMessage(tc.raw))
 			require.NoError(t, err)
 			assert.Equal(t, tc.want, sanitized)
 		})
 	}
 }
 
-func TestSanitizeStockTrackingDeltasEmptyForNilAndNull(t *testing.T) {
+func TestSanitizeAuditDeltasEmptyForNilAndNull(t *testing.T) {
 	t.Parallel()
 	a := assert.New(t)
 
-	sanitized, err := SanitizeStockTrackingDeltas(nil)
+	sanitized, err := SanitizeAuditDeltas(nil)
 	a.NoError(err)
 	a.Equal(map[string]any{}, sanitized)
 
-	sanitized, err = SanitizeStockTrackingDeltas(json.RawMessage(`null`))
+	sanitized, err = SanitizeAuditDeltas(json.RawMessage(`null`))
 	a.NoError(err)
 	a.Equal(map[string]any{}, sanitized)
 }
 
-func TestSanitizeStockTrackingDeltasRejectsNonObjectPayload(t *testing.T) {
+func TestSanitizeAuditDeltasRejectsNonObjectPayload(t *testing.T) {
 	t.Parallel()
 	a := assert.New(t)
 
 	for _, raw := range []string{`[1,2,3]`, `"unexpected"`, `42`} {
-		_, err := SanitizeStockTrackingDeltas(json.RawMessage(raw))
+		_, err := SanitizeAuditDeltas(json.RawMessage(raw))
 		a.Error(err, raw)
 	}
 }
 
-func TestSanitizeStockTrackingDeltasFailsClosedOnExcessiveKeyCount(t *testing.T) {
+func TestSanitizeAuditDeltasFailsClosedOnExcessiveKeyCount(t *testing.T) {
 	t.Parallel()
 	a := assert.New(t)
 
 	var builder strings.Builder
 	builder.WriteByte('{')
-	for i := range stockTrackingDeltasMaxKeys + 1 {
+	for i := range stockAuditDeltasMaxKeys + 1 {
 		if i > 0 {
 			builder.WriteByte(',')
 		}
@@ -136,32 +136,32 @@ func TestSanitizeStockTrackingDeltasFailsClosedOnExcessiveKeyCount(t *testing.T)
 	}
 	builder.WriteByte('}')
 
-	_, err := SanitizeStockTrackingDeltas(json.RawMessage(builder.String()))
+	_, err := SanitizeAuditDeltas(json.RawMessage(builder.String()))
 	a.Error(err)
 	a.Contains(err.Error(), "key safety bound")
 }
 
-func TestSanitizeStockTrackingDeltasFailsClosedOnExcessiveDepth(t *testing.T) {
+func TestSanitizeAuditDeltasFailsClosedOnExcessiveDepth(t *testing.T) {
 	t.Parallel()
 	a := assert.New(t)
 
 	raw := json.RawMessage(`{"a":{"b":{"c":{"d":{"e":1}}}}}`)
-	_, err := SanitizeStockTrackingDeltas(raw)
+	_, err := SanitizeAuditDeltas(raw)
 	a.Error(err)
 	a.Contains(err.Error(), "nesting safety bound")
 }
 
-func TestSanitizeStockTrackingDeltasFailsClosedOnExcessiveByteSize(t *testing.T) {
+func TestSanitizeAuditDeltasFailsClosedOnExcessiveByteSize(t *testing.T) {
 	t.Parallel()
 	a := assert.New(t)
 
-	raw := json.RawMessage(`{"notes": "` + strings.Repeat("x", stockTrackingDeltasMaxBytes) + `"}`)
-	_, err := SanitizeStockTrackingDeltas(raw)
+	raw := json.RawMessage(`{"batch": "` + strings.Repeat("x", stockAuditDeltasMaxBytes) + `"}`)
+	_, err := SanitizeAuditDeltas(raw)
 	a.Error(err)
 	a.Contains(err.Error(), "byte safety bound")
 }
 
-func TestStockTrackingUnmarshalJSONSanitizesDeltas(t *testing.T) {
+func TestStockAuditUnmarshalJSONSanitizesDeltas(t *testing.T) {
 	t.Parallel()
 	r := require.New(t)
 	a := assert.New(t)
@@ -172,13 +172,13 @@ func TestStockTrackingUnmarshalJSONSanitizesDeltas(t *testing.T) {
 		"part": 1,
 		"date": "2026-08-18 01:26",
 		"deltas": {"location": 2, "location_detail": {"pk": 2, "name": "Second Location"}, "quantity": 20},
-		"label": "Location changed",
+		"event_label": "Location changed",
 		"notes": "moved",
-		"tracking_type": 20,
+		"event_type": 20,
 		"user": 2
 	}`)
 
-	var entry StockTracking
+	var entry StockAudit
 	r.NoError(json.Unmarshal(raw, &entry))
 	a.Equal(5, entry.PK)
 	a.Equal("Location changed", entry.Label)
@@ -191,7 +191,7 @@ func TestStockTrackingUnmarshalJSONSanitizesDeltas(t *testing.T) {
 // schema (docs/api-schema.yaml's PartStocktake). A populated record's
 // successful read path could not be exercised live in the Testcontainers
 // suite because pinned InvenTree 1.5.0 has no working path to create a
-// PartStocktake record (see the "stock_tracking_and_stocktake_history"
+// PartStocktake record (see the "stock_audit_and_stocktake_history"
 // integration subtest for the pinned upstream-bug write-up), so this unit
 // test is the primary coverage for the populated-record decode shape.
 func TestPartStocktakeUnmarshalJSONDecodesPinnedSchemaShape(t *testing.T) {
@@ -230,4 +230,28 @@ func TestPartStocktakeUnmarshalJSONDecodesPinnedSchemaShape(t *testing.T) {
 	r.NotNil(stocktake.CostMax)
 	a.Equal(DecimalString("12.500000"), *stocktake.CostMax)
 	a.Equal("AUD", stocktake.CostMaxCurrency)
+}
+
+func TestAuditDeltasDropsNestedReferencesAndArrayIdentities(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+	raw := json.RawMessage(`{"direct":{"model_type":"company.company","pk":7,"str":"private"},"refs":[{"model_type":"company.company","pk":123,"str":"private"},{"email":"private@example.test","username":"private"}],"deeper":{"ref":{"model_type":"part.part","pk":999,"str":"private"},"rows":[{"email":"private@example.test"}]}}`)
+	safe, err := SanitizeAuditDeltas(raw)
+	r.NoError(err)
+	a.Equal(float64(7), safe["direct"])
+	encoded, err := json.Marshal(safe)
+	r.NoError(err)
+	for _, value := range []string{"123", "999", "private", "email", "username", "model_type"} {
+		a.NotContains(string(encoded), value)
+	}
+}
+
+func TestAuditDeltasDropsMalformedReferenceIdentity(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+	safe, err := SanitizeAuditDeltas(json.RawMessage(`{"bad_type":{"model_type":3,"pk":123},"bad_pk":{"model_type":"part.part","pk":{"secret":"private"}}}`))
+	r.NoError(err)
+	a.Equal(map[string]any{"bad_type": nil, "bad_pk": nil}, safe)
 }

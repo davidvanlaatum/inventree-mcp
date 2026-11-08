@@ -1,1 +1,1 @@
-FROM inventree/inventree:1.6.3
+FROM inventree/inventree:1.7.1

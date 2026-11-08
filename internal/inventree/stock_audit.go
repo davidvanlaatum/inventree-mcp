@@ -3,75 +3,81 @@ package inventree
 import (
 	"encoding/json"
 	"fmt"
+	"math"
 	"net/url"
 	"strconv"
 	"strings"
 )
 
 const (
-	stockTrackingDeltasMaxDepth = 4
-	stockTrackingDeltasMaxKeys  = 64
-	stockTrackingDeltasMaxBytes = 8192
+	stockAuditDeltasMaxDepth = 4
+	stockAuditDeltasMaxKeys  = 64
+	stockAuditDeltasMaxBytes = 8192
 )
 
-// stockTrackingDeltasDroppedKeys are non-"_detail"-suffixed keys InvenTree
+// stockAuditDeltasDroppedKeys are non-"_detail"-suffixed keys InvenTree
 // still uses to embed a full nested record inside a StockItemTracking
 // `deltas` payload. Pinned 2026-08-18 spike evidence: a purchase-order
 // receipt event's `purchaseorder_detail.created_by` exposes the receiving
 // user's email and username; see docs/api-schema.md's "Verified Stock
 // Tracking And Stocktake Endpoints" section for the full write-up.
-var stockTrackingDeltasDroppedKeys = map[string]bool{
-	"created_by": true,
+var stockAuditDeltasDroppedKeys = map[string]bool{
+	"created_by":   true,
+	"actor_detail": true, "actor_username": true, "remote_addr": true,
+	"remote_port": true, "cid": true, "additional_data": true, "notes": true,
+	"password": true, "token": true, "client_secret": true, "str": true,
 }
 
-// stockTrackingDeltasIdentityFields are keys whose presence inside a nested
+// stockAuditDeltasIdentityFields are keys whose presence inside a nested
 // object marks it as an embedded user/account record, independent of the
 // enclosing key's own name. The key-name denylist above only catches the
 // two conventions InvenTree is confirmed to use today (a "_detail" suffix,
 // or the literal "created_by"); this content-based check is a second,
 // defense-in-depth layer against a future/undiscovered event type embedding
 // a similarly-shaped nested record under some other key name.
-var stockTrackingDeltasIdentityFields = map[string]bool{
+var stockAuditDeltasIdentityFields = map[string]bool{
 	"email":    true,
 	"username": true,
 }
 
-// StockTracking is the client projection of one StockItemTracking audit
-// event, backing both the list and exact-detail endpoints (InvenTree uses
-// the same serializer for both). Deltas is always the redacted, bounded
-// representation produced by SanitizeStockTrackingDeltas; nested item, part,
-// and user detail stay separate stable-ID lookups because item_detail and
-// user_detail are never requested.
-type StockTracking struct {
-	PK           int            `json:"pk"`
-	Item         *int           `json:"item"`
-	Part         *int           `json:"part"`
-	Date         string         `json:"date"`
-	Deltas       map[string]any `json:"deltas"`
-	Label        string         `json:"label"`
-	Notes        string         `json:"notes"`
-	TrackingType int            `json:"tracking_type"`
-	User         *int           `json:"user"`
+// StockAudit is the stock-only client convenience projection of an API 570
+// audit entry. Generic MCP audit tools use AuditEntry instead. Deltas and
+// Changes share the generic bounded redaction policy; nested records remain
+// separate exact lookups.
+type StockAudit struct {
+	PK        int            `json:"pk"`
+	Item      *int           `json:"item"`
+	Part      *int           `json:"part"`
+	Date      string         `json:"timestamp"`
+	Deltas    map[string]any `json:"deltas"`
+	Label     string         `json:"event_label"`
+	Notes     string         `json:"notes"`
+	EventType *int           `json:"event_type"`
+	Action    int            `json:"action"`
+	Changes   map[string]any `json:"changes"`
+	User      *int           `json:"actor"`
 }
 
-func (s *StockTracking) UnmarshalJSON(data []byte) error {
-	type alias StockTracking
+func (s *StockAudit) UnmarshalJSON(data []byte) error {
+	type alias StockAudit
 	wire := struct {
-		Deltas json.RawMessage `json:"deltas"`
+		Deltas  json.RawMessage `json:"deltas"`
+		Changes json.RawMessage `json:"changes"`
 		*alias
 	}{alias: (*alias)(s)}
 	if err := json.Unmarshal(data, &wire); err != nil {
 		return err
 	}
-	sanitized, err := SanitizeStockTrackingDeltas(wire.Deltas)
+	sanitized, err := SanitizeAuditDeltas(wire.Deltas)
 	if err != nil {
 		return err
 	}
 	s.Deltas = sanitized
-	return nil
+	s.Changes, err = sanitizeStockAuditChanges(wire.Changes)
+	return err
 }
 
-// SanitizeStockTrackingDeltas decodes a raw StockItemTracking `deltas`
+// SanitizeAuditDeltas decodes an audit-event `deltas`
 // payload, strips nested `*_detail`/`created_by` full-record keys InvenTree
 // embeds unconditionally for some event types, and enforces bounded
 // depth/key-count/byte-size limits on what remains. It returns an error
@@ -80,39 +86,43 @@ func (s *StockTracking) UnmarshalJSON(data []byte) error {
 // value type. See docs/api-schema.md's "Verified Stock Tracking And
 // Stocktake Endpoints" section for the pinned spike evidence behind this
 // design.
-func SanitizeStockTrackingDeltas(raw json.RawMessage) (map[string]any, error) {
+func SanitizeAuditDeltas(raw json.RawMessage) (map[string]any, error) {
+	return sanitizeAuditObject(raw, true)
+}
+
+func sanitizeAuditObject(raw json.RawMessage, allowDirectReferences bool) (map[string]any, error) {
 	if len(raw) == 0 || string(raw) == "null" {
 		return map[string]any{}, nil
 	}
 	var decoded map[string]any
 	if err := json.Unmarshal(raw, &decoded); err != nil {
-		return nil, fmt.Errorf("stock tracking deltas is not a JSON object: %w", err)
+		return nil, fmt.Errorf("audit data is not a JSON object: %w", err)
 	}
-	redacted := redactStockTrackingDeltas(decoded)
+	redacted := redactAuditMap(decoded, allowDirectReferences)
 	keyCount := 0
-	if err := boundStockTrackingDeltas(redacted, 1, &keyCount); err != nil {
+	if err := boundStockAuditDeltas(redacted, 1, &keyCount); err != nil {
 		return nil, err
 	}
 	encoded, err := json.Marshal(redacted)
 	if err != nil {
-		return nil, fmt.Errorf("encode redacted stock tracking deltas: %w", err)
+		return nil, fmt.Errorf("encode redacted audit data: %w", err)
 	}
-	if len(encoded) > stockTrackingDeltasMaxBytes {
-		return nil, fmt.Errorf("stock tracking deltas exceeds the %d-byte safety bound after redaction", stockTrackingDeltasMaxBytes)
+	if len(encoded) > stockAuditDeltasMaxBytes {
+		return nil, fmt.Errorf("audit data exceeds the %d-byte safety bound after redaction", stockAuditDeltasMaxBytes)
 	}
 	return redacted, nil
 }
 
-func redactStockTrackingDeltas(value map[string]any) map[string]any {
+func redactAuditMap(value map[string]any, allowDirectReferences bool) map[string]any {
 	result := make(map[string]any, len(value))
 	for key, v := range value {
-		if strings.HasSuffix(key, "_detail") || stockTrackingDeltasDroppedKeys[key] {
+		if strings.HasSuffix(key, "_detail") || stockAuditDeltasDroppedKeys[key] {
 			continue
 		}
 		if nested, ok := v.(map[string]any); ok && looksLikeIdentityRecord(nested) {
 			continue
 		}
-		result[key] = redactStockTrackingDeltasValue(v)
+		result[key] = redactAuditValue(v, allowDirectReferences)
 	}
 	return result
 }
@@ -124,21 +134,42 @@ func redactStockTrackingDeltas(value map[string]any) map[string]any {
 // it, so the recursive redaction walk still reaches deeper structure.
 func looksLikeIdentityRecord(obj map[string]any) bool {
 	for key := range obj {
-		if stockTrackingDeltasIdentityFields[strings.ToLower(key)] {
+		if stockAuditDeltasIdentityFields[strings.ToLower(key)] {
 			return true
 		}
 	}
 	return false
 }
 
-func redactStockTrackingDeltasValue(value any) any {
+func redactAuditValue(value any, allowDirectReference bool) any {
 	switch v := value.(type) {
 	case map[string]any:
-		return redactStockTrackingDeltas(v)
+		if looksLikeIdentityRecord(v) {
+			return nil
+		}
+		if rawModel, reference := v["model_type"]; reference {
+			model, ok := rawModel.(string)
+			if !ok {
+				return nil
+			}
+			// InvenTree get_deltas checks permissions for direct references only.
+			// Nested references in maps/arrays have no established visibility proof.
+			if !allowDirectReference {
+				return nil
+			}
+			switch model {
+			case "part.part", "stock.stockitem", "stock.stocklocation", "company.company", "company.supplierpart", "company.manufacturerpart", "order.purchaseorder", "order.purchaseorderlineitem":
+				if pk, valid := v["pk"].(float64); valid && pk > 0 && pk <= 9007199254740991 && math.Trunc(pk) == pk {
+					return pk
+				}
+			}
+			return nil
+		}
+		return redactAuditMap(v, false)
 	case []any:
 		result := make([]any, len(v))
 		for i, item := range v {
-			result[i] = redactStockTrackingDeltasValue(item)
+			result[i] = redactAuditValue(item, false)
 		}
 		return result
 	default:
@@ -146,31 +177,31 @@ func redactStockTrackingDeltasValue(value any) any {
 	}
 }
 
-func boundStockTrackingDeltas(value any, depth int, keyCount *int) error {
-	if depth > stockTrackingDeltasMaxDepth {
-		return fmt.Errorf("stock tracking deltas exceeds the %d-level nesting safety bound", stockTrackingDeltasMaxDepth)
+func boundStockAuditDeltas(value any, depth int, keyCount *int) error {
+	if depth > stockAuditDeltasMaxDepth {
+		return fmt.Errorf("audit data exceeds the %d-level nesting safety bound", stockAuditDeltasMaxDepth)
 	}
 	switch v := value.(type) {
 	case map[string]any:
 		for _, nested := range v {
 			*keyCount++
-			if *keyCount > stockTrackingDeltasMaxKeys {
-				return fmt.Errorf("stock tracking deltas exceeds the %d-key safety bound", stockTrackingDeltasMaxKeys)
+			if *keyCount > stockAuditDeltasMaxKeys {
+				return fmt.Errorf("audit data exceeds the %d-key safety bound", stockAuditDeltasMaxKeys)
 			}
-			if err := boundStockTrackingDeltas(nested, depth+1, keyCount); err != nil {
+			if err := boundStockAuditDeltas(nested, depth+1, keyCount); err != nil {
 				return err
 			}
 		}
 	case []any:
 		for _, item := range v {
-			if err := boundStockTrackingDeltas(item, depth+1, keyCount); err != nil {
+			if err := boundStockAuditDeltas(item, depth+1, keyCount); err != nil {
 				return err
 			}
 		}
 	case string, float64, bool, nil:
 		// scalar; nothing further to bound.
 	default:
-		return fmt.Errorf("stock tracking deltas contains an unsupported JSON value type %T", v)
+		return fmt.Errorf("audit data contains an unsupported JSON value type %T", v)
 	}
 	return nil
 }
@@ -192,23 +223,11 @@ type PartStocktake struct {
 	CostMaxCurrency string         `json:"cost_max_currency"`
 }
 
-type StockTrackingQuery struct {
+type StockAuditQuery struct {
 	ItemID int
 	PartID int
 	Limit  int
 	Offset int
-}
-
-func (q StockTrackingQuery) values() url.Values {
-	values := url.Values{}
-	if q.ItemID != 0 {
-		values.Set("item", strconv.Itoa(q.ItemID))
-	}
-	if q.PartID != 0 {
-		values.Set("part", strconv.Itoa(q.PartID))
-	}
-	setPagination(values, q.Limit, q.Offset)
-	return values
 }
 
 type PartStocktakeQuery struct {

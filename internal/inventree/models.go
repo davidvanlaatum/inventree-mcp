@@ -323,7 +323,6 @@ type StockItem struct {
 	Allocated              *float64       `json:"allocated"`
 	InstalledItems         *int           `json:"installed_items"`
 	ChildItems             *int           `json:"child_items"`
-	TrackingItems          *int           `json:"tracking_items"`
 	PurchasePrice          *DecimalString `json:"purchase_price"`
 	PurchasePriceCurrency  string         `json:"purchase_price_currency"`
 	CreationDate           *string        `json:"creation_date"`
@@ -370,7 +369,6 @@ type StockItemDetail struct {
 	Stale                  *bool          `json:"stale"`
 	InstalledItems         *int           `json:"installed_items"`
 	ChildItems             *int           `json:"child_items"`
-	TrackingItems          *int           `json:"tracking_items"`
 	PurchasePrice          *DecimalString `json:"purchase_price"`
 	PurchasePriceCurrency  string         `json:"purchase_price_currency"`
 	CreationDate           *string        `json:"creation_date"`

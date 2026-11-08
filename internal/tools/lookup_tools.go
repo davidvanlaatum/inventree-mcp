@@ -63,8 +63,8 @@ const (
 	GetStockLocationTypeToolName                  = "get_stock_location_type"
 	SearchStockItemsToolName                      = "search_stock_items"
 	GetStockItemToolName                          = "get_stock_item"
-	ListStockTrackingEntriesToolName              = "list_stock_tracking_entries"
-	GetStockTrackingEntryToolName                 = "get_stock_tracking_entry"
+	ListAuditEntriesToolName                      = "list_audit_entries"
+	GetAuditEntryToolName                         = "get_audit_entry"
 	ListPartStocktakesToolName                    = "list_part_stocktakes"
 	GetPartStocktakeToolName                      = "get_part_stocktake"
 	GenerateStocktakeToolName                     = "generate_stocktake"
@@ -250,8 +250,8 @@ var lookupToolNames = []string{
 	GetStockLocationTypeToolName,
 	SearchStockItemsToolName,
 	GetStockItemToolName,
-	ListStockTrackingEntriesToolName,
-	GetStockTrackingEntryToolName,
+	ListAuditEntriesToolName,
+	GetAuditEntryToolName,
 	SearchStockSerialsToolName,
 	GetPartNextSerialToolName,
 	ListPartStocktakesToolName,
@@ -795,7 +795,8 @@ func registerLookupTools(server *mcp.Server, deps Dependencies) {
 	addReadOnlyTool(server, deps, GetStockItemToolName, "Get stock item", "Retrieves one stock item with traceability and source context by stable ID.", getStockItem(deps))
 	addReadOnlyTool(server, deps, SearchStockSerialsToolName, "Search stock serials", "Searches existing stock items for one part by serial number, serial range, or serialized state.", searchStockSerials(deps))
 	addReadOnlyTool(server, deps, GetPartNextSerialToolName, "Get part next serial", "Retrieves the latest assigned and next available serial number for one trackable part.", getPartNextSerial(deps))
-	registerStockTrackingLookupTools(server, deps)
+	registerAuditLookupTools(server, deps)
+	registerPartStocktakeLookupTools(server, deps)
 	registerStocktakePollingTool(server, deps)
 	addReadOnlyTool(server, deps, ListAttachmentsToolName, "List attachments", "Lists attachment metadata for an in-scope InvenTree object. Use it to find a same-part image attachment before calling set_primary_image; generic attachment results are not automatically primary images.", listAttachments(deps))
 	addReadOnlyTool(server, deps, GetAttachmentMetadataToolName, "Get attachment metadata", "Retrieves one attachment metadata record by ID.", getAttachmentMetadata(deps))

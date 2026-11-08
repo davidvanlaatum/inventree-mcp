@@ -1,8 +1,8 @@
 schema:
   path: docs/api-schema.yaml
-  sha256: 41899455ce19610a8037566e9243b1150b51fbc6418a1613d98ffb50502bda8b
+  sha256: 2437e90db2f73a5fbac9585eb683421ca8c8710711b65f57196536e9b1b875ae
   openapi: 3.0.3
-  api_version: "561"
+  api_version: "570"
 
 coverage_areas:
   - tags
@@ -11,6 +11,7 @@ coverage_areas:
   - categories
   - companies
   - stock
+  - audit
   - parameters
   - attachments
   - purchasing_preview
@@ -145,75 +146,75 @@ endpoints:
     response_schema: '#/components/schemas/PartTestTemplate'
   - id: search_internal_price_breaks
     area: pricing
-    path: /api/part/internal-price/
+    path: /api/pricing/internal-price/
     method: GET
-    operation_id: part_internal_price_list
+    operation_id: pricing_internal_price_list
     required_query:
       - part
     response_schema: '#/components/schemas/PaginatedPartInternalPriceList'
   - id: create_internal_price_break
     area: pricing
-    path: /api/part/internal-price/
+    path: /api/pricing/internal-price/
     method: POST
-    operation_id: part_internal_price_create
+    operation_id: pricing_internal_price_create
     request_schema: '#/components/schemas/PartInternalPrice'
     request_content_type: application/json
     response_schema: '#/components/schemas/PartInternalPrice'
   - id: get_internal_price_break
     area: pricing
-    path: /api/part/internal-price/{id}/
+    path: /api/pricing/internal-price/{id}/
     method: GET
-    operation_id: part_internal_price_retrieve
+    operation_id: pricing_internal_price_retrieve
     response_schema: '#/components/schemas/PartInternalPrice'
   - id: update_internal_price_break
     area: pricing
-    path: /api/part/internal-price/{id}/
+    path: /api/pricing/internal-price/{id}/
     method: PATCH
-    operation_id: part_internal_price_partial_update
+    operation_id: pricing_internal_price_partial_update
     request_schema: '#/components/schemas/PatchedPartInternalPrice'
     request_content_type: application/json
     response_schema: '#/components/schemas/PartInternalPrice'
   - id: delete_internal_price_break
     area: pricing
-    path: /api/part/internal-price/{id}/
+    path: /api/pricing/internal-price/{id}/
     method: DELETE
-    operation_id: part_internal_price_destroy
+    operation_id: pricing_internal_price_destroy
     response_status: "204"
   - id: search_sale_price_breaks
     area: pricing
-    path: /api/part/sale-price/
+    path: /api/pricing/sale-price/
     method: GET
-    operation_id: part_sale_price_list
+    operation_id: pricing_sale_price_list
     required_query:
       - part
     response_schema: '#/components/schemas/PaginatedPartSalePriceList'
   - id: create_sale_price_break
     area: pricing
-    path: /api/part/sale-price/
+    path: /api/pricing/sale-price/
     method: POST
-    operation_id: part_sale_price_create
+    operation_id: pricing_sale_price_create
     request_schema: '#/components/schemas/PartSalePrice'
     request_content_type: application/json
     response_schema: '#/components/schemas/PartSalePrice'
   - id: get_sale_price_break
     area: pricing
-    path: /api/part/sale-price/{id}/
+    path: /api/pricing/sale-price/{id}/
     method: GET
-    operation_id: part_sale_price_retrieve
+    operation_id: pricing_sale_price_retrieve
     response_schema: '#/components/schemas/PartSalePrice'
   - id: update_sale_price_break
     area: pricing
-    path: /api/part/sale-price/{id}/
+    path: /api/pricing/sale-price/{id}/
     method: PATCH
-    operation_id: part_sale_price_partial_update
+    operation_id: pricing_sale_price_partial_update
     request_schema: '#/components/schemas/PatchedPartSalePrice'
     request_content_type: application/json
     response_schema: '#/components/schemas/PartSalePrice'
   - id: delete_sale_price_break
     area: pricing
-    path: /api/part/sale-price/{id}/
+    path: /api/pricing/sale-price/{id}/
     method: DELETE
-    operation_id: part_sale_price_destroy
+    operation_id: pricing_sale_price_destroy
     response_status: "204"
   - id: search_supplier_price_breaks
     area: pricing
@@ -254,15 +255,15 @@ endpoints:
     response_status: "204"
   - id: get_part_pricing
     area: pricing
-    path: /api/part/{id}/pricing/
+    path: /api/pricing/part/{id}/
     method: GET
-    operation_id: part_pricing_retrieve
+    operation_id: pricing_part_retrieve
     response_schema: '#/components/schemas/PartPricing'
   - id: update_part_pricing
     area: pricing
-    path: /api/part/{id}/pricing/
+    path: /api/pricing/part/{id}/
     method: PATCH
-    operation_id: part_pricing_partial_update
+    operation_id: pricing_part_partial_update
     request_schema: '#/components/schemas/PatchedPartPricing'
     request_content_type: application/json
     response_schema: '#/components/schemas/PartPricing'
@@ -609,18 +610,18 @@ endpoints:
     request_schema: '#/components/schemas/UninstallStockItem'
     request_content_type: application/json
     response_schema: '#/components/schemas/UninstallStockItem'
-  - id: search_stock_tracking
-    area: stock
-    path: /api/stock/track/
+  - id: search_audit_entries
+    area: audit
+    path: /api/audit/
     method: GET
-    operation_id: stock_track_list
-    response_schema: '#/components/schemas/PaginatedStockTrackingList'
-  - id: get_stock_tracking_entry
-    area: stock
-    path: /api/stock/track/{id}/
+    operation_id: audit_list
+    response_schema: '#/components/schemas/PaginatedAuditLogEntryList'
+  - id: get_audit_entry
+    area: audit
+    path: /api/audit/{id}/
     method: GET
-    operation_id: stock_track_retrieve
-    response_schema: '#/components/schemas/StockTracking'
+    operation_id: audit_retrieve
+    response_schema: '#/components/schemas/AuditLogEntry'
   - id: generate_part_stocktake
     area: stocktake_generation
     path: /api/part/stocktake/generate/
