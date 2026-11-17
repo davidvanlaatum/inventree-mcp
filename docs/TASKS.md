@@ -3797,6 +3797,13 @@ Out of scope: implementation or live deployment of notes-image tools, generic no
 - Residual risk: per-model live tests prove superuser success and no-permission denial; granular non-staff single-role permission separation remains source-verified rather than independently isolated. The schema and tagged GroupSerializer expose roles/permissions read-only, so no out-of-scope role-grant mechanism is added for test setup. Historical free text remains operator-sensitive; unexercised upstream behavior and readable image-tag republishing remain limitations.
 
 
+- InvenTree 1.7.2 maintenance (PR [#329](https://github.com/davidvanlaatum/inventree-mcp/pull/329), operator-approved 2026-11-17): retain API 570 and the existing MCP contracts; align the build-info/Testcontainers pins, README compatibility history, plan and runtime schema provenance. This follows the F-S61 patch-maintenance precedent without reopening the completed migration or creating a new issue. No release or deployment.
+- Maintenance source evidence: official tag commit `7a137c8947e5c781d2f4a28b2ae55acbc2af054e` still declares API 570. The complete 1.7.1-to-1.7.2 source diff changes logging, importer date conversion and browser forms/WebAuthn, with no REST serializer, route, model, permission or frontend-router changes. Preserve the original schema-fetch provenance and endpoint manifest. No new mutating tool or bulk counterpart is needed.
+- Maintenance validation (2026-11-17): `go test -race -timeout=20m -covermode=atomic -coverprofile=<profile> ./...` passed with all default-on Docker suites against InvenTree 1.7.2/API 570. Matched `go test -tags no_integration_tests -race -p=1 -covermode=atomic -coverprofile=<profile> ./...` against exact base `ad41b4e` passed with all 22 packages containing executable statements unchanged. `go vet ./...`, `golangci-lint run ./...` (0 issues), schema SHA-256 verification and `git diff --check` passed. Latest-head CI must pass before handoff.
+- Maintenance review: Senior Go Developer, Senior QA / Test Architect, Senior Product Manager and Senior Infosec Reviewer completed workspace reviews read-only by instruction with no actionable findings or unexpected edits. Existing pin/schema/runtime/README tests cover this constant-only change; no new test mirrors the implementation. Completion-evidence review confirms the maintenance scope and historical provenance remain accurate.
+- Maintenance residual risk: existing F-S108 limitations remain; same API revision does not prove unexercised upstream behavior. Historical tool/recipe evidence remains attributed to 1.7.1 under the patch-maintenance editorial policy in `docs/api-schema.md`.
+
+
 ### F-S109: Audit history for categories and project codes
 
 - Status: `Future`
