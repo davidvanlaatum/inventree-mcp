@@ -2904,7 +2904,7 @@ func TestClientMethodsAgainstInvenTree(t *testing.T) {
 		r.NoError(err)
 		r.Equal(order.PK, gotOrderDetail.PK)
 		r.Equal(order.Reference, gotOrderDetail.Reference)
-		r.NotZero(gotOrderDetail.CreatedBy.PK)
+		r.NotZero(gotOrderDetail.CreatedBy)
 		r.NotEmpty(gotOrderDetail.SupplierName)
 		r.NotNil(gotOrderDetail.LineItems)
 		r.NotNil(gotOrderDetail.CompletedLines)

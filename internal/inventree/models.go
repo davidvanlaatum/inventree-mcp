@@ -628,9 +628,9 @@ type PurchaseOrderPage struct {
 // object to its stable creator user ID at the MCP boundary. The wire format
 // decodes a full User object, but only the ID is exposed; unmarshalling into
 // this narrow type means the caller's username/email are never retained.
-type PurchaseOrderCreatedBy struct {
-	PK int
-}
+// Its integer underlying type also makes the inferred MCP output schema match
+// the serialized user ID.
+type PurchaseOrderCreatedBy int
 
 func (value *PurchaseOrderCreatedBy) UnmarshalJSON(data []byte) error {
 	var wire struct {
@@ -639,12 +639,8 @@ func (value *PurchaseOrderCreatedBy) UnmarshalJSON(data []byte) error {
 	if err := json.Unmarshal(data, &wire); err != nil {
 		return err
 	}
-	value.PK = wire.PK
+	*value = PurchaseOrderCreatedBy(wire.PK)
 	return nil
-}
-
-func (value PurchaseOrderCreatedBy) MarshalJSON() ([]byte, error) {
-	return json.Marshal(value.PK)
 }
 
 // PurchaseOrderDetail is the approved complete scalar projection returned by

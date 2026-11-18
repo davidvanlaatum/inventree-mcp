@@ -1718,7 +1718,7 @@ func TestMilestoneHappyPathToolsAgainstInvenTree(t *testing.T) {
 		r.NoError(err)
 		a.Equal(StatusOK, gotOrder.Status)
 		a.Equal(orderID, gotOrder.Record.PK)
-		a.NotZero(gotOrder.Record.CreatedBy.PK)
+		a.NotZero(gotOrder.Record.CreatedBy)
 		r.NotNil(gotOrder.Record.LineItems)
 		a.Equal(1, *gotOrder.Record.LineItems)
 		r.NotNil(gotOrder.Record.StatusText)
