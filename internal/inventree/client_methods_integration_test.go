@@ -2876,11 +2876,12 @@ func TestClientMethodsAgainstInvenTree(t *testing.T) {
 		r.Empty(orderWithoutSupplierReference.SupplierReference)
 		supplierReference, err := fixture.run.Name("po")
 		r.NoError(err)
-		order, err := fixture.client.CreatePurchaseOrder(ctx, inventree.PurchaseOrderCreate{Supplier: supplier.ID, SupplierReference: &supplierReference, Description: dvgoutils.Ptr("client-method integration order"), OrderCurrency: dvgoutils.Ptr("AUD")})
+		order, err := fixture.client.CreatePurchaseOrder(ctx, inventree.PurchaseOrderCreate{Supplier: supplier.ID, SupplierReference: &supplierReference, Description: dvgoutils.Ptr("client-method integration order"), CreationDate: dvgoutils.Ptr("2026-01-01"), OrderCurrency: dvgoutils.Ptr("AUD")})
 		r.NoError(err)
 		r.NotZero(order.PK)
 		r.NotEmpty(order.Reference)
 		r.Equal(supplierReference, order.SupplierReference)
+		r.Equal(dvgoutils.Ptr("2026-01-01"), order.CreationDate)
 		lineReference, err := fixture.run.Name("po-line")
 		r.NoError(err)
 		line, err := fixture.client.CreatePurchaseOrderLine(ctx, inventree.PurchaseOrderLineCreate{Order: order.PK, SupplierPart: supplierPart.ID, Reference: &lineReference, Quantity: 3, PurchasePrice: dvgoutils.Ptr("1.25"), PurchasePriceCurrency: dvgoutils.Ptr("AUD"), Destination: &destination.ID})
@@ -3002,9 +3003,9 @@ func TestClientMethodsAgainstInvenTree(t *testing.T) {
 		_, err = fixture.client.UpdatePurchaseOrderDetail(ctx, order.PK, inventree.PatchFields{"description": inventree.Set("updated sourcing description")})
 		r.NoError(err)
 
-		withDatesAndDestination, err := fixture.client.UpdatePurchaseOrderDetail(ctx, order.PK, inventree.PatchFields{"creation_date": inventree.Set("2026-01-01"), "start_date": inventree.Set("2026-01-02"), "target_date": inventree.Set("2026-01-03"), "destination": inventree.Set(destination.ID)})
+		withDatesAndDestination, err := fixture.client.UpdatePurchaseOrderDetail(ctx, order.PK, inventree.PatchFields{"creation_date": inventree.Set("1900-01-01"), "start_date": inventree.Set("2026-01-02"), "target_date": inventree.Set("2026-01-03"), "destination": inventree.Set(destination.ID)})
 		r.NoError(err)
-		r.NotNil(withDatesAndDestination.CreationDate)
+		r.Equal(updatedOrderDetail.CreationDate, withDatesAndDestination.CreationDate, "InvenTree 1.7.3 ignores creation_date on update")
 		r.NotNil(withDatesAndDestination.StartDate)
 		r.NotNil(withDatesAndDestination.TargetDate)
 		r.NotNil(withDatesAndDestination.Destination)
@@ -3013,15 +3014,10 @@ func TestClientMethodsAgainstInvenTree(t *testing.T) {
 		r.Nil(clearedDatesAndDestination.StartDate, "an explicit null PATCH must clear start_date rather than storing a zero value")
 		r.Nil(clearedDatesAndDestination.TargetDate, "an explicit null PATCH must clear target_date rather than storing a zero value")
 		r.Nil(clearedDatesAndDestination.Destination, "an explicit null PATCH must clear destination rather than storing a zero value")
-		// Pinned InvenTree 1.5.0 behavior: unlike start_date/target_date/destination
-		// above, an explicit null PATCH to creation_date does not clear it -
-		// InvenTree resets it to the current date instead. update_purchase_order
-		// therefore never offers a clear_creation_date flag (see
-		// UpdatePurchaseOrderInput.CreationDate); this pins that upstream quirk at
-		// the client layer so a future InvenTree release changing it is caught.
-		creationDateResetToToday, err := fixture.client.UpdatePurchaseOrderDetail(ctx, order.PK, inventree.PatchFields{"creation_date": inventree.Null()})
+		// InvenTree 1.7.3 makes creation_date read-only on updates, including null.
+		creationDateUnchanged, err := fixture.client.UpdatePurchaseOrderDetail(ctx, order.PK, inventree.PatchFields{"creation_date": inventree.Null()})
 		r.NoError(err)
-		r.NotNil(creationDateResetToToday.CreationDate, "pinned InvenTree 1.5.0 resets creation_date to today on null rather than clearing it")
+		r.Equal(updatedOrderDetail.CreationDate, creationDateUnchanged.CreationDate)
 
 		updatedLine, err := fixture.client.UpdatePurchaseOrderLine(ctx, line.PK, inventree.PatchFields{"order": inventree.Set(order.PK), "part": inventree.Set(supplierPart.ID), "quantity": inventree.Set(4.0), "link": inventree.Set("https://example.com/line/" + lineReference), "discount": inventree.Set(10.0)})
 		r.NoError(err)

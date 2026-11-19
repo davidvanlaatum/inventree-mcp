@@ -195,6 +195,7 @@ Before assigning a new story ID, inspect `git worktree list --porcelain`, search
 | [F-S112](#f-s112-audit-history-for-parameters-and-templates) | Audit history for parameters and templates. | Future |
 | [F-S113](#f-s113-audit-history-for-company-contacts-and-addresses) | Audit history for company contacts and addresses. | Future |
 | [F-S114](#f-s114-audit-history-for-attachments) | Audit history for attachments. | Future |
+| [F-S115](#f-s115-upgrade-to-inventree-173--api-570) | Upgrade the runtime baseline and order creation-date contract to InvenTree 1.7.3/API 570. | Active |
 
 ## Milestone 0: Repository And Planning
 
@@ -3806,6 +3807,7 @@ Out of scope: implementation or live deployment of notes-image tools, generic no
 - Maintenance residual risk: existing F-S108 limitations remain; same API revision does not prove unexercised upstream behavior. Historical tool/recipe evidence remains attributed to 1.7.1 under the patch-maintenance editorial policy in `docs/api-schema.md`.
 
 
+
 ### F-S109: Audit history for categories and project codes
 
 - Status: `Future`
@@ -3918,3 +3920,23 @@ Out of scope: implementation or live deployment of notes-image tools, generic no
 - Validation: not started; backlog planning only.
 - Review: implementation review required when selected.
 - Residual risk: actual per-model audited fields and permission boundaries require verification; an enum change alone is insufficient.
+
+### F-S115: Upgrade To InvenTree 1.7.3 / API 570
+
+- Status: `Active`
+- Issue: https://github.com/davidvanlaatum/inventree-mcp/issues/332
+- Depends on: F-S108 (Done)
+- Scope: upgrade latest main from 1.7.2 to latest stable 1.7.3/API 570; adapt purchase-order creation-date mutability without adding capabilities. No release or deployment.
+- Decisions (operator, 2026-11-19): remove `creation_date` from single/bulk order update inputs; retain creation input and apply it only to new orders in the combined workflow. Use a new issue; leave closed #319 unchanged.
+- Plan: align build-info/Docker pins and README/plan/schema/tool/recipe/generated contracts; exercise real creation and ignored update/null behavior; verify create-only MCP schemas and preview/reuse semantics; run full Docker race suite and matched package coverage, then Go/QA/product/infosec review and latest-head CI.
+- Source evidence: official 1.7.3 tag commit `67229e49308256def6b01806a2ee0cd81f52a7dc` retains API 570. OrderSerializer dynamically makes `creation_date` read-only on update; the static checked API 570 schema and its original fetch provenance remain unchanged. Other upstream changes cover stock-transfer audit quantities, transition errors, token UI metadata, MFA and remote URL hardening.
+- Bulk assessment: existing bulk order updates receive the same field removal; no new mutation operation.
+- Acceptance:
+  - [ ] Align runtime/Docker pins, README compatibility table, plan and schema provenance.
+  - [ ] Remove creation date from single/bulk updates; preserve creation and combined-workflow retry semantics; align docs/generated metadata.
+  - [ ] Verify real API create/ignored update/null behavior, MCP schemas and create/reuse previews.
+  - [ ] Pass full local Docker race suite, matched per-package coverage comparison, lint and latest-head CI.
+  - [ ] Complete Go, QA, product and infosec reviews and resolve actionable findings.
+- Validation: in progress on `codex/inventree-1.7.3`; initial schema test needed write-tool registration enabled, corrected before final validation.
+- Review: pending required four-role workspace panel.
+- Residual risk: existing granular-permission and unexercised-upstream limitations remain; static API 570 schema does not express creation-date mutability conditional on create versus update.

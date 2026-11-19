@@ -78,6 +78,7 @@ func TestCreatePurchaseOrderWithLinesDryRunPreflightsWithoutWrites(t *testing.T)
 		DryRun:            true,
 		SupplierID:        30,
 		SupplierReference: "EBAY-42",
+		CreationDate:      dvgoutils.Ptr("2026-01-01"),
 		Lines:             []PurchaseOrderWorkflowLine{{SupplierPartID: 40, Quantity: 2, UnitPrice: &price, Currency: "AUD"}},
 	})
 	r.NoError(err)
@@ -88,7 +89,7 @@ func TestCreatePurchaseOrderWithLinesDryRunPreflightsWithoutWrites(t *testing.T)
 	a.Equal("planned", output.Actions[0].Status)
 	a.Equal("EBAY-42-1", output.Actions[1].Reference)
 	a.Equal([]PlannedChange{
-		{Action: "create_purchase_order", RecordType: "purchase_order", Fields: map[string]any{"supplier": 30, "supplier_reference": "EBAY-42"}},
+		{Action: "create_purchase_order", RecordType: "purchase_order", Fields: map[string]any{"supplier": 30, "supplier_reference": "EBAY-42", "creation_date": "2026-01-01"}},
 		{Action: "create_purchase_order_line", RecordType: "purchase_order_line", Fields: map[string]any{
 			"part": 40, "reference": "EBAY-42-1", "notes": "", "quantity": float64(2), "purchase_price": "1.25", "purchase_price_currency": "AUD", "auto_pricing": false, "merge_items": false,
 		}, DependsOn: []PlannedChangeDependency{{Field: "order", Action: "create_purchase_order"}}},
@@ -112,7 +113,7 @@ func TestCreatePurchaseOrderWithLinesDryRunExposesEffectiveUpdates(t *testing.T)
 	}
 
 	_, output, err := createPurchaseOrderWithLines(purchasingDeps(fake))(ctx, &mcp.CallToolRequest{}, PurchaseOrderWorkflowInput{
-		DryRun: true, SupplierID: 30, SupplierReference: "EBAY-42", Description: &description,
+		DryRun: true, SupplierID: 30, SupplierReference: "EBAY-42", Description: &description, CreationDate: dvgoutils.Ptr("2026-01-01"),
 		Lines: []PurchaseOrderWorkflowLine{{SupplierPartID: 40, Quantity: 3, UnitPrice: &price, Currency: "AUD", Notes: "updated line"}},
 	})
 
@@ -1720,4 +1721,25 @@ func (f *fakePurchasingClient) GetSupplierPart(_ context.Context, id int) (inven
 		}
 	}
 	return inventree.SupplierPart{PK: id, Part: 10, Supplier: 30}, nil
+}
+
+func TestPurchaseOrderCreationDateIsCreateOnly(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	a := assert.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	tools := listedPolicyTools(t, ctx, Dependencies{EnableWriteTools: true})
+	for _, name := range []string{"update_purchase_order", "bulk_update_purchase_orders"} {
+		r.Contains(tools, name)
+		encoded, err := json.Marshal(tools[name].InputSchema)
+		r.NoError(err)
+		a.NotContains(string(encoded), `"creation_date"`, name)
+	}
+	for _, name := range []string{"create_purchase_order", "create_purchase_order_with_lines"} {
+		r.Contains(tools, name)
+		encoded, err := json.Marshal(tools[name].InputSchema)
+		r.NoError(err)
+		a.Contains(string(encoded), `"creation_date"`, name)
+	}
+	a.Empty(purchaseOrderWorkflowPatch(PurchaseOrderWorkflowInput{CreationDate: dvgoutils.Ptr("2026-01-01")}))
 }

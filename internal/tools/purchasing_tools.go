@@ -145,7 +145,6 @@ type UpdatePurchaseOrderInput struct {
 	ID                int      `json:"id" jsonschema:"Existing purchase-order primary key."`
 	Description       *string  `json:"description,omitempty" jsonschema:"Optional replacement order description, including an explicit empty string."`
 	SupplierReference *string  `json:"supplier_reference,omitempty" jsonschema:"Optional replacement supplier or external order identifier, including an explicit empty string."`
-	CreationDate      *string  `json:"creation_date,omitempty" jsonschema:"Optional replacement creation date in YYYY-MM-DD form. Pinned InvenTree 1.5.0 behavior resets this to the current date rather than clearing it when sent null, so no clear flag is offered."`
 	StartDate         *string  `json:"start_date,omitempty" jsonschema:"Optional replacement scheduled start date in YYYY-MM-DD form."`
 	ClearStartDate    bool     `json:"clear_start_date,omitempty" jsonschema:"Explicitly PATCH start_date to null; mutually exclusive with start_date."`
 	TargetDate        *string  `json:"target_date,omitempty" jsonschema:"Optional replacement target delivery date in YYYY-MM-DD form."`
@@ -191,7 +190,7 @@ type PurchaseOrderWorkflowInput struct {
 	SupplierReference string                           `json:"supplier_reference" jsonschema:"Stable supplier or external order identifier used with supplier_id for retry recovery."`
 	PurchaseOrderID   int                              `json:"purchase_order_id,omitempty" jsonschema:"Existing purchase-order primary key selected after an ambiguous exact retry lookup."`
 	Description       *string                          `json:"description,omitempty" jsonschema:"Optional order description."`
-	CreationDate      *string                          `json:"creation_date,omitempty" jsonschema:"Optional creation date in YYYY-MM-DD form."`
+	CreationDate      *string                          `json:"creation_date,omitempty" jsonschema:"Optional creation date in YYYY-MM-DD form, used only when creating a new order; ignored when reusing an existing order."`
 	StartDate         *string                          `json:"start_date,omitempty" jsonschema:"Optional scheduled start date in YYYY-MM-DD form."`
 	TargetDate        *string                          `json:"target_date,omitempty" jsonschema:"Optional target delivery date in YYYY-MM-DD form."`
 	Currency          *string                          `json:"currency,omitempty" jsonschema:"Optional order currency."`
@@ -1320,7 +1319,7 @@ func updatePurchaseOrderPatch(input UpdatePurchaseOrderInput) (inventree.PatchFi
 			return nil, fmt.Errorf("provide either a replacement %s or its clear flag, not both", pair.field)
 		}
 	}
-	for field, value := range map[string]*string{"creation_date": input.CreationDate, "start_date": input.StartDate, "target_date": input.TargetDate} {
+	for field, value := range map[string]*string{"start_date": input.StartDate, "target_date": input.TargetDate} {
 		if value != nil && !validDate(*value) {
 			return nil, fmt.Errorf("%s must use YYYY-MM-DD", field)
 		}
@@ -1334,7 +1333,6 @@ func updatePurchaseOrderPatch(input UpdatePurchaseOrderInput) (inventree.PatchFi
 	setPatchString(fields, "supplier_reference", input.SupplierReference)
 	setPatchString(fields, "order_currency", input.Currency)
 	setPatchString(fields, "link", link)
-	setPatchString(fields, "creation_date", input.CreationDate)
 	setNullableString(fields, "start_date", input.StartDate, input.ClearStartDate)
 	setNullableString(fields, "target_date", input.TargetDate, input.ClearTargetDate)
 	setNullableIntPatch(fields, "destination", input.DestinationID, input.ClearDestination)
@@ -1420,9 +1418,6 @@ func purchaseOrderWorkflowPatch(input PurchaseOrderWorkflowInput) inventree.Patc
 	fields := inventree.PatchFields{}
 	if input.Description != nil {
 		fields["description"] = inventree.Set(*input.Description)
-	}
-	if input.CreationDate != nil {
-		fields["creation_date"] = inventree.Set(*input.CreationDate)
 	}
 	if input.StartDate != nil {
 		fields["start_date"] = inventree.Set(*input.StartDate)

@@ -91,7 +91,6 @@ type BulkUpdatePurchaseOrderItem struct {
 	ID                int     `json:"id" jsonschema:"Stable purchase-order primary key."`
 	Description       *string `json:"description,omitempty" jsonschema:"Optional replacement order description, including an explicit empty string."`
 	SupplierReference *string `json:"supplier_reference,omitempty" jsonschema:"Optional replacement supplier or external order identifier, including an explicit empty string."`
-	CreationDate      *string `json:"creation_date,omitempty" jsonschema:"Optional replacement creation date in YYYY-MM-DD form."`
 	StartDate         *string `json:"start_date,omitempty" jsonschema:"Optional replacement scheduled start date in YYYY-MM-DD form."`
 	ClearStartDate    bool    `json:"clear_start_date,omitempty" jsonschema:"Explicitly PATCH start_date to null; mutually exclusive with start_date."`
 	TargetDate        *string `json:"target_date,omitempty" jsonschema:"Optional replacement target delivery date in YYYY-MM-DD form."`
@@ -166,7 +165,7 @@ func buildPurchaseOrderBulkPlanItem(ctx context.Context, client PurchaseOrderBul
 	// except tags, which stays out of bulk scope per F-S91; this maps every
 	// other field through explicitly rather than relying on a type conversion.
 	fields, err := updatePurchaseOrderPatch(UpdatePurchaseOrderInput{
-		ID: item.ID, Description: item.Description, SupplierReference: item.SupplierReference, CreationDate: item.CreationDate,
+		ID: item.ID, Description: item.Description, SupplierReference: item.SupplierReference,
 		StartDate: item.StartDate, ClearStartDate: item.ClearStartDate,
 		TargetDate: item.TargetDate, ClearTargetDate: item.ClearTargetDate,
 		Currency: item.Currency, DestinationID: item.DestinationID,
