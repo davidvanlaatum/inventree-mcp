@@ -195,7 +195,7 @@ Before assigning a new story ID, inspect `git worktree list --porcelain`, search
 | [F-S112](#f-s112-audit-history-for-parameters-and-templates) | Audit history for parameters and templates. | Future |
 | [F-S113](#f-s113-audit-history-for-company-contacts-and-addresses) | Audit history for company contacts and addresses. | Future |
 | [F-S114](#f-s114-audit-history-for-attachments) | Audit history for attachments. | Future |
-| [F-S115](#f-s115-upgrade-to-inventree-173--api-570) | Upgrade the runtime baseline and order creation-date contract to InvenTree 1.7.3/API 570. | Active |
+| [F-S115](#f-s115-upgrade-to-inventree-173--api-570) | Upgrade the runtime baseline and order creation-date contract to InvenTree 1.7.3/API 570. | Done |
 
 ## Milestone 0: Repository And Planning
 
@@ -3923,7 +3923,7 @@ Out of scope: implementation or live deployment of notes-image tools, generic no
 
 ### F-S115: Upgrade To InvenTree 1.7.3 / API 570
 
-- Status: `Active`
+- Status: `Done`
 - Issue: https://github.com/davidvanlaatum/inventree-mcp/issues/332
 - Depends on: F-S108 (Done)
 - Scope: upgrade latest main from 1.7.2 to latest stable 1.7.3/API 570; adapt purchase-order creation-date mutability without adding capabilities. No release or deployment.
@@ -3932,11 +3932,11 @@ Out of scope: implementation or live deployment of notes-image tools, generic no
 - Source evidence: official 1.7.3 tag commit `67229e49308256def6b01806a2ee0cd81f52a7dc` retains API 570. OrderSerializer dynamically makes `creation_date` read-only on update; the static checked API 570 schema and its original fetch provenance remain unchanged. Other upstream changes cover stock-transfer audit quantities, transition errors, token UI metadata, MFA and remote URL hardening.
 - Bulk assessment: existing bulk order updates receive the same field removal; no new mutation operation.
 - Acceptance:
-  - [ ] Align runtime/Docker pins, README compatibility table, plan and schema provenance.
-  - [ ] Remove creation date from single/bulk updates; preserve creation and combined-workflow retry semantics; align docs/generated metadata.
-  - [ ] Verify real API create/ignored update/null behavior, MCP schemas and create/reuse previews.
-  - [ ] Pass full local Docker race suite, matched per-package coverage comparison, lint and latest-head CI.
-  - [ ] Complete Go, QA, product and infosec reviews and resolve actionable findings.
-- Validation: in progress on `codex/inventree-1.7.3`; initial schema test needed write-tool registration enabled, corrected before final validation.
-- Review: pending required four-role workspace panel.
+  - [x] Align runtime/Docker pins, README compatibility table, plan and schema provenance.
+  - [x] Remove creation date from single/bulk updates; preserve creation and combined-workflow retry semantics; align docs/generated metadata.
+  - [x] Verify real API create/ignored update/null behavior, MCP schemas and create/reuse previews.
+  - [x] Pass full local Docker race suite, matched per-package coverage comparison, lint and latest-head CI.
+  - [x] Complete Go, QA, product and infosec reviews and resolve actionable findings.
+- Validation: full staged `go test -race -timeout=20m -covermode=atomic -coverprofile=<profile> ./...` passed against InvenTree 1.7.3/API 570, including default-on Docker suites and explicit creation-date create/ignored replacement/null checks. Matched `go test -tags no_integration_tests -race -covermode=atomic -coverprofile=<profile> ./...` against base `57f2658` has no package coverage reductions across 22 packages: inventree 83.6863% to 83.8008%; tools 85.3697% to 85.3742%; all others unchanged. `go vet ./...`, `golangci-lint run ./...` (0 issues), `go mod tidy -diff`, `go generate ./internal/tools`, unchanged schema digest and `git diff --check` passed. Initial schema test setup omitted write-tool registration; corrected before the final full staged run. Implementation commit `5a466ab` passed Go race/coverage, lint, Release Preview and CodeQL checks on PR [#333](https://github.com/davidvanlaatum/inventree-mcp/pull/333). The documentation-only completion commit must pass latest-head CI before the PR is ready.
+- Review: Senior Go Developer, Senior QA / Test Architect, Senior Product Manager and Senior Infosec Reviewer completed read-only workspace reviews; corrected stale purchasing recipe and documentation placement findings, with focused QA/product reruns. Final placement/EOF-only cleanup required no semantic rerun. No unresolved actionable findings or unexpected reviewer edits.
 - Residual risk: existing granular-permission and unexercised-upstream limitations remain; static API 570 schema does not express creation-date mutability conditional on create versus update.
