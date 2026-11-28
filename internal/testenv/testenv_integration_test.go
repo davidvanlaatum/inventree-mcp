@@ -3,7 +3,10 @@
 package testenv
 
 import (
+	"bytes"
 	"context"
+	"image"
+	"image/png"
 	"io"
 	"net/http"
 	"net/netip"
@@ -13,6 +16,7 @@ import (
 	"time"
 
 	"github.com/davidvanlaatum/dvgoutils/logging/testhandler"
+	"github.com/davidvanlaatum/inventree-mcp/internal/inventree"
 	"github.com/stretchr/testify/require"
 )
 
@@ -50,6 +54,7 @@ func TestSharedInvenTreeFixturesAndParallelRuns(t *testing.T) {
 	t.Parallel()
 
 	opts := DefaultTestOptions(t)
+	opts.StartWorker = true
 	logProbeSeen := make(chan string, 1)
 	originalContainerLogf := opts.ContainerLogf
 	opts.ContainerLogf = func(container string, stream string, line string) {
@@ -70,6 +75,45 @@ func TestSharedInvenTreeFixturesAndParallelRuns(t *testing.T) {
 	}))
 	env := shared.Environment()
 	r.NotNil(env)
+	t.Run("worker-media-storage", func(t *testing.T) {
+		r := require.New(t)
+		ctx, _, _ := testhandler.SetupTestHandler(t)
+		run, err := shared.NewRun(t)
+		r.NoError(err)
+		account, err := shared.Account(ctx, run, AccountAdmin)
+		r.NoError(err)
+		client, err := shared.Client(account)
+		r.NoError(err)
+		part, err := shared.EnsureFixture(ctx, account, run, FixturePart)
+		r.NoError(err)
+		name, err := run.Name("worker-media")
+		r.NoError(err)
+		note, err := client.CreateNote(ctx, inventree.NoteCreate{ModelType: "part.part", ModelID: part.ID, Title: name, Content: "<p>original</p>"})
+		r.NoError(err)
+		var data bytes.Buffer
+		r.NoError(png.Encode(&data, image.NewRGBA(image.Rect(0, 0, 1, 1))))
+		im, err := client.UploadNoteImage(ctx, note.PK, inventree.NoteImageUpload{Filename: name + ".png", ContentType: "image/png", Content: data.Bytes()})
+		r.NoError(err)
+		_, err = client.UpdateNote(ctx, note.PK, inventree.PatchFields{"content": inventree.Set(`<img src="` + im.Image + `">`)})
+		r.NoError(err)
+
+		worker := env.containers[len(env.containers)-1]
+		code, _, err := worker.Exec(ctx, []string{"sh", "-c", `test -f "$INVENTREE_MEDIA_ROOT/notes/$1"`, "media-check", name + ".png"})
+		r.NoError(err)
+		r.Zero(code, "the worker must see files uploaded through the web API")
+		// Run real housekeeping synchronously instead of waiting for the daily
+		// scheduler. It must retain an embedded image visible in shared storage.
+		code, _, err = worker.Exec(ctx, []string{"sh", "-c", `python "$INVENTREE_BACKEND_DIR/InvenTree/manage.py" shell -c 'from common.tasks import delete_old_notes_images; delete_old_notes_images()'`})
+		r.NoError(err)
+		r.Zero(code)
+		page, err := client.ListNoteImagesPage(ctx, inventree.NoteImageQuery{NoteID: note.PK, Limit: 100})
+		r.NoError(err)
+		r.Len(page.Results, 1)
+		r.Equal(im.PK, page.Results[0].PK)
+		download, err := client.DownloadNoteImage(ctx, note.PK, im.PK, 1024)
+		r.NoError(err)
+		r.Equal(data.Bytes(), download.Content)
+	})
 	t.Run("container-log-forwarding-after-start", func(t *testing.T) {
 		r := require.New(t)
 		ctx, _, _ := testhandler.SetupTestHandler(t)

@@ -60,6 +60,7 @@ func TestMilestoneHappyPathToolsAgainstInvenTree(t *testing.T) {
 	}))
 
 	t.Run("notes", func(t *testing.T) { runNoteToolsIntegration(t, shared) })
+	t.Run("note_images", func(t *testing.T) { runNoteImageToolsIntegration(t, shared) })
 	t.Run("audit_history", func(t *testing.T) { runAuditToolsIntegration(t, shared) })
 
 	t.Run("catalog_stock_supplier_and_purchase_preview_happy_path", func(t *testing.T) {

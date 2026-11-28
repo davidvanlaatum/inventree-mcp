@@ -214,7 +214,7 @@ const componentRenderToolDescription = "Renders a deterministic PNG image for a 
 
 func registerComponentRenderTool(server *mcp.Server, deps Dependencies) {
 	tool := ToolDescriptor(RenderComponentImageToolName, "Render component image",
-		componentRenderToolDescription+" If the operator wants this image attached to a part (optionally as its primary image), use render_and_attach_component_image instead: it does the render and the upload in one server-side call, so you never have to relay the image bytes yourself. This tool alone does not upload or assign the image to InvenTree; only use it directly when the operator wants the raw bytes for something other than attaching to a part.")
+		componentRenderToolDescription+" If the operator wants this image attached to a part (optionally as its primary image), use render_and_attach_component_image instead: it does the render and the upload in one server-side call, so you never have to relay the image bytes yourself. For note images use render_and_embed_note_image or render_and_replace_note_image so bytes stay server-side. This tool alone does not upload or assign the image to InvenTree; only use it directly when the operator wants the raw bytes for something other than attaching to a part.")
 	schema, err := componentRenderInputSchema()
 	if err != nil {
 		panic(fmt.Errorf("%s: building input schema: %w", RenderComponentImageToolName, err))

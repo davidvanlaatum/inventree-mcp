@@ -223,6 +223,7 @@ type ToolAuthorization struct {
 }
 
 var lookupToolNames = []string{
+	ListNoteImagesToolName, DownloadNoteImageToolName,
 	SearchNotesToolName, GetNoteToolName,
 	SearchPartsToolName,
 	GetPartToolName,
@@ -295,6 +296,7 @@ var lookupToolNames = []string{
 }
 
 var writeToolNames = []string{
+	UploadNoteImageToolName, ReplaceNoteImageToolName, RemoveNoteImageToolName, RenderAndEmbedNoteImageToolName, RenderAndReplaceNoteImageToolName,
 	CreateNoteToolName, UpdateNoteToolName, DeleteNoteToolName, BulkCreateNotesToolName, BulkUpdateNotesToolName,
 	CreatePartToolName,
 	UpdatePartToolName,
@@ -493,7 +495,7 @@ func init() {
 			mutationClass = "operational"
 		case UploadAttachmentToolName, UploadAttachmentFromURLToolName, CreateLinkAttachmentToolName, UpdateAttachmentMetadataToolName, SetPrimaryImageToolName:
 			scopes = []string{ScopeInventreeWrite, ScopeInventreeUpload}
-		case SetCompanyImageToolName, SetCompanyImageFromURLToolName, RenderAndAttachComponentImageToolName:
+		case UploadNoteImageToolName, RenderAndEmbedNoteImageToolName, SetCompanyImageToolName, SetCompanyImageFromURLToolName, RenderAndAttachComponentImageToolName:
 			scopes = []string{ScopeInventreeRead, ScopeInventreeWrite, ScopeInventreeUpload}
 		case DeletePartParameterToolName, DeleteObjectParameterToolName, DeleteParameterTemplateToolName, MergeParameterTemplatesToolName, DeleteCategoryParameterDefaultToolName, DeletePurchaseOrderExtraLineToolName, DeletePurchaseOrderLineToolName, DeletePartToolName, DeletePartRelationToolName, DeleteStockLocationTypeToolName, DeletePartCategoryToolName:
 			scopes = []string{ScopeInventreeRead, ScopeInventreeWrite, ScopeInventreeDestructive}
@@ -512,6 +514,12 @@ func init() {
 		case DeleteAttachmentToolName:
 			scopes = []string{ScopeInventreeWrite, ScopeInventreeUpload, ScopeInventreeDestructive}
 			mutationClass = "destructive"
+		case ReplaceNoteImageToolName, RenderAndReplaceNoteImageToolName:
+			scopes = []string{ScopeInventreeRead, ScopeInventreeWrite, ScopeInventreeUpload, ScopeInventreeDestructive}
+			mutationClass = "destructive"
+		case RemoveNoteImageToolName:
+			scopes = []string{ScopeInventreeRead, ScopeInventreeWrite, ScopeInventreeDestructive}
+			mutationClass = "destructive"
 		case ClearCompanyImageToolName:
 			scopes = []string{ScopeInventreeRead, ScopeInventreeWrite, ScopeInventreeUpload, ScopeInventreeDestructive}
 			mutationClass = "destructive"
@@ -520,7 +528,7 @@ func init() {
 		if name == UploadAttachmentFromURLToolName || name == SetCompanyImageFromURLToolName {
 			annotations.OpenWorld = true
 		}
-		if name == DeleteNoteToolName || name == DeleteAttachmentToolName || name == ClearCompanyImageToolName || name == DeletePartParameterToolName || name == DeleteObjectParameterToolName || name == DeleteParameterTemplateToolName || name == MergeParameterTemplatesToolName || name == DeleteCategoryParameterDefaultToolName || name == DeletePurchaseOrderExtraLineToolName || name == DeletePurchaseOrderLineToolName || name == BulkPropagatePartParametersToolName || name == SetStockDeleteOnDepleteToolName || name == DepleteStockItemToolName || name == UpdatePartFamilyRelationshipsToolName || name == UpdateStockItemProvenanceToolName || name == DeletePartToolName || name == DeletePartRelationToolName || name == RemoveCompanyCustomerRoleToolName || name == AssignOwnerToolName || name == AssignContactToolName || name == AssignAddressToolName || name == AssignProjectCodeToolName || name == DeleteStockLocationTypeToolName || name == DeleteStockLocationToolName || name == DeletePartCategoryToolName || name == SetStockSerialToolName || name == UninstallStockItemToolName || name == CancelPurchaseOrderToolName {
+		if name == ReplaceNoteImageToolName || name == RemoveNoteImageToolName || name == RenderAndReplaceNoteImageToolName || name == DeleteNoteToolName || name == DeleteAttachmentToolName || name == ClearCompanyImageToolName || name == DeletePartParameterToolName || name == DeleteObjectParameterToolName || name == DeleteParameterTemplateToolName || name == MergeParameterTemplatesToolName || name == DeleteCategoryParameterDefaultToolName || name == DeletePurchaseOrderExtraLineToolName || name == DeletePurchaseOrderLineToolName || name == BulkPropagatePartParametersToolName || name == SetStockDeleteOnDepleteToolName || name == DepleteStockItemToolName || name == UpdatePartFamilyRelationshipsToolName || name == UpdateStockItemProvenanceToolName || name == DeletePartToolName || name == DeletePartRelationToolName || name == RemoveCompanyCustomerRoleToolName || name == AssignOwnerToolName || name == AssignContactToolName || name == AssignAddressToolName || name == AssignProjectCodeToolName || name == DeleteStockLocationTypeToolName || name == DeleteStockLocationToolName || name == DeletePartCategoryToolName || name == SetStockSerialToolName || name == UninstallStockItemToolName || name == CancelPurchaseOrderToolName {
 			annotations.Destructive = true
 		}
 		ToolAuthorizations[name] = ToolAuthorization{
@@ -817,6 +825,7 @@ func registerLookupTools(server *mcp.Server, deps Dependencies) {
 	registerPartTestingLookupTools(server, deps)
 	registerPartRequirementsLookupTools(server, deps)
 	registerNoteReadTools(server, deps)
+	registerNoteImageReadTools(server, deps)
 }
 
 func addReadOnlyTool[In, Out any](server *mcp.Server, deps Dependencies, name string, title string, description string, handler mcp.ToolHandlerFor[In, Out]) {

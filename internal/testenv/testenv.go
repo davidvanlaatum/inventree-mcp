@@ -60,6 +60,7 @@ const (
 	defaultPostgresImage = "postgres:17"
 	defaultRedisImage    = "redis:7-alpine"
 	defaultWebPort       = "8000/tcp"
+	defaultMediaRoot     = "/home/inventree/data/media"
 	defaultDBName        = "inventree"
 	defaultDBUser        = "inventree"
 	defaultDBPassword    = "inventree-test-password"
@@ -293,6 +294,9 @@ func Start(ctx context.Context, opts Options) (*Environment, CleanupFunc, error)
 
 	serverOpts := []testcontainers.ContainerCustomizer{
 		tcnetwork.WithNetwork([]string{"inventree-server"}, nw),
+		// Anonymous storage belongs to this stack and is removed on teardown.
+		// The worker must see the same files for upstream housekeeping.
+		testcontainers.WithMounts(testcontainers.VolumeMount("", defaultMediaRoot)),
 		testcontainers.WithEnv(inventreeContainerEnv(dbHost, cacheHost, secretKey)),
 		testcontainers.WithCmd(
 			"sh",
@@ -363,6 +367,7 @@ func Start(ctx context.Context, opts Options) (*Environment, CleanupFunc, error)
 			}),
 			testcontainers.WithHostConfigModifier(func(hostConfig *container.HostConfig) {
 				hostConfig.NetworkMode = container.NetworkMode("container:" + server.GetContainerID())
+				hostConfig.VolumesFrom = []string{server.GetContainerID() + ":rw"}
 			}),
 			testcontainers.WithEnv(inventreeContainerEnv(dbHost, cacheHost, secretKey)),
 			testcontainers.WithCmd("sh", "-c", "exec invoke worker"),
@@ -600,6 +605,7 @@ func inventreeContainerEnv(dbHost string, cacheHost string, secretKey string) ma
 		"INVENTREE_DEBUG":           "True",
 		"INVENTREE_LOG_LEVEL":       "WARNING",
 		"INVENTREE_CONSOLE_LOG":     "True",
+		"INVENTREE_MEDIA_ROOT":      defaultMediaRoot,
 		"INVENTREE_DB_ENGINE":       "postgresql",
 		"INVENTREE_DB_NAME":         defaultDBName,
 		"INVENTREE_DB_HOST":         dbHost,

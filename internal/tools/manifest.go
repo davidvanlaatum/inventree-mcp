@@ -94,9 +94,9 @@ func uploadSourcesForTool(name string) []string {
 		return []string{"http_url_link"}
 	case SetPrimaryImageToolName:
 		return []string{"existing_attachment_image"}
-	case RenderAndAttachComponentImageToolName:
+	case RenderAndEmbedNoteImageToolName, RenderAndReplaceNoteImageToolName, RenderAndAttachComponentImageToolName:
 		return []string{"server_rendered_bytes"}
-	case SetCompanyImageToolName:
+	case UploadNoteImageToolName, ReplaceNoteImageToolName, SetCompanyImageToolName:
 		return []string{"inline_base64", "stdio_local_path"}
 	case SetCompanyImageFromURLToolName:
 		return []string{"http_url_fetch"}

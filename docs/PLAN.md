@@ -625,7 +625,7 @@ Important behaviors:
 - Treat the part thumbnail API as part of the primary part image implementation. For schema version `530`, `set_primary_image` resolves an existing same-part image attachment, downloads it through the scoped InvenTree attachment path, then uploads those bytes with multipart `PATCH /api/part/{id}/` using the `image` file field. Live integration rejected using a generic attachment URL with `PATCH /api/part/thumbs/{id}/`; keep `existing_image` write-only and outside download behavior.
 - Company primary images use direct multipart `PATCH /api/company/{id}/` after the dedicated tool resolves and validates PNG, JPEG, or WebP bytes. Enforce a fixed 5 MiB encoded limit, 4096-pixel per-dimension limit, 16-megapixel total limit, and agreement between decoded format, extension, and media type. First assignment is unconfirmed; replacement requires `confirm:true`. Exact same-instance download and SHA-256 comparison must prove assignment or response-loss recovery while preserving every unrelated company detail field and role.
 - `clear_company_image` is a separate destructive tool requiring `confirm:true` and exact null read-back. Pinned InvenTree 1.5.0 deletes the current stored media file when the nullable image association is cleared. The tool applies to an existing company regardless of supplier, manufacturer, or customer role and does not add customer-role or sales administration.
-- Keep notes image upload, generated report attachments, stock test-result attachments, and other app-specific file surfaces out of the first release unless the plan is explicitly changed.
+- Keep generated report attachments, stock test-result attachments, and other app-specific file surfaces out of the first release unless the plan is explicitly changed.
 - Define upload input forms explicitly:
   - `upload_attachment` accepts inline byte blobs encoded as base64 in HTTP and STDIO mode, with required filename and content type.
   - `upload_attachment` may additionally accept local file paths in STDIO mode only when a configured allowlist permits the path.
@@ -1101,6 +1101,7 @@ Responsibilities:
 
 - Start database dependencies, likely PostgreSQL, with `testcontainers-go`.
 - Start the InvenTree services required for realistic API behavior. This may include the server, worker, proxy, and optional Redis/cache depending on the official stable deployment shape.
+- Keep server and worker media storage shared within each disposable stack. The server owns an anonymous media volume; the worker inherits that mount, and reverse container teardown removes it. Exercise worker visibility and real housekeeping retention of an embedded upload rather than disabling cleanup.
 - Start containers with deterministic admin credentials.
 - Run any required InvenTree setup, migrations, or startup commands.
 - Create or retrieve per-run InvenTree users and API tokens for integration tests. Each subtest should request its own account before requesting its client or fixtures.
@@ -1369,7 +1370,7 @@ Blocking milestone tests:
 - Primary image assignment and replacement-confirmation tests.
 - Primary image download tests for present, missing, too-large, and non-InvenTree URL states.
 - Attachment listing or metadata test proving returned fields include thumbnail/image state, link/file classification, file size, object target, stable attachment ID, and relevant primary-image state.
-- Registered tool/prompt/resource list test proving no sales-order tools, customer-oriented workflows, customer-role defaults, notes image upload, report attachment, stock test-result attachment, or other deferred app-specific file surfaces are present in milestone 1.
+- Registered tool/prompt/resource list test proving no sales-order tools, customer-oriented workflows, customer-role defaults, report attachment, stock test-result attachment, or other deferred app-specific file surfaces are present in milestone 1.
 - Existing-parameter reuse test and ambiguous-parameter clarification test.
 - Category-parameter-link reuse, ambiguity, and confirmation-gate tests.
 - Documentation drift check from tool registry/schema metadata to `docs/tool-reference.md`, `docs/operator-recipes.md`, and `docs/api-schema.md`.
@@ -1384,7 +1385,7 @@ Milestone test classification:
 - Blocking tests must have deterministic local execution paths for milestone-scope behavior. Docker-backed integration tests run by default and can be explicitly excluded for unit-only, fast, or Docker-unavailable runs with `INVENTREE_TEST_SKIP_DOCKER=1` or `GOFLAGS=-trimpath go test -race -short`.
 - Non-blocking tests may cover optional live external InvenTree instances, canary compatibility checks, and extended stress runs.
 - Future tests must be tied to deferred scope such as production HTTP setup/deployment wiring, sales workflows, return orders, transfer orders, and build attachment support.
-- Future image/file tests must cover deferred surfaces only when they enter scope, including notes image upload, generated report attachments, and stock test-result attachments.
+- Future image/file tests must cover deferred surfaces only when they enter scope, including generated report attachments, and stock test-result attachments.
 
 Milestone README recipes:
 
@@ -1404,7 +1405,7 @@ Milestone README recipes:
 
 ## InvenTree 1.6 Notes Migration (F-S106)
 
-InvenTree 1.7.4/API 570 is the supported runtime baseline; 1.5.x compatibility is dropped. The removed inline Markdown `notes` and `clear_notes` fields on parts, companies, sourcing parts, stock items, and purchase-order headers are replaced by shared `search_notes`, `get_note`, `create_note`, `update_note`, and `delete_note` tools. Parent selection uses the notes endpoint qualified model type and object ID; edits and deletion use stable note IDs. Only existing MCP domains are exposed. Templates and image upload remain deferred; F-S107 investigates embedded images. Transaction/history notes and purchase-order-line notes remain supported.
+InvenTree 1.7.4/API 570 is the supported runtime baseline; 1.5.x compatibility is dropped. The removed inline Markdown `notes` and `clear_notes` fields on parts, companies, sourcing parts, stock items, and purchase-order headers are replaced by shared `search_notes`, `get_note`, `create_note`, `update_note`, and `delete_note` tools. Parent selection uses the notes endpoint qualified model type and object ID; edits and deletion use stable note IDs. Only existing MCP domains are exposed. Templates remain deferred. F-S107 investigated embedded images; F-S117 adds scoped image reads and confirmed HTML upload/replace/remove workflows. Transaction/history notes and purchase-order-line notes remain supported.
 
 Notes support bounded dedicated and global content search, explicit primary-note selection, and `bulk_create_notes` / `bulk_update_notes` through the shared batch executor. Every mutation uses a principal-bound single-use preview/confirm plan. A batch may touch each parent only once, since InvenTree automatically promotes a sole note and demotes sibling primaries. Bulk deletion is deferred. Creation does not retry blindly or silently update a same-title note; existing titles require explicit duplicate permission. Ambiguous creations require inspection before a new plan. Concurrent external writers can still race between preflight and mutation; upstream offers no conditional-write token.
 
@@ -1418,4 +1419,13 @@ F-S109 extends scoped audit reads to categories and project codes using their ex
 
 ### F-S107 notes-image investigation
 
-The [1.7.4/API 570 investigation](notes-images-investigation.md) proposes scoped reads and guarded HTML upload-and-embed, with render reuse and a deferred dependent bulk workflow. It identifies broader authenticated media access than note metadata permissions and immediate cleanup on note saves. The operator accepted the existing media-access behavior, approved separate-write recovery and confirmed destructive replacement/removal. Implementation is tracked by [F-S117 / #338](https://github.com/davidvanlaatum/inventree-mcp/issues/338), Ready and unassigned; tools remain unavailable until that task is implemented and validated. Public bulk image tools remain deferred because same-note uploads and content writes are dependent. No release or deployment is authorized.
+The [1.7.4/API 570 investigation](notes-images-investigation.md) proposes scoped reads and guarded HTML upload-and-embed, with render reuse and a deferred dependent bulk workflow. It identifies broader authenticated media access than note metadata permissions and immediate cleanup on note saves. The operator accepted the existing media-access behavior, approved separate-write recovery and confirmed destructive replacement/removal. Implementation is tracked by [F-S117 / #338](https://github.com/davidvanlaatum/inventree-mcp/issues/338), completed in PR #340 on `codex/f-s117-note-image-tools`; the implementation uses separate read/add/replace/remove tools and server-side render reuse. Public bulk image tools remain deferred because same-note uploads and content writes are dependent. No release or deployment is authorized.
+
+
+### F-S117 notes-image implementation
+
+Add scoped `list_note_images`/`download_note_image`, confirmed `upload_note_image`/`replace_note_image`/`remove_note_image`, and server-side `render_and_embed_note_image`/`render_and_replace_note_image`. Reads check the supported note and live parent; downloads select a schema-exposed same-instance notes-media URL, reject redirects and enforce bounded raster validation. Mutations bind complete note/image state and source digests, verify uploaded bytes, preserve unrelated content, and report partial/unknown outcomes without automatic retries or rollback.
+
+Native image-reference changes are rejected by ordinary note tools, including HTML entity/URL-encoded aliases. Pending unreferenced uploads block PATCH workflows. The state bound is 100 owned images; upload operations reserve one temporary slot. Sole non-primary notes require explicit primary selection before image edits; the tool does not request promotion. Add/render-add require read/write/upload; replacement/render-replacement also require destructive permission; removal requires read/write/destructive. Same-note URL references elsewhere can prevent a safe edit; independent copies are required across notes. Public bulk tools, URL ingestion, templates, expanded domains, release and deployment remain excluded.
+
+Default-on client integration tests exercise all three new exported methods and isolated no-role/view/change tiers for all six domains. The MCP matrix exercises wire-level listing/downloading/addition/replacement/removal across six domains and server-side rendering. Unit tests cover unsafe media, encoded references, source/state/principal/operation binding and explicit destructive failure recovery. Keep production proxy/storage, browser visual rendering and populated legacy-upgrade limits separate from this API evidence. The 1.7.4/API 570 pin and README compatibility mapping remain unchanged.
