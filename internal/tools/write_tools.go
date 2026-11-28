@@ -374,6 +374,7 @@ func registerWriteTools(server *mcp.Server, deps Dependencies) {
 	registerAttachmentWriteTools(server, deps)
 	registerAttachmentBulkWriteTools(server, deps)
 	registerNoteWriteTools(server, deps)
+	registerNoteImageWriteTools(server, deps)
 	registerRenderAndAttachComponentImageTool(server, deps)
 	registerPurchasingWriteTools(server, deps)
 	registerPurchasingBulkWriteTools(server, deps)

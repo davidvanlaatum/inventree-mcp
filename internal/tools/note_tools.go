@@ -29,6 +29,7 @@ const (
 type NoteReadClient interface {
 	SearchNotesPage(context.Context, inventree.NoteQuery) (inventree.Page[inventree.Note], error)
 	GetNote(context.Context, int) (inventree.Note, error)
+	ListNoteImagesPage(context.Context, inventree.NoteImageQuery) (inventree.Page[inventree.NoteImage], error)
 }
 type NoteWriteClient interface {
 	NoteReadClient
@@ -61,7 +62,7 @@ type NoteMutationItem struct {
 	ModelID        int           `json:"model_id,omitempty" jsonschema:"Required existing parent ID on creation; existing notes cannot be reparented."`
 	Title          *string       `json:"title,omitempty" jsonschema:"Required non-empty title on creation, at most 100 characters."`
 	Description    *string       `json:"description,omitempty" jsonschema:"Optional replacement description up to 250 characters; empty string explicitly clears it."`
-	Content        *string       `json:"content,omitempty" jsonschema:"Note text/Markdown up to 50000 characters; empty string explicitly clears it. Templates and image uploads are excluded."`
+	Content        *string       `json:"content,omitempty" jsonschema:"Note text/Markdown or sanitized HTML up to 50000 characters; empty string explicitly clears it when no native image references are removed. Use dedicated note-image tools for native image-reference changes; templates remain excluded."`
 	Primary        *bool         `json:"primary,omitempty" jsonschema:"Optional primary selection. The first note is automatically primary upstream. Promotion demotes an existing primary and requires a reviewed plan."`
 	AllowDuplicate bool          `json:"allow_duplicate,omitempty" jsonschema:"Explicitly allow creation with a title already present on this parent; default false. Inspect existing notes before retrying an ambiguous creation."`
 }
@@ -80,6 +81,7 @@ type BulkNotesInput struct {
 type NoteMutationResult struct {
 	ItemIndex    int             `json:"item_index"`
 	NoteID       int             `json:"note_id,omitempty"`
+	ImageIDs     []int           `json:"image_ids,omitempty"`
 	Outcome      string          `json:"outcome"`
 	Message      string          `json:"message,omitempty"`
 	RecoveryPlan string          `json:"recovery_plan,omitempty"`
@@ -99,6 +101,7 @@ type notePlanItem struct {
 	Before     *inventree.Note
 	Target     inventree.Note
 	Siblings   []inventree.Note
+	Images     []inventree.NoteImage
 	FailReason string
 }
 type notePlan struct {
@@ -254,6 +257,22 @@ func buildNotePlan(ctx context.Context, c NoteReadClient, action string, inputs 
 			fail("note title/content exceeds its schema bounds or title is empty")
 			continue
 		}
+		if action == "create" && len(noteMediaReferences(item.Target.Content)) > 0 {
+			fail("use the dedicated note-image workflow to add native image references after creating the note")
+			continue
+		}
+		if item.Before != nil {
+			state, err := readNoteImageState(ctx, c, item.Before.PK)
+			if err != nil || !reflect.DeepEqual(state.Note, *item.Before) {
+				fail("complete stable note/image state could not be inspected")
+				continue
+			}
+			item.Images = state.Images
+			if action == "update" && (!noteImagesReferenced(state, 0) || !noteImageReferencesPreserved(state, item.Target.Content)) {
+				fail("note update would discard a pending upload or change native image references; use the dedicated image workflow or reconcile pending uploads first")
+				continue
+			}
+		}
 		siblings, err := noteSiblings(ctx, c, item.Target.ModelType, item.Target.ModelID)
 		if err != nil {
 			fail("parent notes could not be safely inspected")
@@ -316,6 +335,10 @@ func (a *noteAdapter) Preflight(ctx context.Context, item notePlanItem) (bool, s
 		if !reflect.DeepEqual(current, *item.Before) {
 			return false, bulkReasonDrifted, errors.New(bulkReasonDrifted)
 		}
+		state, err := readNoteImageState(ctx, a.client, item.Before.PK)
+		if err != nil || !reflect.DeepEqual(state.Note, *item.Before) || !reflect.DeepEqual(state.Images, item.Images) {
+			return false, bulkReasonDrifted, errors.New("note image set changed before mutation")
+		}
 		if a.action == "update" && noteTargetMatches(current, item.Target) {
 			a.store(item.Index, current)
 			return true, "already at target state", nil
@@ -361,6 +384,12 @@ func (a *noteAdapter) Verify(ctx context.Context, item notePlanItem) error {
 	if err != nil || !noteTargetMatches(n, item.Target) {
 		return errors.New("note read-back differs from the reviewed target")
 	}
+	if item.Before != nil {
+		state, err := readNoteImageState(ctx, a.client, n.PK)
+		if err != nil || !reflect.DeepEqual(state.Images, item.Images) {
+			return errors.New("note image state changed outside the reviewed update")
+		}
+	}
 	siblings, err := noteSiblings(ctx, a.client, n.ModelType, n.ModelID)
 	if err != nil {
 		return errors.New("note sibling verification failed")
@@ -403,6 +432,9 @@ func executeNotes(ctx context.Context, req *mcp.CallToolRequest, deps Dependenci
 	if dry {
 		for _, item := range plan.Items {
 			v := NoteMutationResult{ItemIndex: item.Index + 1, NoteID: item.Input.NoteID, Outcome: bulkOutcomePlanned, Record: &item.Target}
+			for _, image := range item.Images {
+				v.ImageIDs = append(v.ImageIDs, image.PK)
+			}
 			if item.FailReason != "" {
 				v.Outcome = bulkOutcomeFailed
 				v.Message = item.FailReason

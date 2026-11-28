@@ -239,4 +239,7 @@ var clientMethodRoutes = map[string]clientRoute{
 
 	// from stock_serial.go
 	"GetPartSerialNumbers": {Method: "GET", Path: "/api/part/{id}/serial-numbers/", Family: RequestFamilyJSONAPI, ManifestID: "get_part_serial_numbers"},
+	"ListNoteImagesPage":   {Method: "GET", Path: "/api/note/image/", Family: RequestFamilyJSONAPI, ManifestID: "list_note_images"},
+	"UploadNoteImage":      {Method: "POST", Path: "/api/note/image/", Family: RequestFamilyMultipartAPI, ManifestID: "upload_note_image"},
+	"DownloadNoteImage":    {Method: "GET", Path: "/media/{path}", Family: RequestFamilyImageDownload, ManifestID: "download_note_image_content"},
 }

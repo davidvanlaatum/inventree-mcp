@@ -29,7 +29,6 @@ coverage_areas:
   - notes
 
 forbidden_paths:
-  - /api/note/image/
   - /api/report/asset/
   - /api/report/asset/{id}/
   - /api/report/print/
@@ -1172,3 +1171,17 @@ endpoints:
     method: DELETE
     operation_id: note_destroy
     response_status: "204"
+  - id: list_note_images
+    area: notes
+    path: /api/note/image/
+    method: GET
+    operation_id: note_image_list
+    response_schema: '#/components/schemas/PaginatedNotesImageList'
+  - id: upload_note_image
+    area: notes
+    path: /api/note/image/
+    method: POST
+    operation_id: note_image_create
+    request_schema: '#/components/schemas/NotesImage'
+    request_content_type: multipart/form-data
+    response_schema: '#/components/schemas/NotesImage'

@@ -33,6 +33,10 @@ type fakeNotes struct {
 	mutateError            bool
 }
 
+func (f *fakeNotes) ListNoteImagesPage(_ context.Context, _ inventree.NoteImageQuery) (inventree.Page[inventree.NoteImage], error) {
+	return inventree.Page[inventree.NoteImage]{Results: []inventree.NoteImage{}}, nil
+}
+
 func (f *fakeNotes) SearchNotesPage(_ context.Context, q inventree.NoteQuery) (inventree.Page[inventree.Note], error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
