@@ -1,6 +1,6 @@
 # Notes images investigation (F-S107)
 
-Investigation baseline: InvenTree **1.7.4 / API 570**, selected by the operator on 2026-11-28. The investigation introduced no notes-image client methods, MCP tools or deployment. The operator subsequently approved the implementation contract and issue creation; [F-S117 / #338](https://github.com/davidvanlaatum/inventree-mcp/issues/338) records completed implementation in [PR #340](https://github.com/davidvanlaatum/inventree-mcp/pull/340), awaiting merge and final-head CI before readiness.
+Investigation baseline: InvenTree **1.7.4 / API 570**, selected by the operator on 2026-11-28. The investigation introduced no notes-image client methods, MCP tools or deployment. The operator subsequently approved the implementation contract and issue creation; [F-S117 / #338](https://github.com/davidvanlaatum/inventree-mcp/issues/338) records completed implementation in [PR #340](https://github.com/davidvanlaatum/inventree-mcp/pull/340), awaiting merge. Final-head CI must pass before PR readiness.
 
 ## Evidence and reproduction
 
