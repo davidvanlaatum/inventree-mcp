@@ -4,6 +4,8 @@ This file is the source of truth for first-release operator workflows. README sh
 
 Each recipe should preserve omitted fields versus explicit zero/false/empty values, prefer existing InvenTree records, and return a structured clarification instead of guessing when lookup results are ambiguous.
 
+The current baseline is InvenTree 1.7.4/API 570. Its stock-allocation and permission fixes retain the existing MCP contracts: allocated-stock relationship changes remain refused, and upstream permission failures do not authorize broader MCP access. See [schema notes](api-schema.md) and F-S116 in [TASKS.md](TASKS.md).
+
 ## Local CLI Self-Update
 
 This recipe applies only to a binary installed directly from a GitHub release archive on supported Linux or macOS `amd64`/`arm64` systems. It is a local CLI operation, not an MCP workflow.
