@@ -196,7 +196,7 @@ Before assigning a new story ID, inspect `git worktree list --porcelain`, search
 | [F-S113](#f-s113-audit-history-for-company-contacts-and-addresses) | Audit history for company contacts and addresses. | Future |
 | [F-S114](#f-s114-audit-history-for-attachments) | Audit history for attachments. | Future |
 | [F-S115](#f-s115-upgrade-to-inventree-173--api-570) | Upgrade the runtime baseline and order creation-date contract to InvenTree 1.7.3/API 570. | Done |
-| [F-S116](#f-s116-upgrade-to-inventree-174--api-570) | Upgrade the runtime baseline to InvenTree 1.7.4/API 570. | Active |
+| [F-S116](#f-s116-upgrade-to-inventree-174--api-570) | Upgrade the runtime baseline to InvenTree 1.7.4/API 570. | Done |
 
 ## Milestone 0: Repository And Planning
 
@@ -3944,7 +3944,7 @@ Out of scope: implementation or live deployment of notes-image tools, generic no
 
 ### F-S116: Upgrade To InvenTree 1.7.4 / API 570
 
-- Status: `Active`
+- Status: `Done`
 - Tracking: existing PR https://github.com/davidvanlaatum/inventree-mcp/pull/336; no new issue created.
 - Depends on: F-S115 (Done)
 - Scope: complete the Dependabot 1.7.4 pin upgrade from current main; retain API 570 and existing MCP scopes/tools. No release or deployment.
@@ -3958,7 +3958,7 @@ Out of scope: implementation or live deployment of notes-image tools, generic no
   - [x] Review upstream runtime/API changes and preserve existing tool/scope/guard contracts.
   - [x] Pass full local Docker race suite and matched per-package coverage comparison.
   - [x] Complete Go/QA/product/infosec reviews and resolve actionable findings.
-  - [ ] Pass latest-head CI and update PR scope/validation metadata.
-- Validation: matched `go test -tags no_integration_tests -race -covermode=atomic -coverprofile=<profile> ./...` passes on current main `c3250b3` and head with no coverage reductions across 22 packages (inventree 83.8008%, tools 85.3742%). A focused route-logging fallback test removes map-iteration-dependent coverage variation in unchanged production logic. `go vet ./...`, `golangci-lint run ./...` (0 issues), `go generate ./internal/tools` (no drift), `go mod tidy -diff`, unchanged schema SHA256 and `git diff --check` pass. Full default `go test -race -timeout=20m -covermode=atomic -coverprofile=<profile> ./...` passed against 1.7.4/API 570, including client, server, testenv and tool Docker suites. The exact staged follow-up suite and latest-head CI remain gates before commit/handoff.
-- Review: Senior Go Developer, Senior QA / Test Architect, Senior Product Manager and Senior Infosec Reviewer completed read-only workspace reviews. Corrected stale current-baseline prose and Task Index formatting; focused Go/QA/product reruns approved the fixes and logging test. No unresolved actionable findings or unexpected reviewer edits.
+  - [x] Pass implementation-head CI and update PR scope/validation metadata.
+- Validation: matched `go test -tags no_integration_tests -race -covermode=atomic -coverprofile=<profile> ./...` passes on current main `c3250b3` and head with no coverage reductions across 22 packages (inventree 83.8008%, tools 85.3742%). A focused route-logging fallback test removes map-iteration-dependent coverage variation in unchanged production logic. `go vet ./...`, `golangci-lint run ./...` (0 issues), `go generate ./internal/tools` (no drift), `go mod tidy -diff`, unchanged schema SHA256 and `git diff --check` pass. Full default `go test -race -timeout=20m -covermode=atomic -coverprofile=<profile> ./...` passed against 1.7.4/API 570, including client, server, testenv and tool Docker suites. The complete suite also passed on the exact staged follow-up diff. Implementation commit `5bdb066` passed Go race/coverage, lint, Release Preview and CodeQL checks on PR #336. The documentation-only completion commit must pass latest-head CI before final handoff.
+- Review: Senior Go Developer, Senior QA / Test Architect, Senior Product Manager and Senior Infosec Reviewer completed read-only workspace reviews. Corrected stale current-baseline prose and Task Index formatting; focused Go/QA/product reruns approved the fixes and logging test. No unresolved actionable findings or unexpected reviewer edits. Completion-record product review passed.
 - Residual risk: granular upstream allocation/permission combinations outside existing client/tool coverage are not all exhaustively exercised; no claim of expanded compatibility or access.
