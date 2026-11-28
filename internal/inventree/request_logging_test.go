@@ -296,6 +296,21 @@ func TestResolveRouteReturnsFalseForNilRequestOrURL(t *testing.T) {
 	a.False(ok)
 }
 
+func TestResolveRouteFallsBackWhenContentTypeDoesNotMatchFamily(t *testing.T) {
+	t.Parallel()
+	r := require.New(t)
+	ctx, _, _ := testhandler.SetupTestHandler(t)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://inventree.example/api/part/42/", nil)
+	r.NoError(err)
+	// A mismatched content type must still resolve to the bounded route
+	// registry, rather than dropping request logging or logging a raw URL.
+	req.Header.Set("Content-Type", "multipart/form-data; boundary=test")
+	route, ok := resolveRoute(req)
+	r.True(ok)
+	r.Equal("/api/part/{id}/", route.Path)
+	r.Equal(RequestFamilyJSONAPI, route.Family)
+}
+
 func TestPathMatchesTemplate(t *testing.T) {
 	t.Parallel()
 	a := assert.New(t)

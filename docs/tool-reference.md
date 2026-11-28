@@ -4,6 +4,8 @@ This file is the operator-facing and agent-facing reference for registered MCP t
 
 `inventree-mcp self-update` is deliberately absent from this reference and the generated tool manifest. It is a local CLI command only and is never callable through an MCP STDIO or HTTP session; see [Local CLI self-update policy](self-update.md).
 
+The current baseline is InvenTree 1.7.4/API 570. Its stock-allocation and permission fixes retain the existing MCP contracts: allocated-stock relationship changes remain refused, and upstream permission failures do not authorize broader MCP access. See [schema notes](api-schema.md) and F-S116 in [TASKS.md](TASKS.md).
+
 ## Checked Tool Manifest
 
 `docs/tool-manifest.json` is generated from `internal/tools.ToolAuthorizations`, `internal/tools.PromptManifest`, and `internal/tools.InvenTreeIcon` with:

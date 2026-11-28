@@ -196,6 +196,7 @@ Before assigning a new story ID, inspect `git worktree list --porcelain`, search
 | [F-S113](#f-s113-audit-history-for-company-contacts-and-addresses) | Audit history for company contacts and addresses. | Future |
 | [F-S114](#f-s114-audit-history-for-attachments) | Audit history for attachments. | Future |
 | [F-S115](#f-s115-upgrade-to-inventree-173--api-570) | Upgrade the runtime baseline and order creation-date contract to InvenTree 1.7.3/API 570. | Done |
+| [F-S116](#f-s116-upgrade-to-inventree-174--api-570) | Upgrade the runtime baseline to InvenTree 1.7.4/API 570. | Done |
 
 ## Milestone 0: Repository And Planning
 
@@ -3940,3 +3941,24 @@ Out of scope: implementation or live deployment of notes-image tools, generic no
 - Validation: full staged `go test -race -timeout=20m -covermode=atomic -coverprofile=<profile> ./...` passed against InvenTree 1.7.3/API 570, including default-on Docker suites and explicit creation-date create/ignored replacement/null checks. Matched `go test -tags no_integration_tests -race -covermode=atomic -coverprofile=<profile> ./...` against base `57f2658` has no package coverage reductions across 22 packages: inventree 83.6863% to 83.8008%; tools 85.3697% to 85.3742%; all others unchanged. `go vet ./...`, `golangci-lint run ./...` (0 issues), `go mod tidy -diff`, `go generate ./internal/tools`, unchanged schema digest and `git diff --check` passed. Initial schema test setup omitted write-tool registration; corrected before the final full staged run. Implementation commit `5a466ab` passed Go race/coverage, lint, Release Preview and CodeQL checks on PR [#333](https://github.com/davidvanlaatum/inventree-mcp/pull/333). The documentation-only completion commit must pass latest-head CI before the PR is ready.
 - Review: Senior Go Developer, Senior QA / Test Architect, Senior Product Manager and Senior Infosec Reviewer completed read-only workspace reviews; corrected stale purchasing recipe and documentation placement findings, with focused QA/product reruns. Final placement/EOF-only cleanup required no semantic rerun. No unresolved actionable findings or unexpected reviewer edits.
 - Residual risk: existing granular-permission and unexercised-upstream limitations remain; static API 570 schema does not express creation-date mutability conditional on create versus update.
+
+### F-S116: Upgrade To InvenTree 1.7.4 / API 570
+
+- Status: `Done`
+- Tracking: existing PR https://github.com/davidvanlaatum/inventree-mcp/pull/336; no new issue created.
+- Depends on: F-S115 (Done)
+- Scope: complete the Dependabot 1.7.4 pin upgrade from current main; retain API 570 and existing MCP scopes/tools. No release or deployment.
+- Reservation: registered worktrees and open/closed exact-title issue search checked on 2026-11-28; F-S116 was unused.
+- Assumptions: upstream allocation and permission corrections do not authorize broader MCP operations. Existing allocated-stock guards remain in place.
+- Plan: align build-info/Docker pins and README compatibility rows; inspect official release/source and schema; align plan/schema/tool/recipe docs; run the complete Docker race suite, matched base coverage and lint; complete Go/QA/product/infosec review and latest-head CI.
+- Source evidence: official 1.7.4 commit `5bc9e140f99fe0552a24163e84a38c95e7e4bafd` retains API 570. Stock allocation annotation and boundary checks, metadata view permission and barcode nested-field filtering change at runtime without new schema fields. Original API 570 export provenance is retained.
+- Bulk assessment: no new mutation; existing single/bulk stock guards continue to refuse allocated sources.
+- Acceptance:
+  - [x] Align runtime/Docker pins, README compatibility table and current baseline docs.
+  - [x] Review upstream runtime/API changes and preserve existing tool/scope/guard contracts.
+  - [x] Pass full local Docker race suite and matched per-package coverage comparison.
+  - [x] Complete Go/QA/product/infosec reviews and resolve actionable findings.
+  - [x] Pass implementation-head CI and update PR scope/validation metadata.
+- Validation: matched `go test -tags no_integration_tests -race -covermode=atomic -coverprofile=<profile> ./...` passes on current main `c3250b3` and head with no coverage reductions across 22 packages (inventree 83.8008%, tools 85.3742%). A focused route-logging fallback test removes map-iteration-dependent coverage variation in unchanged production logic. `go vet ./...`, `golangci-lint run ./...` (0 issues), `go generate ./internal/tools` (no drift), `go mod tidy -diff`, unchanged schema SHA256 and `git diff --check` pass. Full default `go test -race -timeout=20m -covermode=atomic -coverprofile=<profile> ./...` passed against 1.7.4/API 570, including client, server, testenv and tool Docker suites. The complete suite also passed on the exact staged follow-up diff. Implementation commit `5bdb066` passed Go race/coverage, lint, Release Preview and CodeQL checks on PR #336. The documentation-only completion commit must pass latest-head CI before final handoff.
+- Review: Senior Go Developer, Senior QA / Test Architect, Senior Product Manager and Senior Infosec Reviewer completed read-only workspace reviews. Corrected stale current-baseline prose and Task Index formatting; focused Go/QA/product reruns approved the fixes and logging test. No unresolved actionable findings or unexpected reviewer edits. Completion-record product review passed.
+- Residual risk: granular upstream allocation/permission combinations outside existing client/tool coverage are not all exhaustively exercised; no claim of expanded compatibility or access.
