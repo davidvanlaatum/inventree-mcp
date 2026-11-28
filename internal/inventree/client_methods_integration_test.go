@@ -295,6 +295,7 @@ func TestClientMethodsAgainstInvenTree(t *testing.T) {
 	})
 
 	t.Run("generic_audit_history", func(t *testing.T) { testGenericAuditHistory(t, shared) })
+	t.Run("category_project_audit", func(t *testing.T) { testCategoryProjectAudit(t, shared) })
 
 	t.Run("current_user_and_connector_token", func(t *testing.T) {
 		r := require.New(t)

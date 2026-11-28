@@ -241,3 +241,31 @@ func TestStockAuditConvenienceReadersShareGenericScopeAndProjection(t *testing.T
 		r.Error(err)
 	}
 }
+
+func TestCategoryProjectAuditProjection(t *testing.T) {
+	for _, model := range []string{"part.partcategory", "common.projectcode"} {
+		t.Run(model, func(t *testing.T) {
+			r := require.New(t)
+			a := assert.New(t)
+			wire := stockAuditWire{PK: 1, ModelType: model, ObjectPK: "7", Timestamp: "today", Action: 1,
+				Changes: json.RawMessage(`{"name":["old","new"],"description":["old","new"],"parent":[null,5],"default_location":[null,6],"default_keywords":[null,"key"],"structural":[true,false],"_icon":[null,"ti:box:outline"],"code":["A","B"],"active":[true,false],"responsible":[1,2],"responsible_detail":{"email":"secret"},"pathstring":["old","new"],"lft":[1,2],"metadata":{"secret":"hidden"},"future_secret":"hidden"}`),
+				Deltas:  json.RawMessage(`{"future_event":"secret","quantity":5,"who":{"email":"secret"}}`)}
+			entry, err := wire.auditEntry()
+			r.NoError(err)
+			a.Empty(entry.Deltas, "no event-data fields are approved for these models")
+			want := map[string]any{"description": []any{"old", "new"}}
+			if model == "part.partcategory" {
+				want["name"] = []any{"old", "new"}
+				want["parent"] = []any{nil, float64(5)}
+				want["default_location"] = []any{nil, float64(6)}
+				want["default_keywords"] = []any{nil, "key"}
+				want["structural"] = []any{true, false}
+				want["_icon"] = []any{nil, "ti:box:outline"}
+			} else {
+				want["code"] = []any{"A", "B"}
+				want["active"] = []any{true, false}
+			}
+			a.Equal(want, entry.Changes)
+		})
+	}
+}
