@@ -1101,6 +1101,7 @@ Responsibilities:
 
 - Start database dependencies, likely PostgreSQL, with `testcontainers-go`.
 - Start the InvenTree services required for realistic API behavior. This may include the server, worker, proxy, and optional Redis/cache depending on the official stable deployment shape.
+- Keep server and worker media storage shared within each disposable stack. The server owns an anonymous media volume; the worker inherits that mount, and reverse container teardown removes it. Exercise worker visibility and real housekeeping retention of an embedded upload rather than disabling cleanup.
 - Start containers with deterministic admin credentials.
 - Run any required InvenTree setup, migrations, or startup commands.
 - Create or retrieve per-run InvenTree users and API tokens for integration tests. Each subtest should request its own account before requesting its client or fixtures.

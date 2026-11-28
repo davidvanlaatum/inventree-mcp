@@ -197,7 +197,7 @@ Before assigning a new story ID, inspect `git worktree list --porcelain`, search
 | [F-S114](#f-s114-audit-history-for-attachments) | Audit history for attachments. | Future |
 | [F-S115](#f-s115-upgrade-to-inventree-173--api-570) | Upgrade the runtime baseline and order creation-date contract to InvenTree 1.7.3/API 570. | Done |
 | [F-S116](#f-s116-upgrade-to-inventree-174--api-570) | Upgrade the runtime baseline to InvenTree 1.7.4/API 570. | Done |
-| [F-S117](#f-s117-guarded-notes-image-upload-embedding-and-removal) | Add scoped notes-image reads and guarded upload, HTML embedding, replacement/removal and render reuse. | Done |
+| [F-S117](#f-s117-guarded-notes-image-upload-embedding-and-removal) | Add scoped notes-image reads and guarded upload, HTML embedding, replacement/removal and render reuse. | Active |
 
 ## Milestone 0: Repository And Planning
 
@@ -3977,12 +3977,12 @@ Out of scope: implementation or live deployment of notes-image tools, generic no
 
 ### F-S117: Guarded notes-image upload, embedding and removal
 
-- Status: `Done`
+- Status: `Active`
 - Issue: https://github.com/davidvanlaatum/inventree-mcp/issues/338
 - Depends on: F-S107 (#311, Done; investigation PR #337 merged at d4f09fe)
 - Baseline: InvenTree 1.7.4/API 570
 - Reservation: operator approved issue creation; all 63 registered worktrees and open/closed exact-title issue search checked before creation and refreshed before recording #338. No task-ID or linked-issue collision.
-- Scope and acceptance: mirror the approved implementation issue; detailed contract follows. Implementation completed in PR #340; awaiting merge.
+- Scope and acceptance: mirror the approved implementation issue; detailed contract follows. PR #340 implementation is undergoing final CI follow-up: correct server/worker media sharing in the suite-owned Testcontainers stack.
 
 - Branch: `codex/f-s117-note-image-tools`, from updated main `d4f09fe` after PR #337 squash merge.
 - Plan: typed `internal/inventree/note_images.go` list/upload/download plus routes/manifest and shared raster validation; `internal/tools/note_image_tools.go` explicit reads/add/replace/remove and server-side render reuse with principal-bound plans and partial outcomes; protect existing single/bulk note updates in `note_tools.go`; isolated unit/live tests across six domains; generated contracts/docs, full staged Docker race suite, matched coverage, lint and Go/QA/product/infosec review. Addition does not require destructive scope; replacement/removal do. Public bulk image tools remain deferred.
@@ -3992,7 +3992,7 @@ Out of scope: implementation or live deployment of notes-image tools, generic no
 - Accept InvenTree's intended media-access behavior: authenticated access to a known media URL is broader than note metadata permissions. MCP tools must still preflight the supported note and parent permissions; an upstream/proxy fix is not a prerequisite.
 - Implement upload plus HTML embedding as separate writes with explicit partial/unknown outcomes and recovery instructions.
 - Allow addition, replacement and removal of images. Replacement/removal require explicit confirmation and destructive authorization. Removing an owner's reference can delete the file even if another note references that URL; no global reference-count guarantee is assumed.
-- Operator explicitly approved creation of this implementation issue. Implementation is complete on `codex/f-s117-note-image-tools` in PR #340, assigned to davidvanlaatum; the issue stays open until merge.
+- Operator explicitly approved creation of this implementation issue. Implementation is active on `codex/f-s117-note-image-tools` in PR #340 for CI follow-up, assigned to davidvanlaatum; the issue stays open until merge.
 
 #### Scope
 
@@ -4038,3 +4038,7 @@ The API has no global reference check, atomic upload/content transaction or CAS.
 - Residual risk: intended broader authenticated media access, external preflight-to-PATCH races and storage-backend deletion failures remain; no global reference counting, atomicity or CAS is claimed. Production proxy/storage authorization, visual browser rendering, populated legacy upgrades, scheduled aging and parent cascade behavior retain the investigation's stated limits; all six supported model role tiers now have direct live evidence. Upload-package coverage arithmetic and existing uncovered source failure branches are recorded above. No release or deployment.
 
 - Dependency check: no Planned or Blocked task depends on F-S117; no successor status transition is needed. PR #340 closes #338 only on merge. No release or deployment.
+
+- CI follow-up: final head `c4598ed` passed five checks but Go attempt 1 hit the unchanged pricing 30-second poll; a complete uncached CI-style local suite passed (pricing 0.84s). Attempt 2 passed pricing but returned an empty scoped image list in the company permission case. The suite server and worker have isolated media storage; upstream housekeeping removes image rows when files are absent. Add a shared media mount and deterministic worker-visibility/housekeeping regression, rerun full validation and all applicable reviews. The exact CI deletion cause is not yet proven.
+
+- Media follow-up validation: old setup failed the worker file-visibility assertion; corrected whole-parent `go test -count=1 -race -timeout=20m ./internal/testenv -run '^TestSharedInvenTreeFixturesAndParallelRuns$'` passed (189.619s), including real housekeeping retention and exact bytes. The initially child-filtered command also hit the existing parent fixture-count cleanup and was replaced with the complete parent command. Matched full unit race/coverage rerun passed. Testenv unit-only coverage is 67.7100% (411/607) to 67.5987% (411/608), down 0.1114 percentage points for the worker mount assignment, which requires Docker and is directly exercised by the default-on live regression; a mirrored configuration unit test would not verify storage visibility. No additional production branch is uncovered. Go, QA, product and infosec reviewed the actual follow-up with no actionable findings. Final staged full gate and latest-head CI remain required.
