@@ -12,7 +12,7 @@ import (
 )
 
 // AuditScope selects one ordinary business object. Child history is opt-in and
-// remains restricted to the same six audited model types as direct reads.
+// remains restricted to the same allowlisted audited model types as direct reads.
 type AuditScope struct {
 	ModelType       string
 	ModelID         int
@@ -31,7 +31,7 @@ type AuditEntryQuery struct {
 
 func ValidAuditModelType(model string) bool {
 	switch model {
-	case "part.part", "company.company", "company.supplierpart", "company.manufacturerpart", "stock.stockitem", "order.purchaseorder":
+	case "part.part", "company.company", "company.supplierpart", "company.manufacturerpart", "stock.stockitem", "order.purchaseorder", "part.partcategory", "common.projectcode":
 		return true
 	default:
 		return false
@@ -91,7 +91,13 @@ func (w stockAuditWire) auditEntry() (AuditEntry, error) {
 		entry.ParentModelType = w.ParentModelType
 		entry.ParentModelID = &parent
 	}
-	entry.Deltas, err = SanitizeAuditDeltas(w.Deltas)
+	// These models define no named events or approved event-data fields.
+	// Keep future event payloads closed until separately reviewed.
+	if w.ModelType == "part.partcategory" || w.ModelType == "common.projectcode" {
+		entry.Deltas = map[string]any{}
+	} else {
+		entry.Deltas, err = SanitizeAuditDeltas(w.Deltas)
+	}
 	if err != nil {
 		return AuditEntry{}, err
 	}
@@ -163,6 +169,17 @@ func (c *Client) GetAuditEntry(ctx context.Context, query AuditEntryQuery) (Audi
 
 func auditChangeFieldExposed(model, key string) bool {
 	switch model {
+	case "part.partcategory":
+		// Stored category fields only: derived paths/counts/tree bookkeeping,
+		// metadata and unrelated location history are not category changes.
+		switch key {
+		case "name", "description", "parent", "default_location", "default_keywords", "structural", "_icon":
+			return true
+		default:
+			return false
+		}
+	case "common.projectcode":
+		return ProjectCodeFieldInventory[key] == ProjectCodeFieldExposed
 	case "part.part":
 		return PartFieldInventory[key] == PartFieldExposed
 	case "company.company":

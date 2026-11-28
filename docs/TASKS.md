@@ -189,7 +189,7 @@ Before assigning a new story ID, inspect `git worktree list --porcelain`, search
 | [F-S106](#f-s106-upgrade-to-inventree-160--api-560) | Upgrade to InvenTree 1.6.0/API 560 with generic notes CRUD/search, primary selection, and batch creation/editing. | Done |
 | [F-S107](#f-s107-investigate-images-embedded-in-notes) | Investigate safe upload, embedding, permissions, and lifecycle for images in notes after F-S106. | Ready |
 | [F-S108](#f-s108-upgrade-to-inventree-171--api-570) | Migrate stock history, pricing and supported contracts to InvenTree 1.7.1/API 570. | Done |
-| [F-S109](#f-s109-audit-history-for-categories-and-project-codes) | Audit history for categories and project codes. | Future |
+| [F-S109](#f-s109-audit-history-for-categories-and-project-codes) | Audit history for categories and project codes. | Done |
 | [F-S110](#f-s110-audit-history-for-purchase-order-lines) | Audit history for purchase-order lines. | Future |
 | [F-S111](#f-s111-audit-history-for-pricing-records) | Audit history for pricing records. | Future |
 | [F-S112](#f-s112-audit-history-for-parameters-and-templates) | Audit history for parameters and templates. | Future |
@@ -3811,21 +3811,24 @@ Out of scope: implementation or live deployment of notes-image tools, generic no
 
 ### F-S109: Audit history for categories and project codes
 
-- Status: `Future`
+- Status: `Done`
 - Issue: https://github.com/davidvanlaatum/inventree-mcp/issues/320
-- Depends on: F-S108
+- Depends on: F-S108 (Done)
+- Branch: `codex/f-s109-category-project-audit`, from current main `c0681cd`; operator approved promotion on 2026-11-28.
+- Assumptions: preserve existing category/project-code detail policies, scopes and bounds. Tree and assignment relations are not audit-parent relations. Project-code audit view follows upstream authenticated access; category history follows model permissions.
+- Plan: add explicit model projections and enum; cover real list/detail, permissions, deleted history, child scope and redaction; align schema/tool/recipe/plan docs and generated metadata; run full race suite, matched package coverage and Go/QA/product/infosec review.
 - Scope: extend the generic audit tools to `part.partcategory`, `common.projectcode`. Existing implemented workflows: search_part_categories/get_part_category and search_project_codes/get_project_code/assign_project_code.
 - Model-specific requirements: Use existing category/project-code detail-field policies. Verify tree/category and project-code permissions, deleted-record history and any actual parent linkage; do not infer stock-location auditing.
 - Bulk assessment: read-only history extension; no new mutation or bulk mutation counterpart.
 - Acceptance:
-  - [ ] Verify exact audited model names, actual history fields/events, parent relations and permissions against the pinned schema/source and real API.
-  - [ ] Extend the generic model registry/enum, scoped list/exact reads and parent-child handling without exposing unrelated or administrative history.
-  - [ ] Define explicit per-model old/new field and event-data projections; retain bounds and prevent sensitive expansions or permission bypass.
-  - [ ] Add isolated real-API list/detail, permission, child-scope and redaction coverage; run full race tests and compare package coverage.
-  - [ ] Align tool reference, recipes, plan, schema notes and generated metadata; complete Go, QA, product and infosec review.
-- Validation: not started; backlog planning only.
-- Review: implementation review required when selected.
-- Residual risk: actual per-model audited fields and permission boundaries require verification; an enum change alone is insufficient.
+  - [x] Verify exact audited model names, actual history fields/events, parent relations and permissions against the pinned schema/source and real API.
+  - [x] Extend the generic model registry/enum, scoped list/exact reads and parent-child handling without exposing unrelated or administrative history.
+  - [x] Define explicit per-model old/new field and event-data projections; retain bounds and prevent sensitive expansions or permission bypass.
+  - [x] Add isolated real-API list/detail, permission, child-scope and redaction coverage; run full race tests and compare package coverage.
+  - [x] Align tool reference, recipes, plan, schema notes and generated metadata; complete Go, QA, product and infosec review.
+- Validation: full staged `go test -race -timeout=20m -covermode=atomic -coverprofile=<profile> ./...` passed against InvenTree 1.7.4/API 570, including new client list/detail, category denial, authenticated project-code access, deletion retention, post-deletion permissions, child-scope exclusion and MCP round trips. Matched base `c0681cd` and head `go test -tags no_integration_tests -race -p=1 -covermode=atomic -coverprofile=<profile> ./...` passed with no reductions across 22 executable packages: inventree 83.8008% to 83.8562%, others unchanged. `go vet ./...`, `golangci-lint run ./...` (0 issues), `go mod tidy -diff`, `go generate ./internal/tools` (no manifest drift), and `git diff --check` passed. Corrected invalid icon and missing deletion-flag fixtures before the passing full run. The initial unconstrained base coverage run timed out an unchanged bounded-process test; both matched serial runs passed. Latest-head CI is required before PR readiness.
+- Review: Senior Go Developer, Senior QA / Test Architect, Senior Product Manager and Senior Infosec Reviewer completed read-only-by-instruction workspace reviews. Added QA-suggested post-deletion permission checks; focused Go/QA/infosec reruns found no actionable issues after fixture corrections. No unexpected reviewer edits. No Planned/Blocked task depends on F-S109.
+- Residual risk: granular category-role separation (including build-role inheritance) remains source-verified rather than independently isolated. One intervening full run failed the unchanged non-leaf category-deletion characterization with an upstream foreign-key error; its cause is unproven. The new retention test now deletes only an empty leaf, and the complete suite passes; no upstream tree-reparenting fix or expanded deletion workflow is claimed. Existing historical free-text sensitivity and unexercised upstream behavior remain.
 
 
 ### F-S110: Audit history for purchase-order lines

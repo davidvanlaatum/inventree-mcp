@@ -26,9 +26,9 @@ type AuditLookupClient interface {
 }
 
 type AuditScopeInput struct {
-	ModelType       auditModelType `json:"model_type" jsonschema:"Qualified audited model type for one of the six supported ordinary object types."`
+	ModelType       auditModelType `json:"model_type" jsonschema:"Qualified audited model type for one of the eight supported ordinary object types."`
 	ModelID         int            `json:"model_id" jsonschema:"Required positive object ID; unscoped audit reads are unavailable. Deleted objects may retain readable audit history."`
-	IncludeChildren bool           `json:"include_children,omitempty" jsonschema:"Opt in to directly linked child audit entries, restricted to the same six supported model types; default false."`
+	IncludeChildren bool           `json:"include_children,omitempty" jsonschema:"Opt in to directly linked child audit entries, restricted to the same eight supported model types; default false."`
 }
 
 func (i AuditScopeInput) scope() inventree.AuditScope {
@@ -60,7 +60,7 @@ type AuditEntryDetailOutput struct {
 }
 
 func addAuditReadTool[In, Out any](server *mcp.Server, deps Dependencies, name, title, description string, handler mcp.ToolHandlerFor[In, Out]) {
-	schema, err := jsonschema.For[In](&jsonschema.ForOptions{TypeSchemas: map[reflect.Type]*jsonschema.Schema{reflect.TypeFor[auditModelType](): stringEnumSchema([]string{"part.part", "company.company", "company.supplierpart", "company.manufacturerpart", "stock.stockitem", "order.purchaseorder"})}})
+	schema, err := jsonschema.For[In](&jsonschema.ForOptions{TypeSchemas: map[reflect.Type]*jsonschema.Schema{reflect.TypeFor[auditModelType](): stringEnumSchema([]string{"part.part", "company.company", "company.supplierpart", "company.manufacturerpart", "stock.stockitem", "order.purchaseorder", "part.partcategory", "common.projectcode"})}})
 	if err != nil {
 		panic(fmt.Sprintf("build %s input schema: %v", name, err))
 	}
@@ -69,7 +69,7 @@ func addAuditReadTool[In, Out any](server *mcp.Server, deps Dependencies, name, 
 	mcp.AddTool(server, tool, GuardTool(deps, name, handler))
 }
 func registerAuditLookupTools(server *mcp.Server, deps Dependencies) {
-	addAuditReadTool(server, deps, ListAuditEntriesToolName, "List audit entries", "Lists bounded, redacted audit history for one supported object; optional child history stays within the six-type allowlist. Omits notes, actor expansions, network details and display expansions. Replaces legacy stock-tracking tools; use the returned audit IDs.", listAuditEntries(deps))
+	addAuditReadTool(server, deps, ListAuditEntriesToolName, "List audit entries", "Lists bounded, redacted audit history for one supported object; optional child history stays within the eight-type allowlist. Omits notes, actor expansions, network details and display expansions. Replaces legacy stock-tracking tools; use the returned audit IDs.", listAuditEntries(deps))
 	addAuditReadTool(server, deps, GetAuditEntryToolName, "Get audit entry", "Reads an exact audit entry after matching its supported object scope; includes free-text notes with bounded/redacted deltas and approved field changes. Audit IDs differ from legacy stock-tracking IDs.", getAuditEntry(deps))
 }
 

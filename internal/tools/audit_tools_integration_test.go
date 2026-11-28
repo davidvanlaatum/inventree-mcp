@@ -4,6 +4,7 @@ package tools
 
 import (
 	"encoding/json"
+	"net/http"
 	"testing"
 
 	"github.com/davidvanlaatum/dvgoutils/logging/testhandler"
@@ -14,7 +15,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func runAuditToolsIntegration(t *testing.T, shared *testenv.SharedInvenTree) {
+func runStockAuditIntegration(t *testing.T, shared *testenv.SharedInvenTree) {
 	ctx, _, _ := testhandler.SetupTestHandler(t)
 	r := require.New(t)
 	a := assert.New(t)
@@ -63,4 +64,55 @@ func runAuditToolsIntegration(t *testing.T, shared *testenv.SharedInvenTree) {
 	r.NoError(json.Unmarshal(payload, &missing))
 	a.Equal(StatusNotFound, missing.Status)
 	a.Nil(missing.Record)
+}
+
+func runAuditToolsIntegration(t *testing.T, shared *testenv.SharedInvenTree) {
+	t.Run("stock", func(t *testing.T) { runStockAuditIntegration(t, shared) })
+	for _, model := range []string{"part.partcategory", "common.projectcode"} {
+		t.Run(model, func(t *testing.T) {
+			ctx, _, _ := testhandler.SetupTestHandler(t)
+			r := require.New(t)
+			a := assert.New(t)
+			f := newMilestoneToolFixture(t, shared)
+			name, err := f.run.Name("mcp-audit")
+			r.NoError(err)
+			var id int
+			if model == "part.partcategory" {
+				category, createErr := f.client.CreatePartCategory(ctx, inventree.CategoryCreate{Name: name})
+				r.NoError(createErr)
+				id = category.PK
+			} else {
+				req, reqErr := f.client.NewRequest(ctx, http.MethodPost, "/api/project-code/", nil, map[string]any{"code": name})
+				r.NoError(reqErr)
+				var project inventree.ProjectCode
+				r.NoError(f.client.DoJSON(req, &project))
+				id = project.PK
+			}
+			session, closeSession := plannedChangesSession(t, ctx, f.client)
+			defer closeSession()
+			result, err := session.CallTool(ctx, &mcp.CallToolParams{Name: ListAuditEntriesToolName, Arguments: map[string]any{"model_type": model, "model_id": id, "include_children": true}})
+			r.NoError(err)
+			r.False(result.IsError)
+			body, err := json.Marshal(result.StructuredContent)
+			r.NoError(err)
+			var listed AuditEntryListOutput
+			r.NoError(json.Unmarshal(body, &listed))
+			r.Equal(StatusOK, listed.Status)
+			r.NotEmpty(listed.Results)
+			a.NotContains(string(body), `"notes"`)
+			for _, entry := range listed.Results {
+				a.Equal(model, entry.ModelType)
+				a.Equal(id, entry.ModelID)
+				detail, readErr := session.CallTool(ctx, &mcp.CallToolParams{Name: GetAuditEntryToolName, Arguments: map[string]any{"model_type": model, "model_id": id, "id": entry.PK}})
+				r.NoError(readErr)
+				r.False(detail.IsError)
+				encoded, marshalErr := json.Marshal(detail.StructuredContent)
+				r.NoError(marshalErr)
+				var exact AuditEntryDetailOutput
+				r.NoError(json.Unmarshal(encoded, &exact))
+				r.NotNil(exact.Record)
+				a.Equal(entry, exact.Record.AuditEntrySummary)
+			}
+		})
+	}
 }
