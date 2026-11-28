@@ -187,7 +187,7 @@ Before assigning a new story ID, inspect `git worktree list --porcelain`, search
 | [F-S104](#f-s104-dedicated-user-lookup-tools) | Add correctly named bounded user lookup tools separate from owner/group lookup. | Done |
 | [F-S105](#f-s105-render-time-attach-to-part-primary-image) | Add render_and_attach_component_image so a rendered image can be attached (and optionally set primary) server-side, without the calling model relaying image bytes. | Done |
 | [F-S106](#f-s106-upgrade-to-inventree-160--api-560) | Upgrade to InvenTree 1.6.0/API 560 with generic notes CRUD/search, primary selection, and batch creation/editing. | Done |
-| [F-S107](#f-s107-investigate-images-embedded-in-notes) | Investigate safe upload, embedding, permissions, and lifecycle for images in notes after F-S106. | Active |
+| [F-S107](#f-s107-investigate-images-embedded-in-notes) | Investigate safe upload, embedding, permissions, and lifecycle for images in notes after F-S106. | Done |
 | [F-S108](#f-s108-upgrade-to-inventree-171--api-570) | Migrate stock history, pricing and supported contracts to InvenTree 1.7.1/API 570. | Done |
 | [F-S109](#f-s109-audit-history-for-categories-and-project-codes) | Audit history for categories and project codes. | Future |
 | [F-S110](#f-s110-audit-history-for-purchase-order-lines) | Audit history for purchase-order lines. | Future |
@@ -3750,11 +3750,11 @@ Out of scope: unrelated new 1.6 features, sales/customer workflow expansion, rel
 
 ### F-S107: Investigate Images Embedded In Notes
 
-- Status: `Active`
+- Status: `Done`
 - Issue: [#311](https://github.com/davidvanlaatum/inventree-mcp/issues/311)
 - Depends on: F-S106 (#310, Done; PR #312 merged)
 
-- Active baseline (operator, 2026-11-28): InvenTree 1.7.4/API 570, following F-S116/PR #336. Historical 1.6.0 context remains historical.
+- Investigation baseline (operator, 2026-11-28): InvenTree 1.7.4/API 570, following F-S116/PR #336. Historical 1.6.0 context remains historical.
 - Branch: `codex/f-s107-notes-images`, from current main `c0681cd`.
 - Plan: inspect tagged source/schema; characterize upload, embedding, permissions and lifecycle with disposable fixtures; assess batch/render reuse; document a bounded recommendation and unresolved decisions; complete Go/QA/product/infosec review. No new tools or deployment.
 
@@ -3766,14 +3766,14 @@ The current API 570 schema exposes GET/POST `/api/note/image/` and a `NotesImage
 
 #### Investigation checklist
 
-- [ ] Verify 1.7.4 source, schema, and disposable live behavior for image upload/list/read, supported media types and limits, and how returned image URLs are embedded in Markdown and rendered in InvenTree.
-- [ ] Determine whether image creation and note-content updates require separate writes; document partial-failure recovery, idempotency/duplicate handling, and concurrent-edit risks.
-- [ ] Verify image readability and mutation permissions against the owning note and parent object, including deleted/unreadable notes, cross-user access, supported model types, and primary-note behavior.
-- [ ] Investigate image replacement, deletion, orphan cleanup, note deletion, retained references, and upstream migration behavior for existing embedded images.
-- [ ] Assess practical bulk upload/association using the shared batch framework; explain any ordering/dependency or partial-failure reason to defer it.
-- [ ] Propose a bounded tool contract with explicit upload scopes and existing transport rules: inline bytes, STDIO allowlisted local paths, separate URL-upload handling if proposed, same-instance bounded downloads, redirect/SSRF controls, and redacted logs/errors.
-- [ ] Assess reuse of existing image-rendering/upload workflows without requiring the model to relay large image blobs.
-- [ ] Record findings, executable validation evidence, unresolved product decisions, and recommended implementation scope. Obtain operator decisions before implementing new tools.
+- [x] Verify 1.7.4 source, schema, and disposable live behavior for image upload/list/read, supported media types and limits, and how returned image URLs are embedded in Markdown and rendered in InvenTree.
+- [x] Determine whether image creation and note-content updates require separate writes; document partial-failure recovery, idempotency/duplicate handling, and concurrent-edit risks.
+- [x] Verify image readability and mutation permissions against the owning note and parent object, including deleted/unreadable notes, cross-user access, supported model types, and primary-note behavior.
+- [x] Investigate image replacement, deletion, orphan cleanup, note deletion, retained references, and upstream migration behavior for existing embedded images.
+- [x] Assess practical bulk upload/association using the shared batch framework; explain any ordering/dependency or partial-failure reason to defer it.
+- [x] Propose a bounded tool contract with explicit upload scopes and existing transport rules: inline bytes, STDIO allowlisted local paths, separate URL-upload handling if proposed, same-instance bounded downloads, redirect/SSRF controls, and redacted logs/errors.
+- [x] Assess reuse of existing image-rendering/upload workflows without requiring the model to relay large image blobs.
+- [x] Record findings, executable validation evidence, unresolved product decisions, and recommended implementation scope. Obtain operator decisions before implementing new tools.
 
 #### Completion criteria
 
@@ -3781,10 +3781,9 @@ A documented, evidence-backed feasibility and workflow recommendation, with a pr
 
 Out of scope: implementation or live deployment of notes-image tools, generic note templates, new sales/build workflows, and unrelated image features. Use disposable fixtures rather than production inventory for investigation.
 
-
 - Investigation report: [notes-images-investigation.md](notes-images-investigation.md), with scoped multipart/HTML evidence, immediate cleanup and broader authenticated media access, proposed bounded tools, bulk/render assessment and explicit implementation decisions. No new issue or tools.
-- Validation in progress: matched base `c0681cd` and head `go test -tags no_integration_tests -race -covermode=atomic -coverprofile=<profile> ./...` passed; all 22 packages with executable statements have identical coverage. Initial live runs exposed a purchase-order fixture name assumption and an incorrect expectation that a deleted-note FK filter returns an empty page; corrected to require HTTP 400 and verify cascade absence via the surviving parent filter plus file 404. A subsequent filter-rejection hypothesis was disproved by the original HTTP log (qualified filter succeeds) and removed. Full staged Docker race suite and final lint remain required before committing tests.
-- Review in progress: Go/QA/product/infosec workspace reviews completed; clarified view-only list success versus upload denial and bound the proposed plan to scoped image IDs/URLs, refusing pending uploads before any PATCH. Focused follow-up reviews pending final evidence; no reviewer edits.
+- Validation: full staged `go test -race -timeout=20m -covermode=atomic -coverprofile=<profile> ./...` passed against InvenTree 1.7.4/API 570, including all default-on Docker suites and the six-model notes-image characterization (upload/list/HTML association/note deletion; part-role/media/duplicate/cleanup checks). Matched base `c0681cd` and head `go test -tags no_integration_tests -race -covermode=atomic -coverprofile=<profile> ./...` passed; all 22 packages with executable statements have identical coverage. `golangci-lint run ./...` reported 0 issues; `git diff --check` passed. Corrected initial purchase-order fixture naming and deleted-note FK filter assumptions before the full staged run. Implementation/evidence commit: `c0e0735`; latest-head CI is required before PR readiness.
+- Review: Senior Go Developer, Senior QA / Test Architect, Senior Product Manager and Senior Infosec Reviewer completed workspace reviews read-only by instruction and focused reruns. Clarified view-only listing success versus upload denial, corrected deleted-note filter characterization, and bound the proposed plan to scoped image IDs/URLs with pending-upload rejection before any PATCH. No unresolved actionable findings or unexpected reviewer edits. Focused QA/product completion-evidence review passed; no dependent Planned/Blocked tasks require promotion.
 - Residual risk: no new runtime behavior; production media authorization, browser visual rendering, populated legacy upgrades, scheduled aging, parent cascades and five granular role cases remain source-only or unverified as detailed in the report. Notes-image implementation remains deferred for operator decisions.
 
 ### F-S108: Upgrade To InvenTree 1.7.1 / API 570
