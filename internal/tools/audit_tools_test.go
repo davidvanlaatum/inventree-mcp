@@ -53,7 +53,7 @@ func TestAuditToolSchemasRequireScopeAndReplaceLegacyNames(t *testing.T) {
 		r.Contains(tools, name)
 		schema := tools[name].InputSchema.(map[string]any)
 		properties := schema["properties"].(map[string]any)
-		a.Equal([]any{"part.part", "company.company", "company.supplierpart", "company.manufacturerpart", "stock.stockitem", "order.purchaseorder"}, properties["model_type"].(map[string]any)["enum"])
+		a.Equal([]any{"part.part", "company.company", "company.supplierpart", "company.manufacturerpart", "stock.stockitem", "order.purchaseorder", "part.partcategory", "common.projectcode"}, properties["model_type"].(map[string]any)["enum"])
 		a.Contains(schema["required"], "model_type")
 		a.Contains(schema["required"], "model_id")
 		if name == GetAuditEntryToolName {
