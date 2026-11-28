@@ -680,7 +680,7 @@ For all mutations, first use `dry_run:true`. Review the returned target records,
 
 This is a breaking replacement for obsolete inline object Markdown notes and their clear flags. Purchase-order-line, stock-adjustment/history, and test-result notes are separate upstream fields and remain supported. `global_search(search_notes:true)` continues to match supported objects through their notes.
 
-F-S107 characterization on InvenTree 1.7.4/API 570: the web editor uses HTML; bare Markdown image syntax remains text. Every upstream note save can delete linked images whose URLs are absent from the resulting content, even for metadata-only updates. Preserve existing image references when editing image-bearing notes. Notes-image upload/list/download tools remain unavailable; see the [investigation](notes-images-investigation.md) for permission, recovery and proposed-contract limits.
+F-S107 characterization on InvenTree 1.7.4/API 570: the web editor uses HTML; bare Markdown image syntax remains text. Every upstream note save can delete linked images whose URLs are absent from the resulting content, even for metadata-only updates. Preserve existing image references when editing image-bearing notes. Notes-image upload/list/download tools remain unavailable; see the [investigation](notes-images-investigation.md) for permission, recovery and approved-contract limits. Implementation is tracked by F-S117 (#338); no new tool is registered by this planning update.
 
 ## Generic Audit History (F-S108)
 

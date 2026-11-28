@@ -1,6 +1,6 @@
 # Notes images investigation (F-S107)
 
-Investigation baseline: InvenTree **1.7.4 / API 570**, selected by the operator on 2026-11-28. This is a feasibility report, not authorization to add tools. No notes-image client methods, MCP tools, deployment, or new implementation issue are introduced.
+Investigation baseline: InvenTree **1.7.4 / API 570**, selected by the operator on 2026-11-28. The investigation introduced no notes-image client methods, MCP tools or deployment. The operator subsequently approved the implementation contract and issue creation; [F-S117 / #338](https://github.com/davidvanlaatum/inventree-mcp/issues/338) tracks that work as Ready and unassigned. Implementation has not started.
 
 ## Evidence and reproduction
 
@@ -52,9 +52,9 @@ Templates are visible through the upstream queryset and need staff rights for wr
 
 The legacy common.0051 migration creates notes from old model `notes`, links directly attached or content-referenced images, preserves directly attached images on blank notes via an empty primary note, and removes still-unlinked rows. Matching is URL-based, and an unlinked image is claimed by one note. common.0052 removes old model association columns and makes the note FK mandatory. These are historical source findings; a fresh 1.7.4 container is not proof of preservation when upgrading a populated old database. Backup and independently validate a real legacy migration before making that claim. Upstream `copy_notes_from` copies bytes and rewrites references for new notes; a future MCP workflow must not infer that generic string copying does the same.
 
-## Proposed bounded implementation contract (not approved)
+## Approved bounded implementation contract (F-S117)
 
-Defer implementation until the operator chooses how to handle the media-permission limitation and approves the two-write recovery semantics. No new task ID/issue is reserved by this report. If approved, a separate implementation task should cover these acceptance criteria:
+The operator approved the decisions below and creation of [F-S117 / #338](https://github.com/davidvanlaatum/inventree-mcp/issues/338). That Ready task carries the following reviewed contract, including replacement/removal. Approval establishes scope; tools remain unavailable until implementation and validation are complete.
 
 1. Scoped image metadata/list and bounded download by stable `note_id` plus image ID; require `inventree.read`, supported note/parent checks, bounded pagination, no expanded user records, no arbitrary URL input. Fetch only the URL actually returned for the selected image belonging to that note, on the configured instance and media path. Bound reads; reject unsafe redirects, credentials and unexpected content; redact URLs and bytes from logs/errors. Return inline image bytes only through the normal image result contract, not reusable unguarded links.
 2. A guarded upload-and-embed operation for an existing note, with explicit append/replace intent, sanitized/escaped HTML image construction, preview/confirm plan, parent, full content-state and scoped image-ID/URL-set binding, pre-write revalidation and post-write verification. Refuse any pre-existing or unexpected unreferenced uploads before a content PATCH, including append-only operations: upload alone does not advance the note timestamp, and a save could otherwise delete another writer's pending image. This preflight still has a race; require single-writer use. Read+write+upload scopes are additive. Because content replacement can remove image references and delete files, explicitly classify replacement/removal under destructive authorization; do not silently treat it as a harmless upload. Do not offer arbitrary image-row DELETE or implicit note creation/primary selection. Account for image cleanup in existing note updates before adding an upload tool.
@@ -65,12 +65,13 @@ Defer implementation until the operator chooses how to handle the media-permissi
 
 ### Bulk assessment
 
-Independent existing notes could eventually use the shared bounded batch executor, each item owning upload + content PATCH + verification with per-item partial outcomes. Preflight all items and reject repeated note IDs; preserve each note's complete content and references. Multiple uploads into the same note are dependent and must be one ordered workflow item with a single final content update, not parallel independent batch rows: an intervening PATCH can delete the other uploads. Cross-item rollback is unavailable. Defer public bulk upload until the single-note recovery contract is approved and tested; this is an ordering/partial-failure boundary rather than a reason to invent an upstream atomic batch endpoint.
+Independent existing notes could eventually use the shared bounded batch executor, each item owning upload + content PATCH + verification with per-item partial outcomes. Preflight all items and reject repeated note IDs; preserve each note's complete content and references. Multiple uploads into the same note are dependent and must be one ordered workflow item with a single final content update, not parallel independent batch rows: an intervening PATCH can delete the other uploads. Cross-item rollback is unavailable. Defer public bulk upload until the single-note recovery workflow is implemented and validated; this is an ordering/partial-failure boundary rather than a reason to invent an upstream atomic batch endpoint.
 
-## Decisions required before implementation
+## Operator decisions (2026-11-28)
 
-- Accept upstream authenticated media access being broader than parent-note metadata permissions, with MCP preflight and explicit deployment guidance, or require an upstream/proxy fix before shipping any notes-image capability?
-- Approve a guarded two-write HTML embed workflow with explicit partial/unknown outcomes and single-writer use, or keep image authoring in the InvenTree web editor?
-- Approve explicit replacement/removal and its destructive authorization requirements, or start with append-only embedding and scoped reads? Existing note updates can already trigger cleanup; this must be reflected in the implementation safety review.
+- Accept broader authenticated access to known media URLs as intended InvenTree behavior. An upstream/proxy fix is not a prerequisite; MCP note/parent permission checks remain required.
+- Approve upload plus HTML embedding as two writes, with explicit partial/unknown results, recovery instructions and single-writer guidance.
+- Allow addition, replacement and removal, with explicit confirmation and destructive authorization for replacement/removal. The operator confirmed this after clarification that cleanup checks only the owning note; another note's reference does not preserve the file. Use independent uploaded copies for different notes.
+- Approve creation of the implementation issue: [F-S117 / #338](https://github.com/davidvanlaatum/inventree-mcp/issues/338). Status Ready; leave unassigned until implementation starts. Public bulk image tools remain deferred under the ordering/partial-failure assessment above.
 
-These are future product decisions, not assumptions this investigation implements. Production reverse-proxy media authorization, browser visual rendering, legacy populated upgrades, exhaustive decoder limits and granular roles for five model types remain validation limits. The current recommendation is to defer new tools until the decisions above are made.
+Production reverse-proxy media authorization, browser visual rendering, legacy populated upgrades, exhaustive decoder limits and granular roles for five model types remain validation limits. These approvals do not claim those environments were verified, do not add runtime tools, and do not authorize a release or deployment.

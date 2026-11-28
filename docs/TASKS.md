@@ -197,6 +197,7 @@ Before assigning a new story ID, inspect `git worktree list --porcelain`, search
 | [F-S114](#f-s114-audit-history-for-attachments) | Audit history for attachments. | Future |
 | [F-S115](#f-s115-upgrade-to-inventree-173--api-570) | Upgrade the runtime baseline and order creation-date contract to InvenTree 1.7.3/API 570. | Done |
 | [F-S116](#f-s116-upgrade-to-inventree-174--api-570) | Upgrade the runtime baseline to InvenTree 1.7.4/API 570. | Done |
+| [F-S117](#f-s117-guarded-notes-image-upload-embedding-and-removal) | Add scoped notes-image reads and guarded upload, HTML embedding, replacement/removal and render reuse. | Ready |
 
 ## Milestone 0: Repository And Planning
 
@@ -3781,10 +3782,10 @@ A documented, evidence-backed feasibility and workflow recommendation, with a pr
 
 Out of scope: implementation or live deployment of notes-image tools, generic note templates, new sales/build workflows, and unrelated image features. Use disposable fixtures rather than production inventory for investigation.
 
-- Investigation report: [notes-images-investigation.md](notes-images-investigation.md), with scoped multipart/HTML evidence, immediate cleanup and broader authenticated media access, proposed bounded tools, bulk/render assessment and explicit implementation decisions. No new issue or tools.
+- Investigation report: [notes-images-investigation.md](notes-images-investigation.md), with scoped multipart/HTML evidence, immediate cleanup and broader authenticated media access, proposed bounded tools, bulk/render assessment and explicit implementation decisions. The investigation introduced no runtime tools; approved implementation is tracked by F-S117 (#338).
 - Validation: full staged `go test -race -timeout=20m -covermode=atomic -coverprofile=<profile> ./...` passed against InvenTree 1.7.4/API 570, including all default-on Docker suites and the six-model notes-image characterization (upload/list/HTML association/note deletion; part-role/media/duplicate/cleanup checks). Matched base `c0681cd` and head `go test -tags no_integration_tests -race -covermode=atomic -coverprofile=<profile> ./...` passed; all 22 packages with executable statements have identical coverage. `golangci-lint run ./...` reported 0 issues; `git diff --check` passed. Corrected initial purchase-order fixture naming and deleted-note FK filter assumptions before the full staged run. Implementation/evidence commit: `c0e0735`; latest-head CI is required before PR readiness.
 - Review: Senior Go Developer, Senior QA / Test Architect, Senior Product Manager and Senior Infosec Reviewer completed workspace reviews read-only by instruction and focused reruns. Clarified view-only listing success versus upload denial, corrected deleted-note filter characterization, and bound the proposed plan to scoped image IDs/URLs with pending-upload rejection before any PATCH. No unresolved actionable findings or unexpected reviewer edits. Focused QA/product completion-evidence review passed; no dependent Planned/Blocked tasks require promotion.
-- Residual risk: no new runtime behavior; production media authorization, browser visual rendering, populated legacy upgrades, scheduled aging, parent cascades and five granular role cases remain source-only or unverified as detailed in the report. Notes-image implementation remains deferred for operator decisions.
+- Residual risk: no new runtime behavior; production media authorization, browser visual rendering, populated legacy upgrades, scheduled aging, parent cascades and five granular role cases remain source-only or unverified as detailed in the report. Operator decisions are recorded in the report; implementation is tracked by F-S117 (#338), Ready and unassigned.
 
 ### F-S108: Upgrade To InvenTree 1.7.1 / API 570
 
@@ -3970,3 +3971,61 @@ Out of scope: implementation or live deployment of notes-image tools, generic no
 - Validation: matched `go test -tags no_integration_tests -race -covermode=atomic -coverprofile=<profile> ./...` passes on current main `c3250b3` and head with no coverage reductions across 22 packages (inventree 83.8008%, tools 85.3742%). A focused route-logging fallback test removes map-iteration-dependent coverage variation in unchanged production logic. `go vet ./...`, `golangci-lint run ./...` (0 issues), `go generate ./internal/tools` (no drift), `go mod tidy -diff`, unchanged schema SHA256 and `git diff --check` pass. Full default `go test -race -timeout=20m -covermode=atomic -coverprofile=<profile> ./...` passed against 1.7.4/API 570, including client, server, testenv and tool Docker suites. The complete suite also passed on the exact staged follow-up diff. Implementation commit `5bdb066` passed Go race/coverage, lint, Release Preview and CodeQL checks on PR #336. The documentation-only completion commit must pass latest-head CI before final handoff.
 - Review: Senior Go Developer, Senior QA / Test Architect, Senior Product Manager and Senior Infosec Reviewer completed read-only workspace reviews. Corrected stale current-baseline prose and Task Index formatting; focused Go/QA/product reruns approved the fixes and logging test. No unresolved actionable findings or unexpected reviewer edits. Completion-record product review passed.
 - Residual risk: granular upstream allocation/permission combinations outside existing client/tool coverage are not all exhaustively exercised; no claim of expanded compatibility or access.
+
+### F-S117: Guarded notes-image upload, embedding and removal
+
+- Status: `Ready`
+- Issue: https://github.com/davidvanlaatum/inventree-mcp/issues/338
+- Depends on: F-S107 (#311, Done; investigation PR #337 awaiting merge)
+- Baseline: InvenTree 1.7.4/API 570
+- Reservation: operator approved issue creation; all 63 registered worktrees and open/closed exact-title issue search checked before creation and refreshed before recording #338. No task-ID or linked-issue collision.
+- Scope and acceptance: mirror the approved implementation issue; detailed contract follows. Implementation has not started.
+
+#### Operator decisions (2026-11-28)
+
+- Accept InvenTree's intended media-access behavior: authenticated access to a known media URL is broader than note metadata permissions. MCP tools must still preflight the supported note and parent permissions; an upstream/proxy fix is not a prerequisite.
+- Implement upload plus HTML embedding as separate writes with explicit partial/unknown outcomes and recovery instructions.
+- Allow addition, replacement and removal of images. Replacement/removal require explicit confirmation and destructive authorization. Removing an owner's reference can delete the file even if another note references that URL; no global reference-count guarantee is assumed.
+- Operator explicitly approved creation of this implementation issue. Implementation has not started; leave unassigned.
+
+#### Scope
+
+Implement the bounded contract reviewed in `docs/notes-images-investigation.md` (F-S107, PR #337): scoped image metadata/list and bounded download; guarded upload-and-embed for an existing supported note; explicit replacement/removal; direct server-side render-and-embed reuse.
+
+Cover the six existing notes domains only: parts, companies, supplier parts, manufacturer parts, stock items and purchase orders. Preserve the distinction between a note's HTML content and its separate metadata. Do not infer Markdown image rendering from text retention.
+
+#### Safety and recovery contract
+
+- Resolve a supported readable live note and parent before listing, uploading or downloading. Select download URLs only from that note's scoped image metadata with the same credential. Never authorize by successful media fetch alone or expose an unscoped upstream image list.
+- Require read scope for reads; additive read/write/upload for upload-and-embed; destructive authorization and confirmation for replacement/removal that can delete stored files. Check and document how existing single/bulk note writes trigger image cleanup before exposing the new surface.
+- Bind parent, complete note content, metadata relevant to the operation, and scoped image ID/URL set into preview/confirmation. Revalidate before mutation; refuse pre-existing/unexpected unreferenced uploads before any PATCH, including append-only changes. Upload does not advance the note timestamp. Explicit single-writer guidance remains necessary; no upstream compare-and-swap, transaction or exactly-once guarantee.
+- Preserve all wanted references, construct escaped/sanitized HTML, and verify resulting content and image state. Do not silently create/promote notes or repoint image ownership. Cross-note reuse requires independent uploaded copies.
+- Return distinct uploaded-but-not-embedded, outcome-unknown, vanished-upload, verified-embedded and failed-verification outcomes. Re-read before retrying ambiguous writes; do not blindly repeat POST, delete the note, or use an incidental metadata save as rollback.
+- Reuse bounded inline uploads and STDIO-only allowlisted Afero local reads. Reuse/refactor the existing complete PNG/JPEG/WebP validator: 5 MiB encoded, 4096 per dimension, 16 million pixels, MIME/extension agreement. No HTTP local paths, SVG, arbitrary URL ingestion or private/admin/database workaround.
+- Downloads must be same-instance and selected-image scoped, bounded and redirect-safe, with credential/URL/byte redaction. Existing note-content reads can already disclose media URLs; MCP preflight cannot make those external URLs private.
+- Pass rendered PNG bytes directly from `internal/render` into the guarded workflow; no model relay of large image blobs.
+
+#### Bulk assessment
+
+Defer public bulk image tools until the single-note recovery workflow is implemented and validated. Multiple images for the same note require ordered uploads and one final content write, since intervening saves can delete pending uploads. Independent notes could later use the shared batch executor with repeated-note rejection and per-item partial outcomes; cross-item rollback is unavailable. This issue adds no public bulk upload endpoint.
+
+#### Acceptance criteria
+
+- [ ] Define and implement typed client methods, scoped metadata/download and guarded upload/embed/replacement/removal tools without leaking HTTP encoding into tool interfaces.
+- [ ] Enforce the approved scope, permission, confirmation, image-set/pending-upload, bounded-file/download and HTML preservation contracts, including existing single/bulk note-update cleanup interactions.
+- [ ] Reuse render-to-upload server-side and provide explicit verified, partial, unknown and retry/recovery outcomes without automatic rollback claims.
+- [ ] Add isolated default-on real-API successful coverage for every exported client method and all six supported domains; distinguish no-role, view-only and change/upload permission behavior and media access from metadata authorization.
+- [ ] Cover malformed/oversized/unsupported images, URL/redirect/redaction boundaries, duplicates/lost responses, concurrent edits/pending uploads, metadata/primary cleanup, reference removal, cross-note restrictions and delete cascades with appropriate unit/live tests. Verify browser HTML rendering if claimed; keep source-only/deployment/legacy limits explicit.
+- [ ] Align PLAN, TASKS, schema notes/endpoint manifest, tool reference/generated metadata and operator recipes; retain the README's current 1.7.4 compatibility mapping unless actual compatibility changes.
+- [ ] Pass the full staged default Docker race suite, compare per-package coverage with current main and resolve reductions, run lint/diff checks and latest-head CI.
+- [ ] Complete Go, QA, product and infosec workspace review and required focused reruns; resolve or explicitly document actionable findings and residual risk.
+
+#### Exclusions and residual limits
+
+No generic note templates, sales/build domain expansion, arbitrary remote URL upload, direct image-row DELETE/PATCH, automatic note creation/primary selection, public bulk image tool, release or deployment.
+
+The API has no global reference check, atomic upload/content transaction or CAS. Preserve explicit broad-media and concurrent-writer limits. Production proxy/storage authorization and populated legacy migration behavior require separate evidence; the F-S107 source-only findings are not a claim those deployments/upgrades were exercised.
+
+- Validation: implementation not started; planning-only `go test ./docs` and `git diff --check` passed.
+- Review: Senior Go Developer, Senior QA / Test Architect, Senior Product Manager and Senior Infosec Reviewer completed read-only-by-instruction planning reviews. Corrected stale issue-creation and bulk-approval wording; focused Go/product reruns passed. No unresolved actionable findings or unexpected edits. Full implementation panel remains required when selected.
+- Residual risk: accepted upstream broad authenticated media access, single-writer races, no global reference check and source-only/deployment/legacy limits above.
