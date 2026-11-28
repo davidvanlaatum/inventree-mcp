@@ -50,6 +50,7 @@ func TestClientMethodsAgainstInvenTree(t *testing.T) {
 	}))
 
 	t.Run("notes", func(t *testing.T) { runNoteClientCases(t, shared) })
+	t.Run("note_image_discovery", func(t *testing.T) { runNoteImageDiscovery(t, shared) })
 
 	t.Run("testing_and_requirements_discovery", func(t *testing.T) {
 		r := require.New(t)

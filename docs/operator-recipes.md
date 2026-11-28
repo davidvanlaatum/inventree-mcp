@@ -661,3 +661,10 @@ To add a Markdown note, call `create_note` with the parent type/ID, an explicit 
 Use `update_note` with a stable note ID to replace chosen text fields; an empty description/content explicitly clears that field. Use `delete_note` with the same preview/confirm sequence to remove exactly one note. Templates and embedded-image uploads are excluded from this release; image feasibility is tracked by F-S107.
 
 For independent parents, use `bulk_create_notes` or `bulk_update_notes` with the same preview/confirm sequence. Each parent can occur only once in a batch. Inspect every item outcome; there is no all-or-nothing transaction. If a write is ambiguous or unverified, re-read the current notes and prepare a fresh plan only after deciding what remains. Never blindly repeat creation, since a lost response may follow a successful write. Dedicated notes search matches note title, description, and content; global search can continue matching object notes with `search_notes:true`.
+
+
+### Existing notes containing images (1.7.4 / API 570)
+
+Before changing an image-bearing note, read its complete content and preserve every image URL that should remain. InvenTree saves HTML from its web editor; a Markdown image string alone is not a verified browser-rendering contract. Saving a note deletes linked image files whose URLs are absent from the resulting content, including on title/description/primary changes. Avoid editing a note while another writer is uploading an image to it.
+
+Use the InvenTree web editor for image authoring while MCP notes-image tools remain deferred. Do not substitute generic attachment or primary-image tools. Direct media URLs can be readable by authenticated users who lack the owning note's model permission; do not share them assuming note permissions apply. The [F-S107 report](notes-images-investigation.md) records the tested boundary, deployment limitations and decisions needed before new tools.
